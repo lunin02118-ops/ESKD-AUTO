@@ -99,8 +99,37 @@ foreach ($og in $oldGuids) {
     Remove-Item "HKCU:\Software\SolidWorks\AddIns\$og" -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item "HKCU:\Software\SolidWorks\AddInsStartup\$og" -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item "HKLM:\Software\SolidWorks\AddIns\$og" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item "HKLM:\Software\SolidWorks\AddInsStartup\$og" -Recurse -Force -ErrorAction SilentlyContinue
 }
+
+# Удаление остатков и вкладок Semantic / Semantic MDM
+$semanticTabs = @(
+    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab19",
+    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab20",
+    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab14",
+    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab15",
+    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab7",
+    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab8"
+)
+foreach ($st in $semanticTabs) {
+    Remove-Item $st -Recurse -Force -ErrorAction SilentlyContinue
+}
+foreach ($ctx in @("PartContext", "AssyContext", "DrwContext")) {
+    $ctxPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\$ctx"
+    if (Test-Path $ctxPath) {
+        Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -like "Tab*" } | ForEach-Object {
+            $ref = (Get-ItemProperty -Path $_.PSPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
+            $props = (Get-ItemProperty -Path $_.PSPath -Name "Tab Props" -ErrorAction SilentlyContinue)."Tab Props"
+            if (($ref -and ($ref -like "*Semantic*")) -or ($props -and ($props -like "*Semantic*"))) {
+                Remove-Item $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+Remove-ItemProperty -Path "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\General\Addin Performance" -Name "Semantic" -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\General\Addin Performance" -Name "Semantic MDM" -ErrorAction SilentlyContinue
+Remove-Item "HKCU:\Software\SDI Solution" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "HKLM:\SOFTWARE\SDI Solution" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item "HKLM:\SOFTWARE\WOW6432Node\SDI Solution" -Recurse -Force -ErrorAction SilentlyContinue
 
 # 2. Определение путей
 $ToolsRoot = (Resolve-Path $ToolsRoot).Path

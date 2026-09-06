@@ -234,9 +234,15 @@ class CADConfiguratorApp:
             r'\[HKEY_LOCAL_MACHINE\\SOFTWARE\\SolidWorks\\AddIns\\\{03412BA8-10F6-4D51-AC38-4937CE7BEA5F\}\].*?(?=\r?\n\[|\Z)',
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\[^\\]+\\Tab\d+\].*?OnCadTools.*?(?=\r?\n\[|\Z)',
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\TaskPane\\.*?OnCadTools.*?\].*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\[^\\]+\\Tab\d+\].*?Semantic.*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\TaskPane\\.*?Semantic.*?\].*?(?=\r?\n\[|\Z)',
         ]
         for ep in excluded_patterns:
-            text = re.sub(ep, '', text, flags=re.DOTALL)
+            text = re.sub(ep, '', text, flags=re.DOTALL | re.IGNORECASE)
+            
+        # Strip Semantic from Addin Performance
+        text = re.sub(r'"Semantic"="[^"]*"\r?\n', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'"Semantic MDM"="[^"]*"\r?\n', '', text, flags=re.IGNORECASE)
             
         # 3. Path mappings
         doc_templates   = os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблоны документов")
