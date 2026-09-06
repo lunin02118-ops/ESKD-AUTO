@@ -203,16 +203,33 @@ namespace ESKD.MaterialSync
                     {
                         try
                         {
-                            ICommandTab tab = iCmdMgr.GetCommandTab(dt, "ЕСКД");
-                            if (tab != null)
+                            CommandTab tab = iCmdMgr.GetCommandTab(dt, "ЕСКД");
+                            if (tab == null)
                             {
-                                try { iCmdMgr.RemoveCommandTab((CommandTab)tab); } catch { }
+                                tab = iCmdMgr.AddCommandTab(dt, "ЕСКД");
+                                Log("AddCommandManager: Created new CommandTab for dt=" + dt);
                             }
-                            tab = iCmdMgr.AddCommandTab(dt, "ЕСКД");
+                            else
+                            {
+                                Log("AddCommandManager: Found existing CommandTab for dt=" + dt);
+                            }
+
                             if (tab != null)
                             {
                                 tab.Visible = true;
-                                ICommandTabBox box = tab.AddCommandTabBox();
+                                CommandTabBox box = null;
+                                object boxesObj = null;
+                                try { boxesObj = tab.CommandTabBoxes(); } catch { }
+
+                                if (boxesObj != null && ((object[])boxesObj).Length > 0)
+                                {
+                                    box = (CommandTabBox)((object[])boxesObj)[0];
+                                }
+                                else
+                                {
+                                    box = tab.AddCommandTabBox();
+                                }
+
                                 if (box != null)
                                 {
                                     int[] cmdIDs = new int[] { cmdIDSettings, cmdIDSync };
@@ -220,7 +237,8 @@ namespace ESKD.MaterialSync
                                         (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow,
                                         (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow
                                     };
-                                    box.AddCommands(cmdIDs, textTypes);
+                                    bool addOk = box.AddCommands(cmdIDs, textTypes);
+                                    Log("AddCommandManager: box.AddCommands result for dt=" + dt + ": " + addOk);
                                 }
                             }
                         }
