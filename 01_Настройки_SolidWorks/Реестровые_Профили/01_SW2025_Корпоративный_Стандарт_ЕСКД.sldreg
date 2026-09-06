@@ -13608,13 +13608,6 @@ REGEDIT4
 
 [HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab17\GB2]
 
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab18]
-"ModuleName"="{08C4BC0B-C36C-470E-A0EA-02232F023333}"
-"RefName"="Drew"
-"Tab Props"="Drew,0,1,-1"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab18\GB0]
-
 [HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab19]
 "ModuleName"="{59959DFA-3229-4B86-852E-52ABF2BDB8C0}"
 "RefName"="SWTools"
@@ -13688,122 +13681,6 @@ REGEDIT4
 "Btn0"="2,51572"
 "Btn1"="2,37848"
 "Btn2"="2,37849"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab20]
-"ModuleName"="{03412BA8-10F6-4D51-AC38-4937CE7BEA5F}"
-"RefName"="OnCadTools"
-"Tab Props"="OnCadTools,0,1,-1"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab20\GB0]
-"Btn0"="3,41655"
-"Btn1"="3,41656"
-"Btn2"="3,41657"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab20\GB1]
-"Btn0"="3,41658"
-"Btn1"="3,41659"
-"Btn2"="3,41660"
-"Btn3"="1,41661"
-"Btn4"="1,41662"
-"Btn5"="1,41663"
-"Btn6"="1,41664"
-"Btn7"="1,41665"
-"Btn8"="1,41666"
-"Btn9"="3,41667"
-"Btn10"="3,41668"
-"Btn11"="3,41669"
-"Btn12"="3,41670"
-"Btn13"="3,41671"
-"Btn14"="3,41672"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab20\GB2]
-"Btn0"="3,41673"
-"Btn1"="3,41674"
-"Btn2"="3,41675"
-"Btn3"="3,41676"
-"Btn4"="3,41677"
-"Btn5"="3,41678"
-"Btn6"="3,41679"
-"Btn7"="3,41680"
-"Btn8"="3,41681"
-"Btn9"="3,41682"
-"Btn10"="3,41683"
-"Btn11"="3,41684"
-"Btn12"="3,41685"
-"Btn13"="3,41686"
-"Btn14"="3,41687"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab20\GB3]
-"Btn0"="3,41688"
-"Btn1"="3,41689"
-"Btn2"="3,41690"
-"Btn3"="3,41691"
-"Btn4"="3,41694"
-"Btn5"="3,41695"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab20\GB4]
-"Btn0"="3,41696"
-"Btn1"="3,41702"
-"Btn2"="3,41703"
-"Btn3"="3,41704"
-"Btn4"="3,41705"
-"Btn5"="3,41706"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab20\GB5]
-"Btn0"="3,41707"
-"Btn1"="3,41708"
-"Btn2"="3,41709"
-"Btn3"="3,41710"
-"Btn4"="3,41711"
-"Btn5"="3,41712"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab20\GB6]
-"Btn0"="3,41713"
-"Btn1"="3,41714"
-"Btn2"="3,41715"
-"Btn3"="3,41716"
-"Btn4"="3,41717"
-"Btn5"="3,41718"
-"Btn6"="3,41719"
-"Btn7"="3,41720"
-"Btn8"="3,41721"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab21]
-"ModuleName"="{03412BA8-10F6-4D51-AC38-4937CE7BEA5F}"
-"RefName"="Листовой металл и профили"
-"Tab Props"="Листовой металл и профили,0,1,-1"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab21\GB0]
-"Btn0"="2,41722"
-"Btn1"="2,41723"
-"Btn2"="2,41724"
-"Btn3"="2,41725"
-"Btn4"="2,41726"
-"Btn5"="2,41727"
-"Btn6"="2,41728"
-"Btn7"="2,41729"
-"Btn8"="2,41730"
-"Btn9"="2,41731"
-"Btn10"="2,41732"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab21\GB1]
-"Btn0"="2,41733"
-"Btn1"="2,41734"
-"Btn2"="2,41735"
-"Btn3"="2,41736"
-"Btn4"="2,41737"
-"Btn5"="2,41738"
-"Btn6"="2,41739"
-"Btn7"="2,41740"
-"Btn8"="2,41741"
-"Btn9"="2,41742"
-"Btn10"="2,41743"
-"Btn11"="2,41744"
-"Btn12"="2,41745"
-"Btn13"="2,41746"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab21\GB2]
-"Btn0"="2,41747"
 
 [HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\AssyContext\Tab22]
 "ModuleName"="{B64E6875-B101-4D5C-B245-FF8D50772E25}"
@@ -14132,34 +14009,6 @@ REGEDIT4
 
 [HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab11]
 
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab12]
-"ModuleName"="{08C4BC0B-C36C-470E-A0EA-02232F023333}"
-"RefName"="Drew"
-"Tab Props"="Drew,0,1,-1"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab12\GB0]
-"Btn0"="2,41804"
-"Btn1"="2,41805"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab12\GB1]
-"Btn0"="2,59424"
-"Btn1"="2,59425"
-"Btn2"="2,59426"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab12\GB2]
-"Btn0"="2,41806"
-"Btn1"="2,41807"
-"Btn2"="2,59427"
-"Btn3"="2,41808"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab12\GB3]
-"Btn0"="3,41809"
-"Btn1"="3,41810"
-"Btn2"="3,41811"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab12\GB4]
-"Btn0"="2,41812"
-
 [HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab13]
 "ModuleName"="{59959DFA-3229-4B86-852E-52ABF2BDB8C0}"
 "RefName"="SWTools"
@@ -14191,47 +14040,6 @@ REGEDIT4
 "Btn0"="2,41792"
 "Btn1"="2,41793"
 "Btn2"="2,41794"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab14]
-"ModuleName"="{03412BA8-10F6-4D51-AC38-4937CE7BEA5F}"
-"RefName"="Чертежи Ounan"
-"Tab Props"="Чертежи Ounan,0,1,-1"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab14\GB0]
-"Btn0"="2,41748"
-"Btn1"="2,41749"
-"Btn2"="2,41750"
-"Btn3"="2,41751"
-"Btn4"="2,41752"
-"Btn5"="2,41753"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab14\GB1]
-"Btn0"="2,41754"
-"Btn1"="2,41755"
-"Btn2"="2,41756"
-"Btn3"="2,41757"
-"Btn4"="2,41758"
-"Btn5"="2,41759"
-"Btn6"="2,41760"
-"Btn7"="2,41761"
-"Btn8"="2,41762"
-"Btn9"="2,41763"
-"Btn10"="2,41764"
-"Btn11"="2,41765"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab14\GB2]
-"Btn0"="2,41766"
-"Btn1"="2,41767"
-"Btn2"="2,41768"
-"Btn3"="2,41769"
-"Btn4"="2,41770"
-"Btn5"="2,41771"
-"Btn6"="2,41772"
-"Btn7"="2,41773"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab14\GB3]
-"Btn0"="2,41774"
-"Btn1"="2,41775"
 
 [HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\DrwContext\Tab15]
 "ModuleName"="{B64E6875-B101-4D5C-B245-FF8D50772E25}"
@@ -15203,13 +15011,6 @@ REGEDIT4
 
 [HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab23\GB2]
 
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab24]
-"ModuleName"="{08C4BC0B-C36C-470E-A0EA-02232F023333}"
-"RefName"="Drew"
-"Tab Props"="Drew,0,1,-1"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab24\GB0]
-
 [HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab25]
 "ModuleName"="{59959DFA-3229-4B86-852E-52ABF2BDB8C0}"
 "RefName"="SWTools"
@@ -15241,122 +15042,6 @@ REGEDIT4
 "Btn0"="2,41792"
 "Btn1"="2,41793"
 "Btn2"="2,41794"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab26]
-"ModuleName"="{03412BA8-10F6-4D51-AC38-4937CE7BEA5F}"
-"RefName"="OnCadTools"
-"Tab Props"="OnCadTools,0,1,-1"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab26\GB0]
-"Btn0"="3,41655"
-"Btn1"="3,41656"
-"Btn2"="3,41657"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab26\GB1]
-"Btn0"="3,41658"
-"Btn1"="3,41659"
-"Btn2"="3,41660"
-"Btn3"="1,41661"
-"Btn4"="1,41662"
-"Btn5"="1,41663"
-"Btn6"="1,41664"
-"Btn7"="1,41665"
-"Btn8"="1,41666"
-"Btn9"="3,41667"
-"Btn10"="3,41668"
-"Btn11"="3,41669"
-"Btn12"="3,41670"
-"Btn13"="3,41671"
-"Btn14"="3,41672"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab26\GB2]
-"Btn0"="3,41673"
-"Btn1"="3,41674"
-"Btn2"="3,41675"
-"Btn3"="3,41676"
-"Btn4"="3,41677"
-"Btn5"="3,41678"
-"Btn6"="3,41679"
-"Btn7"="3,41680"
-"Btn8"="3,41681"
-"Btn9"="3,41682"
-"Btn10"="3,41683"
-"Btn11"="3,41684"
-"Btn12"="3,41685"
-"Btn13"="3,41686"
-"Btn14"="3,41687"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab26\GB3]
-"Btn0"="3,41688"
-"Btn1"="3,41689"
-"Btn2"="3,41690"
-"Btn3"="3,41691"
-"Btn4"="3,41694"
-"Btn5"="3,41695"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab26\GB4]
-"Btn0"="3,41696"
-"Btn1"="3,41702"
-"Btn2"="3,41703"
-"Btn3"="3,41704"
-"Btn4"="3,41705"
-"Btn5"="3,41706"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab26\GB5]
-"Btn0"="3,41707"
-"Btn1"="3,41708"
-"Btn2"="3,41709"
-"Btn3"="3,41710"
-"Btn4"="3,41711"
-"Btn5"="3,41712"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab26\GB6]
-"Btn0"="3,41713"
-"Btn1"="3,41714"
-"Btn2"="3,41715"
-"Btn3"="3,41716"
-"Btn4"="3,41717"
-"Btn5"="3,41718"
-"Btn6"="3,41719"
-"Btn7"="3,41720"
-"Btn8"="3,41721"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab27]
-"ModuleName"="{03412BA8-10F6-4D51-AC38-4937CE7BEA5F}"
-"RefName"="Листовой металл и профили"
-"Tab Props"="Листовой металл и профили,0,1,-1"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab27\GB0]
-"Btn0"="2,41722"
-"Btn1"="2,41723"
-"Btn2"="2,41724"
-"Btn3"="2,41725"
-"Btn4"="2,41726"
-"Btn5"="2,41727"
-"Btn6"="2,41728"
-"Btn7"="2,41729"
-"Btn8"="2,41730"
-"Btn9"="2,41731"
-"Btn10"="2,41732"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab27\GB1]
-"Btn0"="2,41733"
-"Btn1"="2,41734"
-"Btn2"="2,41735"
-"Btn3"="2,41736"
-"Btn4"="2,41737"
-"Btn5"="2,41738"
-"Btn6"="2,41739"
-"Btn7"="2,41740"
-"Btn8"="2,41741"
-"Btn9"="2,41742"
-"Btn10"="2,41743"
-"Btn11"="2,41744"
-"Btn12"="2,41745"
-"Btn13"="2,41746"
-
-[HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab27\GB2]
-"Btn0"="2,41747"
 
 [HKEY_CURRENT_USER\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\PartContext\Tab28]
 "ModuleName"="{B64E6875-B101-4D5C-B245-FF8D50772E25}"

@@ -83,11 +83,68 @@ if ($swProc -and -not $SkipClose) {
     Write-Host "  SolidWorks запущен (пропуск закрытия по ключу -SkipClose)..." -ForegroundColor Yellow
 }
 
-# Блокировка и удаление остатков аварийного плагина OnCadTools
-Remove-Item "HKLM:\SOFTWARE\SolidWorks\AddIns\{03412ba8-10f6-4d51-ac38-4937ce7bea5f}" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item "HKLM:\SOFTWARE\SolidWorks\AddIns{03412ba8-10f6-4d51-ac38-4937ce7bea5f}" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item "HKCU:\SOFTWARE\SolidWorks\AddIns\{03412ba8-10f6-4d51-ac38-4937ce7bea5f}" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item "HKCU:\Software\SolidWorks\AddInsStartup\{03412ba8-10f6-4d51-ac38-4937ce7bea5f}" -Recurse -Force -ErrorAction SilentlyContinue
+# Блокировка и полное удаление нежелательных надстроек (OnCadTools, Drew, устаревшие версии)
+$unwantedAddinGuids = @(
+    "{03412ba8-10f6-4d51-ac38-4937ce7bea5f}", # OnCadTools
+    "{7a2f5c31-9e44-4b0d-8c21-5f0e9a4b77c2}", # OnCadTools Shim
+    "{08c4bc0b-c36c-470e-a0ea-02232f023333}"  # CAD Booster Drew
+)
+foreach ($ug in $unwantedAddinGuids) {
+    Remove-Item "HKLM:\SOFTWARE\SolidWorks\AddIns\$ug" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKLM:\SOFTWARE\SolidWorks\AddInsStartup\$ug" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKLM:\SOFTWARE\WOW6432Node\SolidWorks\AddIns\$ug" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKLM:\SOFTWARE\WOW6432Node\SolidWorks\AddInsStartup\$ug" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKCU:\SOFTWARE\SolidWorks\AddIns\$ug" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKCU:\Software\SolidWorks\AddInsStartup\$ug" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKCU:\Software\SolidWorks\AddInsEntitlement\$ug" -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# Очистка COM-классов и ProgID OnCadTools и Drew в Classes
+foreach ($rootClass in @("HKLM:\SOFTWARE\Classes", "HKCU:\Software\Classes")) {
+    Get-ChildItem $rootClass -ErrorAction SilentlyContinue | Where-Object { 
+        $_.PSChildName -like "OnCadTools*" -or $_.PSChildName -like "CADBooster*" 
+    } | ForEach-Object {
+        Remove-Item $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    foreach ($ug in $unwantedAddinGuids) {
+        Remove-Item (Join-Path $rootClass "CLSID\$ug") -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item (Join-Path $rootClass "WOW6432Node\CLSID\$ug") -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# Очистка вкладок CommandManager и TaskPane от OnCadTools, Drew, Ounan
+foreach ($ctx in @("PartContext", "AssyContext", "DrwContext")) {
+    $ctxPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\$ctx"
+    if (Test-Path $ctxPath) {
+        Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -like "Tab*" } | ForEach-Object {
+            $ref = (Get-ItemProperty -Path $_.PSPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
+            $props = (Get-ItemProperty -Path $_.PSPath -Name "Tab Props" -ErrorAction SilentlyContinue)."Tab Props"
+            $mod = (Get-ItemProperty -Path $_.PSPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
+            if (($ref -and ($ref -match "OnCad|Drew|Ounan")) -or 
+                ($props -and ($props -match "OnCad|Drew|Ounan")) -or
+                ($mod -and ($mod -match "03412ba8|08C4BC0B|7A2F5C31"))) {
+                Remove-Item $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
+$flyoutsPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\Custom API Flyouts"
+if (Test-Path $flyoutsPath) {
+    Get-ChildItem $flyoutsPath -ErrorAction SilentlyContinue | ForEach-Object {
+        $mod = (Get-ItemProperty $_.PSPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
+        if ($mod -and ($mod -match "03412ba8|08C4BC0B|7A2F5C31")) {
+            Remove-Item $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+Remove-Item "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\TaskPane\Инструменты Ounan (OnCadTools)" -Recurse -Force -ErrorAction SilentlyContinue
+Get-ChildItem "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\TaskPane" -ErrorAction SilentlyContinue | Where-Object { 
+    $_.Name -match "OnCad|Drew|Ounan" 
+} | ForEach-Object {
+    Remove-Item $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+}
+Remove-ItemProperty -Path "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\General\Addin Performance" -Name "OnCadTools" -ErrorAction SilentlyContinue
+Remove-ItemProperty -Path "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\General\Addin Performance" -Name "Drew" -ErrorAction SilentlyContinue
 
 # Очистка устаревших версий надстройки ЕСКД во избежание дубликатов
 $oldGuids = @(

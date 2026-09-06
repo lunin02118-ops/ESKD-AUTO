@@ -232,8 +232,15 @@ class CADConfiguratorApp:
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddInsStartup\\\{03412BA8-10F6-4D51-AC38-4937CE7BEA5F\}\].*?(?=\r?\n\[|\Z)',
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddIns\\\{03412BA8-10F6-4D51-AC38-4937CE7BEA5F\}\].*?(?=\r?\n\[|\Z)',
             r'\[HKEY_LOCAL_MACHINE\\SOFTWARE\\SolidWorks\\AddIns\\\{03412BA8-10F6-4D51-AC38-4937CE7BEA5F\}\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\[^\\]+\\Tab\d+\].*?OnCadTools.*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\TaskPane\\.*?OnCadTools.*?\].*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddInsStartup\\\{08C4BC0B-C36C-470E-A0EA-02232F023333\}\].*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddIns\\\{08C4BC0B-C36C-470E-A0EA-02232F023333\}\].*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddInsEntitlement\\\{08C4BC0B-C36C-470E-A0EA-02232F023333\}\].*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_LOCAL_MACHINE\\SOFTWARE\\SolidWorks\\AddIns\\\{08C4BC0B-C36C-470E-A0EA-02232F023333\}\].*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\[^\\]+\\Tab\d+\].*?(OnCadTools|Ounan|03412BA8).*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\[^\\]+\\Tab\d+\].*?(Drew|CADBooster|08C4BC0B).*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\TaskPane\\.*?(OnCadTools|Ounan).*?\].*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\TaskPane\\.*?(Drew|CADBooster).*?\].*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\Custom API Flyouts\\.*?\].*?(03412BA8|08C4BC0B).*?(?=\r?\n\[|\Z)',
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\[^\\]+\\Tab\d+\].*?Semantic.*?(?=\r?\n\[|\Z)',
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\TaskPane\\.*?Semantic.*?\].*?(?=\r?\n\[|\Z)',
         ]
@@ -606,42 +613,50 @@ class CADConfiguratorApp:
         subprocess.run(["taskkill", "/F", "/IM", "sldworks.exe"], capture_output=True)
         time.sleep(2)
         
-        self.log("2. Полная очистка реестра от следов OnCadTools...", "INFO")
+        self.log("2. Полная очистка реестра от следов OnCadTools и Drew...", "INFO")
         hkcu = winreg.HKEY_CURRENT_USER
         hklm = winreg.HKEY_LOCAL_MACHINE
-        oncad_guid = "{03412BA8-10F6-4D51-AC38-4937CE7BEA5F}"
-        oncad_shim = "{7A2F5C31-9E44-4B0D-8C21-5F0E9A4B77C2}"
+        unwanted_guids = [
+            "{03412BA8-10F6-4D51-AC38-4937CE7BEA5F}".lower(), # OnCadTools
+            "{7A2F5C31-9E44-4B0D-8C21-5F0E9A4B77C2}".lower(), # OnCadTools Shim
+            "{08C4BC0B-C36C-470E-A0EA-02232F023333}".lower()  # CAD Booster Drew
+        ]
 
         # Удаление из автозагрузки и списков надстроек
         for root_k, base_p in [
             (hkcu, r"Software\SolidWorks\AddInsStartup"),
             (hkcu, r"Software\SolidWorks\AddIns"),
+            (hkcu, r"Software\SolidWorks\AddInsEntitlement"),
             (hklm, r"SOFTWARE\SolidWorks\AddIns"),
             (hklm, r"SOFTWARE\SolidWorks"),
+            (hklm, r"SOFTWARE\WOW6432Node\SolidWorks\AddIns"),
             (hkcu, r"Software\Classes\CLSID"),
             (hklm, r"SOFTWARE\Classes\CLSID"),
+            (hklm, r"SOFTWARE\Classes\WOW6432Node\CLSID"),
         ]:
             try:
                 with winreg.OpenKey(root_k, base_p, 0, winreg.KEY_ALL_ACCESS) as k:
                     sub_cnt = winreg.QueryInfoKey(k)[0]
                     sub_keys = [winreg.EnumKey(k, i) for i in range(sub_cnt)]
                     for sub in sub_keys:
-                        if oncad_guid.lower() in sub.lower() or oncad_shim.lower() in sub.lower():
+                        if any(ug in sub.lower() for ug in unwanted_guids):
                             self.delete_key_recursive(root_k, f"{base_p}\\{sub}")
                             self.log(f"Удален ключ: {base_p}\\{sub}", "SUCCESS")
             except Exception:
                 pass
 
-        # Удаление ProgID OnCadTools в HKLM
-        try:
-            with winreg.OpenKey(hklm, r"SOFTWARE\Classes", 0, winreg.KEY_ALL_ACCESS) as k:
-                sub_cnt = winreg.QueryInfoKey(k)[0]
-                sub_keys = [winreg.EnumKey(k, i) for i in range(sub_cnt)]
-                for sub in sub_keys:
-                    if sub.lower().startswith("oncadtools"):
-                        self.delete_key_recursive(hklm, f"SOFTWARE\\Classes\\{sub}")
-        except Exception:
-            pass
+        # Удаление ProgID OnCadTools и CADBooster в Classes
+        for root_k, base_p in [(hklm, r"SOFTWARE\Classes"), (hkcu, r"Software\Classes")]:
+            try:
+                with winreg.OpenKey(root_k, base_p, 0, winreg.KEY_ALL_ACCESS) as k:
+                    sub_cnt = winreg.QueryInfoKey(k)[0]
+                    sub_keys = [winreg.EnumKey(k, i) for i in range(sub_cnt)]
+                    for sub in sub_keys:
+                        sub_low = sub.lower()
+                        if sub_low.startswith("oncadtools") or sub_low.startswith("cadbooster"):
+                            self.delete_key_recursive(root_k, f"{base_p}\\{sub}")
+            except Exception:
+                pass
             
         self.log("3. Сброс профиля SolidWorks 2025 в реестре...", "INFO")
         self.delete_key_recursive(hkcu, r"Software\SolidWorks\SOLIDWORKS 2025")

@@ -133,12 +133,11 @@ namespace ESKD.MaterialSync
                 }
 
                 View v = (View)drw.GetFirstView();
-                double scaleX = 0.0;
-                double scaleY = 0.0;
-                int scaleJust = 0;
-                bool foundScale = false;
+                Note massNote = null;
+                Note scaleNote = null;
+                Note litNote = null;
 
-                // Pass 1: find dynamic Scale value note (NEVER match static header label "Масштаб")
+                // Scan drawing views for Scale, Mass, and Litera notes in title block data row (Y in [0.015, 0.045])
                 View cur = v;
                 while (cur != null)
                 {
@@ -148,103 +147,127 @@ namespace ESKD.MaterialSync
                         string ltxt = n.PropertyLinkedText ?? "";
                         string name = n.GetName() ?? "";
 
-                        bool isScaleValue = false;
-                        if (name.Equals("Scale", StringComparison.OrdinalIgnoreCase))
+                        Annotation ann = (Annotation)n.GetAnnotation();
+                        if (ann != null)
                         {
-                            isScaleValue = true;
-                        }
-                        else if (ltxt.IndexOf("Sheet Scale", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 ltxt.IndexOf("Масштаб листа", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 ltxt.IndexOf("SW-Sheet Scale", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            isScaleValue = true;
-                        }
-
-                        if (isScaleValue)
-                        {
-                            Annotation ann = (Annotation)n.GetAnnotation();
-                            if (ann != null)
+                            double[] pos = (double[])ann.GetPosition();
+                            if (pos != null && pos.Length >= 2 && pos[1] > 0.015 && pos[1] < 0.045)
                             {
-                                double[] pos = (double[])ann.GetPosition();
-                                if (pos != null && pos.Length >= 2 && pos[1] > 0.005)
+                                if (name.Equals("Scale", StringComparison.OrdinalIgnoreCase) ||
+                                    ltxt.IndexOf("Sheet Scale", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    ltxt.IndexOf("Масштаб листа", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    ltxt.IndexOf("SW-Sheet Scale", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    (ltxt.IndexOf("Масштаб", StringComparison.OrdinalIgnoreCase) >= 0 && ltxt.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0))
                                 {
-                                    scaleX = pos[0];
-                                    scaleY = pos[1];
-                                    scaleJust = n.GetTextJustification();
-                                    foundScale = true;
-                                    break;
+                                    if (scaleNote == null) scaleNote = n;
+                                }
+                                else if (name.Equals("MYPRP15", StringComparison.OrdinalIgnoreCase) ||
+                                         ltxt.IndexOf("Масса_ФБ", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         ltxt.IndexOf("$PRPSHEET:\"Масса", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         ltxt.IndexOf("$PRP:\"Масса", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         ltxt.IndexOf("$PRPSHEET:\"SW-Mass", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         ltxt.IndexOf("$PRP:\"SW-Mass", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         (ltxt.IndexOf("Масса", StringComparison.OrdinalIgnoreCase) >= 0 && ltxt.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0))
+                                {
+                                    if (massNote == null) massNote = n;
+                                }
+                                else if (name.Equals("MYPRP5", StringComparison.OrdinalIgnoreCase) ||
+                                         ltxt.IndexOf("Литера_ФБ", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         ltxt.IndexOf("$PRPSHEET:\"Литера", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                         (ltxt.IndexOf("Литера", StringComparison.OrdinalIgnoreCase) >= 0 && ltxt.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0))
+                                {
+                                    if (litNote == null) litNote = n;
                                 }
                             }
                         }
                         n = (Note)n.GetNext();
                     }
-                    if (foundScale) break;
                     cur = (View)cur.GetNextView();
                 }
 
-                double targetX = 0.0;
-                double targetY = 0.0;
+                if (massNote == null && scaleNote == null) return;
+
+                Annotation annM = massNote != null ? (Annotation)massNote.GetAnnotation() : null;
+                Annotation annS = scaleNote != null ? (Annotation)scaleNote.GetAnnotation() : null;
+                TextFormat tfS = annS != null ? (TextFormat)annS.GetTextFormat(0) : null;
+                TextFormat tfM = annM != null ? (TextFormat)annM.GetTextFormat(0) : null;
+
+                // Sync text formatting of Mass and Litera to match Scale (ensures exact identical baseline and line spacing)
+                if (tfM != null && annM != null)
+                {
+                    if (tfS != null)
+                    {
+                        tfM.LineSpacing = tfS.LineSpacing;
+                        tfM.CharHeight = tfS.CharHeight;
+                        tfM.TypeFaceName = tfS.TypeFaceName;
+                        tfM.Italic = tfS.Italic;
+                        tfM.Bold = tfS.Bold;
+                    }
+                    else
+                    {
+                        tfM.LineSpacing = 0.001;
+                    }
+                    annM.SetTextFormat(0, false, tfM);
+                }
 
                 // Standard GOST 2.104 title block dimensions:
                 // Stamp width = 185 mm, right margin = 5 mm.
-                // Mass cell center is exactly 31.85 mm from the right edge of sheet (or 17.5 mm to the left of centered Scale cell).
-                // Mass cell baseline/center Y is 34.53 mm from bottom edge.
-                if (sheetW > 0.15)
+                // Mass/Scale data cell vertical range: Y in [0.025, 0.040] (15 mm height).
+                // Vertical geometric center: Y = 0.0325 m (32.5 mm).
+                double cellCenterY = 0.0325;
+                double targetY = 0.0348;
+
+                if (scaleNote != null && annS != null)
                 {
-                    targetX = sheetW - 0.03185;
-                    targetY = foundScale ? scaleY : 0.03453;
-                    if (foundScale && scaleJust == (int)swTextJustification_e.swTextJustificationCenter)
+                    double[] posS = (double[])annS.GetPosition();
+                    double[] extS = (double[])scaleNote.GetExtent();
+                    if (extS != null && extS.Length >= 6 && (extS[4] - extS[1]) > 0.001)
                     {
-                        targetX = scaleX - 0.0175;
+                        double curCenterS = (extS[1] + extS[4]) / 2.0;
+                        double deltaS = cellCenterY - curCenterS;
+                        targetY = posS[1] + deltaS;
                     }
-                }
-                else if (foundScale)
-                {
-                    targetY = scaleY;
-                    targetX = scaleX - 0.0175;
-                }
-                else
-                {
-                    return;
-                }
-
-                // Pass 2: find dynamic Mass value note (NEVER match static header label "Масса")
-                cur = v;
-                while (cur != null)
-                {
-                    Note n = (Note)cur.GetFirstNote();
-                    while (n != null)
+                    else if (posS != null && posS.Length >= 2)
                     {
-                        string ltxt = n.PropertyLinkedText ?? "";
-                        string name = n.GetName() ?? "";
-
-                        bool isMassValue = false;
-                        if (name.Equals("MYPRP15", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isMassValue = true;
-                        }
-                        else if (ltxt.IndexOf("Масса_ФБ", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 ltxt.IndexOf("$PRPSHEET:\"Масса", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 ltxt.IndexOf("$PRP:\"Масса", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 ltxt.IndexOf("$PRPSHEET:\"SW-Mass", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 ltxt.IndexOf("$PRP:\"SW-Mass", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 (ltxt.IndexOf("Масса", StringComparison.OrdinalIgnoreCase) >= 0 && ltxt.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0))
-                        {
-                            isMassValue = true;
-                        }
-
-                        if (isMassValue)
-                        {
-                            Annotation ann = (Annotation)n.GetAnnotation();
-                            if (ann != null)
-                            {
-                                ann.SetPosition(targetX, targetY, 0.0);
-                                n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                            }
-                        }
-                        n = (Note)n.GetNext();
+                        targetY = posS[1];
                     }
-                    cur = (View)cur.GetNextView();
+
+                    // Scale cell is 18 mm wide, right margin 5 mm -> center is sheetW - 14 mm (0.014 m)
+                    double targetScaleX = sheetW > 0.15 ? (sheetW - 0.0140) : (posS != null ? posS[0] : 0.0);
+                    annS.SetPosition(targetScaleX, targetY, posS != null && posS.Length > 2 ? posS[2] : 0.0);
+                    scaleNote.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
+                }
+
+                if (massNote != null && annM != null)
+                {
+                    // Mass cell is 17 mm wide, between (sheetW - 40 mm) and (sheetW - 23 mm) -> center is sheetW - 31.5 mm (0.0315 m)
+                    double targetMassX = sheetW > 0.15 ? (sheetW - 0.0315) : (scaleNote != null ? (sheetW - 0.0140 - 0.0175) : 0.0);
+                    double[] posM = (double[])annM.GetPosition();
+                    annM.SetPosition(targetMassX, targetY, posM != null && posM.Length > 2 ? posM[2] : 0.0);
+                    massNote.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
+                }
+
+                if (litNote != null)
+                {
+                    Annotation annL = (Annotation)litNote.GetAnnotation();
+                    if (annL != null)
+                    {
+                        TextFormat tfL = (TextFormat)annL.GetTextFormat(0);
+                        if (tfL != null && tfS != null)
+                        {
+                            tfL.LineSpacing = tfS.LineSpacing;
+                            tfL.CharHeight = tfS.CharHeight;
+                            tfL.TypeFaceName = tfS.TypeFaceName;
+                            tfL.Italic = tfS.Italic;
+                            tfL.Bold = tfS.Bold;
+                            annL.SetTextFormat(0, false, tfL);
+                        }
+                        double[] posL = (double[])annL.GetPosition();
+                        // Litera cell: default column 2 center is sheetW - 47.5 mm (0.0475 m)
+                        double targetLitX = sheetW > 0.15 ? (sheetW - 0.0475) : 0.0;
+                        annL.SetPosition(targetLitX, targetY, posL != null && posL.Length > 2 ? posL[2] : 0.0);
+                        litNote.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
+                    }
                 }
             }
             catch { }
