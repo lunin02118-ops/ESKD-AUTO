@@ -1,0 +1,122 @@
+' ==============================================================================
+' Макрос: Безопасное добавление ТТ по ГОСТ 2.316-2008 / ЕСКД
+' Совместимость: SolidWorks 2018 - 2026 / SWPlus
+' Правило ГОСТ: ТТ наносятся ТОЛЬКО на первый лист над основной надписью.
+'               Не удаляет сторонние заметки и шероховатость.
+' ==============================================================================
+Option Explicit
+
+Sub main()
+    Dim swApp As Object
+    Dim swDraw As Object
+    Dim swSheet As Object
+    Dim sheetNames As Variant
+    Dim currentSheetName As String
+    Dim sheet1Name As String
+    Dim sheetProps As Variant
+    Dim sheetWidth As Double, sheetHeight As Double
+    Dim posX As Double, posY As Double
+    Dim sheetView As Object, n As Object, existingNote As Object
+    Dim ann As Object
+    
+    Set swApp = Application.SldWorks
+    Set swDraw = swApp.ActiveDoc
+    
+    If swDraw Is Nothing Then
+        MsgBox "Пожалуйста, откройте чертеж перед запуском макроса.", vbExclamation, "ЕСКД ТТ"
+        Exit Sub
+    End If
+    
+    If swDraw.GetType <> 3 Then ' 3 = swDocDRAWING
+        MsgBox "Активный документ должен быть чертежом (SLDDRW).", vbExclamation, "ЕСКД ТТ"
+        Exit Sub
+    End If
+    
+    Set swSheet = swDraw.GetCurrentSheet
+    currentSheetName = swSheet.GetName
+    sheetNames = swDraw.GetSheetNames
+    sheet1Name = CStr(sheetNames(0))
+    
+    ' Активируем строго Лист 1
+    swDraw.ActivateSheet sheet1Name
+    Set swSheet = swDraw.GetCurrentSheet
+    sheetProps = swSheet.GetProperties2
+    sheetWidth = sheetProps(5)
+    sheetHeight = sheetProps(6)
+    
+    ' Активируем листовой вид
+    swDraw.ActivateView ""
+    Set sheetView = swDraw.GetFirstView
+    
+    ' Поиск существующей заметки ТТ
+    Set existingNote = Nothing
+    If Not sheetView Is Nothing Then
+        Set n = sheetView.GetFirstNote
+        Do While Not n Is Nothing
+            Dim nName As String, nTxt As String
+            nName = LCase(n.GetName)
+            nTxt = LCase(n.GetText)
+            If InStr(nName, "заметка_тт") > 0 Or InStr(nName, "tt_note") > 0 Then
+                Set existingNote = n
+                Exit Do
+            ElseIf InStr(nTxt, "*размеры для справок") > 0 Or InStr(nTxt, "гост 30893") > 0 Then
+                Set ann = n.GetAnnotation
+                If Not ann Is Nothing Then
+                    Dim pos As Variant
+                    pos = ann.GetPosition
+                    If pos(0) >= (sheetWidth - 0.200) And pos(1) >= 0.055 And pos(1) <= 0.280 Then
+                        Set existingNote = n
+                        Exit Do
+                    End If
+                End If
+            End If
+            Set n = n.GetNext
+        Loop
+    End If
+    
+    ' Координаты над штампом (185 мм)
+    posX = sheetWidth - 0.185
+    posY = 0.065 + (0.0065 * 3) ' под 3 строки
+    
+    Dim ttText As String
+    ttText = "1. *Размеры для справок." & vbCrLf & _
+             "2. Общие допуски: ГОСТ 30893.1-m, ГОСТ 30893.2-K." & vbCrLf & _
+             "3. Острые кромки притупить."
+             
+    If Not existingNote Is Nothing Then
+        existingNote.SetText ttText
+        existingNote.SetName "Заметка_ТТ"
+        Set ann = existingNote.GetAnnotation
+        If Not ann Is Nothing Then
+            ann.SetPosition posX, posY, 0#
+            Dim tf As Object
+            Set tf = existingNote.GetTextFormat
+            If Not tf Is Nothing Then
+                tf.CharHeight = 0.0035
+                tf.Italic = True
+                ann.SetTextFormat 0, False, tf
+            End If
+        End If
+    Else
+        Dim newNote As Object
+        Set newNote = swDraw.CreateText2(ttText, posX, posY, 0, 0.0035, 0)
+        If Not newNote Is Nothing Then
+            newNote.SetName "Заметка_ТТ"
+            Set tf = newNote.GetTextFormat
+            If Not tf Is Nothing Then
+                tf.CharHeight = 0.0035
+                tf.Italic = True
+                newNote.GetAnnotation.SetTextFormat 0, False, tf
+            End If
+        End If
+    End If
+    
+    If currentSheetName <> sheet1Name Then
+        swDraw.ActivateSheet currentSheetName
+    End If
+    
+    swDraw.ClearSelection2 True
+    swDraw.ForceRebuild3 False
+    
+    MsgBox "Технические требования успешно обновлены на Листе 1 чертежа!", vbInformation, "ЕСКД ТТ"
+End Sub

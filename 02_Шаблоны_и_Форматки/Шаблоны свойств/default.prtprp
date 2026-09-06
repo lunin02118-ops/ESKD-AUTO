@@ -1,0 +1,27 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<CPSheet AppVersion="33">
+  <GroupBox Label="Идентификация по ЕСКД" PropName="Groupbox_ESKD" DefaultState="Expanded">
+    <Control Label="Обозначение" PropName="Обозначение" ApplyTo="Global" Type="TextBox" Mode="Text" DefaultValue="" />
+    <Control Label="Наименование" PropName="Наименование" ApplyTo="Global" Type="TextBox" Mode="Text" DefaultValue="" />
+  </GroupBox>
+  <GroupBox Label="Материал детали (ГОСТ)" PropName="Groupbox_Material" DefaultState="Expanded">
+    <Control Label="Материал SolidWorks" PropName="Материал" ApplyTo="Global" Type="TextBox" Mode="SWProperty" DefaultValue="SW-Material" ReadOnly="False" />
+  </GroupBox>
+  <GroupBox Label="Сведения об исполнителе" PropName="Groupbox_Dev" DefaultState="Expanded">
+    <Control Label="Разработал" PropName="Разработал" ApplyTo="Global" Type="ComboBox" UserDefineable="True">
+      <Item>Лунин В.И.</Item>
+    </Control>
+    <Control Label="Проверил" PropName="Проверил" ApplyTo="Global" Type="TextBox" Mode="Text" DefaultValue="" />
+    <Control Label="Организация" PropName="Организация" ApplyTo="Global" Type="TextBox" Mode="Text" DefaultValue="Home Made" />
+    <Control Label="Литера" PropName="Литера" ApplyTo="Global" Type="ComboBox" UserDefineable="True">
+      <Item>-</Item>
+      <Item>Э</Item>
+      <Item>Т</Item>
+      <Item>О</Item>
+      <Item>О1</Item>
+      <Item>А</Item>
+      <Item>Б</Item>
+    </Control>
+    <Control Label="Масса (SW)" PropName="Масса" ApplyTo="Global" Type="TextBox" Mode="SWProperty" DefaultValue="SW-Mass" ReadOnly="True" />
+  </GroupBox>
+</CPSheet>

@@ -1,0 +1,169 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<HTML>
+<BODY>
+<OBJECT type="text/site properties">
+	<param name="Window Styles" value="0x800025">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Описание пакета макросов">
+	<param name="ImageNumber" value="17">
+	<param name="Local" value="welcome_topic.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Системные требования">
+	<param name="ImageNumber" value="17">
+	<param name="Local" value="second_topic.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Установка и настройка">
+	<param name="ImageNumber" value="41">
+	<param name="Local" value="install.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Основные макросы">
+	<param name="Local" value="___________________________.htm">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="MProp">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="mprop.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="DProp">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="dprop.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="SProp">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="sprop_2.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="SaveDRW">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="savedrw.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="SaveAsPDF">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="saveaspdf.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Master">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="master.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="SpecEditor">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="speceditor.htm">
+</OBJECT>
+</UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Дополнительные макросы">
+	<param name="ImageNumber" value="1">
+	<param name="Local" value="topic.htm">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="TT">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="tt.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Roughness">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="roughness.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="RecordDimM">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="recorddimm.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="CoolOut">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="coolout.htm">
+</OBJECT>
+</UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Типовые алгоритмы работы">
+	<param name="Local" value="________________________.htm">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Оформление чертежа детали">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="_________________________.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Оформление группового чертежа детали">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="______________________________.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Оформление чертежа детали с доработкой">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="_____________________________5.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Оформление чертежа детали с конфигурацией для чертежа">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="_____________________________6.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Оформление сборочного чертежа и специфкации">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="_____________________________2.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Оформление группового сборочного чертежа и специфкации">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="_____________________________3.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Оформление габаритного чертежа">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="_____________________________4.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Оформление ведомости покупных">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="_____________________________.htm">
+</OBJECT>
+</UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Дополнения">
+	<param name="Local" value="__________.htm">
+</OBJECT>
+<UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="О свойствах">
+	<param name="ImageNumber" value="11">
+	<param name="Local" value="___________.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Возможные проблемы">
+	<param name="ImageNumber" value="9">
+	<param name="Local" value="__________________.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="Вопрос-Ответ">
+	<param name="ImageNumber" value="9">
+	<param name="Local" value="______-_____.htm">
+</OBJECT>
+</UL>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="О пакете макросов SWPlus">
+	<param name="ImageNumber" value="37">
+	<param name="Local" value="________________2.htm">
+</OBJECT>
+<LI><OBJECT type="text/sitemap">
+	<param name="Name" value="О файле справки">
+	<param name="ImageNumber" value="37">
+	<param name="Local" value="_______________.htm">
+</OBJECT>
+</UL>
+</BODY></HTML>

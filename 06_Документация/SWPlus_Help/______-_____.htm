@@ -1,0 +1,188 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+   <title>Вопрос-Ответ</title>
+   <meta name="generator" content="Help &amp; Manual" />
+   <meta name="keywords" content="" />
+   <meta http-equiv="Content-Type" content="text/html; charset=Windows-1251" />
+   
+   <link type="text/css" href="default.css" rel="stylesheet" />
+   <style type="text/css">
+     body { margin: 0px; background: #FFFFFF; }
+   </style>
+
+   <script type="text/javascript" src="jquery.js"></script>
+   <script type="text/javascript" src="helpman_settings.js"></script>
+   <script type="text/javascript" src="helpman_topicinit.js"></script>
+
+
+</head>
+<body>
+
+
+<table style="width:100%; border:none; border-spacing:0px; padding:5px; background:#C0C0C0">
+  <tr style="vertical-align:middle">
+    <td style="text-align:left">
+      <h1 class="p_Heading1" style="text-align: justify;"><span class="f_Heading1">Вопрос-Ответ</span></h1>
+
+    </td>
+    <td style="text-align:right">
+     <a href="welcome_topic.htm">Top</a>&nbsp;
+     <a href="__________________.htm">Previous</a>&nbsp;
+     <a href="________________2.htm">Next</a>
+    </td>
+  </tr>
+</table>
+
+
+<!-- Placeholder for topic body. -->
+<table style="width:100%;border:none;border-spacing:0px"><tr style="vertical-align:top"><td style="text-align:left;padding:5px">
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> Если название состоит из 5 и больше слов (так вышло), то как заставить MProp автоматически разбивать на пару строк в основной надписи, не влазя туды ручками?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> В поле Наименования макроса Mprop нужно вводить текст в две строки, через Enter, тогда и в чертеже в две строки будет.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> &nbsp;Можно ли уменьшить шрифт в спецификации в графе &quot;примечание&quot;, &quot;доработка&quot; не влазит))</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> В отдельном столбце только вручную. Еще можно установить в настройках поджатие длинных строк или всего текста.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> Почему у меня на сборочном чертеже с подсборками, позиции проставляются на деталях подсборок?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> Нужно в свойствах таблицы спецификации выбрать тип &quot;Только верхнего уровня&quot;. Это лучше делать сразу при добавлении таблицы.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> Можно ли для каждой конфигурации задать индивидуальное имя в наименовании чертежа? Меняю в Dprop Наименование так ко всем конфигурациям добовляется это имя.</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> Полностью индивидуальное имя задать нельзя. Если у изделия есть исполнения, то для них можно задать Условное наименование, которое добавится к Наименованию. Это условное наименование будет фигурировать также и в групповой спецификации. </span></p>
+<p><span style="font-size: 14pt;">Также и обозначение нельзя задавать разным для разных конфигураций.</span></p>
+<p><span style="font-size: 14pt;">Это сделано чтобы соблюдался принцип одно изделие - один файл. Иначе бардак начинается.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> Как задать сжатие шрифтов</span></p>
+<p><span style="font-size: 14pt;"> </span><img src="clip0002.jpg" width="578" height="365" alt="clip0002" style="border:none"></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О: </span><span style="font-size: 14pt;">Надо выставить нужные значения в графах &quot;Сжатие длинных строк&quot; или &quot;Сжатие общее&quot;.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> У спецификации сделать возможность убрать доп. графы?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> Проще и правильнее если графы не нужны, удалить их руками из шаблонов.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> Какой принцип работы макроса с конфигурациями?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> Я, по возможности вынес эти принципы &quot;за скобки&quot;, чтобы сделать макросы как можно более универсальными.</span></p>
+<p><span style="font-size: 14pt;">Основной принцип тот, что для деталей и сборок конфигурации верхнего уровня - это исполнения. И они именуются как 00, 01 и т.д. В моих шаблонах детали и сборки имя конфигурации &quot;по умолчанию&quot; заменено на 00, это базовое исполнение. Детали и сборки, используемые в других сборках, или детали, используемые в других деталях как базовые, в базовом исполнении должны применяться в них только в этой конфигурации.</span></p>
+<p><span style="font-size: 14pt;">Если деталь или сборка имеет несколько вариантов отображения (в рамках одного исполнения), то это реализовывается через вложенные, или как они обозваны в солиде, извлеченные конфигурации. Эти извлеченные конфигурации именуются как &quot;00 ГЧ&quot;, &quot;00 Э3&quot;, &quot;00 Для чертежа&quot;, &quot;00 Для расчетов&quot; и т.д. Например есть прокладка, которая вставлена в сборку в сжатом виде. Тогда конфигурация 00 эта сжатая конфигурация для сборки, а конфигурация &quot;00 Для чертежа&quot; соответственно для чертежа, не сжатая.</span></p>
+<p><span style="font-size: 14pt;">Я думаю, принцип понятен - все конфигурации верхнего уровня называются номерами исполнений. Для стандартных и прочих изделий, для которых чертежи не выпускаются, конфигурации это разные типоразмеры.</span></p>
+<p><span style="font-size: 14pt;">Использование данной логики работы с конфигурациями заложено в макросах MProp и SProp для заполнения свойств.</span></p>
+<p><span style="font-size: 14pt;">В макросе MProp есть галочка &quot;Из конфигурации&quot;. Она становится активной при установленной галочке &quot;Исполнение&quot; и вставляет имя конфигурации в качестве номера исполнения. Причем текстовая часть, например &quot;ГЧ&quot; для конфигурации &quot;00 ГЧ&quot;, отбрасывается. </span></p>
+<p><span style="font-size: 14pt;">В макросе SProp есть галочка &quot;Включить имя конфигурации&quot;. Она добавляет имя конфигурации, например М3х6 между Винт и DIN 912. Я думаю, это тоже понятно.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> Как иправить такое</span></p>
+<p><span style="font-size: 14pt;"> </span><img src="clip0003.jpg" width="443" height="152" alt="clip0003" style="border:none"><span class="f_ImageCaption"> &nbsp;  <img src="clip0004.jpg" width="448" height="147" alt="clip0004" style="border:none"></span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> Сохранить чертеж и открыть снова, всё встанет на свои места.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> При создании ведомости покупных, что и куда записать чтобы была заполнена графа &quot;Куда входит&quot;?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> Только вручную после генерации ведомости. Автоматизировать заполнение входимости сложно.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> Как изменить цвет всей основной надписи? Она у меня серая и на экране и на печати.</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> Печать-параметры страницы-цвет чертежа-черно_белый</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> Возникла ошибка run-time error 91: object variable or with block variable not set. Что делать?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> Проверить подключенные библиотеки, поставить последний сервис-пак к solidworks.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> Как изменить и где АБВГ и фирму набить ?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> В папке макроса Mpop есть файл MProp_Firm.txt. Пишите там то, что нужно. Только учтите, что число строк в файле должно быть четным. Например если у вас одна фирма, то оставьте 2 строки</span></p>
+<p><span style="font-size: 14pt;">ОАО &quot;Фирма&quot;</span></p>
+<p><span style="font-size: 14pt;">АБВГ</span></p>
+<p><span style="font-size: 14pt;">Если АБВГ вам не нужно, оставьте просто пустую строку.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> За что отвечает кнопка (&quot;галочка&quot;) &quot;без масштаба&quot;?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> Ставит прочерк в графе масштаб на первом листе чертежа. Нужно для схем и групповых чертежей.</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В:</span><span style="font-size: 14pt;"> Можно ли забить разные обозначения для разных исполнений одной и той же модели!? То есть не разные исполнения -01, -02 и т.д., а разные обозначения КД-123 и КД-124.</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> Пишите вместо 01 и 02 свои 123 и 124. Т.е. у вас должна стоять только галочка &quot;Исполнение&quot;, а галочку &quot;Из конфигурации&quot; снимите, если хотите что-то свое вбить, отличное от имени конфигурации. Это и будет переменная часть Обозначения. Но я обычно называю конфигурации 00, 01 и т .д. И тогда все очень удобно.</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Как быть со стандартными изделиями из тулбокса, в спецификации проставляются пустыми строчками, но ведь SWR-спецификация от куда-то тянет их названия?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> &quot;Тянет&quot; из имени конфигурации, а спецификация SW из свойства. Видимо в этом и все проблемы.</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">А Вы слышали об ОТДЕЛЬНОМ РАЗДЕЛЕ - Покупные изделия?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Вы можете добавить нужный вам раздел в файл </span><span style="font-size: 14pt; font-weight: bold;">SpecEditor_Sections.txt</span><span style="font-size: 14pt;">. И макросы будут с ним работать</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">в MProp с помошью кнопки не добавляются профили для фамилий. Стандартные профили удалил через окошко макроса, а новые не добавляются. Забил в блокнот &quot;MProp_Prof.txt&quot; пару профилей - результата ноль?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Написал свои фамилии, нажал на кнопку </span><span style="font-size: 14pt; font-weight: bold;">Добавить</span><span style="font-size: 14pt;"> и все - макрос сам сохранил</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt; font-style: italic; font-weight: bold;">Можно ли &nbsp;сделать:</span></p>
+<p style="margin: 0px 0px 0px 40px;"><span style="font-size: 14pt; font-style: italic; font-weight: bold;">Винты ГОСТ 17475-80</span><br>
+<span style="font-size: 14pt; font-style: italic; font-weight: bold;">М2,5-6gx5.46.026</span><br>
+<span style="font-size: 14pt; font-style: italic; font-weight: bold;">М2,5-6gx6.46.026</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">пока такой возможности нет, только полные отдельные строки</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Как сделать оформление материала из листового проката?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Включаете в MProp </span><span style="font-size: 14pt; font-weight: bold;">Задать Сортамент</span><span style="font-size: 14pt;"> и вписываете (&lt;STACK&gt; вводить не надо)</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Что значит группировать конфигурации. Деталь с разными конфигурациями, даже если поставлена галочка &quot;Группировать конфигурации&quot; входит в спецификацию с разными номерами.</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Проверьте, что в свойства таблицы спецификации в пункте про группировку конфигураций выбран последний (третий) переключатель &quot;Отобразить как конфигурации одной позиции с тем же именем&quot;.</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Не работает макрос (например: SaveAsPDF), при нажатии на кнопку ничего не происходит</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Проверьте, что в качестве метода запуска выбран - </span><span style="font-size: 14pt; font-weight: bold;">run.main</span><span style="font-size: 14pt;"> (в свойствах кнопки)</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Делаю Чертеж БЧ, забиваю формат БЧ в свойствах детали, но в примечаниях прога не ставит числовое значение массы, а пишет - МАССА. Должно писать слово &quot;Масса&quot; в спецификацию?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Так и должно быть, главное что бы в свойство </span><span style="font-size: 14pt; font-weight: bold;">Примечание</span><span style="font-size: 14pt;"> писалось то, что надо. И соответственно в спецификацию попадало. Т.е. &nbsp;в спецификацию должно попадать значение массы с размерностью. </span></p>
+<p style="line-height: 1.15; margin: 0px 0px 13px 0px;"><span style="font-size: 14pt;">А в свойство </span><span style="font-size: 14pt; font-weight: bold;">Примечание</span><span style="font-size: 14pt;"> что-то типа этого: &nbsp; &quot;SW-Mass@@00@$PRP:&quot;SW-File Name&quot;.SLDPRT&quot; кг.</span></p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Макрос SaveAsPDF нормально сохраняет только стандартные форматы, а вот кратные (А4х4 и т.д.) сохраняет на листе А4</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Это ограничение </span><span style="font-size: 14pt; font-weight: bold;">PDFCreator</span><span style="font-size: 14pt;">. Кратные форматы можно сохранять только встроенным сохранятелем. Чтобы было без глюков изображения, можно в </span><span style="font-size: 14pt; font-weight: bold;">tiff</span><span style="font-size: 14pt;">. В </span><span style="font-size: 14pt; font-weight: bold;">ini</span><span style="font-size: 14pt;"> файле макроса </span><span style="font-size: 14pt; font-weight: bold;">SaveAsPDF</span><span style="font-size: 14pt;"> можно настроить разные режимы сохранения.</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">А для чего некоторые свойства расположены на вкладке &quot;настройки&quot; а некоторые на вкладке &quot;конфигурация&quot;? Тот же &quot;проверил&quot; для одного чертежа может же быть только один...вроде</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">С одного файла модели может быть сделано несколько чертежей, например СБ, ГЧ и т.д.</span></p>
+<p style="line-height: 1.15; margin: 0px 0px 13px 0px;"><span style="font-size: 14pt;">Для каждого документа своя конфигурация. &quot;Проверил&quot; может быть разным.</span></p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">При создании форматки сначала пишет, &nbsp;что файл создан в более старой версии и предлагает сохранить в новой. При отказе пересохранения вылетает ошибка </span><span style="font-size: 14pt; font-style: italic; text-decoration: underline;">run&#8209;time error 53</span><span style="font-size: 14pt;">. Если пересохранить файл, &nbsp;то вылезает ошибка </span><span style="font-size: 14pt; font-style: italic; text-decoration: underline;">run-time error 91</span><span style="font-size: 14pt;">.</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Перед использованием макросов в новой версии SW, лучше пересохранить все шаблоны. Также необходимо убедиться, что система позволяет макросу операции с файлами (удаление, переименование).</span><br>
+<span style="font-size: 14pt;">И, надо учитывать, что макросы из разных версий могут быть не совместимы друг с другом.</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Почему может возникнуть такая ошибка: сборочная единица попадает в раздел деталей</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Значит принудительно задан данный раздел. Проверьте свойство </span><span style="font-size: 14pt; font-style: italic; font-weight: bold;">Раздел</span><span style="font-size: 14pt;">, или посмотрите в </span><span style="font-size: 14pt; font-weight: bold;">Mprop</span><span style="font-size: 14pt;">.</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">run-time error 91: object variable or with block variable not set</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Это скорее всего сервиспак - вернее его отсутствие</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Можно ли использовать макрос для составления спецификации &quot;сварных&quot; деталей?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> Нет</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Подскажите, как можно сделать, чтобы при генерации спецификации в разделе </span><span style="font-size: 14pt; text-decoration: underline;">Материалы</span><span style="font-size: 14pt;"> в графе </span><span style="font-size: 14pt; text-decoration: underline;">кол</span><span style="font-size: 14pt;">. стояло бы например: 50мм, 5г. , а не кол-во ?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">В свойствах файла: </span><span style="font-size: 14pt; font-style: italic; font-weight: bold;">Суммарная информация&gt;Настройки&gt;Количество в спецификации</span><span style="font-size: 14pt; font-style: italic;"> </span><span style="font-size: 14pt;">– из выпадающего списка выбрать </span><span style="font-size: 14pt; font-style: italic; font-weight: bold;">Масса</span><span style="font-size: 14pt;">…</span></p>
+<p style="line-height: 1.15; margin: 0px 0px 13px 0px;"><span style="font-size: 14pt;">И тогда в графе </span><span style="font-size: 14pt; font-style: italic; font-weight: bold;">кол-во</span><span style="font-size: 14pt;">, будет выводиться масса детали, а не кол-во деталей…</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Библиотека материалов ошибок не выдает, правда в </span><span style="font-size: 14pt; font-style: italic; text-decoration: underline;">MProp</span><span style="font-size: 14pt;"> в </span><span style="font-size: 14pt; font-style: italic; text-decoration: underline;">Базе</span><span style="font-size: 14pt;"> пишется &quot;Временная база&quot;.</span><br>
+<span style="font-size: 14pt;">При попытке указать мою - появляется ошибка.</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">«</span><span style="font-size: 14pt; font-style: italic;">Временная база</span><span style="font-size: 14pt;">» означает, что Солид не может найти материал, заданный в детали или Ваша база материалов многоуровневая (с сортаментом). С такими базами макрос пока не работает.</span></p>
+<p style="margin: 0px 0px 4px 0px;"><span style="font-size: 14pt; font-weight: bold;">Уровней должно быть не более 2</span><span style="font-size: 14pt;">.</span></p>
+<p style="line-height: 1.15; margin: 0px 0px 13px 0px;"><span style="font-size: 14pt;">Выбор материала реализован через раскрывающиеся списки. Их всего три - </span><span style="font-size: 14pt; font-style: italic; font-weight: bold;">база, группа и материал</span><span style="font-size: 14pt;">. Если существуют еще уровни подгрупп, то девать их некуда.</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Генерирую спецификацию с помощью SpecEditor v.4.4 все хорошо получается, но вот запускаю опять MProp и вижу что формат считывает не А2 а А4… и получается что все сборки с А4-тым форматом.</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Формат, прописанный в свойствах сборки должен быть </span><span style="font-size: 14pt; font-weight: bold;">А4</span><span style="font-size: 14pt;">. </span><span style="font-size: 14pt; font-weight: bold;">Макрос</span><span style="font-size: 14pt;"> его правильно исправляет, потому что для сборки основной конструкторский документ это спецификация, а у нее формат </span><span style="font-size: 14pt; font-weight: bold;">А4</span><span style="font-size: 14pt;"> и в спецификацию в раздел </span><span style="font-size: 14pt; font-style: italic; font-weight: bold;">Сборочные единицы</span><span style="font-size: 14pt;"> оно так и попадает.</span></p>
+<p style="line-height: 1.15; margin: 0px 0px 13px 0px;"><span style="font-size: 14pt;">А формат сборочного чертежа, для которого вы делаете спецификацию, считывается при генерации спецификации с самого чертежа. И в разделе </span><span style="font-size: 14pt; font-style: italic; font-weight: bold;">Документация</span><span style="font-size: 14pt;"> прописывается тот что надо.</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">При создании ведомости покупных, что и куда записать чтобы была заполнена графа </span><span style="font-size: 14pt; font-style: italic;">&quot;Куда входит&quot;</span><span style="font-size: 14pt;">?</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Только вручную после генерации ведомости.</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Как настроить параметры изменения оформления чертежа по умолчанию? Сейчас высота размеров - 3,5 (нужно 5), высота шероховатости 2,5 (нужно 3,5)</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">Все настройки оформления содержаться в файле стандарта </span><span style="font-size: 14pt; font-weight: bold;">Mystandart</span><span style="font-size: 14pt;">. Меняешь этот файл, меняешь шаблон чертежа (</span><span style="font-size: 14pt; font-weight: bold;">drwdot</span><span style="font-size: 14pt;">). Обновляешь форматки.</span></p>
+<p>&nbsp;</p>
+<p><span style="font-size: 14pt; color: #0000ff;">В: </span><span style="font-size: 14pt;">Как правильно записать исполнение в спецификацию, чтоб позиции не полетели.</span><br>
+<span style="font-size: 14pt;">Надо чтоб была такая запись:</span><br>
+<span style="font-size: 14pt;">АБВГ.1234.56</span><br>
+<span style="font-size: 14pt;"> &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; -01</span></p>
+<p><span style="font-size: 14pt; color: #ff0000;">О:</span><span style="font-size: 14pt;"> </span><span style="font-size: 14pt;">ГОСТ допускает запись АБВГ.1234.56-01, &nbsp;после основного АБВГ.1234.56. </span></p>
+<p style="line-height: 1.15; margin: 0px 0px 13px 0px;"><span style="font-size: 14pt;">Присваивайте исполнениям (конфигурациям) - </span><span style="font-size: 14pt; font-weight: bold;">Основное исп.- 01</span><span style="font-size: 14pt;">... (и не будет проблем).</span></p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+<p>&nbsp;</p>
+
+</td></tr></table>
+
+</body>
+</html>

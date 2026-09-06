@@ -1,0 +1,12 @@
+# Huge driver installers and archives
+07_Драйверы_NVIDIA/
+99_Архив/
+
+# Temporary and build artifacts
+*.tmp
+*.old*
+*.log
+*.bak*
+*.bak-*
+bin/
+obj/
