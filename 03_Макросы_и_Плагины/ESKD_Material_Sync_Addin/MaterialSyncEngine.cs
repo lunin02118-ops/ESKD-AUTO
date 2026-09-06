@@ -32,7 +32,7 @@ namespace ESKD.MaterialSync
         private static readonly Dictionary<string, string> LastProcessedCache = new Dictionary<string, string>();
         private const string RegKeySettings = @"Software\SolidWorks\ESKD_Settings";
 
-        public static void SyncModelProperties(ModelDoc2 model, ISldWorks swApp, bool force = true, bool triggerRebuild = true)
+        public static void SyncModelProperties(ModelDoc2 model, ISldWorks swApp, bool force = true, bool triggerRebuild = true, string targetFileName = null)
         {
             if (model == null || swApp == null) return;
             try
@@ -40,30 +40,30 @@ namespace ESKD.MaterialSync
                 int docType = model.GetType();
                 if (docType == (int)swDocumentTypes_e.swDocPART)
                 {
-                    SyncPart((PartDoc)model, swApp, force);
+                    SyncPart((PartDoc)model, swApp, force, targetFileName);
                 }
                 else if (docType == (int)swDocumentTypes_e.swDocASSEMBLY)
                 {
                     Configuration activeConfig = (Configuration)model.GetActiveConfiguration();
                     string cfgName = activeConfig != null ? activeConfig.Name : "";
                     MaterialSyncResult res = new MaterialSyncResult();
-                    ApplyUserSettings(model, cfgName, res);
+                    ApplyUserSettings(model, cfgName, res, targetFileName);
                 }
                 else if (docType == (int)swDocumentTypes_e.swDocDRAWING)
                 {
-                    SyncDrawing((DrawingDoc)model, swApp, triggerRebuild);
+                    SyncDrawing((DrawingDoc)model, swApp, triggerRebuild, targetFileName);
                 }
             }
             catch { }
         }
 
-        public static void SyncDrawing(DrawingDoc drw, ISldWorks swApp, bool triggerRebuild = true)
+        public static void SyncDrawing(DrawingDoc drw, ISldWorks swApp, bool triggerRebuild = true, string targetFileName = null)
         {
             if (drw == null) return;
             try
             {
                 ModelDoc2 drwModel = (ModelDoc2)drw;
-                ApplyUserSettings(drwModel, "", null);
+                ApplyUserSettings(drwModel, "", null, targetFileName);
 
                 // Also update any referenced 3D models in drawing views so $PRPSHEET links update
                 HashSet<string> updatedModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -80,7 +80,13 @@ namespace ESKD.MaterialSync
                             if (!string.IsNullOrEmpty(refPath) && !updatedModels.Contains(refPath))
                             {
                                 updatedModels.Add(refPath);
-                                ApplyUserSettings(refDoc, v.ReferencedConfiguration, null);
+                                string refTargetName = null;
+                                string refClean = CleanDocumentName(refPath);
+                                if (Regex.IsMatch(refClean, @"^(Деталь|Part|Сборка|Assem|Чертеж|Draw)\s*\d*$", RegexOptions.IgnoreCase))
+                                {
+                                    refTargetName = targetFileName;
+                                }
+                                ApplyUserSettings(refDoc, v.ReferencedConfiguration, null, refTargetName);
                                 refDoc.SetSaveFlag();
                             }
                         }
@@ -438,7 +444,7 @@ namespace ESKD.MaterialSync
             catch { }
         }
 
-        public static MaterialSyncResult SyncPart(PartDoc part, ISldWorks swApp, bool force = false)
+        public static MaterialSyncResult SyncPart(PartDoc part, ISldWorks swApp, bool force = false, string targetFileName = null)
         {
             MaterialSyncResult result = new MaterialSyncResult();
             if (part == null || swApp == null)
@@ -455,7 +461,7 @@ namespace ESKD.MaterialSync
             string configName = activeConfig != null ? activeConfig.Name : "";
             string cacheKey = docTitle + "::" + configName;
 
-            ApplyUserSettings(model, configName, result);
+            ApplyUserSettings(model, configName, result, targetFileName);
 
             string dbName = "";
             string matName = part.GetMaterialPropertyName2(configName, out dbName);
@@ -541,7 +547,7 @@ namespace ESKD.MaterialSync
             return result;
         }
 
-        public static void ApplyUserSettings(ModelDoc2 model, string configName, MaterialSyncResult result)
+        public static void ApplyUserSettings(ModelDoc2 model, string configName, MaterialSyncResult result, string targetFileName = null)
         {
             try
             {
@@ -554,6 +560,12 @@ namespace ESKD.MaterialSync
                         string org = key.GetValue("Organization") as string;
                         int autoMass = (int)key.GetValue("AutoMass", 1);
                         int decimals = (int)key.GetValue("MassDecimals", 2);
+                        int autoSplitName = (int)key.GetValue("AutoSplitName", 1);
+
+                        if (autoSplitName == 1)
+                        {
+                            ApplyFileNameDesignationAndTitle(model, targetFileName);
+                        }
 
                         string dateRu = DateTime.Now.ToString("dd.MM.yy");
                         string dateIso = DateTime.Now.ToString("yyyy-MM-dd");
@@ -806,6 +818,111 @@ namespace ESKD.MaterialSync
             if (string.IsNullOrEmpty(text)) return "";
             Match m = Regex.Match(text, @"(ГОСТ|ТУ|ОСТ)\s*[\w\.\-]+", RegexOptions.IgnoreCase);
             return m.Success ? m.Value : "";
+        }
+
+        public static string CleanDocumentName(string pathOrTitle)
+        {
+            if (string.IsNullOrWhiteSpace(pathOrTitle)) return "";
+            string name = Path.GetFileName(pathOrTitle.Trim());
+            if (string.IsNullOrWhiteSpace(name)) return "";
+
+            // Remove known SolidWorks extensions
+            name = Regex.Replace(name, @"\.(sldprt|sldasm|slddrw|prt|asm|drw)$", "", RegexOptions.IgnoreCase).Trim();
+            return name;
+        }
+
+        public static void ApplyFileNameDesignationAndTitle(ModelDoc2 model, string targetFileName = null)
+        {
+            if (model == null) return;
+            try
+            {
+                string rawName = targetFileName;
+                if (string.IsNullOrWhiteSpace(rawName))
+                {
+                    rawName = model.GetPathName();
+                }
+                if (string.IsNullOrWhiteSpace(rawName))
+                {
+                    rawName = model.GetTitle();
+                }
+                if (string.IsNullOrWhiteSpace(rawName)) return;
+
+                string baseName = CleanDocumentName(rawName);
+                if (string.IsNullOrWhiteSpace(baseName)) return;
+
+                // Skip default unsaved template names like "Деталь1", "Деталь 1", "Part1", "Part 1", "Сборка1", "Assem1", "Чертеж1", "Draw1"
+                if (Regex.IsMatch(baseName, @"^(Деталь|Part|Сборка|Assem|Чертеж|Draw)\s*\d*$", RegexOptions.IgnoreCase))
+                {
+                    return;
+                }
+
+                string designation = "";
+                string title = "";
+
+                int spaceIdx = baseName.IndexOf(' ');
+                if (spaceIdx > 0)
+                {
+                    designation = baseName.Substring(0, spaceIdx).Trim();
+                    title = baseName.Substring(spaceIdx + 1).Trim();
+                }
+                else
+                {
+                    // No space: if it contains digits or dots, treat as designation, otherwise title
+                    if (Regex.IsMatch(baseName, @"\d"))
+                        designation = baseName;
+                    else
+                        title = baseName;
+                }
+
+                // 1. General custom properties (for $PRPSHEET and $PRP)
+                CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
+                if (cpmGen != null)
+                {
+                    if (!string.IsNullOrEmpty(designation))
+                    {
+                        SetProp(cpmGen, "Обозначение", designation);
+                        SetProp(cpmGen, "PartNo", designation);
+                        SetProp(cpmGen, "Number", designation);
+                    }
+                    if (!string.IsNullOrEmpty(title))
+                    {
+                        SetProp(cpmGen, "Наименование", title);
+                        SetProp(cpmGen, "Наименование_ФБ", title);
+                        SetProp(cpmGen, "Description", title);
+                    }
+                }
+
+                // 2. All configurations (ensures configuration-specific tables and drawings resolve correctly)
+                try
+                {
+                    string[] cfgNames = model.GetConfigurationNames() as string[];
+                    if (cfgNames != null)
+                    {
+                        foreach (string cfg in cfgNames)
+                        {
+                            if (string.IsNullOrEmpty(cfg)) continue;
+                            CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(cfg);
+                            if (cpmCfg != null)
+                            {
+                                if (!string.IsNullOrEmpty(designation))
+                                {
+                                    SetProp(cpmCfg, "Обозначение", designation);
+                                    SetProp(cpmCfg, "PartNo", designation);
+                                    SetProp(cpmCfg, "Number", designation);
+                                }
+                                if (!string.IsNullOrEmpty(title))
+                                {
+                                    SetProp(cpmCfg, "Наименование", title);
+                                    SetProp(cpmCfg, "Наименование_ФБ", title);
+                                    SetProp(cpmCfg, "Description", title);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+            catch { }
         }
     }
 }

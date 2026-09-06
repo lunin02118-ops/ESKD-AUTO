@@ -246,6 +246,7 @@ if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
     Set-ItemProperty -Path $eskdSettingsPath -Name "AutoMass" -Value 1 -Type DWord
     Set-ItemProperty -Path $eskdSettingsPath -Name "MassDecimals" -Value 2 -Type DWord
     Set-ItemProperty -Path $eskdSettingsPath -Name "AutoCenterMass" -Value 1 -Type DWord
+    Set-ItemProperty -Path $eskdSettingsPath -Name "AutoSplitName" -Value 1 -Type DWord
     Set-ItemProperty -Path $eskdSettingsPath -Name "AuthorList" -Value $Author
 
     # Избранные материалы с дробным слэшем '/'

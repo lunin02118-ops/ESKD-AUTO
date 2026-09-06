@@ -406,7 +406,7 @@ namespace ESKD.MaterialSync
                 {
                     AttachDocEvents(doc);
                     Log("Attached doc events on FileOpenPost: " + doc.GetTitle());
-                    RunSyncSafe(doc);
+                    RunSyncSafe(doc, fileName, false);
                 }
             }
             catch { }
@@ -475,21 +475,21 @@ namespace ESKD.MaterialSync
                 if (docType == (int)swDocumentTypes_e.swDocPART)
                 {
                     PartDoc part = (PartDoc)doc;
-                    part.FileSaveNotify += (string fn) => { RunSyncSafe(doc); return 0; };
-                    part.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc); return 0; };
+                    part.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
+                    part.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
                 }
                 else if (docType == (int)swDocumentTypes_e.swDocASSEMBLY)
                 {
                     AssemblyDoc asm = (AssemblyDoc)doc;
-                    asm.FileSaveNotify += (string fn) => { RunSyncSafe(doc); return 0; };
-                    asm.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc); return 0; };
+                    asm.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
+                    asm.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
                 }
                 else if (docType == (int)swDocumentTypes_e.swDocDRAWING)
                 {
                     DrawingDoc drw = (DrawingDoc)doc;
-                    drw.FileSaveNotify += (string fn) => { RunSyncSafe(doc); return 0; };
-                    drw.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc); return 0; };
-                    drw.RegenNotify += () => { RunSyncSafe(doc, false); return 0; };
+                    drw.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
+                    drw.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
+                    drw.RegenNotify += () => { RunSyncSafe(doc, null, false); return 0; };
                 }
             }
             catch (Exception ex)
@@ -498,13 +498,13 @@ namespace ESKD.MaterialSync
             }
         }
 
-        private void RunSyncSafe(ModelDoc2 doc, bool triggerRebuild = true)
+        private void RunSyncSafe(ModelDoc2 doc, string targetFileName = null, bool triggerRebuild = true)
         {
             if (_isSyncing || doc == null) return;
             _isSyncing = true;
             try
             {
-                MaterialSyncEngine.SyncModelProperties(doc, iSwApp, false, triggerRebuild);
+                MaterialSyncEngine.SyncModelProperties(doc, iSwApp, false, triggerRebuild, targetFileName);
             }
             catch (Exception ex)
             {

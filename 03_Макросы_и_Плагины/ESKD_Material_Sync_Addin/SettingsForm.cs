@@ -72,6 +72,7 @@ namespace ESKD.MaterialSync
         private CheckBox chkAutoMass;
         private NumericUpDown numMassDecimals;
         private CheckBox chkAutoCenterMass;
+        private CheckBox chkAutoSplitName;
         private Button btnSave;
         private Button btnCancel;
         private Button btnApplyNow;
@@ -336,7 +337,7 @@ namespace ESKD.MaterialSync
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 ColumnCount = 1,
-                RowCount = 3,
+                RowCount = 5,
                 BackColor = Color.Transparent
             };
             tblProps.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -435,9 +436,30 @@ namespace ESKD.MaterialSync
             tblPropsGrid.Controls.Add(lblOrg, 0, 2);
             tblPropsGrid.Controls.Add(cmbOrg, 1, 2);
 
+            chkAutoSplitName = new CheckBox()
+            {
+                Text = "Автоматически заполнять Обозначение и Наименование из имени файла",
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Regular),
+                ForeColor = Color.FromArgb(15, 23, 42),
+                AutoSize = true,
+                Checked = true, // ALWAYS CHECKED BY DEFAULT
+                Margin = new Padding(0, 12, 0, 2)
+            };
+
+            Label lblAutoSplitNameNote = new Label()
+            {
+                Text = "При сохранении имя файла делится по первому пробелу: Обозначение (до пробела) и Наименование (после пробела)",
+                Font = new Font("Segoe UI", 8.5F),
+                ForeColor = Color.FromArgb(100, 116, 139),
+                AutoSize = true,
+                Margin = new Padding(24, 0, 0, 4)
+            };
+
             tblProps.Controls.Add(lblPropsTitle, 0, 0);
             tblProps.Controls.Add(lblPropsSub, 0, 1);
             tblProps.Controls.Add(tblPropsGrid, 0, 2);
+            tblProps.Controls.Add(chkAutoSplitName, 0, 3);
+            tblProps.Controls.Add(lblAutoSplitNameNote, 0, 4);
             cardProps.Controls.Add(tblProps);
 
             // -------------------------------------------------------------
@@ -727,6 +749,7 @@ namespace ESKD.MaterialSync
                 int autoMass = 1;
                 int decimals = 2;
                 int autoCenter = 1;
+                int autoSplit = 1;
 
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegPath))
                 {
@@ -738,6 +761,7 @@ namespace ESKD.MaterialSync
                         autoMass = (int)key.GetValue("AutoMass", 1);
                         decimals = (int)key.GetValue("MassDecimals", 2);
                         autoCenter = (int)key.GetValue("AutoCenterMass", 1);
+                        autoSplit = (int)key.GetValue("AutoSplitName", 1);
 
                         string authorList = key.GetValue("AuthorList") as string;
                         if (!string.IsNullOrEmpty(authorList))
@@ -784,6 +808,7 @@ namespace ESKD.MaterialSync
                 chkAutoMass.Checked = (autoMass == 1);
                 numMassDecimals.Value = Math.Max(0, Math.Min(4, decimals));
                 chkAutoCenterMass.Checked = (autoCenter == 1);
+                chkAutoSplitName.Checked = (autoSplit == 1);
             }
             catch (Exception ex)
             {
@@ -809,6 +834,7 @@ namespace ESKD.MaterialSync
                         key.SetValue("AutoMass", chkAutoMass.Checked ? 1 : 0, RegistryValueKind.DWord);
                         key.SetValue("MassDecimals", (int)numMassDecimals.Value, RegistryValueKind.DWord);
                         key.SetValue("AutoCenterMass", chkAutoCenterMass.Checked ? 1 : 0, RegistryValueKind.DWord);
+                        key.SetValue("AutoSplitName", chkAutoSplitName.Checked ? 1 : 0, RegistryValueKind.DWord);
 
                         UpdateRegistryList(key, "AuthorList", author);
                         if (!string.IsNullOrEmpty(checker))
