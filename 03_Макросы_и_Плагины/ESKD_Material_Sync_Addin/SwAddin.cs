@@ -17,7 +17,7 @@ namespace ESKD.MaterialSync
     public class SwAddin : ISwAddin
     {
         private const int SwCmdEditMaterial = 175; // swCommands_EditMaterial
-        private const int CommandGroupId = 9995;
+        private const int CommandGroupId = 9997;
 
         private ISldWorks iSwApp;
         private ICommandManager iCmdMgr;
@@ -113,6 +113,57 @@ namespace ESKD.MaterialSync
             return true;
         }
 
+        public bool ActivateTab(int docType)
+        {
+            try
+            {
+                Log("ActivateTab called for docType=" + docType);
+                if (iCmdMgr == null)
+                {
+                    Log("ActivateTab: iCmdMgr is null");
+                    return false;
+                }
+                CommandTab tab = iCmdMgr.GetCommandTab(docType, "ЕСКД");
+                if (tab == null)
+                {
+                    try
+                    {
+                        object tabsObj = iCmdMgr.CommandTabs(docType);
+                        if (tabsObj != null)
+                        {
+                            foreach (object o in (object[])tabsObj)
+                            {
+                                CommandTab t = (CommandTab)o;
+                                if (t != null && !string.IsNullOrEmpty(t.Name) && t.Name.StartsWith("ЕСКД"))
+                                {
+                                    tab = t;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (tab != null)
+                {
+                    tab.Visible = true;
+                    tab.Active = true;
+                    Log("ActivateTab: tab found and activated. Name=" + tab.Name + ", Visible=" + tab.Visible + ", Active=" + tab.Active);
+                    return true;
+                }
+                else
+                {
+                    Log("ActivateTab: tab is null for docType=" + docType);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("ActivateTab exception: " + ex.Message);
+            }
+            return false;
+        }
+
         #region CommandManager & Menu Integration
 
         public void AddCommandManager()
@@ -128,15 +179,41 @@ namespace ESKD.MaterialSync
                 }
 
                 int cmdGroupErr = 0;
-                // Force ignorePreviousVersion = true so toolbar and tab are recreated cleanly in SW
-                Log("AddCommandManager: Calling CreateCommandGroup2 with ID " + CommandGroupId);
+                bool ignorePreviousVersion = false;
+                object registryIDsObj;
+                bool getRegResult = iCmdMgr.GetGroupDataFromRegistry(CommandGroupId, out registryIDsObj);
+                int[] expectedIDs = new int[] { 9900, 9901, 9902 };
+                if (!getRegResult || registryIDsObj == null)
+                {
+                    ignorePreviousVersion = true;
+                }
+                else
+                {
+                    int[] regIDs = (int[])registryIDsObj;
+                    if (regIDs.Length != expectedIDs.Length)
+                    {
+                        ignorePreviousVersion = true;
+                    }
+                    else
+                    {
+                        for (int i = 0; i < expectedIDs.Length; i++)
+                        {
+                            if (regIDs[i] != expectedIDs[i])
+                            {
+                                ignorePreviousVersion = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                Log("AddCommandManager: Calling CreateCommandGroup2 with ID " + CommandGroupId + ", ignorePrevious=" + ignorePreviousVersion);
                 ICommandGroup cmdGroup = iCmdMgr.CreateCommandGroup2(
                     CommandGroupId,
                     "ЕСКД",
                     "Инструменты ЕСКД: Настройки реквизитов, синхронизация материалов и массы",
                     "",
                     -1,
-                    true,
+                    ignorePreviousVersion,
                     ref cmdGroupErr);
 
                 if (cmdGroup != null)
@@ -154,6 +231,18 @@ namespace ESKD.MaterialSync
                     if (File.Exists(mainLarge)) cmdGroup.LargeMainIcon = mainLarge;
                     if (File.Exists(mainSmall)) cmdGroup.SmallMainIcon = mainSmall;
 
+                    // Dummy command at index 0 to consume command ID 41655 (which SW internal resources map to Routing)
+                    cmdGroup.AddCommandItem2(
+                        "",
+                        -1,
+                        "",
+                        "",
+                        0,
+                        "",
+                        "",
+                        9900,
+                        0);
+
                     int cmdIndexSettings = cmdGroup.AddCommandItem2(
                         "Настройки ЕСКД",
                         -1,
@@ -162,7 +251,7 @@ namespace ESKD.MaterialSync
                         0,
                         "ShowSettings",
                         "EnableCommand",
-                        101,
+                        9901,
                         (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem));
 
                     int cmdIndexSync = cmdGroup.AddCommandItem2(
@@ -173,24 +262,36 @@ namespace ESKD.MaterialSync
                         1,
                         "SyncCurrentDoc",
                         "EnableCommand",
-                        102,
+                        9902,
                         (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem));
 
-                    cmdGroup.HasToolbar = false; // No standalone toolbar window
+                    cmdGroup.HasToolbar = true; // Must be true so buttons exist for CommandTabBox
                     cmdGroup.HasMenu = true;
                     try
                     {
-                        cmdGroup.ShowInDocumentType = (int)(swDocTemplateTypes_e.swDocTemplateTypePART |
-                                                            swDocTemplateTypes_e.swDocTemplateTypeASSEMBLY |
-                                                            swDocTemplateTypes_e.swDocTemplateTypeDRAWING);
+                        cmdGroup.ShowInDocumentType = 0; // Prevent SW from automatically showing toolbar in documents!
                     }
                     catch { }
 
                     Log("AddCommandManager: Activating cmdGroup");
                     cmdGroup.Activate();
 
+                    try
+                    {
+                        int tbId = cmdGroup.ToolbarId;
+                        Log("AddCommandManager: ToolbarId=" + tbId);
+                        if (tbId > 0)
+                        {
+                            iSwApp.SetToolbarVisibility(tbId, false);
+                            iSwApp.HideToolbar2(iSwCookie, tbId);
+                            HideToolbarInRegistry(tbId);
+                        }
+                    }
+                    catch { }
+
                     int cmdIDSettings = cmdGroup.get_CommandID(cmdIndexSettings);
                     int cmdIDSync = cmdGroup.get_CommandID(cmdIndexSync);
+                    Log("AddCommandManager: cmdIDSettings=" + cmdIDSettings + ", cmdIDSync=" + cmdIDSync);
 
                     int[] docTypes = new int[] {
                         (int)swDocumentTypes_e.swDocPART,
@@ -203,15 +304,38 @@ namespace ESKD.MaterialSync
                     {
                         try
                         {
-                            CommandTab tab = iCmdMgr.GetCommandTab(dt, "ЕСКД");
+                            CommandTab tab = null;
+                            try
+                            {
+                                object tabsObj = iCmdMgr.CommandTabs(dt);
+                                if (tabsObj != null)
+                                {
+                                    foreach (object o in (object[])tabsObj)
+                                    {
+                                        CommandTab t = (CommandTab)o;
+                                        if (t != null && !string.IsNullOrEmpty(t.Name) && t.Name.StartsWith("ЕСКД"))
+                                        {
+                                            if (tab == null)
+                                            {
+                                                tab = t;
+                                                try { tab.Name = "ЕСКД"; } catch { }
+                                                Log("AddCommandManager: Reusing existing CommandTab for dt=" + dt + " (" + t.Name + ")");
+                                            }
+                                            else
+                                            {
+                                                Log("AddCommandManager: Removing duplicate CommandTab for dt=" + dt + " (" + t.Name + ")");
+                                                try { iCmdMgr.RemoveCommandTab(t); } catch { }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+
                             if (tab == null)
                             {
                                 tab = iCmdMgr.AddCommandTab(dt, "ЕСКД");
                                 Log("AddCommandManager: Created new CommandTab for dt=" + dt);
-                            }
-                            else
-                            {
-                                Log("AddCommandManager: Found existing CommandTab for dt=" + dt);
                             }
 
                             if (tab != null)
@@ -232,6 +356,18 @@ namespace ESKD.MaterialSync
 
                                 if (box != null)
                                 {
+                                    try
+                                    {
+                                        object curCmds;
+                                        object curTextStyles;
+                                        int cmdCount = box.GetCommands(out curCmds, out curTextStyles);
+                                        if (cmdCount > 0 && curCmds != null)
+                                        {
+                                            box.RemoveCommands(curCmds);
+                                        }
+                                    }
+                                    catch { }
+
                                     int[] cmdIDs = new int[] { cmdIDSettings, cmdIDSync };
                                     int[] textTypes = new int[] {
                                         (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow,
@@ -270,6 +406,117 @@ namespace ESKD.MaterialSync
                 }
             }
             catch { }
+        }
+
+        public void HideGroupToolbar()
+        {
+            try
+            {
+                if (iSwApp != null)
+                {
+                    for (int id = 59420; id <= 59435; id++)
+                    {
+                        try
+                        {
+                            iSwApp.SetToolbarVisibility(id, false);
+                            if (iSwCookie > 0) iSwApp.HideToolbar2(iSwCookie, id);
+                            HideToolbarInRegistry(id);
+                        }
+                        catch { }
+                    }
+
+                    if (iCmdMgr != null)
+                    {
+                        foreach (int gid in new int[] { 9995, 9996, 9997 })
+                        {
+                            try
+                            {
+                                ICommandGroup cg = iCmdMgr.GetCommandGroup(gid);
+                                if (cg != null)
+                                {
+                                    int tbId = cg.ToolbarId;
+                                    if (tbId > 0)
+                                    {
+                                        iSwApp.SetToolbarVisibility(tbId, false);
+                                        iSwApp.HideToolbar2(iSwCookie, tbId);
+                                        HideToolbarInRegistry(tbId);
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        public static void HideToolbarInRegistry(int tbId)
+        {
+            try
+            {
+                using (RegistryKey hkcu = Registry.CurrentUser.OpenSubKey(@"Software\SolidWorks", true))
+                {
+                    if (hkcu == null) return;
+                    foreach (string ver in hkcu.GetSubKeyNames())
+                    {
+                        if (!ver.StartsWith("SOLIDWORKS")) continue;
+                        using (RegistryKey uiKey = hkcu.OpenSubKey(ver + @"\User Interface", true))
+                        {
+                            if (uiKey == null) continue;
+                            foreach (string sub in uiKey.GetSubKeyNames())
+                            {
+                                if (sub.StartsWith("General-Bar") || sub.StartsWith("Part-Bar") || sub.StartsWith("Assy-Bar") || sub.StartsWith("Drw-Bar"))
+                                {
+                                    try
+                                    {
+                                        using (RegistryKey barKey = uiKey.OpenSubKey(sub, true))
+                                        {
+                                            if (barKey != null)
+                                            {
+                                                object bId = barKey.GetValue("BarID");
+                                                if (bId != null && Convert.ToInt32(bId) == tbId)
+                                                {
+                                                    barKey.SetValue("Visible", 0, RegistryValueKind.DWord);
+                                                    Log("HideToolbarInRegistry: Set Visible=0 on " + sub);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    catch { }
+                                }
+                            }
+                            // Also clear from General-Bar1 dock row
+                            try
+                            {
+                                using (RegistryKey gb1 = uiKey.OpenSubKey("General-Bar1", true))
+                                {
+                                    if (gb1 != null)
+                                    {
+                                        foreach (string valName in gb1.GetValueNames())
+                                        {
+                                            if (valName.StartsWith("Bar#"))
+                                            {
+                                                object v = gb1.GetValue(valName);
+                                                if (v != null && Convert.ToInt32(v) == tbId)
+                                                {
+                                                    gb1.SetValue(valName, 0, RegistryValueKind.DWord);
+                                                    Log("HideToolbarInRegistry: Cleared " + valName + " in General-Bar1");
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log("HideToolbarInRegistry exception: " + ex.Message);
+            }
         }
 
         public void AddMenuItems()
@@ -428,13 +675,17 @@ namespace ESKD.MaterialSync
                     app.CommandCloseNotify -= OnCommandClose;
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Log("DetachAppEvents exception: " + ex.Message);
+            }
         }
 
         private int OnFileOpenPost(string fileName)
         {
             try
             {
+                HideGroupToolbar();
                 ModelDoc2 doc = (ModelDoc2)iSwApp.ActiveDoc;
                 if (doc != null)
                 {
@@ -451,6 +702,7 @@ namespace ESKD.MaterialSync
         {
             try
             {
+                HideGroupToolbar();
                 if (newDoc != null && newDoc is ModelDoc2)
                 {
                     ModelDoc2 doc = (ModelDoc2)newDoc;
@@ -467,6 +719,7 @@ namespace ESKD.MaterialSync
         {
             try
             {
+                HideGroupToolbar();
                 ModelDoc2 doc = (ModelDoc2)iSwApp.ActiveDoc;
                 if (doc != null)
                 {
