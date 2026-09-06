@@ -209,9 +209,13 @@ class CADConfiguratorApp:
         return all_ok
 
     def build_full_profile(self, root_p, as_sldreg=True):
-        src_profile = os.path.join(root_p, "01_Настройки_SolidWorks", "SW 2021 12-12-2021.sldreg")
-        if not os.path.exists(src_profile):
-            src_profile = os.path.join(DEFAULT_ROOT, "01_Настройки_SolidWorks", "SW 2021 12-12-2021.sldreg")
+        candidate_2025 = os.path.join(root_p, "01_Настройки_SolidWorks", "Реестровые_Профили", "01_SW2025_Корпоративный_Стандарт_ЕСКД.sldreg")
+        if os.path.exists(candidate_2025):
+            src_profile = candidate_2025
+        else:
+            src_profile = os.path.join(root_p, "01_Настройки_SolidWorks", "SW 2021 12-12-2021.sldreg")
+            if not os.path.exists(src_profile):
+                src_profile = os.path.join(DEFAULT_ROOT, "01_Настройки_SolidWorks", "SW 2021 12-12-2021.sldreg")
             
         with open(src_profile, "rb") as f:
             text = f.read().decode("cp1251", errors="replace")
