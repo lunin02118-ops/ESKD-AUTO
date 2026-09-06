@@ -17,7 +17,7 @@ namespace ESKD.MaterialSync
     public class SwAddin : ISwAddin
     {
         private const int SwCmdEditMaterial = 175; // swCommands_EditMaterial
-        private const int CommandGroupId = 9990;
+        private const int CommandGroupId = 9995;
 
         private ISldWorks iSwApp;
         private ICommandManager iCmdMgr;
@@ -119,11 +119,17 @@ namespace ESKD.MaterialSync
         {
             try
             {
+                Log("AddCommandManager: Start");
                 iCmdMgr = iSwApp.GetCommandManager(iSwCookie);
-                if (iCmdMgr == null) return;
+                if (iCmdMgr == null)
+                {
+                    Log("AddCommandManager: iCmdMgr is null!");
+                    return;
+                }
 
                 int cmdGroupErr = 0;
                 // Force ignorePreviousVersion = true so toolbar and tab are recreated cleanly in SW
+                Log("AddCommandManager: Calling CreateCommandGroup2 with ID " + CommandGroupId);
                 ICommandGroup cmdGroup = iCmdMgr.CreateCommandGroup2(
                     CommandGroupId,
                     "ЕСКД",
@@ -135,6 +141,7 @@ namespace ESKD.MaterialSync
 
                 if (cmdGroup != null)
                 {
+                    Log("AddCommandManager: cmdGroup created successfully");
                     string asmDir = Path.GetDirectoryName(typeof(SwAddin).Assembly.Location) ?? "";
                     string iconDir = Path.Combine(asmDir, "Icons");
                     string iconSmall = Path.Combine(iconDir, "icons_small.bmp");
@@ -169,7 +176,7 @@ namespace ESKD.MaterialSync
                         102,
                         (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem));
 
-                    cmdGroup.HasToolbar = true;
+                    cmdGroup.HasToolbar = false; // No standalone toolbar window
                     cmdGroup.HasMenu = true;
                     try
                     {
@@ -178,23 +185,23 @@ namespace ESKD.MaterialSync
                                                             swDocTemplateTypes_e.swDocTemplateTypeDRAWING);
                     }
                     catch { }
+
+                    Log("AddCommandManager: Activating cmdGroup");
                     cmdGroup.Activate();
 
                     int cmdIDSettings = cmdGroup.get_CommandID(cmdIndexSettings);
                     int cmdIDSync = cmdGroup.get_CommandID(cmdIndexSync);
 
                     int[] docTypes = new int[] {
-                        (int)swDocumentTypes_e.swDocNONE,
                         (int)swDocumentTypes_e.swDocPART,
                         (int)swDocumentTypes_e.swDocASSEMBLY,
                         (int)swDocumentTypes_e.swDocDRAWING
                     };
 
+                    Log("AddCommandManager: Setting up CommandTabs");
                     foreach (int dt in docTypes)
                     {
-                        try { cmdGroup.SetToolbarVisibility(true, dt); } catch { }
-
-                        if (dt != (int)swDocumentTypes_e.swDocNONE)
+                        try
                         {
                             ICommandTab tab = iCmdMgr.GetCommandTab(dt, "ЕСКД");
                             if (tab != null)
@@ -217,12 +224,21 @@ namespace ESKD.MaterialSync
                                 }
                             }
                         }
+                        catch (Exception exTab)
+                        {
+                            Log("CommandTab setup error for dt=" + dt + ": " + exTab.Message);
+                        }
                     }
+                    Log("AddCommandManager: Completed successfully");
+                }
+                else
+                {
+                    Log("AddCommandManager: cmdGroup is null! Error code=" + cmdGroupErr);
                 }
             }
             catch (Exception ex)
             {
-                Log("AddCommandManager exception: " + ex.Message);
+                Log("AddCommandManager exception: " + ex.ToString());
             }
         }
 
@@ -232,7 +248,7 @@ namespace ESKD.MaterialSync
             {
                 if (iCmdMgr != null)
                 {
-                    iCmdMgr.RemoveCommandGroup2(CommandGroupId, true);
+                    try { iCmdMgr.RemoveCommandGroup2(CommandGroupId, true); } catch { }
                 }
             }
             catch { }
