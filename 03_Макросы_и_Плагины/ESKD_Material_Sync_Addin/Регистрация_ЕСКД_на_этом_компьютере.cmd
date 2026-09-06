@@ -70,6 +70,7 @@ echo [3/4] Настройка общих параметров по умолча�
 reg add "HKCU\Software\SolidWorks\ESKD_Settings" /v "AutoMass" /t REG_DWORD /d 1 /f >nul
 reg add "HKCU\Software\SolidWorks\ESKD_Settings" /v "MassDecimals" /t REG_DWORD /d 2 /f >nul
 reg add "HKCU\Software\SolidWorks\ESKD_Settings" /v "AutoCenterMass" /t REG_DWORD /d 1 /f >nul
+reg add "HKCU\Software\SolidWorks\ESKD_Settings" /v "AutoSplitName" /t REG_DWORD /d 1 /f >nul
 
 echo.
 echo [4/4] Проверка реквизитов конструктора текущего пользователя Windows...
