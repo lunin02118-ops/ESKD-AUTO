@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Builds and registers the ESKD Material Sync Zero-Click Add-In for SolidWorks 2025.
 #>

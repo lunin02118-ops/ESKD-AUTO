@@ -560,7 +560,7 @@ namespace ESKD.MaterialSync
 
             chkAutoCenterMass = new CheckBox()
             {
-                Text = "Автоматически центрировать массу и материал в графах штампа чертежа",
+                Text = "Автоматически центрировать наименование, массу и материал в штампе чертежа",
                 Font = new Font("Segoe UI", 9.5F, FontStyle.Regular),
                 ForeColor = Color.FromArgb(15, 23, 42),
                 AutoSize = true,
@@ -570,7 +570,7 @@ namespace ESKD.MaterialSync
 
             Label lblAutoCenterNote = new Label()
             {
-                Text = "Выравнивание по центру ячеек: масса (графа 5) и материал (графа 3, одно- и двухстрочный) по ГОСТ 2.104",
+                Text = "Выравнивание по центру ячеек: наименование (графа 1), масса (графа 5) и материал (графа 3) по ГОСТ 2.104",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,

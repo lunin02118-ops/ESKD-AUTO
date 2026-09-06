@@ -97,6 +97,7 @@ namespace ESKD.MaterialSync
 
                 AlignDrawingMassNote(drw);
                 AlignDrawingMaterialNote(drw);
+                AlignDrawingTitleNote(drw);
                 if (triggerRebuild)
                 {
                     drwModel.ForceRebuild3(true);
@@ -439,6 +440,182 @@ namespace ESKD.MaterialSync
                         n = (Note)n.GetNext();
                     }
                     v = (View)v.GetNextView();
+                }
+            }
+            catch { }
+        }
+
+        public static void AlignDrawingTitleNote(DrawingDoc drw)
+        {
+            if (drw == null) return;
+            try
+            {
+                int autoCenter = 1;
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegKeySettings))
+                {
+                    if (key != null)
+                    {
+                        autoCenter = (int)key.GetValue("AutoCenterMass", 1);
+                    }
+                }
+                if (autoCenter == 0) return;
+
+                Sheet sheet = (Sheet)drw.GetCurrentSheet();
+                double sheetW = 0.0;
+                if (sheet != null)
+                {
+                    double[] sProps = (double[])sheet.GetProperties2();
+                    if (sProps != null && sProps.Length > 5)
+                    {
+                        sheetW = sProps[5];
+                    }
+                }
+
+                // In standard GOST 2.104 title block (Форма 1):
+                // Stamp width = 185 mm, right margin = 5 mm.
+                // Наименование cell (Графа 1) is 70 mm wide.
+                // Left border = sheetW - 125 mm, Right border = sheetW - 55 mm.
+                // Cell center X = sheetW - 90 mm (0.090 m).
+                // Cell vertical boundaries:
+                // Floor Y = 0.020 m (20 mm from sheet bottom, above the 15 mm material/company cell).
+                // Ceiling Y = 0.045 m (45 mm from sheet bottom, below the 15 mm designation cell).
+                // Cell height = 0.025 m (25 mm).
+                // Vertical center Y = (0.020 + 0.045) / 2 = 0.0325 m (32.5 mm).
+                double targetCenterX = sheetW > 0.15 ? (sheetW - 0.090) : 0.0;
+                double cellCenterY = 0.0325;
+
+                View v = (View)drw.GetFirstView();
+                Note noteTitle = null;
+                Note noteSubtitle = null;
+
+                while (v != null)
+                {
+                    Note n = (Note)v.GetFirstNote();
+                    while (n != null)
+                    {
+                        string name = n.GetName() ?? "";
+                        string ltxt = n.PropertyLinkedText ?? "";
+
+                        bool isTitle = false;
+                        bool isSubtitle = false;
+
+                        if (name.Equals("MYPRP4", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isTitle = true;
+                        }
+                        else if (name.Equals("MYPRP3", StringComparison.OrdinalIgnoreCase))
+                        {
+                            isSubtitle = true;
+                        }
+                        else if (ltxt.IndexOf("Наименование_ФБ", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 ltxt.IndexOf("$PRPSHEET:\"Наименование", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 (ltxt.IndexOf("Наименование", StringComparison.OrdinalIgnoreCase) >= 0 && ltxt.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0))
+                        {
+                            Annotation a = (Annotation)n.GetAnnotation();
+                            if (a != null)
+                            {
+                                double[] p = (double[])a.GetPosition();
+                                if (p != null && p.Length >= 2 && p[1] > 0.015 && p[1] < 0.055)
+                                {
+                                    isTitle = true;
+                                }
+                            }
+                        }
+                        else if (ltxt.IndexOf("Сборка2_ФБ", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            isSubtitle = true;
+                        }
+
+                        if (isTitle && noteTitle == null)
+                        {
+                            noteTitle = n;
+                        }
+                        if (isSubtitle && noteSubtitle == null)
+                        {
+                            noteSubtitle = n;
+                        }
+
+                        n = (Note)n.GetNext();
+                    }
+                    v = (View)v.GetNextView();
+                }
+
+                if (noteTitle != null)
+                {
+                    Annotation annTitle = (Annotation)noteTitle.GetAnnotation();
+                    if (annTitle != null)
+                    {
+                        double[] posTitle = (double[])annTitle.GetPosition();
+                        double[] extTitle = (double[])noteTitle.GetExtent();
+                        double targetX = (targetCenterX > 0.05) ? targetCenterX : (posTitle != null && posTitle.Length > 0 ? posTitle[0] : 0.0);
+
+                        bool hasValidTitleExt = extTitle != null && extTitle.Length >= 6 && (extTitle[4] - extTitle[1]) > 0.001;
+
+                        // Check if subtitle note exists and has non-empty text (e.g. "Сборочный чертеж")
+                        bool hasSubtitleText = false;
+                        Annotation annSub = null;
+                        double[] posSub = null;
+                        double[] extSub = null;
+                        if (noteSubtitle != null)
+                        {
+                            string subText = noteSubtitle.GetText();
+                            if (!string.IsNullOrWhiteSpace(subText))
+                            {
+                                annSub = (Annotation)noteSubtitle.GetAnnotation();
+                                if (annSub != null)
+                                {
+                                    posSub = (double[])annSub.GetPosition();
+                                    extSub = (double[])noteSubtitle.GetExtent();
+                                    hasSubtitleText = true;
+                                }
+                            }
+                        }
+
+                        if (hasSubtitleText && extSub != null && extSub.Length >= 6 && hasValidTitleExt)
+                        {
+                            // Two elements: Title and Subtitle stacked together
+                            double combinedMinY = Math.Min(extTitle[1], extSub[1]);
+                            double combinedMaxY = Math.Max(extTitle[4], extSub[4]);
+                            double currentCenterY = (combinedMinY + combinedMaxY) / 2.0;
+                            double deltaY = cellCenterY - currentCenterY;
+
+                            double targetYTitle = posTitle[1] + deltaY;
+                            double targetYSub = posSub[1] + deltaY;
+
+                            if (Math.Abs(posTitle[1] - targetYTitle) > 0.00015 || Math.Abs(posTitle[0] - targetX) > 0.0005)
+                            {
+                                annTitle.SetPosition(targetX, targetYTitle, posTitle.Length > 2 ? posTitle[2] : 0.0);
+                                noteTitle.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
+                            }
+                            if (Math.Abs(posSub[1] - targetYSub) > 0.00015 || Math.Abs(posSub[0] - targetX) > 0.0005)
+                            {
+                                annSub.SetPosition(targetX, targetYSub, posSub.Length > 2 ? posSub[2] : 0.0);
+                                noteSubtitle.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
+                            }
+                        }
+                        else
+                        {
+                            // Single element: Title alone centered in [0.020, 0.045]
+                            double targetYTitle = posTitle[1];
+                            if (hasValidTitleExt)
+                            {
+                                double currentCenterY = (extTitle[1] + extTitle[4]) / 2.0;
+                                double deltaY = cellCenterY - currentCenterY;
+                                targetYTitle = posTitle[1] + deltaY;
+                            }
+                            else
+                            {
+                                double hTitle = 0.0055;
+                                targetYTitle = cellCenterY + (hTitle / 2.0);
+                            }
+
+                            if (Math.Abs(posTitle[1] - targetYTitle) > 0.00015 || Math.Abs(posTitle[0] - targetX) > 0.0005)
+                            {
+                                annTitle.SetPosition(targetX, targetYTitle, posTitle.Length > 2 ? posTitle[2] : 0.0);
+                                noteTitle.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
+                            }
+                        }
+                    }
                 }
             }
             catch { }
