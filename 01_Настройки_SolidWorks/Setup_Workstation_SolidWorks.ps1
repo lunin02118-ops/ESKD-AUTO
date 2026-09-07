@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Автоматическая настройка рабочего места SolidWorks 2025 (Корпоративный стандарт ЕСКД)
 .DESCRIPTION
@@ -16,10 +16,13 @@ param (
 )
 
 if (-not $ToolsRoot) {
-    if ($PSScriptRoot) {
-        $ToolsRoot = $PSScriptRoot
+    $cand = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+    if (Test-Path (Join-Path $cand "04_Библиотеки_Материалов_и_Профилей")) {
+        $ToolsRoot = $cand
+    } elseif (Test-Path (Join-Path (Split-Path $cand -Parent) "04_Библиотеки_Материалов_и_Профилей")) {
+        $ToolsRoot = Split-Path $cand -Parent
     } else {
-        $ToolsRoot = (Get-Location).Path
+        $ToolsRoot = $cand
     }
 }
 $ToolsRoot = (Resolve-Path $ToolsRoot).Path
