@@ -1253,9 +1253,13 @@ namespace ESKD.MaterialSync
                 }
 
                 // Determine effective root base designation and document code (e.g. " СБ")
-                string effectiveBaseDesig = !string.IsNullOrWhiteSpace(existingGenDesig) && !existingGenDesig.Contains("$PRP")
-                    ? existingGenDesig
-                    : parsedDesig;
+                bool isExistingDesigTemplate = string.IsNullOrWhiteSpace(existingGenDesig) ||
+                    existingGenDesig.Contains("$PRP") ||
+                    Regex.IsMatch(existingGenDesig.Trim(), @"^(Деталь|Part|Сборка|Assem|Чертеж|Draw)\s*\d*$", RegexOptions.IgnoreCase);
+
+                string effectiveBaseDesig = !string.IsNullOrWhiteSpace(parsedDesig)
+                    ? parsedDesig
+                    : (!isExistingDesigTemplate ? existingGenDesig : "");
 
                 string foundExecInBase;
                 string docCode;
@@ -1266,9 +1270,13 @@ namespace ESKD.MaterialSync
                     docCode = " СБ";
                 }
 
-                string effectiveTitle = !string.IsNullOrWhiteSpace(existingGenTitle)
-                    ? existingGenTitle
-                    : parsedTitle;
+                bool isExistingTitleTemplate = string.IsNullOrWhiteSpace(existingGenTitle) ||
+                    existingGenTitle.Contains("$PRP") ||
+                    Regex.IsMatch(existingGenTitle.Trim(), @"^(Деталь|Part|Сборка|Assem|Чертеж|Draw)\s*\d*$", RegexOptions.IgnoreCase);
+
+                string effectiveTitle = !string.IsNullOrWhiteSpace(parsedTitle)
+                    ? parsedTitle
+                    : (!isExistingTitleTemplate ? existingGenTitle : "");
 
                 // 2. Set general custom properties (for $PRPSHEET and $PRP)
                 if (cpmGen != null)
