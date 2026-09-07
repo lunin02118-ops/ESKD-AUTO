@@ -1,9 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 
+import os
+
+spec_dir = SPECPATH
+
 a = Analysis(
-    ['D:\\Work\\_Инструменты_Конструктора\\01_Настройки_SolidWorks\\CAD_Workstation_Configurator.py'],
-    pathex=[],
+    [os.path.join(spec_dir, 'CAD_Workstation_Configurator.py')],
+    pathex=[spec_dir],
     binaries=[],
     datas=[],
     hiddenimports=[],
@@ -35,5 +39,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['D:\\Work\\_Инструменты_Конструктора\\01_Настройки_SolidWorks\\app_icon.ico'],
+    icon=[os.path.join(spec_dir, 'app_icon.ico')],
 )
