@@ -53,46 +53,74 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "Compilation successful: $outputDll" -ForegroundColor Green
 
-# 3. Register with RegAsm
-& $regasm /codebase $outputDll
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "RegAsm registration failed with code $LASTEXITCODE"
-    exit $LASTEXITCODE
-}
-
-# 4. Set Registry Keys in HKLM and HKCU
+# 3. Register COM: direct HKCU registration (works without Admin) + RegAsm/HKLM if elevated
 $guid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
+$progId = "ESKD.MaterialSync.SwAddin_v5"
+$className = "ESKD.MaterialSync.SwAddin"
+$assemblyName = "ESKD_Material_Sync_v5, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+$runtimeVersion = "v4.0.30319"
 $title = "ЕСКД: Синхронизация материалов и реквизитов"
 $desc = "Панель инструментов ЕСКД: настройки реквизитов (фамилии, контора, масса), автоматическая синхронизация материалов и центрирование штампа по ГОСТ 2.104"
+$codeBase = ([System.Uri](Resolve-Path $outputDll).Path).AbsoluteUri
 
-# HKLM\Software\SolidWorks\AddIns (Displays in Tools -> Add-ins dialog!)
-try {
-    $hklmPath = "HKLM:\Software\SolidWorks\AddIns\$guid"
-    if (-not (Test-Path $hklmPath)) {
-        New-Item -Path $hklmPath -Force | Out-Null
-    }
-    Set-ItemProperty -Path $hklmPath -Name "(Default)" -Value 1 -Type DWord
-    Set-ItemProperty -Path $hklmPath -Name "Title" -Value $title -Type String
-    Set-ItemProperty -Path $hklmPath -Name "Description" -Value $desc -Type String
-} catch {
-    Write-Warning "Could not write to HKLM (may require admin privileges): $_"
+# 3.1. HKCU COM Registration
+$clsidKey = "HKCU:\Software\Classes\CLSID\$guid"
+if (-not (Test-Path $clsidKey)) { New-Item -Path $clsidKey -Force | Out-Null }
+Set-ItemProperty -Path $clsidKey -Name "(Default)" -Value $className
+
+$inprocKey = Join-Path $clsidKey "InprocServer32"
+if (-not (Test-Path $inprocKey)) { New-Item -Path $inprocKey -Force | Out-Null }
+Set-ItemProperty -Path $inprocKey -Name "(Default)" -Value "mscoree.dll"
+Set-ItemProperty -Path $inprocKey -Name "ThreadingModel" -Value "Both"
+Set-ItemProperty -Path $inprocKey -Name "Class" -Value $className
+Set-ItemProperty -Path $inprocKey -Name "Assembly" -Value $assemblyName
+Set-ItemProperty -Path $inprocKey -Name "RuntimeVersion" -Value $runtimeVersion
+Set-ItemProperty -Path $inprocKey -Name "CodeBase" -Value $codeBase
+
+$verKey = Join-Path $inprocKey "1.0.0.0"
+if (-not (Test-Path $verKey)) { New-Item -Path $verKey -Force | Out-Null }
+Set-ItemProperty -Path $verKey -Name "Class" -Value $className
+Set-ItemProperty -Path $verKey -Name "Assembly" -Value $assemblyName
+Set-ItemProperty -Path $verKey -Name "RuntimeVersion" -Value $runtimeVersion
+Set-ItemProperty -Path $verKey -Name "CodeBase" -Value $codeBase
+
+$progKey = Join-Path $clsidKey "ProgId"
+if (-not (Test-Path $progKey)) { New-Item -Path $progKey -Force | Out-Null }
+Set-ItemProperty -Path $progKey -Name "(Default)" -Value $progId
+
+$catKey = Join-Path $clsidKey "Implemented Categories\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}"
+if (-not (Test-Path $catKey)) { New-Item -Path $catKey -Force | Out-Null }
+
+$rootProgKey = "HKCU:\Software\Classes\$progId"
+if (-not (Test-Path $rootProgKey)) { New-Item -Path $rootProgKey -Force | Out-Null }
+Set-ItemProperty -Path $rootProgKey -Name "(Default)" -Value $className
+$rootProgClsid = Join-Path $rootProgKey "CLSID"
+if (-not (Test-Path $rootProgClsid)) { New-Item -Path $rootProgClsid -Force | Out-Null }
+Set-ItemProperty -Path $rootProgClsid -Name "(Default)" -Value $guid
+
+# 3.2. RegAsm / HKLM if running as administrator
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if ($isAdmin) {
+    try {
+        & $regasm /codebase $outputDll 2>$null
+        $hklmPath = "HKLM:\Software\SolidWorks\AddIns\$guid"
+        if (-not (Test-Path $hklmPath)) { New-Item -Path $hklmPath -Force | Out-Null }
+        Set-ItemProperty -Path $hklmPath -Name "(Default)" -Value 1 -Type DWord
+        Set-ItemProperty -Path $hklmPath -Name "Title" -Value $title -Type String
+        Set-ItemProperty -Path $hklmPath -Name "Description" -Value $desc -Type String
+    } catch { }
 }
 
-# HKCU\Software\SolidWorks\AddIns
+# 4. Set SolidWorks Add-in registration in HKCU
 $keyPath = "HKCU:\Software\SolidWorks\AddIns\$guid"
-if (-not (Test-Path $keyPath)) {
-    New-Item -Path $keyPath -Force | Out-Null
-}
+if (-not (Test-Path $keyPath)) { New-Item -Path $keyPath -Force | Out-Null }
 Set-ItemProperty -Path $keyPath -Name "(Default)" -Value 1 -Type DWord
 Set-ItemProperty -Path $keyPath -Name "Title" -Value $title -Type String
 Set-ItemProperty -Path $keyPath -Name "Description" -Value $desc -Type String
 
-# HKCU\Software\SolidWorks\AddInsStartup (Ensures cold-start autoload!)
 $startupPath = "HKCU:\Software\SolidWorks\AddInsStartup\$guid"
-if (-not (Test-Path $startupPath)) {
-    New-Item -Path $startupPath -Force | Out-Null
-}
+if (-not (Test-Path $startupPath)) { New-Item -Path $startupPath -Force | Out-Null }
 Set-ItemProperty -Path $startupPath -Name "(Default)" -Value 1 -Type DWord
 
-Write-Host "Add-In successfully registered in SolidWorks Add-Ins and AddInsStartup!" -ForegroundColor Green
+Write-Host "Add-In successfully registered in SolidWorks Add-Ins and AddInsStartup (HKCU)!" -ForegroundColor Green
 

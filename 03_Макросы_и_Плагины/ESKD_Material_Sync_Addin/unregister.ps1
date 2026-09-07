@@ -1,22 +1,35 @@
-<#
+﻿<#
 .SYNOPSIS
-    Unregisters the ESKD Material Sync Zero-Click Add-In from SolidWorks 2025.
+    Unregisters the ESKD Material Sync Add-In from SolidWorks and Windows COM.
 #>
 [CmdletBinding()]
 param()
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $regasm = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
-$outputDll = Join-Path $ScriptDir "ESKD_Material_Sync_Addin.dll"
+$outputDll = Join-Path $ScriptDir "ESKD_Material_Sync_v5.dll"
+$guid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
+$progId = "ESKD.MaterialSync.SwAddin_v5"
 
-if (Test-Path $outputDll) {
-    & $regasm /u $outputDll
+# 1. RegAsm unregister if elevated
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if ($isAdmin -and (Test-Path $outputDll) -and (Test-Path $regasm)) {
+    try { & $regasm /u $outputDll 2>$null } catch { }
 }
 
-$guid = "{B64E6875-B101-4D5C-B245-FF8D50772E21}"
-$keyPath = "HKCU:\Software\SolidWorks\AddIns\$guid"
-if (Test-Path $keyPath) {
-    Remove-Item -Path $keyPath -Recurse -Force
+# 2. Clean HKCU Classes
+Remove-Item -Path "HKCU:\Software\Classes\CLSID\$guid" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "HKCU:\Software\Classes\$progId" -Recurse -Force -ErrorAction SilentlyContinue
+
+# 3. Clean HKLM if elevated
+if ($isAdmin) {
+    Remove-Item -Path "HKLM:\Software\Classes\CLSID\$guid" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "HKLM:\Software\Classes\$progId" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "HKLM:\Software\SolidWorks\AddIns\$guid" -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host "Add-In successfully unregistered." -ForegroundColor Yellow
+# 4. Clean SolidWorks AddIns in HKCU
+Remove-Item -Path "HKCU:\Software\SolidWorks\AddIns\$guid" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "HKCU:\Software\SolidWorks\AddinsStartup\$guid" -Recurse -Force -ErrorAction SilentlyContinue
+
+Write-Host "ESKD Add-In successfully unregistered." -ForegroundColor Yellow

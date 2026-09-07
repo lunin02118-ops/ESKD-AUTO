@@ -10,3 +10,7 @@
 *.bak-*
 bin/
 obj/
+*.7z
+*.zip
+__pycache__/
+build_temp/

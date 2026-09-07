@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Reflection;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -12,10 +13,39 @@ namespace ESKD.MaterialSync
 {
     [Guid("B64E6875-B101-4D5C-B245-FF8D50772E25")]
     [ComVisible(true)]
-    [ClassInterface(ClassInterfaceType.AutoDual)]
+    [ClassInterface(ClassInterfaceType.AutoDispatch)]
     [ProgId("ESKD.MaterialSync.SwAddin_v5")]
     public class SwAddin : ISwAddin
     {
+        static SwAddin()
+        {
+            try
+            {
+                AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
+            }
+            catch { }
+        }
+
+        private static Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
+        {
+            try
+            {
+                string loc = typeof(SwAddin).Assembly.Location;
+                if (!string.IsNullOrEmpty(loc))
+                {
+                    string dir = Path.GetDirectoryName(loc);
+                    string simpleName = new AssemblyName(args.Name).Name;
+                    string candidate = Path.Combine(dir, simpleName + ".dll");
+                    if (File.Exists(candidate))
+                    {
+                        return Assembly.LoadFrom(candidate);
+                    }
+                }
+            }
+            catch { }
+            return null;
+        }
+
         private const int SwCmdEditMaterial = 175; // swCommands_EditMaterial
         private const int CommandGroupId = 9997;
 

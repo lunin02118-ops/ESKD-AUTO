@@ -17,6 +17,7 @@ import time
 import ctypes
 import shutil
 import re
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
@@ -803,39 +804,52 @@ class CADConfiguratorApp:
             fonts_dir = os.path.join(root_p, "05_Шрифты")
             if os.path.exists(fonts_dir):
                 win_fonts = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Fonts")
+                user_fonts = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "Windows", "Fonts")
+                try:
+                    os.makedirs(user_fonts, exist_ok=True)
+                except Exception: pass
+                
                 installed_cnt = 0
                 for f_name in os.listdir(fonts_dir):
                     if f_name.lower().endswith(('.ttf', '.fon', '.otf')):
                         src_font = os.path.join(fonts_dir, f_name)
                         dst_font = os.path.join(win_fonts, f_name)
+                        is_user = False
                         try:
                             if not os.path.exists(dst_font):
                                 shutil.copy2(src_font, dst_font)
-                            ctypes.windll.gdi32.AddFontResourceW(dst_font)
-                            
-                            font_val_name = f"{os.path.splitext(f_name)[0]} (TrueType)"
-                            try:
-                                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts", 0, winreg.KEY_ALL_ACCESS) as k_fnt:
-                                    winreg.SetValueEx(k_fnt, font_val_name, 0, winreg.REG_SZ, f_name)
-                            except Exception:
-                                try:
-                                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts", 0, winreg.KEY_ALL_ACCESS) as k_fnt_u:
-                                        winreg.SetValueEx(k_fnt_u, font_val_name, 0, winreg.REG_SZ, dst_font)
-                                except Exception:
-                                    pass
-                            installed_cnt += 1
                         except Exception:
+                            dst_font = os.path.join(user_fonts, f_name)
+                            is_user = True
                             try:
-                                ctypes.windll.gdi32.AddFontResourceW(src_font)
-                                installed_cnt += 1
+                                if not os.path.exists(dst_font):
+                                    shutil.copy2(src_font, dst_font)
                             except Exception: pass
+                        
+                        try:
+                            ctypes.windll.gdi32.AddFontResourceW(dst_font)
+                            font_val_name = f"{os.path.splitext(f_name)[0]} (TrueType)"
+                            if not is_user:
+                                try:
+                                    with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts", 0, winreg.KEY_ALL_ACCESS) as k_fnt:
+                                        winreg.SetValueEx(k_fnt, font_val_name, 0, winreg.REG_SZ, f_name)
+                                except Exception:
+                                    is_user = True
+                            if is_user:
+                                try:
+                                    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts") as k_fnt_u:
+                                        winreg.SetValueEx(k_fnt_u, font_val_name, 0, winreg.REG_SZ, dst_font)
+                                except Exception: pass
+                            installed_cnt += 1
+                        except Exception: pass
+
                 if installed_cnt > 0:
                     try:
                         ctypes.windll.user32.PostMessageW(0xFFFF, 0x001D, 0, 0)
                     except Exception: pass
                     self.log(f"Шрифты ГОСТ зарегистрированы в Windows ({installed_cnt} шт.)!", "SUCCESS")
 
-                # 5. Register Native ESKD Material Sync Add-In v5, Toolbar & Favorites
+        # 5. Register Native ESKD Material Sync Add-In v5, Toolbar & Favorites
         addin_dll = os.path.join(root_p, "03_Макросы_и_Плагины", "ESKD_Material_Sync_Addin", "ESKD_Material_Sync_v5.dll")
         regasm = r"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
 
@@ -852,22 +866,59 @@ class CADConfiguratorApp:
                     self.delete_key_recursive(winreg.HKEY_LOCAL_MACHINE, f"{base_p}\\{og}")
                 except Exception: pass
 
-        if os.path.exists(addin_dll) and os.path.exists(regasm):
+        if os.path.exists(addin_dll):
             try:
-                subprocess.run([regasm, "/codebase", addin_dll], capture_output=True)
                 guid_str = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
+                prog_id = "ESKD.MaterialSync.SwAddin_v5"
+                cls_name = "ESKD.MaterialSync.SwAddin"
+                asm_name = "ESKD_Material_Sync_v5, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+                rt_ver = "v4.0.30319"
+                dll_uri = Path(addin_dll).as_uri()
                 title_str = "ЕСКД: Синхронизация материалов и реквизитов"
                 desc_str = "Панель инструментов ЕСКД: настройки реквизитов (фамилии, контора, масса), автоматическая синхронизация материалов и центрирование штампа по ГОСТ 2.104"
 
-                # HKLM
-                try:
-                    with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, f"Software\\SolidWorks\\AddIns\\{guid_str}") as k_hklm:
-                        winreg.SetValueEx(k_hklm, "", 0, winreg.REG_DWORD, 1)
-                        winreg.SetValueEx(k_hklm, "Title", 0, winreg.REG_SZ, title_str)
-                        winreg.SetValueEx(k_hklm, "Description", 0, winreg.REG_SZ, desc_str)
-                except Exception: pass
+                # 5.1. Всегда гарантированная Per-User COM регистрация в HKCU (работает без прав админа!)
+                clsid_base = f"Software\\Classes\\CLSID\\{guid_str}"
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, clsid_base) as k:
+                    winreg.SetValueEx(k, "", 0, winreg.REG_SZ, cls_name)
+                    
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{clsid_base}\\InprocServer32") as k:
+                    winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "mscoree.dll")
+                    winreg.SetValueEx(k, "ThreadingModel", 0, winreg.REG_SZ, "Both")
+                    winreg.SetValueEx(k, "Class", 0, winreg.REG_SZ, cls_name)
+                    winreg.SetValueEx(k, "Assembly", 0, winreg.REG_SZ, asm_name)
+                    winreg.SetValueEx(k, "RuntimeVersion", 0, winreg.REG_SZ, rt_ver)
+                    winreg.SetValueEx(k, "CodeBase", 0, winreg.REG_SZ, dll_uri)
+                    
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{clsid_base}\\InprocServer32\\1.0.0.0") as k:
+                    winreg.SetValueEx(k, "Class", 0, winreg.REG_SZ, cls_name)
+                    winreg.SetValueEx(k, "Assembly", 0, winreg.REG_SZ, asm_name)
+                    winreg.SetValueEx(k, "RuntimeVersion", 0, winreg.REG_SZ, rt_ver)
+                    winreg.SetValueEx(k, "CodeBase", 0, winreg.REG_SZ, dll_uri)
 
-                # HKCU
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"{clsid_base}\\ProgId") as k:
+                    winreg.SetValueEx(k, "", 0, winreg.REG_SZ, prog_id)
+
+                cat_key = clsid_base + r"\Implemented Categories\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}"
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, cat_key):
+                    pass
+
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{prog_id}") as k:
+                    winreg.SetValueEx(k, "", 0, winreg.REG_SZ, cls_name)
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\Classes\\{prog_id}\\CLSID") as k:
+                    winreg.SetValueEx(k, "", 0, winreg.REG_SZ, guid_str)
+
+                # 5.2. Если запущено с правами администратора, пробуем и regasm в HKLM
+                if os.path.exists(regasm):
+                    try:
+                        subprocess.run([regasm, "/codebase", addin_dll], capture_output=True, timeout=5)
+                        with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, f"Software\\SolidWorks\\AddIns\\{guid_str}") as k_hklm:
+                            winreg.SetValueEx(k_hklm, "", 0, winreg.REG_DWORD, 1)
+                            winreg.SetValueEx(k_hklm, "Title", 0, winreg.REG_SZ, title_str)
+                            winreg.SetValueEx(k_hklm, "Description", 0, winreg.REG_SZ, desc_str)
+                    except Exception: pass
+
+                # 5.3. Регистрация в SolidWorks HKCU AddIns
                 with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\SolidWorks\\AddIns\\{guid_str}") as k_add:
                     winreg.SetValueEx(k_add, "", 0, winreg.REG_DWORD, 1)
                     winreg.SetValueEx(k_add, "Title", 0, winreg.REG_SZ, title_str)
@@ -876,8 +927,12 @@ class CADConfiguratorApp:
                 # AddinsStartup
                 with winreg.CreateKey(winreg.HKEY_CURRENT_USER, f"Software\\SolidWorks\\AddinsStartup\\{guid_str}") as k_start:
                     winreg.SetValueEx(k_start, "", 0, winreg.REG_DWORD, 1)
+                self.log("Надстройка ЕСКД зарегистрирована в COM (без прав админа) и подключена к SolidWorks!", "SUCCESS")
+            except Exception as e:
+                self.log(f"Предупреждение при COM-регистрации надстройки: {e}", "WARN")
 
-                # ESKD_Settings in HKCU
+            # ESKD_Settings in HKCU
+            try:
                 with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\SolidWorks\ESKD_Settings") as k_eskd:
                     winreg.SetValueEx(k_eskd, "Author", 0, winreg.REG_SZ, author if author else "Шалунов В.В.")
                     winreg.SetValueEx(k_eskd, "Checker", 0, winreg.REG_SZ, "")
