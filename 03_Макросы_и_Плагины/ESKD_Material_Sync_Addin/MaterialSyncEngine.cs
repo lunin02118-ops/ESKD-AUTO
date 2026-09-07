@@ -1020,6 +1020,178 @@ namespace ESKD.MaterialSync
             return m.Success ? m.Value : "";
         }
 
+        private static string GetProp(CustomPropertyManager cpm, string name)
+        {
+            if (cpm == null || string.IsNullOrEmpty(name)) return null;
+            try
+            {
+                string val = null, resVal = null;
+                cpm.Get4(name, false, out val, out resVal);
+                if (!string.IsNullOrWhiteSpace(resVal)) return resVal.Trim();
+                if (!string.IsNullOrWhiteSpace(val)) return val.Trim();
+            }
+            catch { }
+            return null;
+        }
+
+        private static string StripExecutionSuffix(string desig, out string foundExec, out string docCode)
+        {
+            foundExec = null;
+            docCode = "";
+            if (string.IsNullOrWhiteSpace(desig)) return "";
+
+            string trimmed = desig.Trim();
+
+            // Check for document code like " СБ", " ГЧ", " МЧ", " ТУ", " ВО"
+            Match codeMatch = Regex.Match(trimmed, @"(?:\s+|(?:(?<=[0-9])))(СБ|ГЧ|МЧ|ВО|ТУ|ТБ|ПЭ|Э\d|СХ|СЭ|ВП|СП)$", RegexOptions.IgnoreCase);
+            if (codeMatch.Success)
+            {
+                docCode = " " + codeMatch.Groups[1].Value.ToUpper();
+                trimmed = trimmed.Substring(0, codeMatch.Index).TrimEnd();
+            }
+
+            // Check for dash execution suffix like "-01", "-001", "-02"
+            Match dashMatch = Regex.Match(trimmed, @"-(\d{1,4})$");
+            if (dashMatch.Success)
+            {
+                foundExec = dashMatch.Groups[1].Value;
+                trimmed = trimmed.Substring(0, dashMatch.Index).TrimEnd();
+            }
+
+            return trimmed;
+        }
+
+        private static bool ExtractExecutionFromConfigName(string configName, out string execCode, out bool isBaseConfig)
+        {
+            execCode = null;
+            isBaseConfig = false;
+            if (string.IsNullOrWhiteSpace(configName)) return false;
+
+            string trimmed = configName.Trim();
+
+            // Strip SolidWorks weldment / sheet metal suffixes like "<Как обработанный>", "<Как сварной>", or "SM-FLAT-PATTERN"
+            trimmed = Regex.Replace(trimmed, @"<[^>]+>", "").Trim();
+            trimmed = Regex.Replace(trimmed, @"[-_]?SM-FLAT-PATTERN.*$", "", RegexOptions.IgnoreCase).Trim();
+
+            // 1. Base / Default configuration checks
+            if (trimmed == "0" || trimmed == "00" || trimmed == "000" ||
+                trimmed.Equals("default", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("по умолчанию", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("базовая", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("базовое", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("base", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("главная", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Equals("main", StringComparison.OrdinalIgnoreCase))
+            {
+                isBaseConfig = true;
+                execCode = "";
+                return true;
+            }
+
+            // 2. Pure number: "01", "02", "1", "10", etc.
+            Match mNum = Regex.Match(trimmed, @"^(\d{1,4})$");
+            if (mNum.Success)
+            {
+                int n = 0;
+                int.TryParse(mNum.Groups[1].Value, out n);
+                if (n == 0)
+                {
+                    isBaseConfig = true;
+                    execCode = "";
+                }
+                else
+                {
+                    execCode = mNum.Groups[1].Value.Length == 1 ? ("0" + mNum.Groups[1].Value) : mNum.Groups[1].Value;
+                }
+                return true;
+            }
+
+            // 3. Leading dash: "-01", "-02", "-1", etc.
+            Match mDash = Regex.Match(trimmed, @"^-(\d{1,4})$");
+            if (mDash.Success)
+            {
+                int n = 0;
+                int.TryParse(mDash.Groups[1].Value, out n);
+                if (n == 0)
+                {
+                    isBaseConfig = true;
+                    execCode = "";
+                }
+                else
+                {
+                    execCode = mDash.Groups[1].Value.Length == 1 ? ("0" + mDash.Groups[1].Value) : mDash.Groups[1].Value;
+                }
+                return true;
+            }
+
+            // 4. Prefix or embedded "исп" or "исполнение": "исп. 01", "исп.01", "исп 01", "исполнение 1", "Кронштейн исп. 01"
+            Match mIsp = Regex.Match(trimmed, @"(?:исп\.?|исполнение)\s*[-_]?\s*(\d{1,4})", RegexOptions.IgnoreCase);
+            if (mIsp.Success)
+            {
+                int n = 0;
+                int.TryParse(mIsp.Groups[1].Value, out n);
+                if (n == 0)
+                {
+                    isBaseConfig = true;
+                    execCode = "";
+                }
+                else
+                {
+                    execCode = mIsp.Groups[1].Value.Length == 1 ? ("0" + mIsp.Groups[1].Value) : mIsp.Groups[1].Value;
+                }
+                return true;
+            }
+
+            // 5. Leading number followed by description: "01 - Оцинкованная", "01_L=100", "01 (Черная)"
+            Match mPrefix = Regex.Match(trimmed, @"^(\d{1,4})\s*[-_ \(]");
+            if (mPrefix.Success)
+            {
+                int n = 0;
+                int.TryParse(mPrefix.Groups[1].Value, out n);
+                if (n == 0)
+                {
+                    isBaseConfig = true;
+                    execCode = "";
+                }
+                else
+                {
+                    execCode = mPrefix.Groups[1].Value.Length == 1 ? ("0" + mPrefix.Groups[1].Value) : mPrefix.Groups[1].Value;
+                }
+                return true;
+            }
+
+            // 6. Trailing dash number: "Кронштейн-01", "L100-02"
+            Match mSuffix = Regex.Match(trimmed, @"[-_](\d{1,4})$");
+            if (mSuffix.Success)
+            {
+                int n = 0;
+                int.TryParse(mSuffix.Groups[1].Value, out n);
+                if (n == 0)
+                {
+                    isBaseConfig = true;
+                    execCode = "";
+                }
+                else
+                {
+                    execCode = mSuffix.Groups[1].Value.Length == 1 ? ("0" + mSuffix.Groups[1].Value) : mSuffix.Groups[1].Value;
+                }
+                return true;
+            }
+
+            return false;
+        }
+
+        private static string BuildExecutionDesignation(string rootBaseDesig, string execCode, string docCode)
+        {
+            if (string.IsNullOrWhiteSpace(rootBaseDesig)) return "";
+            if (string.IsNullOrWhiteSpace(execCode))
+            {
+                return !string.IsNullOrEmpty(docCode) ? (rootBaseDesig + docCode) : rootBaseDesig;
+            }
+            string desigWithExec = rootBaseDesig + "-" + execCode;
+            return !string.IsNullOrEmpty(docCode) ? (desigWithExec + docCode) : desigWithExec;
+        }
+
         public static string CleanDocumentName(string pathOrTitle)
         {
             if (string.IsNullOrWhiteSpace(pathOrTitle)) return "";
@@ -1036,86 +1208,178 @@ namespace ESKD.MaterialSync
             if (model == null) return;
             try
             {
+                int docType = model.GetType();
+                bool isAssembly = docType == (int)swDocumentTypes_e.swDocASSEMBLY;
+
+                // 1. Determine base designation and title
+                CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
+                string existingGenDesig = GetProp(cpmGen, "Обозначение");
+                string existingGenTitle = GetProp(cpmGen, "Наименование");
+
                 string rawName = targetFileName;
-                if (string.IsNullOrWhiteSpace(rawName))
-                {
-                    rawName = model.GetPathName();
-                }
-                if (string.IsNullOrWhiteSpace(rawName))
-                {
-                    rawName = model.GetTitle();
-                }
-                if (string.IsNullOrWhiteSpace(rawName)) return;
+                if (string.IsNullOrWhiteSpace(rawName)) rawName = model.GetPathName();
+                if (string.IsNullOrWhiteSpace(rawName)) rawName = model.GetTitle();
 
                 string baseName = CleanDocumentName(rawName);
-                if (string.IsNullOrWhiteSpace(baseName)) return;
+                bool isDefaultTemplateName = !string.IsNullOrEmpty(baseName) &&
+                    Regex.IsMatch(baseName, @"^(Деталь|Part|Сборка|Assem|Чертеж|Draw)\s*\d*$", RegexOptions.IgnoreCase);
 
-                // Skip default unsaved template names like "Деталь1", "Деталь 1", "Part1", "Part 1", "Сборка1", "Assem1", "Чертеж1", "Draw1"
-                if (Regex.IsMatch(baseName, @"^(Деталь|Part|Сборка|Assem|Чертеж|Draw)\s*\d*$", RegexOptions.IgnoreCase))
-                {
-                    return;
-                }
+                string parsedDesig = "";
+                string parsedTitle = "";
 
-                string designation = "";
-                string title = "";
+                if (!isDefaultTemplateName && !string.IsNullOrWhiteSpace(baseName))
+                {
+                    int spaceIdx = baseName.IndexOf(' ');
+                    if (spaceIdx > 0)
+                    {
+                        parsedDesig = baseName.Substring(0, spaceIdx).Trim();
+                        parsedTitle = baseName.Substring(spaceIdx + 1).Trim();
 
-                int spaceIdx = baseName.IndexOf(' ');
-                if (spaceIdx > 0)
-                {
-                    designation = baseName.Substring(0, spaceIdx).Trim();
-                    title = baseName.Substring(spaceIdx + 1).Trim();
-                }
-                else
-                {
-                    // No space: if it contains digits or dots, treat as designation, otherwise title
-                    if (Regex.IsMatch(baseName, @"\d"))
-                        designation = baseName;
+                        // Check if parsedTitle starts with a document code (e.g. "СБ Сборка рамы")
+                        Match docCodeMatch = Regex.Match(parsedTitle, @"^(СБ|ГЧ|МЧ|ВО|ТУ|ТБ|ПЭ|Э\d|СХ|СЭ|ВП|СП)(\s+.*|$)", RegexOptions.IgnoreCase);
+                        if (docCodeMatch.Success)
+                        {
+                            parsedDesig = parsedDesig + " " + docCodeMatch.Groups[1].Value.ToUpper();
+                            parsedTitle = docCodeMatch.Groups[2].Value.Trim();
+                        }
+                    }
                     else
-                        title = baseName;
+                    {
+                        if (Regex.IsMatch(baseName, @"\d"))
+                            parsedDesig = baseName;
+                        else
+                            parsedTitle = baseName;
+                    }
                 }
 
-                // 1. General custom properties (for $PRPSHEET and $PRP)
-                CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
+                // Determine effective root base designation and document code (e.g. " СБ")
+                string effectiveBaseDesig = !string.IsNullOrWhiteSpace(existingGenDesig) && !existingGenDesig.Contains("$PRP")
+                    ? existingGenDesig
+                    : parsedDesig;
+
+                string foundExecInBase;
+                string docCode;
+                string rootBaseDesig = StripExecutionSuffix(effectiveBaseDesig, out foundExecInBase, out docCode);
+
+                if (isAssembly && string.IsNullOrEmpty(docCode) && effectiveBaseDesig.EndsWith(" СБ", StringComparison.OrdinalIgnoreCase))
+                {
+                    docCode = " СБ";
+                }
+
+                string effectiveTitle = !string.IsNullOrWhiteSpace(existingGenTitle)
+                    ? existingGenTitle
+                    : parsedTitle;
+
+                // 2. Set general custom properties (for $PRPSHEET and $PRP)
                 if (cpmGen != null)
                 {
-                    if (!string.IsNullOrEmpty(designation))
+                    string baseFullDesig = BuildExecutionDesignation(rootBaseDesig, "", docCode);
+                    if (!string.IsNullOrEmpty(baseFullDesig))
                     {
-                        SetProp(cpmGen, "Обозначение", designation);
-                        SetProp(cpmGen, "PartNo", designation);
-                        SetProp(cpmGen, "Number", designation);
+                        SetProp(cpmGen, "Обозначение", baseFullDesig);
+                        SetProp(cpmGen, "PartNo", baseFullDesig);
+                        SetProp(cpmGen, "Number", baseFullDesig);
                     }
-                    if (!string.IsNullOrEmpty(title))
+                    if (!string.IsNullOrEmpty(effectiveTitle))
                     {
-                        SetProp(cpmGen, "Наименование", title);
-                        SetProp(cpmGen, "Наименование_ФБ", title);
-                        SetProp(cpmGen, "Description", title);
+                        SetProp(cpmGen, "Наименование", effectiveTitle);
+                        SetProp(cpmGen, "Наименование_ФБ", effectiveTitle);
+                        SetProp(cpmGen, "Description", effectiveTitle);
                     }
                 }
 
-                // 2. All configurations (ensures configuration-specific tables and drawings resolve correctly)
+                // 3. Process every configuration
                 try
                 {
                     string[] cfgNames = model.GetConfigurationNames() as string[];
-                    if (cfgNames != null)
+                    if (cfgNames != null && cfgNames.Length > 0)
                     {
                         foreach (string cfg in cfgNames)
                         {
                             if (string.IsNullOrEmpty(cfg)) continue;
+
+                            Configuration swConfig = (Configuration)model.GetConfigurationByName(cfg);
+                            Configuration rootConfig = swConfig;
+                            while (rootConfig != null && rootConfig.IsDerived())
+                            {
+                                rootConfig = (Configuration)rootConfig.GetParent();
+                            }
+                            string effectiveCfgName = rootConfig != null ? rootConfig.Name : cfg;
+
+                            string execCode;
+                            bool isBaseConfig;
+                            bool recognized = ExtractExecutionFromConfigName(effectiveCfgName, out execCode, out isBaseConfig);
+
                             CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(cfg);
+                            string existingCfgDesig = GetProp(cpmCfg, "Обозначение");
+
+                            string configDesignation = "";
+
+                            if (recognized)
+                            {
+                                if (isBaseConfig || string.IsNullOrEmpty(execCode))
+                                {
+                                    configDesignation = BuildExecutionDesignation(rootBaseDesig, "", docCode);
+                                }
+                                else
+                                {
+                                    configDesignation = BuildExecutionDesignation(rootBaseDesig, execCode, docCode);
+                                }
+                            }
+                            else
+                            {
+                                // Configuration name didn't specify an execution (e.g. "SpecialVariant").
+                                // If existing designation has an execution suffix for this base, preserve it
+                                if (!string.IsNullOrWhiteSpace(existingCfgDesig) && !existingCfgDesig.Contains("$PRP"))
+                                {
+                                    configDesignation = existingCfgDesig;
+                                }
+                                else
+                                {
+                                    configDesignation = BuildExecutionDesignation(rootBaseDesig, "", docCode);
+                                }
+                            }
+
+                            // Write configuration properties
                             if (cpmCfg != null)
                             {
-                                if (!string.IsNullOrEmpty(designation))
+                                if (!string.IsNullOrEmpty(configDesignation))
                                 {
-                                    SetProp(cpmCfg, "Обозначение", designation);
-                                    SetProp(cpmCfg, "PartNo", designation);
-                                    SetProp(cpmCfg, "Number", designation);
+                                    SetProp(cpmCfg, "Обозначение", configDesignation);
+                                    SetProp(cpmCfg, "PartNo", configDesignation);
+                                    SetProp(cpmCfg, "Number", configDesignation);
+
+                                    // MProp execution flag: "2" means execution is active, "0" means base
+                                    string curExec, curDoc;
+                                    StripExecutionSuffix(configDesignation, out curExec, out curDoc);
+                                    if (!string.IsNullOrEmpty(curExec))
+                                    {
+                                        SetProp(cpmCfg, "Исполнение", "2");
+                                    }
+                                    else
+                                    {
+                                        SetProp(cpmCfg, "Исполнение", "0");
+                                    }
                                 }
-                                if (!string.IsNullOrEmpty(title))
+
+                                if (!string.IsNullOrEmpty(effectiveTitle))
                                 {
-                                    SetProp(cpmCfg, "Наименование", title);
-                                    SetProp(cpmCfg, "Наименование_ФБ", title);
-                                    SetProp(cpmCfg, "Description", title);
+                                    SetProp(cpmCfg, "Наименование", effectiveTitle);
+                                    SetProp(cpmCfg, "Наименование_ФБ", effectiveTitle);
+                                    SetProp(cpmCfg, "Description", effectiveTitle);
                                 }
+                            }
+
+                            // Synchronize SolidWorks Bill of Materials (BOM) Options
+                            if (swConfig != null && !string.IsNullOrEmpty(configDesignation))
+                            {
+                                try
+                                {
+                                    swConfig.BOMPartNoSource = (int)swBOMPartNumberSource_e.swBOMPartNumber_UserSpecified;
+                                    swConfig.AlternateName = configDesignation;
+                                    swConfig.UseAlternateNameInBOM = true;
+                                }
+                                catch { }
                             }
                         }
                     }

@@ -53,6 +53,35 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "Compilation successful: $outputDll" -ForegroundColor Green
 
+# 2.1 Compile EXEs (ESKD.exe and ESKD_Sync.exe)
+$outputExe = Join-Path $ScriptDir "ESKD.exe"
+$exeSources = @(
+    (Join-Path $ScriptDir "Program.cs"),
+    (Join-Path $ScriptDir "SettingsForm.cs"),
+    (Join-Path $ScriptDir "MaterialSyncEngine.cs")
+)
+$exeArgs = @(
+    "/target:winexe",
+    "/platform:anycpu",
+    "/optimize+",
+    "/codepage:65001",
+    "/out:$outputExe",
+    "/r:System.dll",
+    "/r:System.Drawing.dll",
+    "/r:System.Windows.Forms.dll",
+    "/r:System.Xml.dll",
+    "/r:$swDir\SolidWorks.Interop.sldworks.dll",
+    "/r:$swDir\SolidWorks.Interop.swconst.dll"
+) + $exeSources
+
+& $csc $exeArgs
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Compilation successful: $outputExe" -ForegroundColor Green
+    $syncExe = Join-Path $ScriptDir "ESKD_Sync.exe"
+    Copy-Item $outputExe $syncExe -Force
+    Write-Host "Copied to: $syncExe" -ForegroundColor Green
+}
+
 # 3. Register COM: direct HKCU registration (works without Admin) + RegAsm/HKLM if elevated
 $guid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
 $progId = "ESKD.MaterialSync.SwAddin_v5"

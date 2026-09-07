@@ -38,6 +38,19 @@ namespace ESKD.MaterialSync
             }
             catch { }
 
+            if (swApp == null)
+            {
+                try
+                {
+                    Type swType = Type.GetTypeFromProgID("SldWorks.Application");
+                    if (swType != null)
+                    {
+                        swApp = (ISldWorks)Activator.CreateInstance(swType);
+                    }
+                }
+                catch { }
+            }
+
             if (syncMode)
             {
                 if (swApp == null)
