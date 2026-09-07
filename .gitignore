@@ -14,3 +14,4 @@ obj/
 *.zip
 __pycache__/
 build_temp/
+~$*
