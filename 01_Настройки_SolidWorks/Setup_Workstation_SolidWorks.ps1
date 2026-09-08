@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Автоматическая настройка рабочего места SolidWorks 2025 (Корпоративный стандарт ЕСКД)
 .DESCRIPTION
@@ -26,15 +26,6 @@ if (-not $ToolsRoot) {
     }
 }
 $ToolsRoot = (Resolve-Path $ToolsRoot).Path
-
-# 0.0. Снятие сетевых блокировок Windows (Mark of the Web / Zone.Identifier)
-Write-Host "Проверка и разблокировка файлов дистрибутива..." -ForegroundColor Gray
-try {
-    Get-ChildItem -LiteralPath $ToolsRoot -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
-        Unblock-File -LiteralPath $_.FullName -ErrorAction SilentlyContinue
-    }
-    Write-Host "  [OK] Все библиотеки и скрипты разблокированы." -ForegroundColor Green
-} catch { }
 
 Write-Host "=================================================================" -ForegroundColor Cyan
 Write-Host " НАСТРОЙКА РАБОЧЕГО МЕСТА SOLIDWORKS 2025 (КОРПОРАТИВНЫЙ СТАНДАРТ) " -ForegroundColor Yellow
@@ -272,65 +263,94 @@ foreach ($ttf in $ttFiles) {
 }
 Write-Host "  [OK] База технических требований (ТТ) проверена и очищена от пустых строк." -ForegroundColor Green
 
-# 4. Импорт полного корпоративного реестрового профиля
+# 4. Импорт полного корпоративного реестрового профиля с адаптацией путей
 Write-Host "`n[4/6] Импорт полного реестрового профиля SolidWorks 2025..." -ForegroundColor Gray
 if (Test-Path $regProfile) {
-    Start-Process -FilePath "reg.exe" -ArgumentList "import `"$regProfile`"" -Wait -NoNewWindow
-    Write-Host "  [OK] Полный корпоративный профиль SolidWorks 2025 успешно импортирован." -ForegroundColor Green
+    # Динамическая адаптация всех путей реестра под текущее размещение _Инструменты_Конструктора
+    $escDouble = $ToolsRoot.Replace('\', '\\')
+    $regText = [System.IO.File]::ReadAllText($regProfile, [System.Text.Encoding]::Unicode)
+    $pattern = '[A-Za-z]:(?:\\\\+|/)[^"\r\n;]*?(?:\\\\+|/)_Инструменты_Конструктора'
+    $adaptedText = [System.Text.RegularExpressions.Regex]::Replace(
+        $regText,
+        $pattern,
+        [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $escDouble },
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+    $tempReg = Join-Path $ToolsRoot "01_Настройки_SolidWorks\_temp_import.reg"
+    [System.IO.File]::WriteAllText($tempReg, $adaptedText, [System.Text.Encoding]::Unicode)
+    Start-Process -FilePath "reg.exe" -ArgumentList "import `"$tempReg`"" -Wait -NoNewWindow
+    if (Test-Path $tempReg) { Remove-Item $tempReg -Force -ErrorAction SilentlyContinue }
+    Write-Host "  [OK] Полный корпоративный профиль SolidWorks 2025 успешно импортирован (пути адаптированы)." -ForegroundColor Green
 } else {
     Write-Host "  [ОШИБКА] Файл профиля не найден: $regProfile" -ForegroundColor Red
 }
 
-# 4.1. Настройка путей ExtReferences, шаблонов документов и библиотек
-Write-Host "  Привязка путей к корпоративным шаблонам, базам материалов и форматам..." -ForegroundColor Gray
-$docTemplates = Join-Path $ToolsRoot "02_Шаблоны_и_Форматки\Шаблоны документов"
-$draftingStd = Join-Path $ToolsRoot "02_Шаблоны_и_Форматки\База шаблонов"
-$weldProfiles = Join-Path $ToolsRoot "04_Библиотеки_Материалов_и_Профилей\Профили сварных деталей"
-$threadProfiles = Join-Path $ToolsRoot "04_Библиотеки_Материалов_и_Профилей\Профили резьбы"
-$matLibrary = Join-Path $ToolsRoot "04_Библиотеки_Материалов_и_Профилей\Библиотека материалов"
-$cutLists = Join-Path $ToolsRoot "02_Шаблоны_и_Форматки\Шаблон списка вырезов"
-$weldTables = Join-Path $ToolsRoot "02_Шаблоны_и_Форматки\Шаблон таблицы сварных швов"
-$favSymbols = Join-Path $ToolsRoot "02_Шаблоны_и_Форматки\Часто используемые размеры и примечания"
-$swplusRoot = Join-Path $ToolsRoot "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0"
+# 4.0. Очистка устаревших надстроек и фантомных вкладок CommandManager
+$oldGuids = @(
+    "{B64E6875-B101-4D5C-B245-FF8D50772E21}",
+    "{B64E6875-B101-4D5C-B245-FF8D50772E23}",
+    "{B64E6875-B101-4D5C-B245-FF8D50772E24}"
+)
+foreach ($og in $oldGuids) {
+    Remove-Item "HKCU:\Software\SolidWorks\AddIns\$og" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKCU:\Software\SolidWorks\AddInsStartup\$og" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKLM:\SOFTWARE\SolidWorks\AddIns\$og" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "HKLM:\SOFTWARE\SolidWorks\AddInsStartup\$og" -Recurse -Force -ErrorAction SilentlyContinue
+}
 
-$partDefault = Join-Path $docTemplates "Деталь.prtdot"
-$asmDefault  = Join-Path $docTemplates "Сборка.asmdot"
-$drwDefault  = Join-Path $docTemplates "Чертеж.drwdot"
-$matDbStr    = "$matLibrary;C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\lang\russian\sldmaterials;C:\ProgramData\SolidWorks\SOLIDWORKS 2025\Custom Materials"
-$tmplFolders = "$docTemplates;$draftingStd"
+$contexts = @("PartContext", "AssyContext", "DrwContext")
+foreach ($ctx in $contexts) {
+    $ctxPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\$ctx"
+    if (Test-Path $ctxPath) {
+        Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | ForEach-Object {
+            $tabPath = $_.PSPath
+            $modName = (Get-ItemProperty -Path $tabPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
+            if ($modName -and ($oldGuids -contains $modName.ToUpper())) {
+                Remove-Item -Path $tabPath -Recurse -Force -ErrorAction SilentlyContinue
+            }
+            $refName = (Get-ItemProperty -Path $tabPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
+            if ($refName -eq "ЕСКД") {
+                Set-ItemProperty -Path $tabPath -Name "Tab Props" -Value "ЕСКД,0,1,-1" -ErrorAction SilentlyContinue
+            }
+        }
+    }
+}
 
-$extRefKey = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\ExtReferences"
-if (-not (Test-Path $extRefKey)) { New-Item -Path $extRefKey -Force | Out-Null }
-Set-ItemProperty -Path $extRefKey -Name "Document Template Folders" -Value $tmplFolders
-Set-ItemProperty -Path $extRefKey -Name "Sheet Format Folders" -Value $sheetFormats
-Set-ItemProperty -Path $extRefKey -Name "Drafting Standard Folder" -Value $draftingStd
-Set-ItemProperty -Path $extRefKey -Name "Weldment Profile Folders" -Value $weldProfiles
-Set-ItemProperty -Path $extRefKey -Name "Thread Profiles Folder" -Value $threadProfiles
-Set-ItemProperty -Path $extRefKey -Name "Material Database Folders" -Value $matDbStr
-Set-ItemProperty -Path $extRefKey -Name "Weldment Cut List Template Folders" -Value $cutLists
-Set-ItemProperty -Path $extRefKey -Name "Weld Table Template Folder" -Value $weldTables
-Set-ItemProperty -Path $extRefKey -Name "Dimension Favorite Folders" -Value $favSymbols
-Set-ItemProperty -Path $extRefKey -Name "Macro Folders" -Value $swplusRoot
+# 4.0.1. Гарантированное закрепление 9 кнопок макросов SWPlus в верхней панели QAT (Quick Access Toolbar)
+$qatGb0Path = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\QAT\GB0"
+if (-not (Test-Path $qatGb0Path)) { New-Item -Path $qatGb0Path -Force | Out-Null }
+$qatButtons = [ordered]@{
+    "Btn11" = "1,33639" # MProp
+    "Btn12" = "1,33640" # SProp
+    "Btn13" = "1,33641" # DProp
+    "Btn14" = "1,33642" # SpecEditor
+    "Btn15" = "1,33643" # RecordDimM
+    "Btn16" = "1,33644" # Roughness
+    "Btn17" = "1,33645" # TT
+    "Btn18" = "1,33646" # Master
+    "Btn19" = "1,33647" # SaveAsPDF
+}
+foreach ($btn in $qatButtons.Keys) {
+    Set-ItemProperty -Path $qatGb0Path -Name $btn -Value $qatButtons[$btn] -Force -ErrorAction SilentlyContinue
+}
 
-$docTmplKey = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\Document Templates"
-if (-not (Test-Path $docTmplKey)) { New-Item -Path $docTmplKey -Force | Out-Null }
-Set-ItemProperty -Path $docTmplKey -Name "Default Part template" -Value $partDefault
-Set-ItemProperty -Path $docTmplKey -Name "Default Assy template" -Value $asmDefault
-Set-ItemProperty -Path $docTmplKey -Name "Default Draw Template" -Value $drwDefault
-Set-ItemProperty -Path $docTmplKey -Name "Use Default Document Templates" -Value 0 -Type DWord
-Set-ItemProperty -Path $docTmplKey -Name "Templates Last Tab Used" -Value "Шаблоны документов"
+$menuCustPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\Menu Customizations"
+if (-not (Test-Path $menuCustPath)) { New-Item -Path $menuCustPath -Force | Out-Null }
+for ($cid = 33639; $cid -le 33647; $cid++) {
+    Set-ItemProperty -Path $menuCustPath -Name "$cid" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+}
 
-$extFolderKey = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\ExtFolder"
-if (-not (Test-Path $extFolderKey)) { New-Item -Path $extFolderKey -Force | Out-Null }
-Set-ItemProperty -Path $extFolderKey -Name "Document Template Folder" -Value $tmplFolders
-Set-ItemProperty -Path $extFolderKey -Name "Sheet Format Folders" -Value $sheetFormats
-Set-ItemProperty -Path $extFolderKey -Name "Drafting Standard Folder" -Value $draftingStd
-Set-ItemProperty -Path $extFolderKey -Name "Weldment Profile Folders" -Value $weldProfiles
-Set-ItemProperty -Path $extFolderKey -Name "Thread Profiles Folder" -Value $threadProfiles
-Set-ItemProperty -Path $extFolderKey -Name "Material Database Folders" -Value $matDbStr
-Write-Host "  [OK] Пути к шаблонам, форматам, базам материалов и профилям зафиксированы." -ForegroundColor Green
+# Очистка фантомных ссылок Custom API Flyouts / Toolbars (Drew, OnCadTools, SWTools) предотвращающая диалог сброса тулбаров SolidWorks
+$orphanToolbars = @(
+    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\Custom API Flyouts",
+    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\Toolbars\ToolbarChangesOnUpgrade"
+)
+foreach ($ot in $orphanToolbars) {
+    Remove-Item -Path $ot -Recurse -Force -ErrorAction SilentlyContinue
+}
+Write-Host "  [OK] 9 кнопок макросов SWPlus зафиксированы в верхней панели быстрого доступа (QAT: 33639-33647)." -ForegroundColor Green
 
-# 4.2. Автоматическая привязка Toolbox и фиксация стабильной графики
+# 4.1. Автоматическая привязка Toolbox и фиксация стабильной графики
 $toolboxCandidates = @(
     (Join-Path (Split-Path $ToolsRoot -Parent) "_Библиотека проектирования\_Toolbox"),
     "D:\Work\_Библиотека проектирования\_Toolbox",
@@ -352,76 +372,70 @@ if ($toolboxPath) {
 Set-ItemProperty -Path "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\Performance" -Name "Use Performance Pipeline 2020" -Value 0 -ErrorAction SilentlyContinue
 Write-Host "  [OK] Графический режим переведен в безопасный режим (черный экран устранен)." -ForegroundColor Green
 
-# 5. Регистрация нативной надстройки ЕСКД v5 (работает без прав администратора через HKCU)
+# 5. Регистрация нативной надстройки ЕСКД v5 (CommandManager, Настройки, Центрирование массы)
 Write-Host "`n[5/6] Регистрация нативной надстройки ЕСКД и панели управления..." -ForegroundColor Gray
 $addinDll = Join-Path $ToolsRoot "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\ESKD_Material_Sync_v5.dll"
-$guid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
-$progId = "ESKD.MaterialSync.SwAddin_v5"
-$className = "ESKD.MaterialSync.SwAddin"
-$assemblyName = "ESKD_Material_Sync_v5, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
-$runtimeVersion = "v4.0.30319"
-$title = "ЕСКД: Синхронизация материалов и реквизитов"
-$desc = "Панель инструментов ЕСКД: настройки реквизитов (фамилии, контора, масса), автоматическая синхронизация материалов и центрирование штампа по ГОСТ 2.104"
+$regasm = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
 
-if (Test-Path $addinDll) {
-    # 5.1. Всегда гарантированная Per-User COM регистрация в HKCU (работает без прав администратора!)
-    $codeBase = ([System.Uri](Resolve-Path $addinDll).Path).AbsoluteUri
+if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
+    Start-Process -FilePath $regasm -ArgumentList "/codebase `"$addinDll`"" -Wait -NoNewWindow
+    $guid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
+    $title = "ЕСКД: Синхронизация материалов и реквизитов"
+    $desc = "Панель инструментов ЕСКД: настройки реквизитов (фамилии, контора, масса), автоматическая синхронизация материалов и центрирование штампа по ГОСТ 2.104"
     
-    # CLSID
-    $clsidKey = "HKCU:\Software\Classes\CLSID\$guid"
-    if (-not (Test-Path $clsidKey)) { New-Item -Path $clsidKey -Force | Out-Null }
-    Set-ItemProperty -Path $clsidKey -Name "(Default)" -Value $className
-    
-    # InprocServer32
-    $inprocKey = Join-Path $clsidKey "InprocServer32"
-    if (-not (Test-Path $inprocKey)) { New-Item -Path $inprocKey -Force | Out-Null }
-    Set-ItemProperty -Path $inprocKey -Name "(Default)" -Value "mscoree.dll"
-    Set-ItemProperty -Path $inprocKey -Name "ThreadingModel" -Value "Both"
-    Set-ItemProperty -Path $inprocKey -Name "Class" -Value $className
-    Set-ItemProperty -Path $inprocKey -Name "Assembly" -Value $assemblyName
-    Set-ItemProperty -Path $inprocKey -Name "RuntimeVersion" -Value $runtimeVersion
-    Set-ItemProperty -Path $inprocKey -Name "CodeBase" -Value $codeBase
-    
-    # InprocServer32\1.0.0.0
-    $verKey = Join-Path $inprocKey "1.0.0.0"
-    if (-not (Test-Path $verKey)) { New-Item -Path $verKey -Force | Out-Null }
-    Set-ItemProperty -Path $verKey -Name "Class" -Value $className
-    Set-ItemProperty -Path $verKey -Name "Assembly" -Value $assemblyName
-    Set-ItemProperty -Path $verKey -Name "RuntimeVersion" -Value $runtimeVersion
-    Set-ItemProperty -Path $verKey -Name "CodeBase" -Value $codeBase
-    
-    # ProgId
-    $progKey = Join-Path $clsidKey "ProgId"
-    if (-not (Test-Path $progKey)) { New-Item -Path $progKey -Force | Out-Null }
-    Set-ItemProperty -Path $progKey -Name "(Default)" -Value $progId
-    
-    # Implemented Categories
-    $catKey = Join-Path $clsidKey "Implemented Categories\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}"
-    if (-not (Test-Path $catKey)) { New-Item -Path $catKey -Force | Out-Null }
-    
-    # Root ProgId in HKCU\Software\Classes
-    $rootProgKey = "HKCU:\Software\Classes\$progId"
-    if (-not (Test-Path $rootProgKey)) { New-Item -Path $rootProgKey -Force | Out-Null }
-    Set-ItemProperty -Path $rootProgKey -Name "(Default)" -Value $className
-    $rootProgClsid = Join-Path $rootProgKey "CLSID"
-    if (-not (Test-Path $rootProgClsid)) { New-Item -Path $rootProgClsid -Force | Out-Null }
-    Set-ItemProperty -Path $rootProgClsid -Name "(Default)" -Value $guid
+    # HKLM (если запущен с правами администратора)
+    try {
+        $hklmPath = "HKLM:\Software\SolidWorks\AddIns\$guid"
+        if (-not (Test-Path $hklmPath -ErrorAction SilentlyContinue)) { New-Item -Path $hklmPath -Force -ErrorAction SilentlyContinue | Out-Null }
+        Set-ItemProperty -Path $hklmPath -Name "(Default)" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $hklmPath -Name "Title" -Value $title -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $hklmPath -Name "Description" -Value $desc -ErrorAction SilentlyContinue
+    } catch { }
 
-    # 5.2. Если есть права администратора — дополнительно регистрируем в HKLM
-    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    $regasm = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
-    if ($isAdmin -and (Test-Path $regasm)) {
-        try {
-            Start-Process -FilePath $regasm -ArgumentList "/codebase `"$addinDll`"" -Wait -NoNewWindow -ErrorAction SilentlyContinue
-            $hklmPath = "HKLM:\Software\SolidWorks\AddIns\$guid"
-            if (-not (Test-Path $hklmPath)) { New-Item -Path $hklmPath -Force | Out-Null }
-            Set-ItemProperty -Path $hklmPath -Name "(Default)" -Value 1 -Type DWord
-            Set-ItemProperty -Path $hklmPath -Name "Title" -Value $title
-            Set-ItemProperty -Path $hklmPath -Name "Description" -Value $desc
-        } catch { }
+    $propFolders = Join-Path $ToolsRoot "02_Шаблоны_и_Форматки\Шаблоны свойств"
+    if (Test-Path $propFolders) {
+        Set-ItemProperty -Path "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\ExtReferences" -Name "Custom Property Folders" -Value $propFolders -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\ExtFolder" -Name "Custom Property Folders" -Value $propFolders -ErrorAction SilentlyContinue
     }
 
-    # 5.3. Регистрация в SolidWorks (HKCU)
+    # Регистрация COM-сервера в HKCU (для гарантированной работы без прав Администратора)
+    $codebase = "file:///" + $addinDll.Replace('\', '/')
+    $clsidPath = "HKCU:\Software\Classes\CLSID\$guid"
+    if (-not (Test-Path $clsidPath)) { New-Item -Path $clsidPath -Force | Out-Null }
+    Set-ItemProperty -Path $clsidPath -Name "(Default)" -Value "ESKD.MaterialSync.SwAddin"
+
+    $inprocPath = "$clsidPath\InprocServer32"
+    if (-not (Test-Path $inprocPath)) { New-Item -Path $inprocPath -Force | Out-Null }
+    Set-ItemProperty -Path $inprocPath -Name "(Default)" -Value "mscoree.dll"
+    Set-ItemProperty -Path $inprocPath -Name "ThreadingModel" -Value "Both"
+    Set-ItemProperty -Path $inprocPath -Name "Class" -Value "ESKD.MaterialSync.SwAddin"
+    Set-ItemProperty -Path $inprocPath -Name "Assembly" -Value "ESKD_Material_Sync_v5, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+    Set-ItemProperty -Path $inprocPath -Name "RuntimeVersion" -Value "v4.0.30319"
+    Set-ItemProperty -Path $inprocPath -Name "CodeBase" -Value $codebase
+
+    $inprocVerPath = "$inprocPath\1.0.0.0"
+    if (-not (Test-Path $inprocVerPath)) { New-Item -Path $inprocVerPath -Force | Out-Null }
+    Set-ItemProperty -Path $inprocVerPath -Name "Class" -Value "ESKD.MaterialSync.SwAddin"
+    Set-ItemProperty -Path $inprocVerPath -Name "Assembly" -Value "ESKD_Material_Sync_v5, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+    Set-ItemProperty -Path $inprocVerPath -Name "RuntimeVersion" -Value "v4.0.30319"
+    Set-ItemProperty -Path $inprocVerPath -Name "CodeBase" -Value $codebase
+
+    $catPath = "$clsidPath\Implemented Categories\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}"
+    if (-not (Test-Path $catPath)) { New-Item -Path $catPath -Force | Out-Null }
+
+    $progIdPath = "$clsidPath\ProgId"
+    if (-not (Test-Path $progIdPath)) { New-Item -Path $progIdPath -Force | Out-Null }
+    Set-ItemProperty -Path $progIdPath -Name "(Default)" -Value "ESKD.MaterialSync.SwAddin_v5"
+
+    $progIdRoot = "HKCU:\Software\Classes\ESKD.MaterialSync.SwAddin_v5\CLSID"
+    if (-not (Test-Path $progIdRoot)) { New-Item -Path $progIdRoot -Force | Out-Null }
+    Set-ItemProperty -Path $progIdRoot -Name "(Default)" -Value $guid
+
+    $progIdMain = "HKCU:\Software\Classes\ESKD.MaterialSync.SwAddin_v5"
+    if (-not (Test-Path $progIdMain)) { New-Item -Path $progIdMain -Force | Out-Null }
+    Set-ItemProperty -Path $progIdMain -Name "(Default)" -Value "ESKD.MaterialSync.SwAddin"
+
+    # HKCU
     $keyPath = "HKCU:\Software\SolidWorks\AddIns\$guid"
     if (-not (Test-Path $keyPath)) { New-Item -Path $keyPath -Force | Out-Null }
     Set-ItemProperty -Path $keyPath -Name "(Default)" -Value 1 -Type DWord
@@ -466,52 +480,39 @@ if (Test-Path $addinDll) {
     }
     Set-ItemProperty -Path $matKey -Name "__NumOfFavs" -Value $favList.Count -Type DWord
 
-    Write-Host "  [OK] Нативная надстройка ЕСКД v5 зарегистрирована в COM (без прав админа), панель инструментов и Избранные материалы настроены." -ForegroundColor Green
+    # Повторная фиксация видимости вкладки ЕСКД
+    foreach ($ctx in @("PartContext", "AssyContext", "DrwContext")) {
+        $ctxPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\$ctx"
+        if (Test-Path $ctxPath) {
+            Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | ForEach-Object {
+                $tabPath = $_.PSPath
+                $refName = (Get-ItemProperty -Path $tabPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
+                if ($refName -eq "ЕСКД") {
+                    Set-ItemProperty -Path $tabPath -Name "Tab Props" -Value "ЕСКД,0,1,-1" -ErrorAction SilentlyContinue
+                }
+            }
+        }
+    }
+
+    Write-Host "  [OK] Нативная надстройка ЕСКД v5, панель инструментов и Избранные материалы настроены." -ForegroundColor Green
 } else {
-    Write-Host "  [ПРЕДУПРЕЖДЕНИЕ] Файл надстройки не найден: $addinDll" -ForegroundColor Yellow
+    Write-Host "  [ПРЕДУПРЕЖДЕНИЕ] Файл надстройки или RegAsm не найден: $addinDll" -ForegroundColor Yellow
 }
 
-# 6. Шрифты ГОСТ (с поддержкой установки без прав администратора)
+# 6. Шрифты ГОСТ
 Write-Host "`n[6/6] Установка шрифтов ГОСТ..." -ForegroundColor Gray
 $fontsDir = Join-Path $ToolsRoot "05_Шрифты"
 if (Test-Path $fontsDir) {
-    $systemFonts = Join-Path $env:SystemRoot "Fonts"
-    $userFontsDir = Join-Path $env:LOCALAPPDATA "Microsoft\Windows\Fonts"
-    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    $targetFontsDir = if ($isAdmin) { $systemFonts } else { $userFontsDir }
-    if (-not (Test-Path $targetFontsDir)) { New-Item -ItemType Directory -Path $targetFontsDir -Force | Out-Null }
-    
+    $winFonts = Join-Path $env:SystemRoot "Fonts"
     $fontCount = 0
     Get-ChildItem -Path $fontsDir -Include *.ttf,*.fon,*.otf -Recurse | ForEach-Object {
-        $fName = $_.Name
-        $dst = Join-Path $targetFontsDir $fName
-        $fontValName = "$([System.IO.Path]::GetFileNameWithoutExtension($fName)) (TrueType)"
-        
-        $copied = $false
+        $dst = Join-Path $winFonts $_.Name
         try {
             if (-not (Test-Path $dst)) {
                 Copy-Item -LiteralPath $_.FullName -Destination $dst -Force -ErrorAction Stop
             }
-            $copied = $true
-        } catch {
-            if ($targetFontsDir -ne $userFontsDir) {
-                if (-not (Test-Path $userFontsDir)) { New-Item -ItemType Directory -Path $userFontsDir -Force | Out-Null }
-                $dst = Join-Path $userFontsDir $fName
-                if (-not (Test-Path $dst)) {
-                    Copy-Item -LiteralPath $_.FullName -Destination $dst -Force -ErrorAction SilentlyContinue
-                }
-                $copied = $true
-            }
-        }
-        
-        if ($copied) {
-            if ($dst.StartsWith($systemFonts, [System.StringComparison]::OrdinalIgnoreCase)) {
-                Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts" -Name $fontValName -Value $fName -ErrorAction SilentlyContinue
-            } else {
-                Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts" -Name $fontValName -Value $dst -ErrorAction SilentlyContinue
-            }
             $fontCount++
-        }
+        } catch { }
     }
     Write-Host "  [OK] Зарегистрировано шрифтов ГОСТ: $fontCount шт." -ForegroundColor Green
 }

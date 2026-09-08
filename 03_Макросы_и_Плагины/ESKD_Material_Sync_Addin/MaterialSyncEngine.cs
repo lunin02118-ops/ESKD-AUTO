@@ -86,7 +86,14 @@ namespace ESKD.MaterialSync
                                 {
                                     refTargetName = targetFileName;
                                 }
-                                ApplyUserSettings(refDoc, v.ReferencedConfiguration, null, refTargetName);
+                                if (refDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
+                                {
+                                    SyncPart((PartDoc)refDoc, swApp, true, refTargetName);
+                                }
+                                else
+                                {
+                                    ApplyUserSettings(refDoc, v.ReferencedConfiguration, null, refTargetName);
+                                }
                                 refDoc.SetSaveFlag();
                             }
                         }
@@ -550,6 +557,17 @@ namespace ESKD.MaterialSync
 
                         if (isMatNote)
                         {
+                            if (ltxt.IndexOf("$PRPSHEET:\"Материал_ФБ\"", StringComparison.OrdinalIgnoreCase) < 0)
+                            {
+                                try
+                                {
+                                    n.PropertyLinkedText = "$PRPSHEET:\"Материал_ФБ\"";
+                                    txt = n.GetText() ?? "";
+                                    ltxt = n.PropertyLinkedText ?? "";
+                                }
+                                catch { }
+                            }
+
                             Annotation ann = (Annotation)n.GetAnnotation();
                             if (ann != null)
                             {
@@ -948,92 +966,193 @@ namespace ESKD.MaterialSync
             string docTitle = model.GetTitle();
 
             Configuration activeConfig = (Configuration)model.GetActiveConfiguration();
-            string configName = activeConfig != null ? activeConfig.Name : "";
-            string cacheKey = docTitle + "::" + configName;
+            string activeConfigName = activeConfig != null ? activeConfig.Name : "";
 
-            ApplyUserSettings(model, configName, result, targetFileName);
+            ApplyUserSettings(model, activeConfigName, result, targetFileName);
 
-            string dbName = "";
-            string matName = part.GetMaterialPropertyName2(configName, out dbName);
-
-            if (string.IsNullOrEmpty(matName) ||
-                matName.Equals("Материал <не указан>", StringComparison.OrdinalIgnoreCase) ||
-                matName.Equals("<не указан>", StringComparison.OrdinalIgnoreCase) ||
-                matName.Contains("$PRP") ||
-                matName.Contains("$PRPWLD"))
+            string[] cfgNames = model.GetConfigurationNames() as string[];
+            if (cfgNames == null || cfgNames.Length == 0)
             {
-                result.Success = true;
-                result.Message = "Реквизиты и масса обновлены, материал не указан";
-                return result;
+                cfgNames = new string[] { activeConfigName };
             }
 
-            result.MaterialName = matName;
+            string activeMatFB = "";
+            string activeMatSP = "";
+            string activeSortament = "";
+            string activeGostSort = "";
+            string activeGostMat = "";
+            string activeMatName = "";
+            int syncedCount = 0;
 
-            string cacheValue = matName;
-            if (!force && LastProcessedCache.ContainsKey(cacheKey) && LastProcessedCache[cacheKey] == cacheValue)
+            foreach (string cfg in cfgNames)
             {
-                result.Success = true;
-                result.Cached = true;
-                result.Message = "Up-to-date (cached)";
-                return result;
+                if (string.IsNullOrEmpty(cfg)) continue;
+
+                string dbName = "";
+                string matName = part.GetMaterialPropertyName2(cfg, out dbName);
+
+                // 1. If material is empty for this configuration, check parent config if derived
+                if (string.IsNullOrEmpty(matName))
+                {
+                    try
+                    {
+                        Configuration cObj = (Configuration)model.GetConfigurationByName(cfg);
+                        if (cObj != null && cObj.IsDerived())
+                        {
+                            Configuration parentCfg = (Configuration)cObj.GetParent();
+                            if (parentCfg != null)
+                            {
+                                matName = part.GetMaterialPropertyName2(parentCfg.Name, out dbName);
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                // 2. If still empty, check weldment sibling (e.g. "01<As Welded>" <-> "01<As Machined>")
+                if (string.IsNullOrEmpty(matName) && cfg.EndsWith("<As Welded>", StringComparison.OrdinalIgnoreCase))
+                {
+                    string siblingCfg = cfg.Replace("<As Welded>", "<As Machined>");
+                    matName = part.GetMaterialPropertyName2(siblingCfg, out dbName);
+                }
+                if (string.IsNullOrEmpty(matName) && cfg.EndsWith("<As Machined>", StringComparison.OrdinalIgnoreCase))
+                {
+                    string siblingCfg = cfg.Replace("<As Machined>", "<As Welded>");
+                    matName = part.GetMaterialPropertyName2(siblingCfg, out dbName);
+                }
+                if (string.IsNullOrEmpty(matName) && cfg.Contains("<"))
+                {
+                    string baseCfg = cfg.Split('<')[0].Trim();
+                    if (!string.IsNullOrEmpty(baseCfg) && !baseCfg.Equals(cfg, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matName = part.GetMaterialPropertyName2(baseCfg, out dbName);
+                    }
+                }
+
+                // 3. Fallback to active configuration or global part material
+                if (string.IsNullOrEmpty(matName) && !string.IsNullOrEmpty(activeConfigName) && !cfg.Equals(activeConfigName, StringComparison.OrdinalIgnoreCase))
+                {
+                    matName = part.GetMaterialPropertyName2(activeConfigName, out dbName);
+                }
+                if (string.IsNullOrEmpty(matName))
+                {
+                    matName = part.GetMaterialPropertyName2("", out dbName);
+                }
+
+                if (string.IsNullOrEmpty(matName) ||
+                    matName.Equals("Материал <не указан>", StringComparison.OrdinalIgnoreCase) ||
+                    matName.Equals("<не указан>", StringComparison.OrdinalIgnoreCase) ||
+                    matName.Contains("$PRP") ||
+                    matName.Contains("$PRPWLD"))
+                {
+                    continue;
+                }
+
+                string xmlSortament = null;
+                string xmlGostSortament = null;
+                string xmlGostMaterial = null;
+                string xmlMaterialFB = null;
+                string xmlMaterialSP = null;
+
+                TryReadXmlProperties(swApp, matName, dbName, 
+                    out xmlSortament, out xmlGostSortament, out xmlGostMaterial, out xmlMaterialFB, out xmlMaterialSP);
+
+                string sortament = "";
+                string gostSortament = "";
+                string gostMaterial = "";
+                string materialFB = "";
+                string materialSP = "";
+
+                if (!string.IsNullOrEmpty(xmlMaterialFB))
+                {
+                    materialFB = xmlMaterialFB;
+                    materialSP = !string.IsNullOrEmpty(xmlMaterialSP) ? xmlMaterialSP : matName;
+                    sortament = xmlSortament ?? "";
+                    gostSortament = xmlGostSortament ?? "";
+                    gostMaterial = xmlGostMaterial ?? "";
+                }
+                else if (matName.Contains("/") || matName.Contains(" / "))
+                {
+                    string[] parts = matName.Split(new char[] { '/' }, 2);
+                    string top = parts[0].Trim();
+                    string bottom = parts[1].Trim();
+
+                    materialFB = string.Format("<STACK size=1>{0}<OVER>{1}</STACK>", top, bottom);
+                    materialSP = string.Format("{0} / {1}", top, bottom);
+
+                    sortament = top;
+                    gostSortament = ExtractGost(top);
+                    gostMaterial = ExtractGost(bottom);
+                }
+                else
+                {
+                    materialFB = matName;
+                    materialSP = matName;
+                    sortament = "";
+                    gostSortament = "";
+                    gostMaterial = ExtractGost(matName);
+                }
+
+                CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(cfg);
+                if (cpmCfg != null)
+                {
+                    SetProp(cpmCfg, "Материал_ФБ", materialFB);
+                    SetProp(cpmCfg, "Материал", materialSP);
+
+                    if (!string.IsNullOrEmpty(sortament))
+                        SetProp(cpmCfg, "Сортамент", sortament);
+                    else
+                        DeleteProp(cpmCfg, "Сортамент");
+
+                    if (!string.IsNullOrEmpty(gostSortament))
+                        SetProp(cpmCfg, "ГОСТ_Сортамент", gostSortament);
+
+                    if (!string.IsNullOrEmpty(gostMaterial))
+                        SetProp(cpmCfg, "ГОСТ_Материал", gostMaterial);
+                }
+
+                syncedCount++;
+
+                if (cfg.Equals(activeConfigName, StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(activeMatFB))
+                {
+                    activeMatName = matName;
+                    activeMatFB = materialFB;
+                    activeMatSP = materialSP;
+                    activeSortament = sortament;
+                    activeGostSort = gostSortament;
+                    activeGostMat = gostMaterial;
+                }
             }
 
-            string xmlSortament = null;
-            string xmlGostSortament = null;
-            string xmlGostMaterial = null;
-            string xmlMaterialFB = null;
-            string xmlMaterialSP = null;
-
-            TryReadXmlProperties(swApp, matName, dbName, 
-                out xmlSortament, out xmlGostSortament, out xmlGostMaterial, out xmlMaterialFB, out xmlMaterialSP);
-
-            string sortament = "";
-            string gostSortament = "";
-            string gostMaterial = "";
-            string materialFB = "";
-            string materialSP = "";
-
-            if (!string.IsNullOrEmpty(xmlMaterialFB))
+            if (!string.IsNullOrEmpty(activeMatFB))
             {
-                materialFB = xmlMaterialFB;
-                materialSP = !string.IsNullOrEmpty(xmlMaterialSP) ? xmlMaterialSP : matName;
-                sortament = xmlSortament ?? "";
-                gostSortament = xmlGostSortament ?? "";
-                gostMaterial = xmlGostMaterial ?? "";
-            }
-            else if (matName.Contains("/") || matName.Contains(" / "))
-            {
-                string[] parts = matName.Split(new char[] { '/' }, 2);
-                string top = parts[0].Trim();
-                string bottom = parts[1].Trim();
+                CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
+                if (cpmGen != null)
+                {
+                    SetProp(cpmGen, "Материал_ФБ", activeMatFB);
+                    SetProp(cpmGen, "Материал", activeMatSP);
 
-                materialFB = string.Format("<STACK size=1>{0}<OVER>{1}</STACK>", top, bottom);
-                materialSP = string.Format("{0} / {1}", top, bottom);
+                    if (!string.IsNullOrEmpty(activeSortament))
+                        SetProp(cpmGen, "Сортамент", activeSortament);
+                    else
+                        DeleteProp(cpmGen, "Сортамент");
 
-                sortament = top;
-                gostSortament = ExtractGost(top);
-                gostMaterial = ExtractGost(bottom);
-            }
-            else
-            {
-                materialFB = matName;
-                materialSP = matName;
-                sortament = "";
-                gostSortament = "";
-                gostMaterial = ExtractGost(matName);
+                    if (!string.IsNullOrEmpty(activeGostSort))
+                        SetProp(cpmGen, "ГОСТ_Сортамент", activeGostSort);
+
+                    if (!string.IsNullOrEmpty(activeGostMat))
+                        SetProp(cpmGen, "ГОСТ_Материал", activeGostMat);
+                }
             }
 
-            result.MaterialFB = materialFB;
-            result.MaterialSP = materialSP;
-            result.Sortament = sortament;
-            result.GostSortament = gostSortament;
-            result.GostMaterial = gostMaterial;
-
-            WriteModelProperties(model, configName, materialFB, materialSP, sortament, gostSortament, gostMaterial);
-
-            LastProcessedCache[cacheKey] = cacheValue;
             result.Success = true;
-            result.Message = "Синхронизировано: " + matName;
+            result.MaterialName = activeMatName;
+            result.MaterialFB = activeMatFB;
+            result.MaterialSP = activeMatSP;
+            result.Sortament = activeSortament;
+            result.GostSortament = activeGostSort;
+            result.GostMaterial = activeGostMat;
+            result.Message = "Синхронизировано конфигураций: " + syncedCount;
             return result;
         }
 
@@ -1154,16 +1273,28 @@ namespace ESKD.MaterialSync
                         SetProp(cpmGen, "Масса_ФБ", massStr);
                         SetProp(cpmGen, "Масса", massStr);
 
-                        string[] allCfgs = (string[])model.GetConfigurationNames();
-                        if (allCfgs != null)
+                        if (!string.IsNullOrEmpty(configName))
                         {
-                            foreach (string cfg in allCfgs)
+                            CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(configName);
+                            if (cpmCfg != null)
                             {
-                                CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(cfg);
-                                if (cpmCfg != null)
+                                SetProp(cpmCfg, "Масса_ФБ", massStr);
+                                SetProp(cpmCfg, "Масса", massStr);
+                            }
+                        }
+                        else
+                        {
+                            string[] allCfgs = (string[])model.GetConfigurationNames();
+                            if (allCfgs != null)
+                            {
+                                foreach (string cfg in allCfgs)
                                 {
-                                    SetProp(cpmCfg, "Масса_ФБ", massStr);
-                                    SetProp(cpmCfg, "Масса", massStr);
+                                    CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(cfg);
+                                    if (cpmCfg != null)
+                                    {
+                                        SetProp(cpmCfg, "Масса_ФБ", massStr);
+                                        SetProp(cpmCfg, "Масса", massStr);
+                                    }
                                 }
                             }
                         }

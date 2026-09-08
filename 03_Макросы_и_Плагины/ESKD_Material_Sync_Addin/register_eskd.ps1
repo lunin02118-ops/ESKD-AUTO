@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 <#
 .SYNOPSIS
     Регистрация надстройки ЕСКД и привязка инструментов заполнения штампов SolidWorks 2025
@@ -221,6 +221,40 @@ foreach ($mIni in $masterInis) {
     }
 }
 Write-Host "  [OK] Master.ini привязан к форматам основных надписей." -ForegroundColor Green
+
+# 4.2 Гарантированное закрепление 9 кнопок макросов SWPlus в верхней панели QAT (Quick Access Toolbar)
+$qatGb0Path = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\QAT\GB0"
+if (-not (Test-Path $qatGb0Path)) { New-Item -Path $qatGb0Path -Force | Out-Null }
+$qatButtons = [ordered]@{
+    "Btn11" = "1,33639" # MProp
+    "Btn12" = "1,33640" # SProp
+    "Btn13" = "1,33641" # DProp
+    "Btn14" = "1,33642" # SpecEditor
+    "Btn15" = "1,33643" # RecordDimM
+    "Btn16" = "1,33644" # Roughness
+    "Btn17" = "1,33645" # TT
+    "Btn18" = "1,33646" # Master
+    "Btn19" = "1,33647" # SaveAsPDF
+}
+foreach ($btn in $qatButtons.Keys) {
+    Set-ItemProperty -Path $qatGb0Path -Name $btn -Value $qatButtons[$btn] -Force -ErrorAction SilentlyContinue
+}
+
+$menuCustPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\Menu Customizations"
+if (-not (Test-Path $menuCustPath)) { New-Item -Path $menuCustPath -Force | Out-Null }
+for ($cid = 33639; $cid -le 33647; $cid++) {
+    Set-ItemProperty -Path $menuCustPath -Name "$cid" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
+}
+
+# Очистка фантомных ссылок Custom API Flyouts / Toolbars (Drew, OnCadTools, SWTools) предотвращающая диалог сброса тулбаров SolidWorks
+$orphanToolbars = @(
+    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\Custom API Flyouts",
+    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\Toolbars\ToolbarChangesOnUpgrade"
+)
+foreach ($ot in $orphanToolbars) {
+    Remove-Item -Path $ot -Recurse -Force -ErrorAction SilentlyContinue
+}
+Write-Host "  [OK] 9 кнопок макросов SWPlus зафиксированы в верхней панели быстрого доступа (QAT: 33639-33647)." -ForegroundColor Green
 
 Write-Host "`n[5/5] Системная регистрация в HKLM..." -ForegroundColor Gray
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
