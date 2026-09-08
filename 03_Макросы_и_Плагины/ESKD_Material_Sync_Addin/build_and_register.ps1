@@ -89,8 +89,7 @@ $className = "ESKD.MaterialSync.SwAddin"
 $assemblyName = "ESKD_Material_Sync_v5, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
 $runtimeVersion = "v4.0.30319"
 $title = "ЕСКД: Синхронизация материалов и реквизитов"
-$desc = "Панель инструментов ЕСКД: настройки реквизитов (фамилии, контора, масса), автоматическая синхронизация материалов и центрирование штампа по ГОСТ 2.104"
-$codeBase = ([System.Uri](Resolve-Path $outputDll).Path).AbsoluteUri
+$codeBase = "file:///" + ((Resolve-Path $outputDll).Path -replace '\\', '/')
 
 # 3.1. HKCU COM Registration
 $clsidKey = "HKCU:\Software\Classes\CLSID\$guid"

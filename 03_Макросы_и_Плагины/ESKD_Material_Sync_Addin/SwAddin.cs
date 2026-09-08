@@ -314,7 +314,6 @@ namespace ESKD.MaterialSync
                         {
                             iSwApp.SetToolbarVisibility(tbId, false);
                             iSwApp.HideToolbar2(iSwCookie, tbId);
-                            HideToolbarInRegistry(tbId);
                         }
                     }
                     catch { }
@@ -442,111 +441,28 @@ namespace ESKD.MaterialSync
         {
             try
             {
-                if (iSwApp != null)
+                if (iCmdMgr != null && iSwApp != null)
                 {
-                    for (int id = 59420; id <= 59435; id++)
+                    foreach (int gid in new int[] { CommandGroupId, 9995, 9996 })
                     {
                         try
                         {
-                            iSwApp.SetToolbarVisibility(id, false);
-                            if (iSwCookie > 0) iSwApp.HideToolbar2(iSwCookie, id);
-                            HideToolbarInRegistry(id);
-                        }
-                        catch { }
-                    }
-
-                    if (iCmdMgr != null)
-                    {
-                        foreach (int gid in new int[] { 9995, 9996, 9997 })
-                        {
-                            try
+                            ICommandGroup cg = iCmdMgr.GetCommandGroup(gid);
+                            if (cg != null)
                             {
-                                ICommandGroup cg = iCmdMgr.GetCommandGroup(gid);
-                                if (cg != null)
+                                int tbId = cg.ToolbarId;
+                                if (tbId > 0)
                                 {
-                                    int tbId = cg.ToolbarId;
-                                    if (tbId > 0)
-                                    {
-                                        iSwApp.SetToolbarVisibility(tbId, false);
-                                        iSwApp.HideToolbar2(iSwCookie, tbId);
-                                        HideToolbarInRegistry(tbId);
-                                    }
+                                    iSwApp.SetToolbarVisibility(tbId, false);
+                                    if (iSwCookie > 0) iSwApp.HideToolbar2(iSwCookie, tbId);
                                 }
                             }
-                            catch { }
                         }
+                        catch { }
                     }
                 }
             }
             catch { }
-        }
-
-        public static void HideToolbarInRegistry(int tbId)
-        {
-            try
-            {
-                using (RegistryKey hkcu = Registry.CurrentUser.OpenSubKey(@"Software\SolidWorks", true))
-                {
-                    if (hkcu == null) return;
-                    foreach (string ver in hkcu.GetSubKeyNames())
-                    {
-                        if (!ver.StartsWith("SOLIDWORKS")) continue;
-                        using (RegistryKey uiKey = hkcu.OpenSubKey(ver + @"\User Interface", true))
-                        {
-                            if (uiKey == null) continue;
-                            foreach (string sub in uiKey.GetSubKeyNames())
-                            {
-                                if (sub.StartsWith("General-Bar") || sub.StartsWith("Part-Bar") || sub.StartsWith("Assy-Bar") || sub.StartsWith("Drw-Bar"))
-                                {
-                                    try
-                                    {
-                                        using (RegistryKey barKey = uiKey.OpenSubKey(sub, true))
-                                        {
-                                            if (barKey != null)
-                                            {
-                                                object bId = barKey.GetValue("BarID");
-                                                if (bId != null && Convert.ToInt32(bId) == tbId)
-                                                {
-                                                    barKey.SetValue("Visible", 0, RegistryValueKind.DWord);
-                                                    Log("HideToolbarInRegistry: Set Visible=0 on " + sub);
-                                                }
-                                            }
-                                        }
-                                    }
-                                    catch { }
-                                }
-                            }
-                            // Also clear from General-Bar1 dock row
-                            try
-                            {
-                                using (RegistryKey gb1 = uiKey.OpenSubKey("General-Bar1", true))
-                                {
-                                    if (gb1 != null)
-                                    {
-                                        foreach (string valName in gb1.GetValueNames())
-                                        {
-                                            if (valName.StartsWith("Bar#"))
-                                            {
-                                                object v = gb1.GetValue(valName);
-                                                if (v != null && Convert.ToInt32(v) == tbId)
-                                                {
-                                                    gb1.SetValue(valName, 0, RegistryValueKind.DWord);
-                                                    Log("HideToolbarInRegistry: Cleared " + valName + " in General-Bar1");
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            catch { }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log("HideToolbarInRegistry exception: " + ex.Message);
-            }
         }
 
         public void AddMenuItems()
