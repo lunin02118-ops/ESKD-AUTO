@@ -98,12 +98,104 @@ namespace ESKD.MaterialSync
                 AlignDrawingMassNote(drw);
                 AlignDrawingMaterialNote(drw);
                 AlignDrawingTitleNote(drw);
+                AlignSpecificationTableColumns(drw);
                 if (triggerRebuild)
                 {
                     drwModel.ForceRebuild3(true);
                 }
             }
             catch { }
+        }
+
+        private static bool IsSpecificationForm2(DrawingDoc drw, Sheet sheet)
+        {
+            if (sheet == null) return false;
+            try
+            {
+                string sName = sheet.GetName() ?? "";
+                string tmpl = sheet.GetTemplateName() ?? "";
+
+                // 1. Check template or sheet name keywords
+                if (tmpl.IndexOf("SP-1", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("SP_1", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("СП-1", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("СП_1", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("GSP-1", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("GSP_1", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+
+                if (Regex.IsMatch(sName, @"^(SP|СП|Спец|Spec)\s*1?$", RegexOptions.IgnoreCase))
+                {
+                    return true;
+                }
+
+                // 2. Check notes on sheet: Form 2 has MYPRP19 (designation 120x15 mm at top of 40mm stamp)
+                // and DOES NOT have Scale / MYPRP15 / MYPRP16.
+                bool hasMyPrp19 = false;
+                bool hasScaleOrMass = false;
+
+                View v = (View)drw.GetFirstView();
+                while (v != null)
+                {
+                    Note n = (Note)v.GetFirstNote();
+                    while (n != null)
+                    {
+                        string nName = n.GetName() ?? "";
+                        if (nName.Equals("MYPRP19", StringComparison.OrdinalIgnoreCase))
+                        {
+                            hasMyPrp19 = true;
+                        }
+                        if (nName.Equals("Scale", StringComparison.OrdinalIgnoreCase) ||
+                            nName.Equals("MYPRP15", StringComparison.OrdinalIgnoreCase) ||
+                            nName.Equals("MYPRP16", StringComparison.OrdinalIgnoreCase))
+                        {
+                            hasScaleOrMass = true;
+                        }
+                        n = (Note)n.GetNext();
+                    }
+                    v = (View)v.GetNextView();
+                }
+
+                if (hasMyPrp19 && !hasScaleOrMass)
+                {
+                    return true;
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private static bool IsSubsequentSheetForm2a(DrawingDoc drw, Sheet sheet)
+        {
+            if (sheet == null) return false;
+            try
+            {
+                string sName = sheet.GetName() ?? "";
+                string tmpl = sheet.GetTemplateName() ?? "";
+
+                if (tmpl.IndexOf("SP-2", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("SP_2", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("СП-2", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("СП_2", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("GSP-2", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("GSP_2", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("A4-2", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("A3-2", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    tmpl.IndexOf("_2.slddrt", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+
+                if (Regex.IsMatch(sName, @"^(SP|СП|Спец|Spec)\s*[2-9]\d*$", RegexOptions.IgnoreCase))
+                {
+                    return true;
+                }
+            }
+            catch { }
+            return false;
         }
 
         public static void AlignDrawingMassNote(DrawingDoc drw)
@@ -121,15 +213,44 @@ namespace ESKD.MaterialSync
                 }
                 if (autoCenter == 0) return;
 
-                Sheet sheet = (Sheet)drw.GetCurrentSheet();
-                double sheetW = 0.0;
-                if (sheet != null)
+                string[] sheetNames = (string[])drw.GetSheetNames();
+                string origSheetName = null;
+                Sheet curSheet = (Sheet)drw.GetCurrentSheet();
+                if (curSheet != null) origSheetName = curSheet.GetName();
+
+                if (sheetNames != null && sheetNames.Length > 1)
                 {
-                    double[] sProps = (double[])sheet.GetProperties2();
-                    if (sProps != null && sProps.Length > 5)
+                    foreach (string sName in sheetNames)
                     {
-                        sheetW = sProps[5];
+                        drw.ActivateSheet(sName);
+                        AlignActiveSheetMassNote(drw);
                     }
+                    if (!string.IsNullOrEmpty(origSheetName))
+                    {
+                        drw.ActivateSheet(origSheetName);
+                    }
+                }
+                else
+                {
+                    AlignActiveSheetMassNote(drw);
+                }
+            }
+            catch { }
+        }
+
+        private static void AlignActiveSheetMassNote(DrawingDoc drw)
+        {
+            if (drw == null) return;
+            try
+            {
+                Sheet sheet = (Sheet)drw.GetCurrentSheet();
+                if (sheet == null || IsSpecificationForm2(drw, sheet) || IsSubsequentSheetForm2a(drw, sheet)) return;
+
+                double sheetW = 0.0;
+                double[] sProps = (double[])sheet.GetProperties2();
+                if (sProps != null && sProps.Length > 5)
+                {
+                    sheetW = sProps[5];
                 }
 
                 View v = (View)drw.GetFirstView();
@@ -283,20 +404,49 @@ namespace ESKD.MaterialSync
                 {
                     if (key != null)
                     {
-                        autoCenter = (int)key.GetValue("AutoCenterMass", 1);
+                        autoCenter = (int)key.GetValue("AutoCenterMaterial", (int)key.GetValue("AutoCenterMass", 1));
                     }
                 }
                 if (autoCenter == 0) return;
 
-                Sheet sheet = (Sheet)drw.GetCurrentSheet();
-                double sheetW = 0.0;
-                if (sheet != null)
+                string[] sheetNames = (string[])drw.GetSheetNames();
+                string origSheetName = null;
+                Sheet curSheet = (Sheet)drw.GetCurrentSheet();
+                if (curSheet != null) origSheetName = curSheet.GetName();
+
+                if (sheetNames != null && sheetNames.Length > 1)
                 {
-                    double[] sProps = (double[])sheet.GetProperties2();
-                    if (sProps != null && sProps.Length > 5)
+                    foreach (string sName in sheetNames)
                     {
-                        sheetW = sProps[5];
+                        drw.ActivateSheet(sName);
+                        AlignActiveSheetMaterialNote(drw);
                     }
+                    if (!string.IsNullOrEmpty(origSheetName))
+                    {
+                        drw.ActivateSheet(origSheetName);
+                    }
+                }
+                else
+                {
+                    AlignActiveSheetMaterialNote(drw);
+                }
+            }
+            catch { }
+        }
+
+        private static void AlignActiveSheetMaterialNote(DrawingDoc drw)
+        {
+            if (drw == null) return;
+            try
+            {
+                Sheet sheet = (Sheet)drw.GetCurrentSheet();
+                if (sheet == null || IsSpecificationForm2(drw, sheet) || IsSubsequentSheetForm2a(drw, sheet)) return;
+
+                double sheetW = 0.0;
+                double[] sProps = (double[])sheet.GetProperties2();
+                if (sProps != null && sProps.Length > 5)
+                {
+                    sheetW = sProps[5];
                 }
 
                 // The Material cell (Графа 3 по ГОСТ 2.104) is in the main title block (Форма 1):
@@ -483,29 +633,69 @@ namespace ESKD.MaterialSync
                 }
                 if (autoCenter == 0) return;
 
-                Sheet sheet = (Sheet)drw.GetCurrentSheet();
-                double sheetW = 0.0;
-                if (sheet != null)
+                string[] sheetNames = (string[])drw.GetSheetNames();
+                string origSheetName = null;
+                Sheet curSheet = (Sheet)drw.GetCurrentSheet();
+                if (curSheet != null) origSheetName = curSheet.GetName();
+
+                if (sheetNames != null && sheetNames.Length > 1)
                 {
-                    double[] sProps = (double[])sheet.GetProperties2();
-                    if (sProps != null && sProps.Length > 5)
+                    foreach (string sName in sheetNames)
                     {
-                        sheetW = sProps[5];
+                        drw.ActivateSheet(sName);
+                        AlignActiveSheetTitleNote(drw);
+                    }
+                    if (!string.IsNullOrEmpty(origSheetName))
+                    {
+                        drw.ActivateSheet(origSheetName);
                     }
                 }
+                else
+                {
+                    AlignActiveSheetTitleNote(drw);
+                }
+            }
+            catch { }
+        }
 
-                // In standard GOST 2.104 title block (Форма 1):
+        private static void AlignActiveSheetTitleNote(DrawingDoc drw)
+        {
+            if (drw == null) return;
+            try
+            {
+                Sheet sheet = (Sheet)drw.GetCurrentSheet();
+                if (sheet == null || IsSubsequentSheetForm2a(drw, sheet)) return;
+
+                bool isForm2 = IsSpecificationForm2(drw, sheet);
+
+                double sheetW = 0.0;
+                double[] sProps = (double[])sheet.GetProperties2();
+                if (sProps != null && sProps.Length > 5)
+                {
+                    sheetW = sProps[5];
+                }
+
+                // ГОСТ 2.104 title block coordinates:
                 // Stamp width = 185 mm, right margin = 5 mm.
-                // Наименование cell (Графа 1) is 70 mm wide.
+                // Графа 1 (Наименование) is 70 mm wide.
                 // Left border = sheetW - 125 mm, Right border = sheetW - 55 mm.
                 // Cell center X = sheetW - 90 mm (0.090 m).
-                // Cell vertical boundaries:
+                //
+                // In Form 1 (Основная надпись чертежей, штамп 55 мм):
                 // Floor Y = 0.020 m (20 mm from sheet bottom, above the 15 mm material/company cell).
                 // Ceiling Y = 0.045 m (45 mm from sheet bottom, below the 15 mm designation cell).
                 // Cell height = 0.025 m (25 mm).
-                // Vertical center Y = (0.020 + 0.045) / 2 = 0.0325 m (32.5 mm).
+                // Center Y = (0.020 + 0.045) / 2 = 0.0325 m (32.5 mm).
+                //
+                // In Form 2 (Основная надпись спецификации первый лист, штамп 40 мм):
+                // Upper row (Y = 30..45 mm, 120x15 mm) is Графа 2 (Обозначение, note MYPRP19).
+                // Lower row (Y = 5..30 mm, 70x25 mm) is Графа 1 (Наименование, note MYPRP4).
+                // Floor Y = 0.005 m, Ceiling Y = 0.030 m.
+                // Cell height = 0.025 m (25 mm).
+                // Center Y = (0.005 + 0.030) / 2 = 0.0175 m (17.5 mm).
+
                 double targetCenterX = sheetW > 0.15 ? (sheetW - 0.090) : 0.0;
-                double cellCenterY = 0.0325;
+                double cellCenterY = isForm2 ? 0.0175 : 0.0325;
 
                 View v = (View)drw.GetFirstView();
                 Note noteTitle = null;
@@ -526,7 +716,7 @@ namespace ESKD.MaterialSync
                         {
                             isTitle = true;
                         }
-                        else if (name.Equals("MYPRP3", StringComparison.OrdinalIgnoreCase))
+                        else if (!isForm2 && name.Equals("MYPRP3", StringComparison.OrdinalIgnoreCase))
                         {
                             isSubtitle = true;
                         }
@@ -538,13 +728,20 @@ namespace ESKD.MaterialSync
                             if (a != null)
                             {
                                 double[] p = (double[])a.GetPosition();
-                                if (p != null && p.Length >= 2 && p[1] > 0.015 && p[1] < 0.055)
+                                if (p != null && p.Length >= 2)
                                 {
-                                    isTitle = true;
+                                    if (isForm2 && p[1] > 0.003 && p[1] < 0.040)
+                                    {
+                                        isTitle = true;
+                                    }
+                                    else if (!isForm2 && p[1] > 0.015 && p[1] < 0.055)
+                                    {
+                                        isTitle = true;
+                                    }
                                 }
                             }
                         }
-                        else if (ltxt.IndexOf("Сборка2_ФБ", StringComparison.OrdinalIgnoreCase) >= 0)
+                        else if (!isForm2 && ltxt.IndexOf("Сборка2_ФБ", StringComparison.OrdinalIgnoreCase) >= 0)
                         {
                             isSubtitle = true;
                         }
@@ -579,7 +776,7 @@ namespace ESKD.MaterialSync
                         Annotation annSub = null;
                         double[] posSub = null;
                         double[] extSub = null;
-                        if (noteSubtitle != null)
+                        if (!isForm2 && noteSubtitle != null)
                         {
                             string subText = noteSubtitle.GetText();
                             if (!string.IsNullOrWhiteSpace(subText))
@@ -618,7 +815,7 @@ namespace ESKD.MaterialSync
                         }
                         else
                         {
-                            // Single element: Title alone centered in [0.020, 0.045]
+                            // Single element: Title alone centered in [0.020, 0.045] (Form 1) or [0.005, 0.030] (Form 2)
                             double targetYTitle = posTitle[1];
                             if (hasValidTitleExt)
                             {
@@ -639,6 +836,38 @@ namespace ESKD.MaterialSync
                             }
                         }
                     }
+                }
+            }
+            catch { }
+        }
+
+        public static void AlignSpecificationTableColumns(DrawingDoc drw)
+        {
+            if (drw == null) return;
+            try
+            {
+                View v = (View)drw.GetFirstView();
+                while (v != null)
+                {
+                    object[] tables = (object[])v.GetTableAnnotations();
+                    if (tables != null)
+                    {
+                        foreach (TableAnnotation t in tables)
+                        {
+                            if (t != null && t.ColumnCount >= 7)
+                            {
+                                int c5Type = t.GetColumnType(5);
+                                int c6Type = t.GetColumnType(6);
+                                if (c5Type != 203 && c6Type == 203)
+                                {
+                                    t.MoveColumn(6, (int)swTableItemInsertPosition_e.swTableItemInsertPosition_After, 4);
+                                    t.SetColumnWidth(5, 0.010, 0);
+                                    t.SetColumnWidth(6, 0.022, 0);
+                                }
+                            }
+                        }
+                    }
+                    v = (View)v.GetNextView();
                 }
             }
             catch { }
