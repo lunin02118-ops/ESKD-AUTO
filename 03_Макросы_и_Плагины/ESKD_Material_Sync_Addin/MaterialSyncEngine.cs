@@ -308,6 +308,22 @@ namespace ESKD.MaterialSync
 
                 if (massNote == null && scaleNote == null) return;
 
+                // Check and clean referenced model's legacy <FONT> tags in "Масса_ФБ"
+                try
+                {
+                    View vFirst = (View)drw.GetFirstView();
+                    View vModel = vFirst != null ? (View)vFirst.GetNextView() : null;
+                    if (vModel != null)
+                    {
+                        ModelDoc2 refModel = (ModelDoc2)vModel.ReferencedDocument;
+                        if (refModel != null && CleanModelMassTags(refModel))
+                        {
+                            drw.ForceRebuild();
+                        }
+                    }
+                }
+                catch { }
+
                 Annotation annM = massNote != null ? (Annotation)massNote.GetAnnotation() : null;
                 Annotation annS = scaleNote != null ? (Annotation)scaleNote.GetAnnotation() : null;
                 TextFormat tfS = annS != null ? (TextFormat)annS.GetTextFormat(0) : null;
@@ -327,6 +343,8 @@ namespace ESKD.MaterialSync
                     else
                     {
                         tfM.LineSpacing = 0.001;
+                        tfM.CharHeight = 0.0035;
+                        tfM.TypeFaceName = "GOST type A";
                     }
                     annM.SetTextFormat(0, false, tfM);
                 }
@@ -336,7 +354,7 @@ namespace ESKD.MaterialSync
                 // Mass/Scale data cell vertical range: Y in [0.025, 0.040] (15 mm height).
                 // Vertical geometric center: Y = 0.0325 m (32.5 mm).
                 double cellCenterY = 0.0325;
-                double targetY = 0.0348;
+                double targetY = 0.0347;
 
                 if (scaleNote != null && annS != null)
                 {
@@ -361,10 +379,34 @@ namespace ESKD.MaterialSync
 
                 if (massNote != null && annM != null)
                 {
+                    double[] extM = (double[])massNote.GetExtent();
+                    double[] posM = (double[])annM.GetPosition();
+                    double targetMassY = targetY;
+
+                    if (extM != null && extM.Length >= 6 && (extM[4] - extM[1]) > 0.001)
+                    {
+                        double hM = extM[4] - extM[1];
+                        if (hM > 0.006)
+                        {
+                            // Multi-line note (e.g. legacy <FONT size=1> top line):
+                            // Center based on the visible text at the bottom
+                            double charH = tfM != null && tfM.CharHeight > 0.001 ? tfM.CharHeight : 0.0035;
+                            double visibleCenterM = extM[1] + (charH / 2.0);
+                            double deltaM = cellCenterY - visibleCenterM;
+                            targetMassY = posM != null && posM.Length >= 2 ? (posM[1] + deltaM) : targetY;
+                        }
+                        else
+                        {
+                            // Clean single-line note: center extent directly
+                            double curCenterM = (extM[1] + extM[4]) / 2.0;
+                            double deltaM = cellCenterY - curCenterM;
+                            targetMassY = posM != null && posM.Length >= 2 ? (posM[1] + deltaM) : targetY;
+                        }
+                    }
+
                     // Mass cell is 17 mm wide, between (sheetW - 40 mm) and (sheetW - 23 mm) -> center is sheetW - 31.5 mm (0.0315 m)
                     double targetMassX = sheetW > 0.15 ? (sheetW - 0.0315) : (scaleNote != null ? (sheetW - 0.0140 - 0.0175) : 0.0);
-                    double[] posM = (double[])annM.GetPosition();
-                    annM.SetPosition(targetMassX, targetY, posM != null && posM.Length > 2 ? posM[2] : 0.0);
+                    annM.SetPosition(targetMassX, targetMassY, posM != null && posM.Length > 2 ? posM[2] : 0.0);
                     massNote.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
                 }
 
@@ -374,19 +416,38 @@ namespace ESKD.MaterialSync
                     if (annL != null)
                     {
                         TextFormat tfL = (TextFormat)annL.GetTextFormat(0);
-                        if (tfL != null && tfS != null)
+                        if (tfL != null)
                         {
-                            tfL.LineSpacing = tfS.LineSpacing;
-                            tfL.CharHeight = tfS.CharHeight;
-                            tfL.TypeFaceName = tfS.TypeFaceName;
-                            tfL.Italic = tfS.Italic;
-                            tfL.Bold = tfS.Bold;
+                            if (tfS != null)
+                            {
+                                tfL.LineSpacing = tfS.LineSpacing;
+                                tfL.CharHeight = tfS.CharHeight;
+                                tfL.TypeFaceName = tfS.TypeFaceName;
+                                tfL.Italic = tfS.Italic;
+                                tfL.Bold = tfS.Bold;
+                            }
+                            else
+                            {
+                                tfL.LineSpacing = 0.001;
+                                tfL.CharHeight = 0.0035;
+                                tfL.TypeFaceName = "GOST type A";
+                            }
                             annL.SetTextFormat(0, false, tfL);
                         }
+
+                        double[] extL = (double[])litNote.GetExtent();
                         double[] posL = (double[])annL.GetPosition();
+                        double targetLitY = targetY;
+                        if (extL != null && extL.Length >= 6 && (extL[4] - extL[1]) > 0.001)
+                        {
+                            double curCenterL = (extL[1] + extL[4]) / 2.0;
+                            double deltaL = cellCenterY - curCenterL;
+                            targetLitY = posL != null && posL.Length >= 2 ? (posL[1] + deltaL) : targetY;
+                        }
+
                         // Litera cell: default column 2 center is sheetW - 47.5 mm (0.0475 m)
                         double targetLitX = sheetW > 0.15 ? (sheetW - 0.0475) : 0.0;
-                        annL.SetPosition(targetLitX, targetY, posL != null && posL.Length > 2 ? posL[2] : 0.0);
+                        annL.SetPosition(targetLitX, targetLitY, posL != null && posL.Length > 2 ? posL[2] : 0.0);
                         litNote.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
                     }
                 }
@@ -1093,19 +1154,72 @@ namespace ESKD.MaterialSync
                         SetProp(cpmGen, "Масса_ФБ", massStr);
                         SetProp(cpmGen, "Масса", massStr);
 
-                        if (!string.IsNullOrEmpty(configName))
+                        string[] allCfgs = (string[])model.GetConfigurationNames();
+                        if (allCfgs != null)
                         {
-                            CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(configName);
-                            if (cpmCfg != null)
+                            foreach (string cfg in allCfgs)
                             {
-                                SetProp(cpmCfg, "Масса_ФБ", massStr);
-                                SetProp(cpmCfg, "Масса", massStr);
+                                CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(cfg);
+                                if (cpmCfg != null)
+                                {
+                                    SetProp(cpmCfg, "Масса_ФБ", massStr);
+                                    SetProp(cpmCfg, "Масса", massStr);
+                                }
                             }
+                        }
+                        CleanModelMassTags(model);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        public static bool CleanModelMassTags(ModelDoc2 doc)
+        {
+            if (doc == null) return false;
+            bool changed = false;
+            try
+            {
+                changed |= CleanCpmMassTags(doc.Extension.get_CustomPropertyManager(""));
+                string[] cfgNames = (string[])doc.GetConfigurationNames();
+                if (cfgNames != null)
+                {
+                    foreach (string cfg in cfgNames)
+                    {
+                        changed |= CleanCpmMassTags(doc.Extension.get_CustomPropertyManager(cfg));
+                    }
+                }
+            }
+            catch { }
+            return changed;
+        }
+
+        private static bool CleanCpmMassTags(CustomPropertyManager cpm)
+        {
+            if (cpm == null) return false;
+            bool changed = false;
+            try
+            {
+                string[] names = (string[])cpm.GetNames();
+                if (names == null) return false;
+                foreach (string name in names)
+                {
+                    if (name.Equals("Масса_ФБ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string val = "", resVal = "";
+                        bool wasRes = false;
+                        cpm.Get5(name, false, out val, out resVal, out wasRes);
+                        if (!string.IsNullOrEmpty(val) && (val.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0 || val.IndexOf("\n") >= 0))
+                        {
+                            string cleaned = System.Text.RegularExpressions.Regex.Replace(val, @"<FONT[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+                            cpm.Set2(name, cleaned);
+                            changed = true;
                         }
                     }
                 }
             }
             catch { }
+            return changed;
         }
 
         private static void TryReadXmlProperties(ISldWorks swApp, string matName, string dbName,
