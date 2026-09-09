@@ -22,46 +22,53 @@ namespace ESKD.MaterialSync
     {
         private const string RegPath = @"Software\SolidWorks\ESKD_Settings";
 
-        private static string[] GetSwPlusFamPaths()
+        private static string[] FindCandidatePaths(string relativeSubPath)
         {
             List<string> list = new List<string>();
             try
             {
                 string asmPath = typeof(SettingsForm).Assembly.Location;
-                string dllDir = Path.GetDirectoryName(asmPath);
-                DirectoryInfo pInfo = Directory.GetParent(dllDir);
-                string pluginsDir = pInfo != null ? pInfo.FullName : null;
-                if (!string.IsNullOrEmpty(pluginsDir))
+                string cur = Path.GetDirectoryName(asmPath);
+                for (int i = 0; i < 5 && !string.IsNullOrEmpty(cur); i++)
                 {
-                    list.Add(Path.Combine(pluginsDir, @"SWPlusMacro_v_2018_SP0.1\MProp\MProp_Fam.txt"));
-                    list.Add(Path.Combine(pluginsDir, @"Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp\MProp_Fam.txt"));
+                    string cand1 = Path.Combine(cur, relativeSubPath);
+                    if (File.Exists(cand1)) list.Add(cand1);
+                    string cand2 = Path.Combine(cur, @"03_Макросы_и_Плагины", relativeSubPath);
+                    if (File.Exists(cand2)) list.Add(cand2);
+                    string cand3 = Path.Combine(cur, @"macros\SWPlus_ESKD", Path.GetFileName(Path.GetDirectoryName(relativeSubPath)), Path.GetFileName(relativeSubPath));
+                    if (File.Exists(cand3)) list.Add(cand3);
+                    DirectoryInfo p = Directory.GetParent(cur);
+                    cur = p != null ? p.FullName : null;
                 }
             }
             catch { }
-            list.Add(@"d:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\SWPlusMacro_v_2018_SP0.1\MProp\MProp_Fam.txt");
-            list.Add(@"d:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp\MProp_Fam.txt");
-            return list.ToArray();
+            list.Add(Path.Combine(@"D:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины", relativeSubPath));
+            string fn = Path.GetFileName(relativeSubPath);
+            string parentDir = Path.GetFileName(Path.GetDirectoryName(relativeSubPath));
+            list.Add(Path.Combine(@"D:\Work\_dev\solidworks-eskd-suite\macros\SWPlus_ESKD", parentDir, fn));
+
+            List<string> res = new List<string>();
+            foreach (string s in list)
+            {
+                if (!File.Exists(s)) continue;
+                bool exists = false;
+                foreach (string r in res)
+                {
+                    if (string.Equals(r, s, StringComparison.OrdinalIgnoreCase)) { exists = true; break; }
+                }
+                if (!exists) res.Add(s);
+            }
+            return res.ToArray();
+        }
+
+        private static string[] GetSwPlusFamPaths()
+        {
+            return FindCandidatePaths(@"Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp\MProp_Fam.txt");
         }
 
         private static string[] GetSwPlusFirmPaths()
         {
-            List<string> list = new List<string>();
-            try
-            {
-                string asmPath = typeof(SettingsForm).Assembly.Location;
-                string dllDir = Path.GetDirectoryName(asmPath);
-                DirectoryInfo pInfo = Directory.GetParent(dllDir);
-                string pluginsDir = pInfo != null ? pInfo.FullName : null;
-                if (!string.IsNullOrEmpty(pluginsDir))
-                {
-                    list.Add(Path.Combine(pluginsDir, @"SWPlusMacro_v_2018_SP0.1\MProp\MProp_Firm.txt"));
-                    list.Add(Path.Combine(pluginsDir, @"Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp\MProp_Firm.txt"));
-                }
-            }
-            catch { }
-            list.Add(@"d:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\SWPlusMacro_v_2018_SP0.1\MProp\MProp_Firm.txt");
-            list.Add(@"d:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp\MProp_Firm.txt");
-            return list.ToArray();
+            return FindCandidatePaths(@"Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp\MProp_Firm.txt");
         }
 
         private readonly ISldWorks _swApp;
@@ -69,6 +76,9 @@ namespace ESKD.MaterialSync
         private ComboBox cmbAuthor;
         private ComboBox cmbChecker;
         private ComboBox cmbOrg;
+        private CheckBox chkServiceEnabled;
+        private Label lblServiceStatus;
+        private CheckBox chkAutoSyncMaterials;
         private CheckBox chkAutoMass;
         private NumericUpDown numMassDecimals;
         private CheckBox chkAutoCenterMass;
@@ -322,10 +332,87 @@ namespace ESKD.MaterialSync
                 AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 ColumnCount = 1,
-                RowCount = 3,
+                RowCount = 4,
                 BackColor = Color.Transparent
             };
             tblCards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+            // -------------------------------------------------------------
+            // CARD 0: РЕЖИМ РАБОТЫ ФОНОВОЙ СЛУЖБЫ ЕСКД
+            // -------------------------------------------------------------
+            Panel cardService = CreateCardPanel();
+            TableLayoutPanel tblService = new TableLayoutPanel()
+            {
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                ColumnCount = 1,
+                RowCount = 4,
+                BackColor = Color.Transparent
+            };
+            tblService.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+            Label lblServiceTitle = new Label()
+            {
+                Text = "РЕЖИМ РАБОТЫ ФОНОВОЙ СЛУЖБЫ ЕСКД",
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(37, 99, 235),
+                AutoSize = true,
+                Margin = new Padding(0, 0, 0, 4)
+            };
+
+            chkServiceEnabled = new CheckBox()
+            {
+                Text = "Включить фоновую службу автоматического оформления ЕСКД",
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(15, 23, 42),
+                AutoSize = true,
+                Checked = true,
+                Cursor = Cursors.Hand,
+                Margin = new Padding(0, 4, 0, 4)
+            };
+
+            lblServiceStatus = new Label()
+            {
+                Text = "🟢 Фоновая служба ЕСКД: ВКЛЮЧЕНА (автоматические триггеры при сохранении активны)",
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(22, 101, 52),
+                BackColor = Color.FromArgb(240, 253, 244),
+                AutoSize = true,
+                Padding = new Padding(10, 6, 10, 6),
+                Margin = new Padding(0, 4, 0, 6)
+            };
+
+            Label lblServiceNote = new Label()
+            {
+                Text = "Когда флажок установлен: служба автоматически заполняет свойства ЕСКД (материалы, массу, обозначение и наименование) и центрирует реквизиты в штампе при сохранении, открытии и перестроении моделей.\nЕсли флажок снять: фоновые триггеры полностью отключаются (ручная синхронизация по кнопке «Синхронизировать ЕСКД» или «Применить сейчас» доступна в любой момент).",
+                Font = new Font("Segoe UI", 8.5F),
+                ForeColor = Color.FromArgb(100, 116, 139),
+                AutoSize = true,
+                Margin = new Padding(0, 2, 0, 4)
+            };
+
+            chkServiceEnabled.CheckedChanged += (s, e) =>
+            {
+                if (chkServiceEnabled.Checked)
+                {
+                    lblServiceStatus.Text = "🟢 Фоновая служба ЕСКД: ВКЛЮЧЕНА (автоматические триггеры при сохранении активны)";
+                    lblServiceStatus.ForeColor = Color.FromArgb(22, 101, 52);
+                    lblServiceStatus.BackColor = Color.FromArgb(240, 253, 244);
+                }
+                else
+                {
+                    lblServiceStatus.Text = "🔴 Фоновая служба ЕСКД: ОТКЛЮЧЕНА (автоматические триггеры неактивны, доступен ручной запуск)";
+                    lblServiceStatus.ForeColor = Color.FromArgb(153, 27, 27);
+                    lblServiceStatus.BackColor = Color.FromArgb(254, 242, 242);
+                }
+            };
+
+            tblService.Controls.Add(lblServiceTitle, 0, 0);
+            tblService.Controls.Add(chkServiceEnabled, 0, 1);
+            tblService.Controls.Add(lblServiceStatus, 0, 2);
+            tblService.Controls.Add(lblServiceNote, 0, 3);
+            cardService.Controls.Add(tblService);
 
             // -------------------------------------------------------------
             // CARD 1: РЕКВИЗИТЫ ОСНОВНОЙ НАДПИСИ (ШТАМПА)
@@ -656,17 +743,30 @@ namespace ESKD.MaterialSync
                 Margin = new Padding(0, 0, 0, 4)
             };
 
+            chkAutoSyncMaterials = new CheckBox()
+            {
+                Text = "Автоматически синхронизировать материалы при сохранении детали",
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Regular),
+                ForeColor = Color.FromArgb(15, 23, 42),
+                AutoSize = true,
+                Checked = true,
+                Margin = new Padding(0, 6, 0, 8)
+            };
+
+            tblMat.RowCount = 6;
             tblMat.Controls.Add(lblMatTitle, 0, 0);
             tblMat.Controls.Add(lblMatSub, 0, 1);
-            tblMat.Controls.Add(lblMatRule1, 0, 2);
-            tblMat.Controls.Add(lblMatRule2, 0, 3);
-            tblMat.Controls.Add(lblMatRule3, 0, 4);
+            tblMat.Controls.Add(chkAutoSyncMaterials, 0, 2);
+            tblMat.Controls.Add(lblMatRule1, 0, 3);
+            tblMat.Controls.Add(lblMatRule2, 0, 4);
+            tblMat.Controls.Add(lblMatRule3, 0, 5);
             cardMat.Controls.Add(tblMat);
 
             // Add all cards to table layout
-            tblCards.Controls.Add(cardProps, 0, 0);
-            tblCards.Controls.Add(cardMass, 0, 1);
-            tblCards.Controls.Add(cardMat, 0, 2);
+            tblCards.Controls.Add(cardService, 0, 0);
+            tblCards.Controls.Add(cardProps, 0, 1);
+            tblCards.Controls.Add(cardMass, 0, 2);
+            tblCards.Controls.Add(cardMat, 0, 3);
 
             pnlBody.Controls.Add(tblCards);
 
@@ -746,6 +846,8 @@ namespace ESKD.MaterialSync
                 string currentAuthor = "Шалунов В.В.";
                 string currentChecker = "";
                 string currentOrg = "Home Made";
+                int serviceEnabled = 1;
+                int autoSyncMat = 1;
                 int autoMass = 1;
                 int decimals = 2;
                 int autoCenter = 1;
@@ -758,6 +860,8 @@ namespace ESKD.MaterialSync
                         currentAuthor = (key.GetValue("Author") as string) ?? currentAuthor;
                         currentChecker = (key.GetValue("Checker") as string) ?? currentChecker;
                         currentOrg = (key.GetValue("Organization") as string) ?? currentOrg;
+                        serviceEnabled = (int)key.GetValue("ServiceEnabled", 1);
+                        autoSyncMat = (int)key.GetValue("AutoSyncMaterials", 1);
                         autoMass = (int)key.GetValue("AutoMass", 1);
                         decimals = (int)key.GetValue("MassDecimals", 2);
                         autoCenter = (int)key.GetValue("AutoCenterMass", 1);
@@ -805,6 +909,8 @@ namespace ESKD.MaterialSync
                 cmbOrg.Text = currentOrg;
 
                 // Set Options (DEFAULTS ARE ALWAYS CHECKED)
+                chkServiceEnabled.Checked = (serviceEnabled == 1);
+                chkAutoSyncMaterials.Checked = (autoSyncMat == 1);
                 chkAutoMass.Checked = (autoMass == 1);
                 numMassDecimals.Value = Math.Max(0, Math.Min(4, decimals));
                 chkAutoCenterMass.Checked = (autoCenter == 1);
@@ -828,6 +934,8 @@ namespace ESKD.MaterialSync
                 {
                     if (key != null)
                     {
+                        key.SetValue("ServiceEnabled", chkServiceEnabled.Checked ? 1 : 0, RegistryValueKind.DWord);
+                        key.SetValue("AutoSyncMaterials", chkAutoSyncMaterials.Checked ? 1 : 0, RegistryValueKind.DWord);
                         key.SetValue("Author", author, RegistryValueKind.String);
                         key.SetValue("Checker", checker, RegistryValueKind.String);
                         key.SetValue("Organization", org, RegistryValueKind.String);
@@ -920,19 +1028,7 @@ namespace ESKD.MaterialSync
         {
             try
             {
-                string asmPath = typeof(SettingsForm).Assembly.Location;
-                string dllDir = Path.GetDirectoryName(asmPath);
-                DirectoryInfo pInfo = Directory.GetParent(dllDir);
-                string pluginsDir = pInfo != null ? pInfo.FullName : null;
-                List<string> iniPaths = new List<string>();
-                if (!string.IsNullOrEmpty(pluginsDir))
-                {
-                    iniPaths.Add(Path.Combine(pluginsDir, @"SWPlusMacro_v_2018_SP0.1\MProp\MProp.ini"));
-                    iniPaths.Add(Path.Combine(pluginsDir, @"Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp\MProp.ini"));
-                }
-                iniPaths.Add(@"d:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\SWPlusMacro_v_2018_SP0.1\MProp\MProp.ini");
-                iniPaths.Add(@"d:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp\MProp.ini");
-
+                string[] iniPaths = FindCandidatePaths(@"Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp\MProp.ini");
                 foreach (string iniPath in iniPaths)
                 {
                     if (File.Exists(iniPath))
@@ -951,7 +1047,7 @@ namespace ESKD.MaterialSync
         private void BtnSave_Click(object sender, EventArgs e)
         {
             SaveSettings();
-            if (_swApp != null)
+            if (_swApp != null && chkServiceEnabled.Checked)
             {
                 try
                 {
@@ -964,8 +1060,10 @@ namespace ESKD.MaterialSync
                 }
                 catch { }
             }
-            MessageBox.Show("Настройки ЕСКД успешно сохранены и синхронизированы с макросами SWPlus!",
-                "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            string statusMsg = chkServiceEnabled.Checked
+                ? "Настройки ЕСКД успешно сохранены и синхронизированы с макросами SWPlus!\n\nФоновая служба ЕСКД: ВКЛЮЧЕНА (автоматическое оформление активно)."
+                : "Настройки ЕСКД успешно сохранены и синхронизированы с макросами SWPlus!\n\nФоновая служба ЕСКД: ОТКЛЮЧЕНА (автоматические фоновые триггеры неактивны, доступен ручной запуск по кнопке «Синхронизировать ЕСКД»).";
+            MessageBox.Show(statusMsg, "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Information);
             this.Close();
         }
 

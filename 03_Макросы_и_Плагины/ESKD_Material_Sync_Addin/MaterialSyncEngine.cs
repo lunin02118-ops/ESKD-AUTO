@@ -32,9 +32,154 @@ namespace ESKD.MaterialSync
         private static readonly Dictionary<string, string> LastProcessedCache = new Dictionary<string, string>();
         private const string RegKeySettings = @"Software\SolidWorks\ESKD_Settings";
 
+        public static bool IsServiceEnabled()
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegKeySettings))
+                {
+                    if (key != null)
+                    {
+                        int val = (int)key.GetValue("ServiceEnabled", 1);
+                        return val == 1;
+                    }
+                }
+            }
+            catch { }
+            return true;
+        }
+
+        public static bool IsAutoSyncMaterialsEnabled()
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegKeySettings))
+                {
+                    if (key != null)
+                    {
+                        int val = (int)key.GetValue("AutoSyncMaterials", 1);
+                        return val == 1;
+                    }
+                }
+            }
+            catch { }
+            return true;
+        }
+
+        private static readonly string[] EskdBlankShapes = new string[] {
+            "Лист", "Труба", "Круг", "Швеллер", "Уголок", "Полоса", 
+            "Квадрат", "Шестигранник", "Профиль", "Лента", "Двутавр", 
+            "Проволока", "Пруток", "Фольга", "Плита", "Сетка", "Рельс"
+        };
+
+        public static string FormatEskdMaterialFB(string top, string bottom, out string detectedShape, out string sortamentOnly)
+        {
+            detectedShape = "";
+            sortamentOnly = top ?? "";
+
+            if (string.IsNullOrWhiteSpace(top) || string.IsNullOrWhiteSpace(bottom))
+            {
+                return (top ?? "") + (bottom ?? "");
+            }
+
+            top = top.Trim();
+            bottom = bottom.Trim();
+
+            foreach (string s in EskdBlankShapes)
+            {
+                if (top.StartsWith(s + " ", StringComparison.OrdinalIgnoreCase))
+                {
+                    detectedShape = top.Substring(0, s.Length).Trim();
+                    sortamentOnly = top.Substring(s.Length).Trim();
+                    break;
+                }
+                else if (top.Equals(s, StringComparison.OrdinalIgnoreCase))
+                {
+                    detectedShape = s;
+                    sortamentOnly = "";
+                    break;
+                }
+            }
+
+            if (!string.IsNullOrEmpty(detectedShape))
+            {
+                return string.Format("{0} <STACK size=1>{1}<OVER>{2}</STACK>", detectedShape, sortamentOnly, bottom);
+            }
+            else
+            {
+                // Guaranteed leading space so MProp InStr("<") == 2, Left$(strTemp, 0) == "" (never crashes with Left$(..., -1))
+                return string.Format(" <STACK size=1>{0}<OVER>{1}</STACK>", top, bottom);
+            }
+        }
+
+        public static string NormalizeMaterialFB(string matFB, string fallbackTop, string fallbackBottom, out string detectedShape, out string sortamentOnly)
+        {
+            detectedShape = "";
+            sortamentOnly = fallbackTop ?? "";
+
+            if (string.IsNullOrWhiteSpace(matFB))
+            {
+                if (!string.IsNullOrEmpty(fallbackTop) && !string.IsNullOrEmpty(fallbackBottom))
+                    return FormatEskdMaterialFB(fallbackTop, fallbackBottom, out detectedShape, out sortamentOnly);
+                return "";
+            }
+
+            matFB = matFB.Trim();
+
+            if (matFB.IndexOf("<OVER>", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                int overIdx = matFB.IndexOf("<OVER>", StringComparison.OrdinalIgnoreCase);
+                int stackOpen = matFB.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase);
+                int stackClose = matFB.IndexOf("</STACK>", StringComparison.OrdinalIgnoreCase);
+
+                string prefixShape = "";
+                if (stackOpen > 0)
+                {
+                    prefixShape = matFB.Substring(0, stackOpen).Trim();
+                }
+
+                int topStart = -1;
+                if (stackOpen >= 0)
+                {
+                    int tagClose = matFB.IndexOf('>', stackOpen);
+                    if (tagClose >= 0 && tagClose < overIdx)
+                    {
+                        topStart = tagClose + 1;
+                    }
+                }
+                else
+                {
+                    topStart = 0;
+                }
+
+                string top = (topStart >= 0 && topStart < overIdx) ? matFB.Substring(topStart, overIdx - topStart).Trim() : (fallbackTop ?? "");
+                int botStart = overIdx + 6; // len("<OVER>")
+                int botEnd = (stackClose >= 0 && stackClose > botStart) ? stackClose : matFB.Length;
+                string bottom = (botEnd > botStart) ? matFB.Substring(botStart, botEnd - botStart).Trim() : (fallbackBottom ?? "");
+
+                if (!string.IsNullOrEmpty(prefixShape))
+                {
+                    detectedShape = prefixShape;
+                    sortamentOnly = top;
+                    return string.Format("{0} <STACK size=1>{1}<OVER>{2}</STACK>", prefixShape, top, bottom);
+                }
+                else
+                {
+                    return FormatEskdMaterialFB(top, bottom, out detectedShape, out sortamentOnly);
+                }
+            }
+            else if (matFB.StartsWith("<"))
+            {
+                return " " + matFB;
+            }
+
+            return matFB;
+        }
+
         public static void SyncModelProperties(ModelDoc2 model, ISldWorks swApp, bool force = true, bool triggerRebuild = true, string targetFileName = null)
         {
             if (model == null || swApp == null) return;
+            if (!force && !IsServiceEnabled()) return;
             try
             {
                 int docType = model.GetType();
@@ -962,6 +1107,13 @@ namespace ESKD.MaterialSync
                 return result;
             }
 
+            if (!force && !IsServiceEnabled())
+            {
+                result.Success = true;
+                result.Message = "Служба ЕСКД отключена в настройках";
+                return result;
+            }
+
             ModelDoc2 model = (ModelDoc2)part;
             string docTitle = model.GetTitle();
 
@@ -1062,12 +1214,14 @@ namespace ESKD.MaterialSync
                 string gostMaterial = "";
                 string materialFB = "";
                 string materialSP = "";
+                string detShape = "";
+                string sortamentPart = "";
 
                 if (!string.IsNullOrEmpty(xmlMaterialFB))
                 {
-                    materialFB = xmlMaterialFB;
+                    materialFB = NormalizeMaterialFB(xmlMaterialFB, xmlSortament, xmlGostMaterial, out detShape, out sortamentPart);
                     materialSP = !string.IsNullOrEmpty(xmlMaterialSP) ? xmlMaterialSP : matName;
-                    sortament = xmlSortament ?? "";
+                    sortament = !string.IsNullOrEmpty(sortamentPart) ? sortamentPart : (xmlSortament ?? "");
                     gostSortament = xmlGostSortament ?? "";
                     gostMaterial = xmlGostMaterial ?? "";
                 }
@@ -1077,10 +1231,10 @@ namespace ESKD.MaterialSync
                     string top = parts[0].Trim();
                     string bottom = parts[1].Trim();
 
-                    materialFB = string.Format("<STACK size=1>{0}<OVER>{1}</STACK>", top, bottom);
+                    materialFB = FormatEskdMaterialFB(top, bottom, out detShape, out sortamentPart);
                     materialSP = string.Format("{0} / {1}", top, bottom);
 
-                    sortament = top;
+                    sortament = !string.IsNullOrEmpty(sortamentPart) ? sortamentPart : top;
                     gostSortament = ExtractGost(top);
                     gostMaterial = ExtractGost(bottom);
                 }
@@ -1097,6 +1251,7 @@ namespace ESKD.MaterialSync
                 if (cpmCfg != null)
                 {
                     SetProp(cpmCfg, "Материал_ФБ", materialFB);
+                    SetProp(cpmCfg, "Материал_Таблица", materialFB);
                     SetProp(cpmCfg, "Материал", materialSP);
 
                     if (!string.IsNullOrEmpty(sortament))
@@ -1130,6 +1285,7 @@ namespace ESKD.MaterialSync
                 if (cpmGen != null)
                 {
                     SetProp(cpmGen, "Материал_ФБ", activeMatFB);
+                    SetProp(cpmGen, "Материал_Таблица", activeMatFB);
                     SetProp(cpmGen, "Материал", activeMatSP);
 
                     if (!string.IsNullOrEmpty(activeSortament))
@@ -1437,6 +1593,7 @@ namespace ESKD.MaterialSync
         {
             CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
             SetProp(cpmGen, "Материал_ФБ", matFB);
+            SetProp(cpmGen, "Материал_Таблица", matFB);
             SetProp(cpmGen, "Материал", matSP);
 
             if (!string.IsNullOrEmpty(sortament))
@@ -1456,6 +1613,7 @@ namespace ESKD.MaterialSync
                 if (cpmCfg != null)
                 {
                     SetProp(cpmCfg, "Материал_ФБ", matFB);
+                    SetProp(cpmCfg, "Материал_Таблица", matFB);
                     SetProp(cpmCfg, "Материал", matSP);
 
                     if (!string.IsNullOrEmpty(sortament))

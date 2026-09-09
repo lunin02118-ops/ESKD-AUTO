@@ -734,6 +734,7 @@ namespace ESKD.MaterialSync
         private void RunSyncSafe(ModelDoc2 doc, string targetFileName = null, bool triggerRebuild = true)
         {
             if (_isSyncing || doc == null) return;
+            if (!MaterialSyncEngine.IsServiceEnabled()) return;
             _isSyncing = true;
             try
             {
