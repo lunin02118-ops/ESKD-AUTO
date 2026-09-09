@@ -101,15 +101,41 @@ namespace ESKD.MaterialSync
                 }
             }
 
-            if (!string.IsNullOrEmpty(detectedShape))
+            // In SolidWorks drawings, the blank shape (Лист, Труба etc.) MUST be inside the numerator of the fraction.
+            // When outside <STACK>, SolidWorks baseline-aligns it to the denominator, causing it to sit awkwardly at the bottom.
+            // Guaranteed leading space ensures MProp InStr("<") == 2, Left$(strTemp, 0) == "" (never crashes with Left$(..., -1)).
+            return string.Format(" <STACK size=1>{0}<OVER>{1}</STACK>", top, bottom);
+        }
+
+        public static string FormatEskdTitleFB(string title)
+        {
+            if (string.IsNullOrWhiteSpace(title)) return "";
+            title = title.Trim();
+            if (title.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0)
+                return title;
+
+            string[] lines = title.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            if (lines.Length <= 1)
             {
-                return string.Format("{0} <STACK size=1>{1}<OVER>{2}</STACK>", detectedShape, sortamentOnly, bottom);
+                return "<FONT size=4> \n<FONT size=5>" + title;
+            }
+            else if (lines.Length == 2)
+            {
+                return "<FONT size=2> \n<FONT size=5>" + string.Join("\n", lines);
             }
             else
             {
-                // Guaranteed leading space so MProp InStr("<") == 2, Left$(strTemp, 0) == "" (never crashes with Left$(..., -1))
-                return string.Format(" <STACK size=1>{0}<OVER>{1}</STACK>", top, bottom);
+                return "<FONT size=3.5>" + string.Join("\n", lines);
             }
+        }
+
+        public static string FormatEskdMassFB(string mass)
+        {
+            if (string.IsNullOrWhiteSpace(mass)) return "";
+            mass = mass.Trim();
+            if (mass.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0)
+                return mass;
+            return "<FONT size=1> \n<FONT size=3.5>" + mass;
         }
 
         public static string NormalizeMaterialFB(string matFB, string fallbackTop, string fallbackBottom, out string detectedShape, out string sortamentOnly)
@@ -157,16 +183,8 @@ namespace ESKD.MaterialSync
                 int botEnd = (stackClose >= 0 && stackClose > botStart) ? stackClose : matFB.Length;
                 string bottom = (botEnd > botStart) ? matFB.Substring(botStart, botEnd - botStart).Trim() : (fallbackBottom ?? "");
 
-                if (!string.IsNullOrEmpty(prefixShape))
-                {
-                    detectedShape = prefixShape;
-                    sortamentOnly = top;
-                    return string.Format("{0} <STACK size=1>{1}<OVER>{2}</STACK>", prefixShape, top, bottom);
-                }
-                else
-                {
-                    return FormatEskdMaterialFB(top, bottom, out detectedShape, out sortamentOnly);
-                }
+                string fullTop = !string.IsNullOrEmpty(prefixShape) ? (prefixShape + " " + top).Trim() : top;
+                return FormatEskdMaterialFB(fullTop, bottom, out detectedShape, out sortamentOnly);
             }
             else if (matFB.StartsWith("<"))
             {
@@ -247,9 +265,9 @@ namespace ESKD.MaterialSync
                 }
                 catch { }
 
-                AlignDrawingMassNote(drw);
-                AlignDrawingMaterialNote(drw);
-                AlignDrawingTitleNote(drw);
+                // Do NOT arbitrarily move drawing formatka notes!
+                // The official .slddrt templates already have exact, calibrated coordinates per GOST 2.104.
+                // Programmatic repositioning destroys template alignment and layout.
                 AlignSpecificationTableColumns(drw);
                 if (triggerRebuild)
                 {
@@ -350,17 +368,86 @@ namespace ESKD.MaterialSync
             return false;
         }
 
+        public static void RestoreDrawingStampTemplate(DrawingDoc drw)
+        {
+            if (drw == null) return;
+            try
+            {
+                Sheet sheet = (Sheet)drw.GetCurrentSheet();
+                if (sheet == null || IsSpecificationForm2(drw, sheet) || IsSubsequentSheetForm2a(drw, sheet)) return;
+
+                double sheetW = 0.0;
+                double[] sProps = (double[])sheet.GetProperties2();
+                if (sProps != null && sProps.Length > 5)
+                {
+                    sheetW = sProps[5];
+                }
+                if (sheetW < 0.15) sheetW = 0.420;
+
+                View v = (View)drw.GetFirstView();
+                while (v != null)
+                {
+                    Note n = (Note)v.GetFirstNote();
+                    while (n != null)
+                    {
+                        string name = n.GetName() ?? "";
+                        Annotation a = (Annotation)n.GetAnnotation();
+
+                        if (a != null)
+                        {
+                            if (name.Equals("MYPRP4", StringComparison.OrdinalIgnoreCase))
+                            {
+                                a.SetPosition(sheetW - 0.0902, 0.0451, 0);
+                                n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
+                            }
+                            else if (name.Equals("MYPRP0", StringComparison.OrdinalIgnoreCase))
+                            {
+                                a.SetPosition(sheetW - 0.0651, 0.0551, 0);
+                                TextFormat tf = (TextFormat)a.GetTextFormat(0);
+                                if (tf != null)
+                                {
+                                    tf.CharHeight = 0.005;
+                                    a.SetTextFormat(0, false, tf);
+                                }
+                                n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
+                            }
+                            else if (name.Equals("MYPRP15", StringComparison.OrdinalIgnoreCase))
+                            {
+                                a.SetPosition(sheetW - 0.0315, 0.0347, 0);
+                                n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
+                            }
+                            else if (name.Equals("MYPRP16", StringComparison.OrdinalIgnoreCase))
+                            {
+                                a.SetPosition(sheetW - 0.0902, 0.0193, 0);
+                                n.PropertyLinkedText = "<FONT size=1.8> <FONT size=3.5>$PRPSHEET:\"Материал_ФБ\"";
+                                n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
+                            }
+                            else if (name.Equals("Scale", StringComparison.OrdinalIgnoreCase))
+                            {
+                                a.SetPosition(sheetW - 0.0140, 0.0347, 0);
+                                n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
+                            }
+                        }
+
+                        n = (Note)n.GetNext();
+                    }
+                    v = (View)v.GetNextView();
+                }
+            }
+            catch { }
+        }
+
         public static void AlignDrawingMassNote(DrawingDoc drw)
         {
             if (drw == null) return;
             try
             {
-                int autoCenter = 1;
+                int autoCenter = 0;
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegKeySettings))
                 {
                     if (key != null)
                     {
-                        autoCenter = (int)key.GetValue("AutoCenterMass", 1);
+                        autoCenter = (int)key.GetValue("AutoCenterMass", 0);
                     }
                 }
                 if (autoCenter == 0) return;
@@ -612,12 +699,12 @@ namespace ESKD.MaterialSync
             if (drw == null) return;
             try
             {
-                int autoCenter = 1;
+                int autoCenter = 0;
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegKeySettings))
                 {
                     if (key != null)
                     {
-                        autoCenter = (int)key.GetValue("AutoCenterMaterial", (int)key.GetValue("AutoCenterMass", 1));
+                        autoCenter = (int)key.GetValue("AutoCenterMaterial", (int)key.GetValue("AutoCenterMass", 0));
                     }
                 }
                 if (autoCenter == 0) return;
@@ -706,7 +793,7 @@ namespace ESKD.MaterialSync
                             {
                                 try
                                 {
-                                    n.PropertyLinkedText = "$PRPSHEET:\"Материал_ФБ\"";
+                                    n.PropertyLinkedText = "<FONT size=1.8> <FONT size=3.5>$PRPSHEET:\"Материал_ФБ\"";
                                     txt = n.GetText() ?? "";
                                     ltxt = n.PropertyLinkedText ?? "";
                                 }
@@ -847,12 +934,12 @@ namespace ESKD.MaterialSync
             if (drw == null) return;
             try
             {
-                int autoCenter = 1;
+                int autoCenter = 0;
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegKeySettings))
                 {
                     if (key != null)
                     {
-                        autoCenter = (int)key.GetValue("AutoCenterMass", 1);
+                        autoCenter = (int)key.GetValue("AutoCenterTitle", (int)key.GetValue("AutoCenterMass", 0));
                     }
                 }
                 if (autoCenter == 0) return;
@@ -1424,9 +1511,10 @@ namespace ESKD.MaterialSync
 
                         string formatStr = "0." + new string('#', decimals);
                         string massStr = massKg.ToString(formatStr, RuCulture);
+                        string massFB = FormatEskdMassFB(massStr);
 
                         CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
-                        SetProp(cpmGen, "Масса_ФБ", massStr);
+                        SetProp(cpmGen, "Масса_ФБ", massFB);
                         SetProp(cpmGen, "Масса", massStr);
 
                         if (!string.IsNullOrEmpty(configName))
@@ -1434,7 +1522,7 @@ namespace ESKD.MaterialSync
                             CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(configName);
                             if (cpmCfg != null)
                             {
-                                SetProp(cpmCfg, "Масса_ФБ", massStr);
+                                SetProp(cpmCfg, "Масса_ФБ", massFB);
                                 SetProp(cpmCfg, "Масса", massStr);
                             }
                         }
@@ -1448,13 +1536,12 @@ namespace ESKD.MaterialSync
                                     CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(cfg);
                                     if (cpmCfg != null)
                                     {
-                                        SetProp(cpmCfg, "Масса_ФБ", massStr);
+                                        SetProp(cpmCfg, "Масса_ФБ", massFB);
                                         SetProp(cpmCfg, "Масса", massStr);
                                     }
                                 }
                             }
                         }
-                        CleanModelMassTags(model);
                     }
                 }
             }
@@ -1463,50 +1550,7 @@ namespace ESKD.MaterialSync
 
         public static bool CleanModelMassTags(ModelDoc2 doc)
         {
-            if (doc == null) return false;
-            bool changed = false;
-            try
-            {
-                changed |= CleanCpmMassTags(doc.Extension.get_CustomPropertyManager(""));
-                string[] cfgNames = (string[])doc.GetConfigurationNames();
-                if (cfgNames != null)
-                {
-                    foreach (string cfg in cfgNames)
-                    {
-                        changed |= CleanCpmMassTags(doc.Extension.get_CustomPropertyManager(cfg));
-                    }
-                }
-            }
-            catch { }
-            return changed;
-        }
-
-        private static bool CleanCpmMassTags(CustomPropertyManager cpm)
-        {
-            if (cpm == null) return false;
-            bool changed = false;
-            try
-            {
-                string[] names = (string[])cpm.GetNames();
-                if (names == null) return false;
-                foreach (string name in names)
-                {
-                    if (name.Equals("Масса_ФБ", StringComparison.OrdinalIgnoreCase))
-                    {
-                        string val = "", resVal = "";
-                        bool wasRes = false;
-                        cpm.Get5(name, false, out val, out resVal, out wasRes);
-                        if (!string.IsNullOrEmpty(val) && (val.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0 || val.IndexOf("\n") >= 0))
-                        {
-                            string cleaned = System.Text.RegularExpressions.Regex.Replace(val, @"<FONT[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
-                            cpm.Set2(name, cleaned);
-                            changed = true;
-                        }
-                    }
-                }
-            }
-            catch { }
-            return changed;
+            return false;
         }
 
         private static void TryReadXmlProperties(ISldWorks swApp, string matName, string dbName,
@@ -1922,8 +1966,9 @@ namespace ESKD.MaterialSync
                     }
                     if (!string.IsNullOrEmpty(effectiveTitle))
                     {
+                        string titleFB = FormatEskdTitleFB(effectiveTitle);
                         SetProp(cpmGen, "Наименование", effectiveTitle);
-                        SetProp(cpmGen, "Наименование_ФБ", effectiveTitle);
+                        SetProp(cpmGen, "Наименование_ФБ", titleFB);
                         SetProp(cpmGen, "Description", effectiveTitle);
                     }
                 }
@@ -2004,8 +2049,9 @@ namespace ESKD.MaterialSync
 
                                 if (!string.IsNullOrEmpty(effectiveTitle))
                                 {
+                                    string titleFB = FormatEskdTitleFB(effectiveTitle);
                                     SetProp(cpmCfg, "Наименование", effectiveTitle);
-                                    SetProp(cpmCfg, "Наименование_ФБ", effectiveTitle);
+                                    SetProp(cpmCfg, "Наименование_ФБ", titleFB);
                                     SetProp(cpmCfg, "Description", effectiveTitle);
                                 }
                             }
