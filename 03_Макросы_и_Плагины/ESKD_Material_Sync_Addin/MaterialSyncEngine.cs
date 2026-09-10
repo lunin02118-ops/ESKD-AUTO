@@ -111,21 +111,20 @@ namespace ESKD.MaterialSync
         {
             if (string.IsNullOrWhiteSpace(title)) return "";
             title = title.Trim();
+            // Remove legacy artificial font tags if present
             if (title.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0)
-                return title;
+            {
+                title = System.Text.RegularExpressions.Regex.Replace(title, @"<FONT[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+            }
 
             string[] lines = title.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             if (lines.Length <= 1)
             {
-                return "<FONT size=4> \n<FONT size=5>" + title;
-            }
-            else if (lines.Length == 2)
-            {
-                return "<FONT size=2> \n<FONT size=5>" + string.Join("\n", lines);
+                return title;
             }
             else
             {
-                return "<FONT size=3.5>" + string.Join("\n", lines);
+                return string.Join("\n", lines);
             }
         }
 
@@ -133,9 +132,12 @@ namespace ESKD.MaterialSync
         {
             if (string.IsNullOrWhiteSpace(mass)) return "";
             mass = mass.Trim();
-            if (mass.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0)
-                return mass;
-            return "<FONT size=1> \n<FONT size=3.5>" + mass;
+            if (mass.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0 || mass.IndexOf("\n") >= 0)
+            {
+                mass = System.Text.RegularExpressions.Regex.Replace(mass, @"<FONT[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+                mass = mass.Replace("\r", "").Replace("\n", "").Trim();
+            }
+            return mass;
         }
 
         public static string NormalizeMaterialFB(string matFB, string fallbackTop, string fallbackBottom, out string detectedShape, out string sortamentOnly)
@@ -1542,6 +1544,7 @@ namespace ESKD.MaterialSync
                                 }
                             }
                         }
+                        CleanModelMassTags(model);
                     }
                 }
             }
@@ -1550,7 +1553,63 @@ namespace ESKD.MaterialSync
 
         public static bool CleanModelMassTags(ModelDoc2 doc)
         {
-            return false;
+            if (doc == null) return false;
+            bool changed = false;
+            try
+            {
+                changed |= CleanCpmTags(doc.Extension.get_CustomPropertyManager(""));
+                string[] cfgNames = (string[])doc.GetConfigurationNames();
+                if (cfgNames != null)
+                {
+                    foreach (string cfg in cfgNames)
+                    {
+                        changed |= CleanCpmTags(doc.Extension.get_CustomPropertyManager(cfg));
+                    }
+                }
+            }
+            catch { }
+            return changed;
+        }
+
+        private static bool CleanCpmTags(CustomPropertyManager cpm)
+        {
+            if (cpm == null) return false;
+            bool changed = false;
+            try
+            {
+                string[] names = (string[])cpm.GetNames();
+                if (names == null) return false;
+                foreach (string name in names)
+                {
+                    if (name.Equals("Масса_ФБ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string val = "", resVal = "";
+                        bool wasRes = false;
+                        cpm.Get5(name, false, out val, out resVal, out wasRes);
+                        if (!string.IsNullOrEmpty(val) && (val.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0 || val.IndexOf("\n") >= 0))
+                        {
+                            string cleaned = System.Text.RegularExpressions.Regex.Replace(val, @"<FONT[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+                            cleaned = cleaned.Replace("\r", "").Replace("\n", "").Trim();
+                            cpm.Set2(name, cleaned);
+                            changed = true;
+                        }
+                    }
+                    else if (name.Equals("Наименование_ФБ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string val = "", resVal = "";
+                        bool wasRes = false;
+                        cpm.Get5(name, false, out val, out resVal, out wasRes);
+                        if (!string.IsNullOrEmpty(val) && val.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            string cleaned = System.Text.RegularExpressions.Regex.Replace(val, @"<FONT[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+                            cpm.Set2(name, cleaned);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return changed;
         }
 
         private static void TryReadXmlProperties(ISldWorks swApp, string matName, string dbName,
