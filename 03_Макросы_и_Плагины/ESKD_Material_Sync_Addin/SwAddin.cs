@@ -708,21 +708,21 @@ namespace ESKD.MaterialSync
                 if (docType == (int)swDocumentTypes_e.swDocPART)
                 {
                     PartDoc part = (PartDoc)doc;
-                    part.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
-                    part.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
+                    part.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
+                    part.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
                 }
                 else if (docType == (int)swDocumentTypes_e.swDocASSEMBLY)
                 {
                     AssemblyDoc asm = (AssemblyDoc)doc;
-                    asm.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
-                    asm.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
+                    asm.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
+                    asm.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
                 }
                 else if (docType == (int)swDocumentTypes_e.swDocDRAWING)
                 {
                     DrawingDoc drw = (DrawingDoc)doc;
-                    drw.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
-                    drw.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, true); return 0; };
-                    drw.RegenNotify += () => { RunSyncSafe(doc, null, false); return 0; };
+                    drw.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
+                    drw.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
+                    // drw.RegenNotify intentionally removed: regen should not mutate document properties or trigger rebuilds
                 }
             }
             catch (Exception ex)

@@ -298,20 +298,38 @@ foreach ($og in $oldGuids) {
 }
 
 $contexts = @("PartContext", "AssyContext", "DrwContext")
+$activeGuid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
 foreach ($ctx in $contexts) {
     $ctxPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\$ctx"
-    if (Test-Path $ctxPath) {
-        Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | ForEach-Object {
-            $tabPath = $_.PSPath
-            $modName = (Get-ItemProperty -Path $tabPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
-            if ($modName -and ($oldGuids -contains $modName.ToUpper())) {
-                Remove-Item -Path $tabPath -Recurse -Force -ErrorAction SilentlyContinue
-            }
-            $refName = (Get-ItemProperty -Path $tabPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
-            if ($refName -eq "ЕСКД") {
-                Set-ItemProperty -Path $tabPath -Name "Tab Props" -Value "ЕСКД,0,1,-1" -ErrorAction SilentlyContinue
-            }
+    if (-not (Test-Path $ctxPath)) { New-Item -Path $ctxPath -Force | Out-Null }
+
+    $found = $false
+    Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | ForEach-Object {
+        $tabPath = $_.PSPath
+        $modName = (Get-ItemProperty -Path $tabPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
+        if ($modName -and ($oldGuids -contains $modName.ToUpper())) {
+            Remove-Item -Path $tabPath -Recurse -Force -ErrorAction SilentlyContinue
+            return
         }
+        $refName = (Get-ItemProperty -Path $tabPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
+        if (($refName -and ($refName -match "ЕСКД")) -or ($modName -and ($modName.ToUpper() -eq $activeGuid.ToUpper()))) {
+            Set-ItemProperty -Path $tabPath -Name "RefName" -Value "ЕСКД" -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $tabPath -Name "ModuleName" -Value $activeGuid -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $tabPath -Name "Tab Props" -Value "ЕСКД,1,1,-1" -Force -ErrorAction SilentlyContinue
+            $found = $true
+        }
+    }
+    if (-not $found) {
+        $existingTabs = Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.PSChildName -match "^Tab(\d+)$") { [int]$matches[1] }
+        }
+        $nextNum = 0
+        if ($existingTabs) { $nextNum = ($existingTabs | Measure-Object -Maximum).Maximum + 1 }
+        $newTabPath = Join-Path $ctxPath "Tab$nextNum"
+        New-Item -Path $newTabPath -Force | Out-Null
+        Set-ItemProperty -Path $newTabPath -Name "RefName" -Value "ЕСКД" -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $newTabPath -Name "ModuleName" -Value $activeGuid -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $newTabPath -Name "Tab Props" -Value "ЕСКД,1,1,-1" -Force -ErrorAction SilentlyContinue
     }
 }
 

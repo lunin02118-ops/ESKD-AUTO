@@ -878,11 +878,14 @@ class CADConfiguratorApp:
                     self.delete_key_recursive(winreg.HKEY_LOCAL_MACHINE, f"{base_p}\\{og}")
                 except Exception: pass
 
-        # Clean legacy tabs from CommandManager
+        # Clean legacy tabs from CommandManager and guarantee ESKD tab visibility
+        active_guid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
         for ctx in ['PartContext', 'AssyContext', 'DrwContext']:
             base_ctx = rf"Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\{ctx}"
             try:
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, base_ctx) as k_ctx:
+                found_eskd = False
+                highest_tab = -1
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base_ctx) as k_ctx:
                     sub_keys = []
                     i = 0
                     while True:
@@ -892,14 +895,32 @@ class CADConfiguratorApp:
                         except OSError:
                             break
                     for sk in sub_keys:
+                        m = re.match(r"^Tab(\d+)$", sk, re.IGNORECASE)
+                        if m:
+                            highest_tab = max(highest_tab, int(m.group(1)))
                         try:
-                            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, rf"{base_ctx}\{sk}") as k_tab:
+                            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, rf"{base_ctx}\{sk}", 0, winreg.KEY_ALL_ACCESS) as k_tab:
                                 mod = ""
                                 try: mod = winreg.QueryValueEx(k_tab, "ModuleName")[0]
                                 except: pass
                                 if any(og.lower() == mod.lower() for og in old_guids):
                                     self.delete_key_recursive(winreg.HKEY_CURRENT_USER, rf"{base_ctx}\{sk}")
+                                    continue
+                                ref = ""
+                                try: ref = winreg.QueryValueEx(k_tab, "RefName")[0]
+                                except: pass
+                                if (ref and "ЕСКД" in ref) or (mod and mod.upper() == active_guid.upper()):
+                                    winreg.SetValueEx(k_tab, "RefName", 0, winreg.REG_SZ, "ЕСКД")
+                                    winreg.SetValueEx(k_tab, "ModuleName", 0, winreg.REG_SZ, active_guid)
+                                    winreg.SetValueEx(k_tab, "Tab Props", 0, winreg.REG_SZ, "ЕСКД,1,1,-1")
+                                    found_eskd = True
                         except Exception: pass
+                if not found_eskd:
+                    next_tab_name = f"Tab{highest_tab + 1}"
+                    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"{base_ctx}\{next_tab_name}") as k_new_tab:
+                        winreg.SetValueEx(k_new_tab, "RefName", 0, winreg.REG_SZ, "ЕСКД")
+                        winreg.SetValueEx(k_new_tab, "ModuleName", 0, winreg.REG_SZ, active_guid)
+                        winreg.SetValueEx(k_new_tab, "Tab Props", 0, winreg.REG_SZ, "ЕСКД,1,1,-1")
             except Exception: pass
 
         if os.path.exists(addin_dll):

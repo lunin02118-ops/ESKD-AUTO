@@ -122,6 +122,43 @@ foreach ($og in $oldGuids) {
     Remove-Item "HKCU:\Software\SolidWorks\AddInsStartup\$og" -Recurse -Force -ErrorAction SilentlyContinue
 }
 
+# 2.3 Гарантированная видимость вкладки ЕСКД в CommandManager (Деталь, Сборка, Чертеж)
+$contexts = @("PartContext", "AssyContext", "DrwContext")
+foreach ($ctx in $contexts) {
+    $ctxPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\$ctx"
+    if (-not (Test-Path $ctxPath)) { New-Item -Path $ctxPath -Force | Out-Null }
+    
+    $found = $false
+    Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | ForEach-Object {
+        $tabPath = $_.PSPath
+        $modName = (Get-ItemProperty -Path $tabPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
+        if ($modName -and ($oldGuids -contains $modName.ToUpper())) {
+            Remove-Item -Path $tabPath -Recurse -Force -ErrorAction SilentlyContinue
+            return
+        }
+        $refName = (Get-ItemProperty -Path $tabPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
+        if (($refName -and ($refName -match "ЕСКД")) -or ($modName -and ($modName.ToUpper() -eq $guid.ToUpper()))) {
+            Set-ItemProperty -Path $tabPath -Name "RefName" -Value "ЕСКД" -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $tabPath -Name "ModuleName" -Value $guid -Force -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $tabPath -Name "Tab Props" -Value "ЕСКД,1,1,-1" -Force -ErrorAction SilentlyContinue
+            $found = $true
+        }
+    }
+    if (-not $found) {
+        $existingTabs = Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.PSChildName -match "^Tab(\d+)$") { [int]$matches[1] }
+        }
+        $nextNum = 0
+        if ($existingTabs) { $nextNum = ($existingTabs | Measure-Object -Maximum).Maximum + 1 }
+        $newTabPath = Join-Path $ctxPath "Tab$nextNum"
+        New-Item -Path $newTabPath -Force | Out-Null
+        Set-ItemProperty -Path $newTabPath -Name "RefName" -Value "ЕСКД" -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $newTabPath -Name "ModuleName" -Value $guid -Force -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $newTabPath -Name "Tab Props" -Value "ЕСКД,1,1,-1" -Force -ErrorAction SilentlyContinue
+    }
+}
+Write-Host "  [OK] Вкладка ЕСКД зафиксирована как активная и видимая (Visible=1) в CommandManager." -ForegroundColor Green
+
 Write-Host "`n[3/5] Настройка папок шаблонов свойств и параметров ЕСКД..." -ForegroundColor Gray
 
 # 3.1 Custom Property Folders

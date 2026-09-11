@@ -686,49 +686,7 @@ def sw_sync_eskd_materials() -> dict:
             except Exception:
                 pass
 
-        if doc_type == 3:
-            try:
-                v = model.GetFirstView
-                scale_x, scale_y = 0.0, 0.0
-                found_scale = False
-                cur = v
-                while cur:
-                    n = cur.GetFirstNote
-                    while n:
-                        txt = n.GetPropertyLinkedText or ""
-                        name = n.GetName or ""
-                        if any(k in txt.lower() or k in name.lower() for k in ["sheet scale", "масштаб"]):
-                            ann = n.GetAnnotation
-                            if ann:
-                                pos = ann.GetPosition
-                                if pos and len(pos) >= 2 and pos[1] > 0.005:
-                                    scale_x, scale_y = pos[0], pos[1]
-                                    found_scale = True
-                                    break
-                        n = n.GetNext
-                    if found_scale:
-                        break
-                    cur = cur.GetNextView
-
-                target_x = scale_x - 0.0175 if found_scale else 0.0
-                target_y = scale_y if found_scale else 0.0
-
-                if target_x > 0 and target_y > 0:
-                    cur = v
-                    while cur:
-                        n = cur.GetFirstNote
-                        while n:
-                            txt = n.GetPropertyLinkedText or ""
-                            name = n.GetName or ""
-                            if "масса_фб" in txt.lower() or "масса" in txt.lower() or "myprp15" in name.lower():
-                                ann = n.GetAnnotation
-                                if ann:
-                                    ann.SetPosition(target_x, target_y, 0.0)
-                                    n.SetTextJustification(2)
-                            n = n.GetNext
-                        cur = cur.GetNextView
-            except Exception:
-                pass
+        # Drawing format notes remain strictly in their template positions
 
         part.ForceRebuild3(False)
         if doc_type == 3:

@@ -103,41 +103,21 @@ namespace ESKD.MaterialSync
 
             // In SolidWorks drawings, the blank shape (Лист, Труба etc.) MUST be inside the numerator of the fraction.
             // When outside <STACK>, SolidWorks baseline-aligns it to the denominator, causing it to sit awkwardly at the bottom.
+            // Scale fraction font to fit 15mm title block cell per SWPlus / GOST standard.
             // Guaranteed leading space ensures MProp InStr("<") == 2, Left$(strTemp, 0) == "" (never crashes with Left$(..., -1)).
-            return string.Format(" <STACK size=1>{0}<OVER>{1}</STACK>", top, bottom);
+            return string.Format(" <FONT size=1.8><FONT size=3.5><STACK size=1>{0}<OVER>{1}</STACK>", top, bottom);
         }
 
         public static string FormatEskdTitleFB(string title)
         {
             if (string.IsNullOrWhiteSpace(title)) return "";
-            title = title.Trim();
-            // Remove legacy artificial font tags if present
-            if (title.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                title = System.Text.RegularExpressions.Regex.Replace(title, @"<FONT[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
-            }
-
-            string[] lines = title.Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            if (lines.Length <= 1)
-            {
-                return title;
-            }
-            else
-            {
-                return string.Join("\n", lines);
-            }
+            return title.Trim();
         }
 
         public static string FormatEskdMassFB(string mass)
         {
             if (string.IsNullOrWhiteSpace(mass)) return "";
-            mass = mass.Trim();
-            if (mass.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0 || mass.IndexOf("\n") >= 0)
-            {
-                mass = System.Text.RegularExpressions.Regex.Replace(mass, @"<FONT[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
-                mass = mass.Replace("\r", "").Replace("\n", "").Trim();
-            }
-            return mass;
+            return mass.Trim();
         }
 
         public static string NormalizeMaterialFB(string matFB, string fallbackTop, string fallbackBottom, out string detectedShape, out string sortamentOnly)
@@ -156,6 +136,12 @@ namespace ESKD.MaterialSync
 
             if (matFB.IndexOf("<OVER>", StringComparison.OrdinalIgnoreCase) >= 0)
             {
+                if (matFB.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                    matFB.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return " " + matFB.TrimStart();
+                }
+
                 int overIdx = matFB.IndexOf("<OVER>", StringComparison.OrdinalIgnoreCase);
                 int stackOpen = matFB.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase);
                 int stackClose = matFB.IndexOf("</STACK>", StringComparison.OrdinalIgnoreCase);
@@ -230,51 +216,11 @@ namespace ESKD.MaterialSync
                 ModelDoc2 drwModel = (ModelDoc2)drw;
                 ApplyUserSettings(drwModel, "", null, targetFileName);
 
-                // Also update any referenced 3D models in drawing views so $PRPSHEET links update
-                HashSet<string> updatedModels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                try
-                {
-                    View v = (View)drw.GetFirstView();
-                    while (v != null)
-                    {
-                        ModelDoc2 refDoc = (ModelDoc2)v.ReferencedDocument;
-                        if (refDoc != null)
-                        {
-                            string refPath = refDoc.GetPathName();
-                            if (string.IsNullOrEmpty(refPath)) refPath = refDoc.GetTitle();
-                            if (!string.IsNullOrEmpty(refPath) && !updatedModels.Contains(refPath))
-                            {
-                                updatedModels.Add(refPath);
-                                string refTargetName = null;
-                                string refClean = CleanDocumentName(refPath);
-                                if (Regex.IsMatch(refClean, @"^(Деталь|Part|Сборка|Assem|Чертеж|Draw)\s*\d*$", RegexOptions.IgnoreCase))
-                                {
-                                    refTargetName = targetFileName;
-                                }
-                                if (refDoc.GetType() == (int)swDocumentTypes_e.swDocPART)
-                                {
-                                    SyncPart((PartDoc)refDoc, swApp, true, refTargetName);
-                                }
-                                else
-                                {
-                                    ApplyUserSettings(refDoc, v.ReferencedConfiguration, null, refTargetName);
-                                }
-                                refDoc.SetSaveFlag();
-                            }
-                        }
-                        v = (View)v.GetNextView();
-                    }
-                }
-                catch { }
-
-                // Do NOT arbitrarily move drawing formatka notes!
+                // Do NOT mutate referenced 3D models during drawing save/sync!
+                // Mutating 3D models marks them dirty, alters their properties in memory,
+                // and causes drawing views and annotations to shift on save.
                 // The official .slddrt templates already have exact, calibrated coordinates per GOST 2.104.
-                // Programmatic repositioning destroys template alignment and layout.
-                AlignSpecificationTableColumns(drw);
-                if (triggerRebuild)
-                {
-                    drwModel.ForceRebuild3(true);
-                }
+                // Template coordinates and table layouts are preserved strictly as authored.
             }
             catch { }
         }
@@ -372,818 +318,27 @@ namespace ESKD.MaterialSync
 
         public static void RestoreDrawingStampTemplate(DrawingDoc drw)
         {
-            if (drw == null) return;
-            try
-            {
-                Sheet sheet = (Sheet)drw.GetCurrentSheet();
-                if (sheet == null || IsSpecificationForm2(drw, sheet) || IsSubsequentSheetForm2a(drw, sheet)) return;
-
-                double sheetW = 0.0;
-                double[] sProps = (double[])sheet.GetProperties2();
-                if (sProps != null && sProps.Length > 5)
-                {
-                    sheetW = sProps[5];
-                }
-                if (sheetW < 0.15) sheetW = 0.420;
-
-                View v = (View)drw.GetFirstView();
-                while (v != null)
-                {
-                    Note n = (Note)v.GetFirstNote();
-                    while (n != null)
-                    {
-                        string name = n.GetName() ?? "";
-                        Annotation a = (Annotation)n.GetAnnotation();
-
-                        if (a != null)
-                        {
-                            if (name.Equals("MYPRP4", StringComparison.OrdinalIgnoreCase))
-                            {
-                                a.SetPosition(sheetW - 0.0902, 0.0451, 0);
-                                n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                            }
-                            else if (name.Equals("MYPRP0", StringComparison.OrdinalIgnoreCase))
-                            {
-                                a.SetPosition(sheetW - 0.0651, 0.0551, 0);
-                                TextFormat tf = (TextFormat)a.GetTextFormat(0);
-                                if (tf != null)
-                                {
-                                    tf.CharHeight = 0.005;
-                                    a.SetTextFormat(0, false, tf);
-                                }
-                                n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                            }
-                            else if (name.Equals("MYPRP15", StringComparison.OrdinalIgnoreCase))
-                            {
-                                a.SetPosition(sheetW - 0.0315, 0.0347, 0);
-                                n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                            }
-                            else if (name.Equals("MYPRP16", StringComparison.OrdinalIgnoreCase))
-                            {
-                                a.SetPosition(sheetW - 0.0902, 0.0193, 0);
-                                n.PropertyLinkedText = "<FONT size=1.8> <FONT size=3.5>$PRPSHEET:\"Материал_ФБ\"";
-                                n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                            }
-                            else if (name.Equals("Scale", StringComparison.OrdinalIgnoreCase))
-                            {
-                                a.SetPosition(sheetW - 0.0140, 0.0347, 0);
-                                n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                            }
-                        }
-
-                        n = (Note)n.GetNext();
-                    }
-                    v = (View)v.GetNextView();
-                }
-            }
-            catch { }
+            // No-op: template coordinates and layout are strictly preserved from GOST 2.104 templates
         }
 
         public static void AlignDrawingMassNote(DrawingDoc drw)
         {
-            if (drw == null) return;
-            try
-            {
-                int autoCenter = 0;
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegKeySettings))
-                {
-                    if (key != null)
-                    {
-                        autoCenter = (int)key.GetValue("AutoCenterMass", 0);
-                    }
-                }
-                if (autoCenter == 0) return;
-
-                string[] sheetNames = (string[])drw.GetSheetNames();
-                string origSheetName = null;
-                Sheet curSheet = (Sheet)drw.GetCurrentSheet();
-                if (curSheet != null) origSheetName = curSheet.GetName();
-
-                if (sheetNames != null && sheetNames.Length > 1)
-                {
-                    foreach (string sName in sheetNames)
-                    {
-                        drw.ActivateSheet(sName);
-                        AlignActiveSheetMassNote(drw);
-                    }
-                    if (!string.IsNullOrEmpty(origSheetName))
-                    {
-                        drw.ActivateSheet(origSheetName);
-                    }
-                }
-                else
-                {
-                    AlignActiveSheetMassNote(drw);
-                }
-            }
-            catch { }
-        }
-
-        private static void AlignActiveSheetMassNote(DrawingDoc drw)
-        {
-            if (drw == null) return;
-            try
-            {
-                Sheet sheet = (Sheet)drw.GetCurrentSheet();
-                if (sheet == null || IsSpecificationForm2(drw, sheet) || IsSubsequentSheetForm2a(drw, sheet)) return;
-
-                double sheetW = 0.0;
-                double[] sProps = (double[])sheet.GetProperties2();
-                if (sProps != null && sProps.Length > 5)
-                {
-                    sheetW = sProps[5];
-                }
-
-                View v = (View)drw.GetFirstView();
-                Note massNote = null;
-                Note scaleNote = null;
-                Note litNote = null;
-
-                // Scan drawing views for Scale, Mass, and Litera notes in title block data row (Y in [0.015, 0.045])
-                View cur = v;
-                while (cur != null)
-                {
-                    Note n = (Note)cur.GetFirstNote();
-                    while (n != null)
-                    {
-                        string ltxt = n.PropertyLinkedText ?? "";
-                        string name = n.GetName() ?? "";
-
-                        Annotation ann = (Annotation)n.GetAnnotation();
-                        if (ann != null)
-                        {
-                            double[] pos = (double[])ann.GetPosition();
-                            if (pos != null && pos.Length >= 2 && pos[1] > 0.015 && pos[1] < 0.045)
-                            {
-                                if (name.Equals("Scale", StringComparison.OrdinalIgnoreCase) ||
-                                    ltxt.IndexOf("Sheet Scale", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    ltxt.IndexOf("Масштаб листа", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    ltxt.IndexOf("SW-Sheet Scale", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                    (ltxt.IndexOf("Масштаб", StringComparison.OrdinalIgnoreCase) >= 0 && ltxt.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0))
-                                {
-                                    if (scaleNote == null) scaleNote = n;
-                                }
-                                else if (name.Equals("MYPRP15", StringComparison.OrdinalIgnoreCase) ||
-                                         ltxt.IndexOf("Масса_ФБ", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                         ltxt.IndexOf("$PRPSHEET:\"Масса", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                         ltxt.IndexOf("$PRP:\"Масса", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                         ltxt.IndexOf("$PRPSHEET:\"SW-Mass", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                         ltxt.IndexOf("$PRP:\"SW-Mass", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                         (ltxt.IndexOf("Масса", StringComparison.OrdinalIgnoreCase) >= 0 && ltxt.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0))
-                                {
-                                    if (massNote == null) massNote = n;
-                                }
-                                else if (name.Equals("MYPRP5", StringComparison.OrdinalIgnoreCase) ||
-                                         ltxt.IndexOf("Литера_ФБ", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                         ltxt.IndexOf("$PRPSHEET:\"Литера", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                         (ltxt.IndexOf("Литера", StringComparison.OrdinalIgnoreCase) >= 0 && ltxt.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0))
-                                {
-                                    if (litNote == null) litNote = n;
-                                }
-                            }
-                        }
-                        n = (Note)n.GetNext();
-                    }
-                    cur = (View)cur.GetNextView();
-                }
-
-                if (massNote == null && scaleNote == null) return;
-
-                // Check and clean referenced model's legacy <FONT> tags in "Масса_ФБ"
-                try
-                {
-                    View vFirst = (View)drw.GetFirstView();
-                    View vModel = vFirst != null ? (View)vFirst.GetNextView() : null;
-                    if (vModel != null)
-                    {
-                        ModelDoc2 refModel = (ModelDoc2)vModel.ReferencedDocument;
-                        if (refModel != null && CleanModelMassTags(refModel))
-                        {
-                            drw.ForceRebuild();
-                        }
-                    }
-                }
-                catch { }
-
-                Annotation annM = massNote != null ? (Annotation)massNote.GetAnnotation() : null;
-                Annotation annS = scaleNote != null ? (Annotation)scaleNote.GetAnnotation() : null;
-                TextFormat tfS = annS != null ? (TextFormat)annS.GetTextFormat(0) : null;
-                TextFormat tfM = annM != null ? (TextFormat)annM.GetTextFormat(0) : null;
-
-                // Sync text formatting of Mass and Litera to match Scale (ensures exact identical baseline and line spacing)
-                if (tfM != null && annM != null)
-                {
-                    if (tfS != null)
-                    {
-                        tfM.LineSpacing = tfS.LineSpacing;
-                        tfM.CharHeight = tfS.CharHeight;
-                        tfM.TypeFaceName = tfS.TypeFaceName;
-                        tfM.Italic = tfS.Italic;
-                        tfM.Bold = tfS.Bold;
-                    }
-                    else
-                    {
-                        tfM.LineSpacing = 0.001;
-                        tfM.CharHeight = 0.0035;
-                        tfM.TypeFaceName = "GOST type A";
-                    }
-                    annM.SetTextFormat(0, false, tfM);
-                }
-
-                // Standard GOST 2.104 title block dimensions:
-                // Stamp width = 185 mm, right margin = 5 mm.
-                // Mass/Scale data cell vertical range: Y in [0.025, 0.040] (15 mm height).
-                // Vertical geometric center: Y = 0.0325 m (32.5 mm).
-                double cellCenterY = 0.0325;
-                double targetY = 0.0347;
-
-                if (scaleNote != null && annS != null)
-                {
-                    double[] posS = (double[])annS.GetPosition();
-                    double[] extS = (double[])scaleNote.GetExtent();
-                    if (extS != null && extS.Length >= 6 && (extS[4] - extS[1]) > 0.001)
-                    {
-                        double curCenterS = (extS[1] + extS[4]) / 2.0;
-                        double deltaS = cellCenterY - curCenterS;
-                        targetY = posS[1] + deltaS;
-                    }
-                    else if (posS != null && posS.Length >= 2)
-                    {
-                        targetY = posS[1];
-                    }
-
-                    // Scale cell is 18 mm wide, right margin 5 mm -> center is sheetW - 14 mm (0.014 m)
-                    double targetScaleX = sheetW > 0.15 ? (sheetW - 0.0140) : (posS != null ? posS[0] : 0.0);
-                    annS.SetPosition(targetScaleX, targetY, posS != null && posS.Length > 2 ? posS[2] : 0.0);
-                    scaleNote.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                }
-
-                if (massNote != null && annM != null)
-                {
-                    double[] extM = (double[])massNote.GetExtent();
-                    double[] posM = (double[])annM.GetPosition();
-                    double targetMassY = targetY;
-
-                    if (extM != null && extM.Length >= 6 && (extM[4] - extM[1]) > 0.001)
-                    {
-                        double hM = extM[4] - extM[1];
-                        if (hM > 0.006)
-                        {
-                            // Multi-line note (e.g. legacy <FONT size=1> top line):
-                            // Center based on the visible text at the bottom
-                            double charH = tfM != null && tfM.CharHeight > 0.001 ? tfM.CharHeight : 0.0035;
-                            double visibleCenterM = extM[1] + (charH / 2.0);
-                            double deltaM = cellCenterY - visibleCenterM;
-                            targetMassY = posM != null && posM.Length >= 2 ? (posM[1] + deltaM) : targetY;
-                        }
-                        else
-                        {
-                            // Clean single-line note: center extent directly
-                            double curCenterM = (extM[1] + extM[4]) / 2.0;
-                            double deltaM = cellCenterY - curCenterM;
-                            targetMassY = posM != null && posM.Length >= 2 ? (posM[1] + deltaM) : targetY;
-                        }
-                    }
-
-                    // Mass cell is 17 mm wide, between (sheetW - 40 mm) and (sheetW - 23 mm) -> center is sheetW - 31.5 mm (0.0315 m)
-                    double targetMassX = sheetW > 0.15 ? (sheetW - 0.0315) : (scaleNote != null ? (sheetW - 0.0140 - 0.0175) : 0.0);
-                    annM.SetPosition(targetMassX, targetMassY, posM != null && posM.Length > 2 ? posM[2] : 0.0);
-                    massNote.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                }
-
-                if (litNote != null)
-                {
-                    Annotation annL = (Annotation)litNote.GetAnnotation();
-                    if (annL != null)
-                    {
-                        TextFormat tfL = (TextFormat)annL.GetTextFormat(0);
-                        if (tfL != null)
-                        {
-                            if (tfS != null)
-                            {
-                                tfL.LineSpacing = tfS.LineSpacing;
-                                tfL.CharHeight = tfS.CharHeight;
-                                tfL.TypeFaceName = tfS.TypeFaceName;
-                                tfL.Italic = tfS.Italic;
-                                tfL.Bold = tfS.Bold;
-                            }
-                            else
-                            {
-                                tfL.LineSpacing = 0.001;
-                                tfL.CharHeight = 0.0035;
-                                tfL.TypeFaceName = "GOST type A";
-                            }
-                            annL.SetTextFormat(0, false, tfL);
-                        }
-
-                        double[] extL = (double[])litNote.GetExtent();
-                        double[] posL = (double[])annL.GetPosition();
-                        double targetLitY = targetY;
-                        if (extL != null && extL.Length >= 6 && (extL[4] - extL[1]) > 0.001)
-                        {
-                            double curCenterL = (extL[1] + extL[4]) / 2.0;
-                            double deltaL = cellCenterY - curCenterL;
-                            targetLitY = posL != null && posL.Length >= 2 ? (posL[1] + deltaL) : targetY;
-                        }
-
-                        // Litera cell: default column 2 center is sheetW - 47.5 mm (0.0475 m)
-                        double targetLitX = sheetW > 0.15 ? (sheetW - 0.0475) : 0.0;
-                        annL.SetPosition(targetLitX, targetLitY, posL != null && posL.Length > 2 ? posL[2] : 0.0);
-                        litNote.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                    }
-                }
-            }
-            catch { }
+            // No-op: mass note position is strictly preserved from drawing template
         }
 
         public static void AlignDrawingMaterialNote(DrawingDoc drw)
         {
-            if (drw == null) return;
-            try
-            {
-                int autoCenter = 0;
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegKeySettings))
-                {
-                    if (key != null)
-                    {
-                        autoCenter = (int)key.GetValue("AutoCenterMaterial", (int)key.GetValue("AutoCenterMass", 0));
-                    }
-                }
-                if (autoCenter == 0) return;
-
-                string[] sheetNames = (string[])drw.GetSheetNames();
-                string origSheetName = null;
-                Sheet curSheet = (Sheet)drw.GetCurrentSheet();
-                if (curSheet != null) origSheetName = curSheet.GetName();
-
-                if (sheetNames != null && sheetNames.Length > 1)
-                {
-                    foreach (string sName in sheetNames)
-                    {
-                        drw.ActivateSheet(sName);
-                        AlignActiveSheetMaterialNote(drw);
-                    }
-                    if (!string.IsNullOrEmpty(origSheetName))
-                    {
-                        drw.ActivateSheet(origSheetName);
-                    }
-                }
-                else
-                {
-                    AlignActiveSheetMaterialNote(drw);
-                }
-            }
-            catch { }
-        }
-
-        private static void AlignActiveSheetMaterialNote(DrawingDoc drw)
-        {
-            if (drw == null) return;
-            try
-            {
-                Sheet sheet = (Sheet)drw.GetCurrentSheet();
-                if (sheet == null || IsSpecificationForm2(drw, sheet) || IsSubsequentSheetForm2a(drw, sheet)) return;
-
-                double sheetW = 0.0;
-                double[] sProps = (double[])sheet.GetProperties2();
-                if (sProps != null && sProps.Length > 5)
-                {
-                    sheetW = sProps[5];
-                }
-
-                // The Material cell (Графа 3 по ГОСТ 2.104) is in the main title block (Форма 1):
-                // Bottom border of stamp: 5 mm from sheet bottom (Y = 0.005 m).
-                // Material cell height: 15 mm (from Y = 0.005 to Y = 0.020).
-                // For two-line fraction (<STACK>...</STACK>): optimal anchor Y is 0.0193 m (19.3 mm).
-                // For single-line material: optimal anchor Y is 0.0152 m (15.2 mm) for perfect dead-center alignment.
-                // Horizontal center: 90 mm from sheet right edge (sheetW - 0.090 m).
-                double targetCenterX = sheetW > 0.15 ? (sheetW - 0.090) : 0.0;
-
-                View v = (View)drw.GetFirstView();
-                while (v != null)
-                {
-                    Note n = (Note)v.GetFirstNote();
-                    while (n != null)
-                    {
-                        string name = n.GetName() ?? "";
-                        string ltxt = n.PropertyLinkedText ?? "";
-                        string txt = n.GetText() ?? "";
-
-                        bool isMatNote = false;
-                        if (name.Equals("MYPRP16", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isMatNote = true;
-                        }
-                        else if (ltxt.IndexOf("Материал_ФБ", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 ltxt.IndexOf("$PRPSHEET:\"Материал", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 (ltxt.IndexOf("Материал", StringComparison.OrdinalIgnoreCase) >= 0 && ltxt.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0))
-                        {
-                            Annotation annTest = (Annotation)n.GetAnnotation();
-                            if (annTest != null)
-                            {
-                                double[] p = (double[])annTest.GetPosition();
-                                if (p != null && p.Length >= 2 && p[1] > 0.003 && p[1] < 0.035)
-                                {
-                                    isMatNote = true;
-                                }
-                            }
-                        }
-
-                        if (isMatNote)
-                        {
-                            if (ltxt.IndexOf("$PRPSHEET:\"Материал_ФБ\"", StringComparison.OrdinalIgnoreCase) < 0)
-                            {
-                                try
-                                {
-                                    n.PropertyLinkedText = "<FONT size=1.8> <FONT size=3.5>$PRPSHEET:\"Материал_ФБ\"";
-                                    txt = n.GetText() ?? "";
-                                    ltxt = n.PropertyLinkedText ?? "";
-                                }
-                                catch { }
-                            }
-
-                            Annotation ann = (Annotation)n.GetAnnotation();
-                            if (ann != null)
-                            {
-                                double[] pos = (double[])ann.GetPosition();
-                                if (pos != null && pos.Length >= 2 && pos[1] > 0.003 && pos[1] < 0.035)
-                                {
-                                    // Determine whether the material is a two-line fraction or a single line
-                                    bool isFraction = txt.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                     txt.IndexOf("<OVER", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                     ltxt.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                     ltxt.IndexOf("<OVER", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                                     txt.IndexOf('\n') >= 0 ||
-                                                     txt.IndexOf('\r') >= 0;
-
-                                    if (!isFraction)
-                                    {
-                                        try
-                                        {
-                                            View curV = (View)drw.GetFirstView();
-                                            while (curV != null)
-                                            {
-                                                ModelDoc2 refDoc = (ModelDoc2)curV.ReferencedDocument;
-                                                if (refDoc != null)
-                                                {
-                                                    // Check global custom properties
-                                                    CustomPropertyManager cpm = refDoc.Extension.get_CustomPropertyManager("");
-                                                    string v1, r1;
-                                                    cpm.Get4("Материал_ФБ", false, out v1, out r1);
-                                                    if (!string.IsNullOrEmpty(r1) && (r1.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0 || r1.IndexOf("<OVER", StringComparison.OrdinalIgnoreCase) >= 0))
-                                                    {
-                                                        isFraction = true;
-                                                        break;
-                                                    }
-                                                    cpm.Get4("Материал", false, out v1, out r1);
-                                                    if (!string.IsNullOrEmpty(r1) && (r1.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0 || r1.IndexOf("<OVER", StringComparison.OrdinalIgnoreCase) >= 0))
-                                                    {
-                                                        isFraction = true;
-                                                        break;
-                                                    }
-
-                                                    // Check configuration-specific custom properties
-                                                    string[] cfgs = (string[])refDoc.GetConfigurationNames();
-                                                    if (cfgs != null)
-                                                    {
-                                                        foreach (string cfg in cfgs)
-                                                        {
-                                                            CustomPropertyManager cpmCfg = refDoc.Extension.get_CustomPropertyManager(cfg);
-                                                            if (cpmCfg != null)
-                                                            {
-                                                                cpmCfg.Get4("Материал_ФБ", false, out v1, out r1);
-                                                                if (!string.IsNullOrEmpty(r1) && (r1.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0 || r1.IndexOf("<OVER", StringComparison.OrdinalIgnoreCase) >= 0))
-                                                                {
-                                                                    isFraction = true;
-                                                                    break;
-                                                                }
-                                                                cpmCfg.Get4("Материал", false, out v1, out r1);
-                                                                if (!string.IsNullOrEmpty(r1) && (r1.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0 || r1.IndexOf("<OVER", StringComparison.OrdinalIgnoreCase) >= 0))
-                                                                {
-                                                                    isFraction = true;
-                                                                    break;
-                                                                }
-                                                            }
-                                                        }
-                                                        if (isFraction) break;
-                                                    }
-                                                }
-                                                curV = (View)curV.GetNextView();
-                                            }
-                                        }
-                                        catch { }
-                                    }
-
-                                    // Dynamic extent-based centering
-                                    double[] ext = (double[])n.GetExtent();
-                                    double targetX = (targetCenterX > 0.05) ? targetCenterX : pos[0];
-                                    double targetY = pos[1];
-
-                                    bool hasValidExtent = ext != null && ext.Length >= 6 && (ext[4] - ext[1]) > 0.002;
-
-                                    if (hasValidExtent)
-                                    {
-                                        // Vertical center of Cell 3 in GOST 2.104 title block (between 5 mm and 20 mm) is 12.5 mm
-                                        double currentCenterY = (ext[1] + ext[4]) / 2.0;
-                                        double deltaY = 0.0125 - currentCenterY;
-                                        targetY = pos[1] + deltaY;
-
-                                        // Safety bounds:
-                                        if (isFraction && targetY < 0.0175)
-                                        {
-                                            targetY = 0.0185;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        if (isFraction)
-                                        {
-                                            targetY = 0.0193;
-                                        }
-                                        else
-                                        {
-                                            if (!string.IsNullOrEmpty(txt) && txt.Trim().Length > 0)
-                                            {
-                                                targetY = 0.0152;
-                                            }
-                                            else
-                                            {
-                                                if (pos[1] < 0.0140) targetY = 0.0187;
-                                                else targetY = pos[1];
-                                            }
-                                        }
-                                    }
-
-                                    if (Math.Abs(pos[1] - targetY) > 0.00015 || Math.Abs(pos[0] - targetX) > 0.0005)
-                                    {
-                                        ann.SetPosition(targetX, targetY, pos.Length > 2 ? pos[2] : 0.0);
-                                        n.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                                    }
-                                }
-                            }
-                            break;
-                        }
-                        n = (Note)n.GetNext();
-                    }
-                    v = (View)v.GetNextView();
-                }
-            }
-            catch { }
+            // No-op: material note position is strictly preserved from drawing template
         }
 
         public static void AlignDrawingTitleNote(DrawingDoc drw)
         {
-            if (drw == null) return;
-            try
-            {
-                int autoCenter = 0;
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegKeySettings))
-                {
-                    if (key != null)
-                    {
-                        autoCenter = (int)key.GetValue("AutoCenterTitle", (int)key.GetValue("AutoCenterMass", 0));
-                    }
-                }
-                if (autoCenter == 0) return;
-
-                string[] sheetNames = (string[])drw.GetSheetNames();
-                string origSheetName = null;
-                Sheet curSheet = (Sheet)drw.GetCurrentSheet();
-                if (curSheet != null) origSheetName = curSheet.GetName();
-
-                if (sheetNames != null && sheetNames.Length > 1)
-                {
-                    foreach (string sName in sheetNames)
-                    {
-                        drw.ActivateSheet(sName);
-                        AlignActiveSheetTitleNote(drw);
-                    }
-                    if (!string.IsNullOrEmpty(origSheetName))
-                    {
-                        drw.ActivateSheet(origSheetName);
-                    }
-                }
-                else
-                {
-                    AlignActiveSheetTitleNote(drw);
-                }
-            }
-            catch { }
-        }
-
-        private static void AlignActiveSheetTitleNote(DrawingDoc drw)
-        {
-            if (drw == null) return;
-            try
-            {
-                Sheet sheet = (Sheet)drw.GetCurrentSheet();
-                if (sheet == null || IsSubsequentSheetForm2a(drw, sheet)) return;
-
-                bool isForm2 = IsSpecificationForm2(drw, sheet);
-
-                double sheetW = 0.0;
-                double[] sProps = (double[])sheet.GetProperties2();
-                if (sProps != null && sProps.Length > 5)
-                {
-                    sheetW = sProps[5];
-                }
-
-                // ГОСТ 2.104 title block coordinates:
-                // Stamp width = 185 mm, right margin = 5 mm.
-                // Графа 1 (Наименование) is 70 mm wide.
-                // Left border = sheetW - 125 mm, Right border = sheetW - 55 mm.
-                // Cell center X = sheetW - 90 mm (0.090 m).
-                //
-                // In Form 1 (Основная надпись чертежей, штамп 55 мм):
-                // Floor Y = 0.020 m (20 mm from sheet bottom, above the 15 mm material/company cell).
-                // Ceiling Y = 0.045 m (45 mm from sheet bottom, below the 15 mm designation cell).
-                // Cell height = 0.025 m (25 mm).
-                // Center Y = (0.020 + 0.045) / 2 = 0.0325 m (32.5 mm).
-                //
-                // In Form 2 (Основная надпись спецификации первый лист, штамп 40 мм):
-                // Upper row (Y = 30..45 mm, 120x15 mm) is Графа 2 (Обозначение, note MYPRP19).
-                // Lower row (Y = 5..30 mm, 70x25 mm) is Графа 1 (Наименование, note MYPRP4).
-                // Floor Y = 0.005 m, Ceiling Y = 0.030 m.
-                // Cell height = 0.025 m (25 mm).
-                // Center Y = (0.005 + 0.030) / 2 = 0.0175 m (17.5 mm).
-
-                double targetCenterX = sheetW > 0.15 ? (sheetW - 0.090) : 0.0;
-                double cellCenterY = isForm2 ? 0.0175 : 0.0325;
-
-                View v = (View)drw.GetFirstView();
-                Note noteTitle = null;
-                Note noteSubtitle = null;
-
-                while (v != null)
-                {
-                    Note n = (Note)v.GetFirstNote();
-                    while (n != null)
-                    {
-                        string name = n.GetName() ?? "";
-                        string ltxt = n.PropertyLinkedText ?? "";
-
-                        bool isTitle = false;
-                        bool isSubtitle = false;
-
-                        if (name.Equals("MYPRP4", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isTitle = true;
-                        }
-                        else if (!isForm2 && name.Equals("MYPRP3", StringComparison.OrdinalIgnoreCase))
-                        {
-                            isSubtitle = true;
-                        }
-                        else if (ltxt.IndexOf("Наименование_ФБ", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 ltxt.IndexOf("$PRPSHEET:\"Наименование", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                 (ltxt.IndexOf("Наименование", StringComparison.OrdinalIgnoreCase) >= 0 && ltxt.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0))
-                        {
-                            Annotation a = (Annotation)n.GetAnnotation();
-                            if (a != null)
-                            {
-                                double[] p = (double[])a.GetPosition();
-                                if (p != null && p.Length >= 2)
-                                {
-                                    if (isForm2 && p[1] > 0.003 && p[1] < 0.040)
-                                    {
-                                        isTitle = true;
-                                    }
-                                    else if (!isForm2 && p[1] > 0.015 && p[1] < 0.055)
-                                    {
-                                        isTitle = true;
-                                    }
-                                }
-                            }
-                        }
-                        else if (!isForm2 && ltxt.IndexOf("Сборка2_ФБ", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            isSubtitle = true;
-                        }
-
-                        if (isTitle && noteTitle == null)
-                        {
-                            noteTitle = n;
-                        }
-                        if (isSubtitle && noteSubtitle == null)
-                        {
-                            noteSubtitle = n;
-                        }
-
-                        n = (Note)n.GetNext();
-                    }
-                    v = (View)v.GetNextView();
-                }
-
-                if (noteTitle != null)
-                {
-                    Annotation annTitle = (Annotation)noteTitle.GetAnnotation();
-                    if (annTitle != null)
-                    {
-                        double[] posTitle = (double[])annTitle.GetPosition();
-                        double[] extTitle = (double[])noteTitle.GetExtent();
-                        double targetX = (targetCenterX > 0.05) ? targetCenterX : (posTitle != null && posTitle.Length > 0 ? posTitle[0] : 0.0);
-
-                        bool hasValidTitleExt = extTitle != null && extTitle.Length >= 6 && (extTitle[4] - extTitle[1]) > 0.001;
-
-                        // Check if subtitle note exists and has non-empty text (e.g. "Сборочный чертеж")
-                        bool hasSubtitleText = false;
-                        Annotation annSub = null;
-                        double[] posSub = null;
-                        double[] extSub = null;
-                        if (!isForm2 && noteSubtitle != null)
-                        {
-                            string subText = noteSubtitle.GetText();
-                            if (!string.IsNullOrWhiteSpace(subText))
-                            {
-                                annSub = (Annotation)noteSubtitle.GetAnnotation();
-                                if (annSub != null)
-                                {
-                                    posSub = (double[])annSub.GetPosition();
-                                    extSub = (double[])noteSubtitle.GetExtent();
-                                    hasSubtitleText = true;
-                                }
-                            }
-                        }
-
-                        if (hasSubtitleText && extSub != null && extSub.Length >= 6 && hasValidTitleExt)
-                        {
-                            // Two elements: Title and Subtitle stacked together
-                            double combinedMinY = Math.Min(extTitle[1], extSub[1]);
-                            double combinedMaxY = Math.Max(extTitle[4], extSub[4]);
-                            double currentCenterY = (combinedMinY + combinedMaxY) / 2.0;
-                            double deltaY = cellCenterY - currentCenterY;
-
-                            double targetYTitle = posTitle[1] + deltaY;
-                            double targetYSub = posSub[1] + deltaY;
-
-                            if (Math.Abs(posTitle[1] - targetYTitle) > 0.00015 || Math.Abs(posTitle[0] - targetX) > 0.0005)
-                            {
-                                annTitle.SetPosition(targetX, targetYTitle, posTitle.Length > 2 ? posTitle[2] : 0.0);
-                                noteTitle.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                            }
-                            if (Math.Abs(posSub[1] - targetYSub) > 0.00015 || Math.Abs(posSub[0] - targetX) > 0.0005)
-                            {
-                                annSub.SetPosition(targetX, targetYSub, posSub.Length > 2 ? posSub[2] : 0.0);
-                                noteSubtitle.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                            }
-                        }
-                        else
-                        {
-                            // Single element: Title alone centered in [0.020, 0.045] (Form 1) or [0.005, 0.030] (Form 2)
-                            double targetYTitle = posTitle[1];
-                            if (hasValidTitleExt)
-                            {
-                                double currentCenterY = (extTitle[1] + extTitle[4]) / 2.0;
-                                double deltaY = cellCenterY - currentCenterY;
-                                targetYTitle = posTitle[1] + deltaY;
-                            }
-                            else
-                            {
-                                double hTitle = 0.0055;
-                                targetYTitle = cellCenterY + (hTitle / 2.0);
-                            }
-
-                            if (Math.Abs(posTitle[1] - targetYTitle) > 0.00015 || Math.Abs(posTitle[0] - targetX) > 0.0005)
-                            {
-                                annTitle.SetPosition(targetX, targetYTitle, posTitle.Length > 2 ? posTitle[2] : 0.0);
-                                noteTitle.SetTextJustification((int)swTextJustification_e.swTextJustificationCenter);
-                            }
-                        }
-                    }
-                }
-            }
-            catch { }
+            // No-op: title note position is strictly preserved from drawing template
         }
 
         public static void AlignSpecificationTableColumns(DrawingDoc drw)
         {
-            if (drw == null) return;
-            try
-            {
-                View v = (View)drw.GetFirstView();
-                while (v != null)
-                {
-                    object[] tables = (object[])v.GetTableAnnotations();
-                    if (tables != null)
-                    {
-                        foreach (TableAnnotation t in tables)
-                        {
-                            if (t != null && t.ColumnCount >= 7)
-                            {
-                                int c5Type = t.GetColumnType(5);
-                                int c6Type = t.GetColumnType(6);
-                                if (c5Type != 203 && c6Type == 203)
-                                {
-                                    t.MoveColumn(6, (int)swTableItemInsertPosition_e.swTableItemInsertPosition_After, 4);
-                                    t.SetColumnWidth(5, 0.010, 0);
-                                    t.SetColumnWidth(6, 0.022, 0);
-                                }
-                            }
-                        }
-                    }
-                    v = (View)v.GetNextView();
-                }
-            }
-            catch { }
+            // No-op: table columns and widths are preserved strictly as authored
         }
 
         public static MaterialSyncResult SyncPart(PartDoc part, ISldWorks swApp, bool force = false, string targetFileName = null)
@@ -1503,6 +658,18 @@ namespace ESKD.MaterialSync
         {
             try
             {
+                CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
+                string existingGenMass = GetProp(cpmGen, "Масса");
+                string existingGenMassFB = GetProp(cpmGen, "Масса_ФБ");
+
+                // If user or MProp already configured dynamic SW-Mass or custom formatted mass, preserve it strictly!
+                bool hasDynamicMass = (!string.IsNullOrEmpty(existingGenMass) && (existingGenMass.Contains("SW-Mass") || existingGenMass.Contains("<FONT") || existingGenMass.Contains("\n"))) ||
+                                      (!string.IsNullOrEmpty(existingGenMassFB) && (existingGenMassFB.Contains("SW-Mass") || existingGenMassFB.Contains("<FONT") || existingGenMassFB.Contains("\n")));
+                if (hasDynamicMass)
+                {
+                    return;
+                }
+
                 MassProperty massProp = (MassProperty)model.Extension.CreateMassProperty();
                 if (massProp != null)
                 {
@@ -1513,19 +680,22 @@ namespace ESKD.MaterialSync
 
                         string formatStr = "0." + new string('#', decimals);
                         string massStr = massKg.ToString(formatStr, RuCulture);
-                        string massFB = FormatEskdMassFB(massStr);
+                        string massFB = string.Format("<FONT size=1> \n<FONT size=3.5>{0}", massStr);
 
-                        CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
                         SetProp(cpmGen, "Масса_ФБ", massFB);
-                        SetProp(cpmGen, "Масса", massStr);
+                        SetProp(cpmGen, "Масса", massFB);
 
                         if (!string.IsNullOrEmpty(configName))
                         {
                             CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(configName);
                             if (cpmCfg != null)
                             {
-                                SetProp(cpmCfg, "Масса_ФБ", massFB);
-                                SetProp(cpmCfg, "Масса", massStr);
+                                string existingCfgMass = GetProp(cpmCfg, "Масса");
+                                if (string.IsNullOrEmpty(existingCfgMass) || (!existingCfgMass.Contains("SW-Mass") && !existingCfgMass.Contains("<FONT")))
+                                {
+                                    SetProp(cpmCfg, "Масса_ФБ", massFB);
+                                    SetProp(cpmCfg, "Масса", massFB);
+                                }
                             }
                         }
                         else
@@ -1538,8 +708,12 @@ namespace ESKD.MaterialSync
                                     CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(cfg);
                                     if (cpmCfg != null)
                                     {
-                                        SetProp(cpmCfg, "Масса_ФБ", massFB);
-                                        SetProp(cpmCfg, "Масса", massStr);
+                                        string existingCfgMass = GetProp(cpmCfg, "Масса");
+                                        if (string.IsNullOrEmpty(existingCfgMass) || (!existingCfgMass.Contains("SW-Mass") && !existingCfgMass.Contains("<FONT")))
+                                        {
+                                            SetProp(cpmCfg, "Масса_ФБ", massFB);
+                                            SetProp(cpmCfg, "Масса", massFB);
+                                        }
                                     }
                                 }
                             }
@@ -1553,63 +727,8 @@ namespace ESKD.MaterialSync
 
         public static bool CleanModelMassTags(ModelDoc2 doc)
         {
-            if (doc == null) return false;
-            bool changed = false;
-            try
-            {
-                changed |= CleanCpmTags(doc.Extension.get_CustomPropertyManager(""));
-                string[] cfgNames = (string[])doc.GetConfigurationNames();
-                if (cfgNames != null)
-                {
-                    foreach (string cfg in cfgNames)
-                    {
-                        changed |= CleanCpmTags(doc.Extension.get_CustomPropertyManager(cfg));
-                    }
-                }
-            }
-            catch { }
-            return changed;
-        }
-
-        private static bool CleanCpmTags(CustomPropertyManager cpm)
-        {
-            if (cpm == null) return false;
-            bool changed = false;
-            try
-            {
-                string[] names = (string[])cpm.GetNames();
-                if (names == null) return false;
-                foreach (string name in names)
-                {
-                    if (name.Equals("Масса_ФБ", StringComparison.OrdinalIgnoreCase))
-                    {
-                        string val = "", resVal = "";
-                        bool wasRes = false;
-                        cpm.Get5(name, false, out val, out resVal, out wasRes);
-                        if (!string.IsNullOrEmpty(val) && (val.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0 || val.IndexOf("\n") >= 0))
-                        {
-                            string cleaned = System.Text.RegularExpressions.Regex.Replace(val, @"<FONT[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
-                            cleaned = cleaned.Replace("\r", "").Replace("\n", "").Trim();
-                            cpm.Set2(name, cleaned);
-                            changed = true;
-                        }
-                    }
-                    else if (name.Equals("Наименование_ФБ", StringComparison.OrdinalIgnoreCase))
-                    {
-                        string val = "", resVal = "";
-                        bool wasRes = false;
-                        cpm.Get5(name, false, out val, out resVal, out wasRes);
-                        if (!string.IsNullOrEmpty(val) && val.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            string cleaned = System.Text.RegularExpressions.Regex.Replace(val, @"<FONT[^>]*>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
-                            cpm.Set2(name, cleaned);
-                            changed = true;
-                        }
-                    }
-                }
-            }
-            catch { }
-            return changed;
+            // Do NOT strip formatting tags: SWPlus MProp relies on <FONT> and newlines for title block vertical alignment
+            return false;
         }
 
         private static void TryReadXmlProperties(ISldWorks swApp, string matName, string dbName,
@@ -1935,6 +1054,8 @@ namespace ESKD.MaterialSync
 
             // Remove known SolidWorks extensions
             name = Regex.Replace(name, @"\.(sldprt|sldasm|slddrw|prt|asm|drw)$", "", RegexOptions.IgnoreCase).Trim();
+            // Strip drawing sheet suffixes if present (e.g. " - Лист1", " - Sheet1")
+            name = Regex.Replace(name, @"\s*-\s*(Лист|Sheet)\s*\d*$", "", RegexOptions.IgnoreCase).Trim();
             return name;
         }
 
@@ -1992,9 +1113,10 @@ namespace ESKD.MaterialSync
                     existingGenDesig.Contains("$PRP") ||
                     Regex.IsMatch(existingGenDesig.Trim(), @"^(Деталь|Part|Сборка|Assem|Чертеж|Draw)\s*\d*$", RegexOptions.IgnoreCase);
 
-                string effectiveBaseDesig = !string.IsNullOrWhiteSpace(parsedDesig)
-                    ? parsedDesig
-                    : (!isExistingDesigTemplate ? existingGenDesig : "");
+                // Priority to existing user/MProp properties over file name parsing
+                string effectiveBaseDesig = !isExistingDesigTemplate
+                    ? existingGenDesig
+                    : (!string.IsNullOrWhiteSpace(parsedDesig) ? parsedDesig : "");
 
                 string foundExecInBase;
                 string docCode;
@@ -2009,9 +1131,10 @@ namespace ESKD.MaterialSync
                     existingGenTitle.Contains("$PRP") ||
                     Regex.IsMatch(existingGenTitle.Trim(), @"^(Деталь|Part|Сборка|Assem|Чертеж|Draw)\s*\d*$", RegexOptions.IgnoreCase);
 
-                string effectiveTitle = !string.IsNullOrWhiteSpace(parsedTitle)
-                    ? parsedTitle
-                    : (!isExistingTitleTemplate ? existingGenTitle : "");
+                // Priority to existing user/MProp title over file name parsing
+                string effectiveTitle = !isExistingTitleTemplate
+                    ? existingGenTitle
+                    : (!string.IsNullOrWhiteSpace(parsedTitle) ? parsedTitle : "");
 
                 // 2. Set general custom properties (for $PRPSHEET and $PRP)
                 if (cpmGen != null)
@@ -2019,16 +1142,28 @@ namespace ESKD.MaterialSync
                     string baseFullDesig = BuildExecutionDesignation(rootBaseDesig, "", docCode);
                     if (!string.IsNullOrEmpty(baseFullDesig))
                     {
-                        SetProp(cpmGen, "Обозначение", baseFullDesig);
-                        SetProp(cpmGen, "PartNo", baseFullDesig);
-                        SetProp(cpmGen, "Number", baseFullDesig);
+                        string curGenDesig = GetProp(cpmGen, "Обозначение");
+                        if (string.IsNullOrEmpty(curGenDesig) || isExistingDesigTemplate)
+                        {
+                            SetProp(cpmGen, "Обозначение", baseFullDesig);
+                            SetProp(cpmGen, "PartNo", baseFullDesig);
+                            SetProp(cpmGen, "Number", baseFullDesig);
+                        }
                     }
                     if (!string.IsNullOrEmpty(effectiveTitle))
                     {
-                        string titleFB = FormatEskdTitleFB(effectiveTitle);
-                        SetProp(cpmGen, "Наименование", effectiveTitle);
-                        SetProp(cpmGen, "Наименование_ФБ", titleFB);
-                        SetProp(cpmGen, "Description", effectiveTitle);
+                        string curGenTitle = GetProp(cpmGen, "Наименование");
+                        string curGenTitleFB = GetProp(cpmGen, "Наименование_ФБ");
+                        if (string.IsNullOrEmpty(curGenTitle) || isExistingTitleTemplate)
+                        {
+                            SetProp(cpmGen, "Наименование", effectiveTitle);
+                            SetProp(cpmGen, "Description", effectiveTitle);
+                        }
+                        if (string.IsNullOrEmpty(curGenTitleFB) || curGenTitleFB.Contains("$PRP"))
+                        {
+                            string titleFB = FormatEskdTitleFB(effectiveTitle);
+                            SetProp(cpmGen, "Наименование_ФБ", titleFB);
+                        }
                     }
                 }
 
@@ -2089,9 +1224,13 @@ namespace ESKD.MaterialSync
                             {
                                 if (!string.IsNullOrEmpty(configDesignation))
                                 {
-                                    SetProp(cpmCfg, "Обозначение", configDesignation);
-                                    SetProp(cpmCfg, "PartNo", configDesignation);
-                                    SetProp(cpmCfg, "Number", configDesignation);
+                                    string curCfgDesig = GetProp(cpmCfg, "Обозначение");
+                                    if (string.IsNullOrEmpty(curCfgDesig) || curCfgDesig.Contains("$PRP") || isExistingDesigTemplate)
+                                    {
+                                        SetProp(cpmCfg, "Обозначение", configDesignation);
+                                        SetProp(cpmCfg, "PartNo", configDesignation);
+                                        SetProp(cpmCfg, "Number", configDesignation);
+                                    }
 
                                     // MProp execution flag: "2" means execution is active, "0" means base
                                     string curExec, curDoc;
@@ -2108,10 +1247,18 @@ namespace ESKD.MaterialSync
 
                                 if (!string.IsNullOrEmpty(effectiveTitle))
                                 {
-                                    string titleFB = FormatEskdTitleFB(effectiveTitle);
-                                    SetProp(cpmCfg, "Наименование", effectiveTitle);
-                                    SetProp(cpmCfg, "Наименование_ФБ", titleFB);
-                                    SetProp(cpmCfg, "Description", effectiveTitle);
+                                    string curCfgTitle = GetProp(cpmCfg, "Наименование");
+                                    string curCfgTitleFB = GetProp(cpmCfg, "Наименование_ФБ");
+                                    if (string.IsNullOrEmpty(curCfgTitle) || isExistingTitleTemplate)
+                                    {
+                                        SetProp(cpmCfg, "Наименование", effectiveTitle);
+                                        SetProp(cpmCfg, "Description", effectiveTitle);
+                                    }
+                                    if (string.IsNullOrEmpty(curCfgTitleFB) || curCfgTitleFB.Contains("$PRP"))
+                                    {
+                                        string titleFB = FormatEskdTitleFB(effectiveTitle);
+                                        SetProp(cpmCfg, "Наименование_ФБ", titleFB);
+                                    }
                                 }
                             }
 
