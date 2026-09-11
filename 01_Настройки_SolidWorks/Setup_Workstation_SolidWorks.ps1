@@ -86,11 +86,10 @@ if ($swProc -and -not $SkipClose) {
     Write-Host "  SolidWorks запущен (пропуск закрытия по ключу -SkipClose)..." -ForegroundColor Yellow
 }
 
-# Блокировка и полное удаление нежелательных надстроек (OnCadTools, Drew, устаревшие версии)
+# Блокировка и удаление устаревших сторонних надстроек (OnCadTools и устаревшие версии)
 $unwantedAddinGuids = @(
     "{03412ba8-10f6-4d51-ac38-4937ce7bea5f}", # OnCadTools
-    "{7a2f5c31-9e44-4b0d-8c21-5f0e9a4b77c2}", # OnCadTools Shim
-    "{08c4bc0b-c36c-470e-a0ea-02232f023333}"  # CAD Booster Drew
+    "{7a2f5c31-9e44-4b0d-8c21-5f0e9a4b77c2}"  # OnCadTools Shim
 )
 foreach ($ug in $unwantedAddinGuids) {
     Remove-Item "HKLM:\SOFTWARE\SolidWorks\AddIns\$ug" -Recurse -Force -ErrorAction SilentlyContinue
@@ -102,10 +101,10 @@ foreach ($ug in $unwantedAddinGuids) {
     Remove-Item "HKCU:\Software\SolidWorks\AddInsEntitlement\$ug" -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# Очистка COM-классов и ProgID OnCadTools и Drew в Classes
+# Очистка COM-классов и ProgID OnCadTools в Classes
 foreach ($rootClass in @("HKLM:\SOFTWARE\Classes", "HKCU:\Software\Classes")) {
     Get-ChildItem $rootClass -ErrorAction SilentlyContinue | Where-Object { 
-        $_.PSChildName -like "OnCadTools*" -or $_.PSChildName -like "CADBooster*" 
+        $_.PSChildName -like "OnCadTools*" 
     } | ForEach-Object {
         Remove-Item $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -115,7 +114,7 @@ foreach ($rootClass in @("HKLM:\SOFTWARE\Classes", "HKCU:\Software\Classes")) {
     }
 }
 
-# Очистка вкладок CommandManager и TaskPane от OnCadTools, Drew, Ounan
+# Очистка вкладок CommandManager и TaskPane от OnCadTools, Ounan
 foreach ($ctx in @("PartContext", "AssyContext", "DrwContext")) {
     $ctxPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\$ctx"
     if (Test-Path $ctxPath) {
@@ -123,9 +122,9 @@ foreach ($ctx in @("PartContext", "AssyContext", "DrwContext")) {
             $ref = (Get-ItemProperty -Path $_.PSPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
             $props = (Get-ItemProperty -Path $_.PSPath -Name "Tab Props" -ErrorAction SilentlyContinue)."Tab Props"
             $mod = (Get-ItemProperty -Path $_.PSPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
-            if (($ref -and ($ref -match "OnCad|Drew|Ounan")) -or 
-                ($props -and ($props -match "OnCad|Drew|Ounan")) -or
-                ($mod -and ($mod -match "03412ba8|08C4BC0B|7A2F5C31"))) {
+            if (($ref -and ($ref -match "OnCad|Ounan")) -or 
+                ($props -and ($props -match "OnCad|Ounan")) -or
+                ($mod -and ($mod -match "03412ba8|7A2F5C31"))) {
                 Remove-Item $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
             }
         }
@@ -135,19 +134,19 @@ $flyoutsPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\Custom 
 if (Test-Path $flyoutsPath) {
     Get-ChildItem $flyoutsPath -ErrorAction SilentlyContinue | ForEach-Object {
         $mod = (Get-ItemProperty $_.PSPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
-        if ($mod -and ($mod -match "03412ba8|08C4BC0B|7A2F5C31")) {
+        if ($mod -and ($mod -match "03412ba8|7A2F5C31")) {
             Remove-Item $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
 }
 Remove-Item "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\TaskPane\Инструменты Ounan (OnCadTools)" -Recurse -Force -ErrorAction SilentlyContinue
 Get-ChildItem "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\TaskPane" -ErrorAction SilentlyContinue | Where-Object { 
-    $_.Name -match "OnCad|Drew|Ounan" 
+    $_.Name -match "OnCad|Ounan" 
 } | ForEach-Object {
     Remove-Item $_.PSPath -Recurse -Force -ErrorAction SilentlyContinue
 }
 Remove-ItemProperty -Path "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\General\Addin Performance" -Name "OnCadTools" -ErrorAction SilentlyContinue
-Remove-ItemProperty -Path "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\General\Addin Performance" -Name "Drew" -ErrorAction SilentlyContinue
+
 
 # Очистка устаревших версий надстройки ЕСКД во избежание дубликатов
 $oldGuids = @(
@@ -495,6 +494,58 @@ if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
     }
 
     Write-Host "  [OK] Нативная надстройка ЕСКД v5, панель инструментов и Избранные материалы настроены." -ForegroundColor Green
+
+    # 5.1. Настройка и интеграция модуля автоматизации черчения Drw (CAD Booster Drew)
+    $drewGuid = "{08c4bc0b-c36c-470e-a0ea-02232f023333}"
+    $drewCandidates = @(
+        (Join-Path $env:ProgramFiles "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"),
+        (Join-Path $env:LOCALAPPDATA "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"),
+        (Join-Path $ToolsRoot "03_Макросы_и_Плагины\Drw_System_Automation\2_комплект_издания\bin\CADBooster.Drew.Drawing.dll")
+    )
+    $drewDll = $null
+    foreach ($dc in $drewCandidates) {
+        if (Test-Path $dc) { $drewDll = (Resolve-Path $dc).Path; break }
+    }
+
+    if ($drewDll) {
+        $drewTitle = "Drew"
+        $drewDesc = "Drew Drawing Automation"
+        $drewCodeBase = "file:///" + $drewDll.Replace('\', '/')
+
+        # HKCU COM-регистрация (для гарантированной работы без прав администратора)
+        $drewClsidPath = "HKCU:\Software\Classes\CLSID\$drewGuid"
+        if (-not (Test-Path $drewClsidPath)) { New-Item -Path $drewClsidPath -Force | Out-Null }
+        Set-ItemProperty -Path $drewClsidPath -Name "(Default)" -Value "CADBooster.Drew.Drawing.SolidWorks.Integration.DrewAddin" -ErrorAction SilentlyContinue
+
+        $drewInprocPath = "$drewClsidPath\InprocServer32"
+        if (-not (Test-Path $drewInprocPath)) { New-Item -Path $drewInprocPath -Force | Out-Null }
+        Set-ItemProperty -Path $drewInprocPath -Name "(Default)" -Value "mscoree.dll" -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $drewInprocPath -Name "ThreadingModel" -Value "Both" -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $drewInprocPath -Name "Class" -Value "CADBooster.Drew.Drawing.SolidWorks.Integration.DrewAddin" -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $drewInprocPath -Name "Assembly" -Value "CADBooster.Drew.Drawing, Version=4.3.0.0, Culture=neutral, PublicKeyToken=null" -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $drewInprocPath -Name "RuntimeVersion" -Value "v4.0.30319" -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $drewInprocPath -Name "CodeBase" -Value $drewCodeBase -ErrorAction SilentlyContinue
+
+        # HKCU AddIns и автозагрузка
+        $drewHkcuKey = "HKCU:\Software\SolidWorks\AddIns\$drewGuid"
+        if (-not (Test-Path $drewHkcuKey)) { New-Item -Path $drewHkcuKey -Force | Out-Null }
+        Set-ItemProperty -Path $drewHkcuKey -Name "(Default)" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $drewHkcuKey -Name "Title" -Value $drewTitle -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $drewHkcuKey -Name "Description" -Value $drewDesc -ErrorAction SilentlyContinue
+
+        $drewStartupKey = "HKCU:\Software\SolidWorks\AddinsStartup\$drewGuid"
+        if (-not (Test-Path $drewStartupKey)) { New-Item -Path $drewStartupKey -Force | Out-Null }
+        Set-ItemProperty -Path $drewStartupKey -Name "(Default)" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+
+        Write-Host "  [OK] Модуль автоматизации чертежей Drw (Drew 4.3.0) интегрирован и активирован." -ForegroundColor Green
+    } else {
+        $drewInstaller = Join-Path $ToolsRoot "03_Макросы_и_Плагины\Drw_System_Automation\install-all.ps1"
+        if (Test-Path $drewInstaller) {
+            Write-Host "  [ИНФО] Развертывание модуля Drw из комплекта поставки..." -ForegroundColor Gray
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $drewInstaller -Silent -NoActivate
+            Write-Host "  [OK] Модуль Drw успешно развернут из дистрибутива." -ForegroundColor Green
+        }
+    }
 } else {
     Write-Host "  [ПРЕДУПРЕЖДЕНИЕ] Файл надстройки или RegAsm не найден: $addinDll" -ForegroundColor Yellow
 }

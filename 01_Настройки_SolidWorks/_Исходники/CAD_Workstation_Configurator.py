@@ -236,15 +236,9 @@ class CADConfiguratorApp:
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddInsStartup\\\{03412BA8-10F6-4D51-AC38-4937CE7BEA5F\}\].*?(?=\r?\n\[|\Z)',
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddIns\\\{03412BA8-10F6-4D51-AC38-4937CE7BEA5F\}\].*?(?=\r?\n\[|\Z)',
             r'\[HKEY_LOCAL_MACHINE\\SOFTWARE\\SolidWorks\\AddIns\\\{03412BA8-10F6-4D51-AC38-4937CE7BEA5F\}\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddInsStartup\\\{08C4BC0B-C36C-470E-A0EA-02232F023333\}\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddIns\\\{08C4BC0B-C36C-470E-A0EA-02232F023333\}\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddInsEntitlement\\\{08C4BC0B-C36C-470E-A0EA-02232F023333\}\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_LOCAL_MACHINE\\SOFTWARE\\SolidWorks\\AddIns\\\{08C4BC0B-C36C-470E-A0EA-02232F023333\}\].*?(?=\r?\n\[|\Z)',
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\[^\\]+\\Tab\d+\].*?(OnCadTools|Ounan|03412BA8).*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\[^\\]+\\Tab\d+\].*?(Drew|CADBooster|08C4BC0B).*?(?=\r?\n\[|\Z)',
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\TaskPane\\.*?(OnCadTools|Ounan).*?\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\TaskPane\\.*?(Drew|CADBooster).*?\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\Custom API Flyouts\\.*?\].*?(03412BA8|08C4BC0B).*?(?=\r?\n\[|\Z)',
+            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\Custom API Flyouts\\.*?\].*?03412BA8.*?(?=\r?\n\[|\Z)',
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\[^\\]+\\Tab\d+\].*?Semantic.*?(?=\r?\n\[|\Z)',
             r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\TaskPane\\.*?Semantic.*?\].*?(?=\r?\n\[|\Z)',
         ]
@@ -622,13 +616,12 @@ class CADConfiguratorApp:
         subprocess.run(["taskkill", "/F", "/IM", "sldworks.exe"], capture_output=True)
         time.sleep(2)
         
-        self.log("2. Полная очистка реестра от следов OnCadTools и Drew...", "INFO")
+        self.log("2. Полная очистка реестра от следов OnCadTools...", "INFO")
         hkcu = winreg.HKEY_CURRENT_USER
         hklm = winreg.HKEY_LOCAL_MACHINE
         unwanted_guids = [
             "{03412BA8-10F6-4D51-AC38-4937CE7BEA5F}".lower(), # OnCadTools
             "{7A2F5C31-9E44-4B0D-8C21-5F0E9A4B77C2}".lower(), # OnCadTools Shim
-            "{08C4BC0B-C36C-470E-A0EA-02232F023333}".lower()  # CAD Booster Drew
         ]
 
         # Удаление из автозагрузки и списков надстроек
@@ -654,7 +647,7 @@ class CADConfiguratorApp:
             except Exception:
                 pass
 
-        # Удаление ProgID OnCadTools и CADBooster в Classes
+        # Удаление ProgID OnCadTools в Classes
         for root_k, base_p in [(hklm, r"SOFTWARE\Classes"), (hkcu, r"Software\Classes")]:
             try:
                 with winreg.OpenKey(root_k, base_p, 0, winreg.KEY_ALL_ACCESS) as k:
@@ -662,7 +655,7 @@ class CADConfiguratorApp:
                     sub_keys = [winreg.EnumKey(k, i) for i in range(sub_cnt)]
                     for sub in sub_keys:
                         sub_low = sub.lower()
-                        if sub_low.startswith("oncadtools") or sub_low.startswith("cadbooster"):
+                        if sub_low.startswith("oncadtools"):
                             self.delete_key_recursive(root_k, f"{base_p}\\{sub}")
             except Exception:
                 pass
@@ -786,8 +779,7 @@ class CADConfiguratorApp:
                     for cid in range(33639, 33648):
                         winreg.SetValueEx(k_mc, str(cid), 0, winreg.REG_DWORD, 0)
 
-                # Очистка фантомных ссылок Custom API Flyouts / Toolbars (Drew, OnCadTools, SWTools) предотвращающая диалог сброса тулбаров SolidWorks
-                self.delete_key_recursive(winreg.HKEY_CURRENT_USER, r"Software\SolidWorks\SOLIDWORKS 2025\User Interface\Custom API Flyouts")
+                # Очистка фантомных ссылок Toolbars (OnCadTools, SWTools) предотвращающая диалог сброса тулбаров SolidWorks
                 self.delete_key_recursive(winreg.HKEY_CURRENT_USER, r"Software\SolidWorks\SOLIDWORKS 2025\User Interface\Toolbars\ToolbarChangesOnUpgrade")
                 self.log("9 кнопок макросов SWPlus зафиксированы в верхней панели быстрого доступа (QAT: 33639-33647)!", "SUCCESS")
             except Exception as e_qat:
@@ -1013,6 +1005,56 @@ class CADConfiguratorApp:
             except Exception as e:
                 self.log(f"Предупреждение при настройке надстройки: {e}", "WARN")
 
+        # 6. Проверка и регистрация надстройки Drw (CAD Booster Drew)
+        drew_guid = "{08C4BC0B-C36C-470E-A0EA-02232F023333}"
+        drew_candidates = [
+            r"C:\Program Files\CAD Booster\Drew\CADBooster.Drew.Drawing.dll",
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), r"CAD Booster\Drew\CADBooster.Drew.Drawing.dll"),
+            os.path.join(root_p, "03_Макросы_и_Плагины", "Drw_System_Automation", "2_комплект_издания", "bin", "CADBooster.Drew.Drawing.dll")
+        ]
+        drew_dll = next((p for p in drew_candidates if os.path.exists(p)), None)
+        if drew_dll:
+            try:
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\SolidWorks\AddIns\{drew_guid}") as k_drew:
+                    winreg.SetValueEx(k_drew, "", 0, winreg.REG_DWORD, 1)
+                    winreg.SetValueEx(k_drew, "Title", 0, winreg.REG_SZ, "Drew")
+                    winreg.SetValueEx(k_drew, "Description", 0, winreg.REG_SZ, "Drew Drawing Automation")
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\SolidWorks\AddinsStartup\{drew_guid}") as k_drew_st:
+                    winreg.SetValueEx(k_drew_st, "", 0, winreg.REG_DWORD, 1)
+
+                drew_codebase = "file:///" + drew_dll.replace('\\', '/')
+                drew_clsid = rf"Software\Classes\CLSID\{drew_guid}"
+                full_class = "CADBooster.Drew.Drawing.SolidWorks.Integration.DrewAddin"
+                assembly_nm = "CADBooster.Drew.Drawing, Version=4.3.0.0, Culture=neutral, PublicKeyToken=null"
+
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, drew_clsid) as k_dc:
+                    winreg.SetValueEx(k_dc, "", 0, winreg.REG_SZ, full_class)
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"{drew_clsid}\InprocServer32") as k_din:
+                    winreg.SetValueEx(k_din, "", 0, winreg.REG_SZ, "mscoree.dll")
+                    winreg.SetValueEx(k_din, "ThreadingModel", 0, winreg.REG_SZ, "Both")
+                    winreg.SetValueEx(k_din, "Class", 0, winreg.REG_SZ, full_class)
+                    winreg.SetValueEx(k_din, "Assembly", 0, winreg.REG_SZ, assembly_nm)
+                    winreg.SetValueEx(k_din, "RuntimeVersion", 0, winreg.REG_SZ, "v4.0.30319")
+                    winreg.SetValueEx(k_din, "CodeBase", 0, winreg.REG_SZ, drew_codebase)
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"{drew_clsid}\InprocServer32\4.3.0.0") as k_din_v:
+                    winreg.SetValueEx(k_din_v, "Class", 0, winreg.REG_SZ, full_class)
+                    winreg.SetValueEx(k_din_v, "Assembly", 0, winreg.REG_SZ, assembly_nm)
+                    winreg.SetValueEx(k_din_v, "RuntimeVersion", 0, winreg.REG_SZ, "v4.0.30319")
+                    winreg.SetValueEx(k_din_v, "CodeBase", 0, winreg.REG_SZ, drew_codebase)
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"{drew_clsid}\Implemented Categories\{{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}}") as _:
+                    pass
+
+                try:
+                    with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, rf"SOFTWARE\SolidWorks\AddIns\{drew_guid}") as k_drew_m:
+                        winreg.SetValueEx(k_drew_m, "", 0, winreg.REG_DWORD, 1)
+                        winreg.SetValueEx(k_drew_m, "Title", 0, winreg.REG_SZ, "Drew")
+                        winreg.SetValueEx(k_drew_m, "Description", 0, winreg.REG_SZ, "Drew Drawing Automation")
+                except Exception: pass
+
+                self.log(f"Надстройка черчения Drw (CAD Booster Drew) успешно активирована ({drew_dll})!", "SUCCESS")
+            except Exception as e_drew:
+                self.log(f"Предупреждение при регистрации Drew: {e_drew}", "WARN")
+
         if show_msgbox:
             self.log("\nНАСТРОЙКА РАБОЧЕГО МЕСТА ЗАВЕРШЕНА!", "SUCCESS")
             messagebox.showinfo(
@@ -1020,6 +1062,7 @@ class CADConfiguratorApp:
                 "Рабочее место SolidWorks 2025 успешно настроено!\n\n"
                 "• Полный корпоративный профиль ЕСКД перенесён и применён.\n"
                 "• Плагин Zero-Click автосинхронизации материалов ЕСКД активирован.\n"
+                "• Надстройка автоматизации черчения Drw (Drew) зарегистрирована.\n"
                 "• Шаблоны документов (Деталь, Сборка, Чертеж) и База форматок подключены.\n"
                 "• 9 кнопок SWPlus встроены в верхнюю панель быстрого доступа (QAT).\n"
                 "• Динамическая подсветка кромок и граней (Dynamic Highlight) включена.\n"

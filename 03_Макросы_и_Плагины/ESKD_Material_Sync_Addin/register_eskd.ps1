@@ -246,9 +246,8 @@ for ($cid = 33639; $cid -le 33647; $cid++) {
     Set-ItemProperty -Path $menuCustPath -Name "$cid" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
 }
 
-# Очистка фантомных ссылок Custom API Flyouts / Toolbars (Drew, OnCadTools, SWTools) предотвращающая диалог сброса тулбаров SolidWorks
+# Очистка фантомных ссылок Toolbars (OnCadTools, SWTools) предотвращающая диалог сброса тулбаров SolidWorks
 $orphanToolbars = @(
-    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\Custom API Flyouts",
     "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\Toolbars\ToolbarChangesOnUpgrade"
 )
 foreach ($ot in $orphanToolbars) {

@@ -15,3 +15,6 @@ obj/
 __pycache__/
 build_temp/
 ~$*
+
+# Allow Drw System Automation distribution binaries
+!03_Макросы_и_Плагины/Drw_System_Automation/**
