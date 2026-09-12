@@ -417,14 +417,14 @@ def run_tier3_tests():
         res.assert_true(r1 == 1, f"БЧ установлен (код {r1})")
         bch_doc.SaveAs3(tube_path, 0, 1)
         res.assert_true(str(cpm_bch.Get("БЧ") or "") == "БЧ", "Свойство-признак «БЧ» установлено")
-        res.assert_true(str(cpm_bch.Get("Наименование") or "").endswith(" БЧ"), "Индекс «БЧ» добавлен в наименование для спецификации")
+        res.assert_true("80х80х4" in str(cpm_bch.Get("Наименование") or "") and "L = " in str(cpm_bch.Get("Наименование") or ""), "Запись по ГОСТ 2.109 п. 3.3 (сортамент и длина L = ... мм) сформирована")
 
         # Шаг 2: Снятие признака БЧ (повторный клик)
         r2 = ao.ToggleDrawinglessSilent
         res.assert_true(r2 == 2, f"БЧ снят (код {r2})")
         bch_doc.SaveAs3(tube_path, 0, 1)
         res.assert_true(str(cpm_bch.Get("БЧ") or "") == "", "Признак «БЧ» удален")
-        res.assert_true(not str(cpm_bch.Get("Наименование") or "").endswith(" БЧ"), "Индекс «БЧ» удален из наименования")
+        res.assert_true(str(cpm_bch.Get("Формат") or "") == "А3", "Стандартный формат чертежа (А3) восстановлен")
 
         # Шаг 3: Повторно помечаем стойку как БЧ для сценария 8 спецификации
         r3 = ao.ToggleDrawinglessSilent
@@ -434,7 +434,7 @@ def run_tier3_tests():
 
         # Проверяем персистентность в файле
         pr_saved = file_props(sw, tube_path, 1)
-        res.assert_true(pr_saved.get("БЧ", "") == "БЧ" and pr_saved.get("Наименование", "").endswith(" БЧ"),
+        res.assert_true(pr_saved.get("Формат", "") == "БЧ" and "L = " in pr_saved.get("Наименование", ""),
                         "Персистентность БЧ-статуса в файле детали подтверждена")
     except Exception as e:
         res.assert_true(False, "Сценарий БЧ", str(e))
@@ -549,7 +549,7 @@ def run_tier3_tests():
             table_a = win32com.client.dynamic.Dispatch(ann_a._oleobj_)
             rows_a = [" | ".join([str(table_a.Text(r, c) or "").strip() for c in range(table_a.ColumnCount) if str(table_a.Text(r, c) or "").strip()]) for r in range(table_a.TotalRowCount)]
             txt_a = "\n".join(rows_a)
-            res.assert_true("ПРТИ.468211.020" in txt_a and "профильной трубы БЧ" in txt_a, "[Вариант А] Спецификация содержит деталь БЧ с индексом в графе Наименование")
+            res.assert_true("ПРТИ.468211.020" in txt_a and "L = 300 мм" in txt_a and "БЧ" in txt_a, "[Вариант А] Спецификация содержит деталь БЧ (графа Формат=БЧ, сортамент и длина L=300 мм по ГОСТ 2.109)")
             res.assert_true("ПРТИ.468211.021" in txt_a and "Пластина опорная нижняя" in txt_a, "[Вариант А] Спецификация содержит стандартную деталь без БЧ")
         path_a_drw = os.path.join(OUTPUT_DIR, "ПРТИ.468211.030 СБ_Спецификация_на_листе.slddrw")
         drw_a.SaveAs3(path_a_drw, 0, 1)
@@ -573,7 +573,7 @@ def run_tier3_tests():
             table_b = win32com.client.dynamic.Dispatch(ann_b._oleobj_)
             rows_b = [" | ".join([str(table_b.Text(r, c) or "").strip() for c in range(table_b.ColumnCount) if str(table_b.Text(r, c) or "").strip()]) for r in range(table_b.TotalRowCount)]
             txt_b = "\n".join(rows_b)
-            res.assert_true("ПРТИ.468211.020" in txt_b and "профильной трубы БЧ" in txt_b, "[Вариант Б] Отдельная спецификация содержит деталь БЧ по ГОСТ 2.109")
+            res.assert_true("ПРТИ.468211.020" in txt_b and "L = 300 мм" in txt_b and "БЧ" in txt_b, "[Вариант Б] Отдельная спецификация содержит деталь БЧ (графа Формат=БЧ, сортамент и длина L=300 мм по ГОСТ 2.109)")
             res.assert_true("ПРТИ.468211.021" in txt_b and "Пластина опорная нижняя" in txt_b, "[Вариант Б] Отдельная спецификация содержит стандартную деталь")
         path_b_drw = os.path.join(OUTPUT_DIR, "ПРТИ.468211.030 СП Спецификация_отдельная.slddrw")
         drw_b.SaveAs3(path_b_drw, 0, 1)
