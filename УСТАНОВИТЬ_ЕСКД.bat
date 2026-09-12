@@ -12,7 +12,16 @@ if %errorlevel% neq 0 (
 cd /d "%~dp0"
 echo Root: %~dp0
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp001_\230\235\241\340\256\351\352\250_\221\356\253\250\244\240\236\242\221\250\351\250\225_\221\250\253\250\256\242_SolidWorks\Setup_Workstation_SolidWorks.ps1"
+rem The batch file stays pure ASCII: cmd reads it in the OEM code page, so the Cyrillic
+rem folder name "01_..." is located by wildcard instead of being typed literally.
+set "SETUP_PS1="
+for /d %%D in ("%~dp001_*") do if exist "%%~fD\Setup_Workstation_SolidWorks.ps1" set "SETUP_PS1=%%~fD\Setup_Workstation_SolidWorks.ps1"
+if not defined SETUP_PS1 (
+    echo  Setup_Workstation_SolidWorks.ps1 was not found in "%~dp001_*"
+    pause
+    exit /b 2
+)
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SETUP_PS1%"
 set RC=%errorlevel%
 echo.
 echo ============================================================

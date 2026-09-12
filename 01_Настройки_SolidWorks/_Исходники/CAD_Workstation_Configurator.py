@@ -810,20 +810,42 @@ class CADConfiguratorApp:
         firm = self.var_firm.get().strip()
         mprop_dir = os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "MProp")
         if os.path.exists(mprop_dir):
+            # Справочники MProp только дополняются: списки коллег и организаций не затираются.
             if author:
                 fam_file = os.path.join(mprop_dir, "MProp_Fam.txt")
                 try:
-                    with open(fam_file, "w", encoding="cp1251") as f:
-                        f.write(f"{author}\n")
-                    self.log(f"Записана фамилия конструктора: {author}", "SUCCESS")
-                except Exception: pass
+                    names = []
+                    if os.path.exists(fam_file):
+                        with open(fam_file, "r", encoding="cp1251") as f:
+                            names = [ln.strip() for ln in f if ln.strip()]
+                    if author not in names:
+                        names.insert(0, author)
+                        with open(fam_file, "w", encoding="cp1251", newline="\r\n") as f:
+                            f.write("\n".join(names) + "\n")
+                    self.log(f"Фамилия конструктора в справочнике MProp: {author}", "SUCCESS")
+                except Exception as e:
+                    self.log(f"Ошибка обновления MProp_Fam.txt: {e}", "WARN")
             if firm:
                 firm_file = os.path.join(mprop_dir, "MProp_Firm.txt")
                 try:
-                    with open(firm_file, "w", encoding="cp1251") as f:
-                        f.write(f"{firm}\n")
-                    self.log(f"Записана организация: {firm}", "SUCCESS")
-                except Exception: pass
+                    # Формат MProp: пары строк «организация» / «буквенный код» (код может быть пустым).
+                    lines = []
+                    if os.path.exists(firm_file):
+                        with open(firm_file, "r", encoding="cp1251") as f:
+                            lines = [ln.rstrip("\r\n") for ln in f]
+                    pairs = []
+                    for i in range(0, len(lines), 2):
+                        name = lines[i].strip()
+                        code = lines[i + 1].strip() if i + 1 < len(lines) else ""
+                        if name:
+                            pairs.append((name, code))
+                    if firm not in [p[0] for p in pairs]:
+                        pairs.insert(0, (firm, ""))
+                        with open(firm_file, "w", encoding="cp1251", newline="\r\n") as f:
+                            f.write("".join(f"{n}\n{c}\n" for n, c in pairs))
+                    self.log(f"Организация в справочнике MProp: {firm}", "SUCCESS")
+                except Exception as e:
+                    self.log(f"Ошибка обновления MProp_Firm.txt: {e}", "WARN")
 
         # 4. Fonts Registration (Permanent in HKLM/HKCU Fonts + GDI AddFontResourceW)
         if self.var_opt_fonts.get():

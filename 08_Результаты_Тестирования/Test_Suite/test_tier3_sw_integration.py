@@ -170,13 +170,15 @@ def run_tier3_tests():
     sheet_path = os.path.join(OUTPUT_DIR, "ПРТИ.468211.021 Пластина опорная нижняя.sldprt")
     asm_path = os.path.join(OUT_DIR if False else OUTPUT_DIR, "ПРТИ.468211.030 СБ Рама кондуктора сварная.sldasm")
 
-    # Гарантированно закрываем открытые документы перед очисткой файлов
+    # Тест работает только в пустой сессии: документы пользователя не закрываются никогда.
     try:
-        while sw.GetDocumentCount() > 0:
-            sw.CloseDoc(sw.ActiveDoc.GetTitle)
+        open_docs = int(sw.GetDocumentCount())
     except Exception:
-        pass
-    time.sleep(1)
+        open_docs = -1
+    if open_docs != 0:
+        res.assert_true(False, "Сессия SolidWorks без открытых документов",
+                        f"открыто документов: {open_docs}; закройте их или запустите SolidWorks заново")
+        return False
 
     for p in (tube_path, sheet_path, asm_path):
         if os.path.isfile(p):
