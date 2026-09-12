@@ -269,19 +269,40 @@ namespace ESKD.MaterialSync
             if (mat.StartsWith("\"SW-Material")) mat = "";
             if (sortament.StartsWith("$")) sortament = "";
 
+            string fullMat = "";
             PartDoc part = model as PartDoc;
-            if (part != null && string.IsNullOrEmpty(sortament))
+            if (part != null)
             {
                 try
                 {
                     string db;
-                    string fullMat = part.GetMaterialPropertyName2("", out db);
-                    if (!string.IsNullOrEmpty(fullMat))
-                    {
-                        sortament = fullMat.Contains("/") ? fullMat.Split('/')[0].Trim() : fullMat;
-                    }
+                    fullMat = part.GetMaterialPropertyName2("", out db) ?? "";
                 }
                 catch { }
+            }
+            if (string.IsNullOrEmpty(fullMat)) fullMat = mat;
+
+            // Формируем двухэтажную дробь сортамента и марки материала с разделительной чертой
+            string matFraction = "";
+            if (!string.IsNullOrEmpty(fullMat) && fullMat.Contains("/"))
+            {
+                string[] parts = fullMat.Split('/');
+                string top = parts[0].Trim();
+                string bot = parts[1].Trim();
+                matFraction = string.Format("<STACK size=1>{0}<OVER>{1}</STACK>", top, bot);
+                if (string.IsNullOrEmpty(sortament)) sortament = top;
+            }
+            else if (!string.IsNullOrEmpty(sortament) && !string.IsNullOrEmpty(mat))
+            {
+                matFraction = string.Format("<STACK size=1>{0}<OVER>{1}</STACK>", sortament, mat);
+            }
+            else if (!string.IsNullOrEmpty(sortament))
+            {
+                matFraction = sortament;
+            }
+            else if (!string.IsNullOrEmpty(fullMat))
+            {
+                matFraction = fullMat;
             }
 
             double minD, midD, maxD;
@@ -299,7 +320,7 @@ namespace ESKD.MaterialSync
                 return baseTitle + " БЧ";
             }
 
-            string checkStr = ((sortament ?? "") + " " + (mat ?? "")).ToLower();
+            string checkStr = ((fullMat ?? "") + " " + (sortament ?? "")).ToLower();
             bool isProfile = checkStr.Contains("труба") || checkStr.Contains("уголок") || checkStr.Contains("швеллер") ||
                              checkStr.Contains("круг") || checkStr.Contains("полоса") || checkStr.Contains("квадрат") ||
                              checkStr.Contains("двутавр") || checkStr.Contains("профиль");
@@ -307,15 +328,23 @@ namespace ESKD.MaterialSync
 
             if (isProfile)
             {
-                // Черт. 40 ГОСТ 2.109-73: наименование, сортамент заготовки и длина L
+                // Черт. 40 ГОСТ 2.109-73: наименование детали, двухэтажная дробь сортамента/материала с чертой и длина L
+                if (!string.IsNullOrEmpty(matFraction))
+                {
+                    return string.Format("{0}\n{1}\nL = {2} мм", shortTitle, matFraction, (int)maxD);
+                }
                 string sortText = !string.IsNullOrEmpty(sortament) ? sortament : "Труба";
-                return string.Format("{0}\n{1}, L = {2} мм", shortTitle, sortText, (int)maxD);
+                return string.Format("{0}\n{1}\nL = {2} мм", shortTitle, sortText, (int)maxD);
             }
             else if (isSheet)
             {
-                // Черт. 40 ГОСТ 2.109-73: наименование, материал, размеры (толщина х ширина х длина)
+                // Черт. 40 ГОСТ 2.109-73: наименование детали, двухэтажная дробь листа/материала с чертой и размеры (BxL)
+                if (!string.IsNullOrEmpty(matFraction))
+                {
+                    return string.Format("{0}\n{1}\n{2}х{3} мм", shortTitle, matFraction, (int)midD, (int)maxD);
+                }
                 string sortText = !string.IsNullOrEmpty(sortament) ? sortament : string.Format("Лист {0} мм", (int)minD);
-                return string.Format("{0}\n{1}, {2}х{3} мм", shortTitle, sortText, (int)midD, (int)maxD);
+                return string.Format("{0}\n{1}\n{2}х{3} мм", shortTitle, sortText, (int)midD, (int)maxD);
             }
             else
             {
