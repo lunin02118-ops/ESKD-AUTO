@@ -261,27 +261,28 @@ namespace ESKD.MaterialSync
             if (sp > 0) shortName = shortName.Substring(0, sp).Trim();
             if (string.IsNullOrEmpty(shortName)) shortName = "Деталь";
 
-            // Сортамент и материал
             CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
-            string sortament = GetProp(cpmGen, "Сортамент") ?? "";
-            string mat = GetProp(cpmGen, "Материал") ?? "";
-            if (mat.StartsWith("\"SW-Material")) mat = "";
-            if (sortament.StartsWith("$")) sortament = "";
 
+            // Полное имя материала и дробь сортамента
+            string fullMat = "";
             PartDoc part = model as PartDoc;
-            if (part != null && string.IsNullOrEmpty(sortament))
+            if (part != null)
             {
                 try
                 {
                     string db;
-                    string fullMat = part.GetMaterialPropertyName2("", out db);
-                    if (!string.IsNullOrEmpty(fullMat))
-                    {
-                        sortament = fullMat.Contains("/") ? fullMat.Split('/')[0].Trim() : fullMat;
-                    }
+                    fullMat = part.GetMaterialPropertyName2("", out db) ?? "";
                 }
                 catch { }
             }
+            if (string.IsNullOrEmpty(fullMat))
+            {
+                fullMat = GetProp(cpmGen, "Материал") ?? "";
+                if (fullMat.StartsWith("\"SW-Material")) fullMat = "";
+            }
+
+            string sortament = GetProp(cpmGen, "Сортамент") ?? "";
+            if (sortament.StartsWith("$")) sortament = "";
 
             double minD, midD, maxD;
             bool hasDims = GetPartDimensions(model, out minD, out midD, out maxD);
@@ -299,7 +300,26 @@ namespace ESKD.MaterialSync
                 return baseTitle + " БЧ";
             }
 
-            string checkStr = ((sortament ?? "") + " " + (mat ?? "")).ToLower();
+            // Формируем дробь сортамента по Черт. 40 ГОСТ 2.109-73:
+            // числитель — сортамент, знаменатель — марка материала заготовки
+            string matFraction = "";
+            if (!string.IsNullOrEmpty(fullMat) && fullMat.Contains("/"))
+            {
+                string[] parts = fullMat.Split('/');
+                string top = parts[0].Trim();
+                string bot = parts[1].Trim();
+                matFraction = string.Format("<STACK size=1>{0}<OVER>{1}</STACK>", top, bot);
+            }
+            else if (!string.IsNullOrEmpty(sortament))
+            {
+                matFraction = sortament;
+            }
+            else if (!string.IsNullOrEmpty(fullMat))
+            {
+                matFraction = fullMat;
+            }
+
+            string checkStr = ((fullMat ?? "") + " " + (sortament ?? "")).ToLower();
             bool isProfile = checkStr.Contains("труба") || checkStr.Contains("уголок") || checkStr.Contains("швеллер") ||
                              checkStr.Contains("круг") || checkStr.Contains("полоса") || checkStr.Contains("квадрат") ||
                              checkStr.Contains("двутавр") || checkStr.Contains("профиль");
@@ -307,15 +327,15 @@ namespace ESKD.MaterialSync
 
             if (isProfile)
             {
-                // ГОСТ 2.109 п. 3.3.3 б: наименование, сортамент заготовки и длина L
-                string sortText = !string.IsNullOrEmpty(sortament) ? sortament : "Труба";
-                return string.Format("{0}\n{1}, L = {2} мм", shortName, sortText, (int)maxD);
+                // Черт. 40 ГОСТ 2.109-73: наименование, двухэтажная дробь сортамента и длина L
+                string sortText = !string.IsNullOrEmpty(matFraction) ? matFraction : "Труба";
+                return string.Format("{0}\n{1}\nL = {2} мм", shortName, sortText, (int)maxD);
             }
             else if (isSheet)
             {
-                // ГОСТ 2.109 п. 3.3.3 в: наименование, материал, размеры (толщина х ширина х длина)
-                string sortText = !string.IsNullOrEmpty(sortament) ? sortament : string.Format("Лист {0} мм", (int)minD);
-                return string.Format("{0}\n{1}, {2}х{3} мм", shortName, sortText, (int)midD, (int)maxD);
+                // Черт. 40 ГОСТ 2.109-73: наименование, двухэтажная дробь листа и размеры (BxL)
+                string sortText = !string.IsNullOrEmpty(matFraction) ? matFraction : string.Format("Лист {0} мм", (int)minD);
+                return string.Format("{0}\n{1}\n{2}х{3} мм", shortName, sortText, (int)midD, (int)maxD);
             }
             else
             {
