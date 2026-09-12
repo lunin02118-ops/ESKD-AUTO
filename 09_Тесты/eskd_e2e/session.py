@@ -163,6 +163,24 @@ class SwSession:
             if was:
                 self.load_eskd()
 
+    @contextlib.contextmanager
+    def eskd_muted(self):
+        """Надстройка загружена, но служба выключена (ServiceEnabled = 0): документы открываются
+        без её записи. Циклы UnloadAddIn/LoadAddIn не используются — после нескольких повторов
+        надстройка v5 роняет SolidWorks при повторном создании вкладки (Д-26)."""
+        self.registry.apply({"ServiceEnabled": 0})
+        try:
+            yield
+        finally:
+            self.registry.apply({"ServiceEnabled": int(self.settings.get("ServiceEnabled", 1))})
+
+    def alive(self):
+        try:
+            self.sw.RevisionNumber()
+            return True
+        except Exception:
+            return False
+
     def eskd(self):
         obj = self.sw.GetAddInObject(paths.ADDIN_PROGID)
         return com.dyn(obj) if obj is not None else None

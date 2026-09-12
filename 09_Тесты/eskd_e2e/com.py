@@ -65,9 +65,14 @@ def _unwrap(value):
     return object.__getattribute__(value, "_obj") if isinstance(value, Proxy) else value
 
 
+PyIDispatchType = pythoncom.TypeIIDs[pythoncom.IID_IDispatch]
+
+
 def _wrap(value):
     if isinstance(value, win32com.client.dynamic.CDispatch):
         return Proxy(value)
+    if isinstance(value, PyIDispatchType):
+        return Proxy(win32com.client.dynamic.Dispatch(value))
     if isinstance(value, tuple):
         return tuple(_wrap(v) for v in value)
     if callable(value) and not isinstance(value, (Proxy, type)):
@@ -112,6 +117,8 @@ def dyn(obj):
         return None
     if isinstance(obj, Proxy):
         return obj
+    if isinstance(obj, PyIDispatchType):
+        return Proxy(win32com.client.dynamic.Dispatch(obj))
     return Proxy(win32com.client.dynamic.Dispatch(obj._oleobj_))
 
 

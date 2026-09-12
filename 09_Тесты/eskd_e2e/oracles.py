@@ -34,8 +34,8 @@ def dump_properties(doc):
 
 
 def read_persisted(session, path):
-    """Состояние файла на диске: надстройка ЕСКД выгружена, документ открыт только для чтения."""
-    with session.eskd_unloaded():
+    """Состояние файла на диске: служба надстройки выключена, документ открыт только для чтения."""
+    with session.eskd_muted():
         doc = session.open(path, readonly=True)
         try:
             return dump_properties(doc)
