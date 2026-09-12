@@ -549,40 +549,50 @@ foreach ($og in $oldGuids) {
 
 $contexts = @("PartContext", "AssyContext", "DrwContext")
 $activeGuid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
+$garbageSubkeys = @("AssyContext", "DrwContext", "EditPartContext", "LAVContext", "PartContext", "QAT")
+
 foreach ($ctx in $contexts) {
     $ctxPath = "$swRegRoot\User Interface\CommandManager\$ctx"
     if (-not (Test-Path $ctxPath)) { New-Item -Path $ctxPath -Force | Out-Null }
 
-    $found = $false
+    # 1. Удаление ошибочно вложенных папок контекстов (порождали пустые строки в меню вкладок)
+    foreach ($gb in $garbageSubkeys) {
+        $gbPath = Join-Path $ctxPath $gb
+        if (Test-Path $gbPath) {
+            Remove-Item -Path $gbPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    # 2. Поиск вкладки ЕСКД и удаление безымянных/пустых фантомных вкладок Tab* (с Tab Props = "0,1,1,-1" и пустым RefName)
     $tabItems = Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue
     if ($tabItems) {
         foreach ($item in $tabItems) {
             $tabPath = $item.PSPath
+            $refName = (Get-ItemProperty -Path $tabPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
+            $tabProps = (Get-ItemProperty -Path $tabPath -Name "Tab Props" -ErrorAction SilentlyContinue)."Tab Props"
             $modName = (Get-ItemProperty -Path $tabPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
+
+            # Удаление устаревших надстроек
             if ($modName -and ($oldGuids -contains $modName.ToUpper())) {
                 Remove-Item -Path $tabPath -Recurse -Force -ErrorAction SilentlyContinue
                 continue
             }
-            $refName = (Get-ItemProperty -Path $tabPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
+
+            # Удаление пустых фантомных вкладок (порождают пустые пункты с галочками в меню вкладок)
+            if (($item.PSChildName -like "Tab*") -and 
+                (-not $refName -or $refName.Trim() -eq "") -and 
+                (-not $tabProps -or $tabProps.StartsWith("0,") -or $tabProps.Trim() -eq "")) {
+                Remove-Item -Path $tabPath -Recurse -Force -ErrorAction SilentlyContinue
+                continue
+            }
+
+            # Фиксация корпоративной вкладки ЕСКД
             if (($refName -and ($refName -match "ЕСКД")) -or ($modName -and ($modName.ToUpper() -eq $activeGuid.ToUpper()))) {
                 Set-ItemProperty -Path $tabPath -Name "RefName" -Value "ЕСКД" -Force -ErrorAction SilentlyContinue
                 Set-ItemProperty -Path $tabPath -Name "ModuleName" -Value $activeGuid -Force -ErrorAction SilentlyContinue
                 Set-ItemProperty -Path $tabPath -Name "Tab Props" -Value "ЕСКД,1,1,-1" -Force -ErrorAction SilentlyContinue
-                $found = $true
             }
         }
-    }
-    if (-not $found) {
-        $existingTabs = Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | ForEach-Object {
-            if ($_.PSChildName -match "^Tab(\d+)$") { [int]$matches[1] }
-        }
-        $nextNum = 0
-        if ($existingTabs) { $nextNum = ($existingTabs | Measure-Object -Maximum).Maximum + 1 }
-        $newTabPath = Join-Path $ctxPath "Tab$nextNum"
-        New-Item -Path $newTabPath -Force | Out-Null
-        Set-ItemProperty -Path $newTabPath -Name "RefName" -Value "ЕСКД" -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path $newTabPath -Name "ModuleName" -Value $activeGuid -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path $newTabPath -Name "Tab Props" -Value "ЕСКД,1,1,-1" -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -843,19 +853,26 @@ if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
 }
 
 # 5.1. Настройка и интеграция модуля автоматизации черчения Drw (CAD Booster Drew)
-# B6 (DEP-6): блок вынесен из-под условия наличия DLL ЕСКД/RegAsm и работает самостоятельно:
-# регистрация Drew выполняется HKCU COM-записями (RegAsm не требуется), а установка из комплекта
-# поставки (install-all.ps1) выполняется независимо от наличия DLL ЕСКД и RegAsm вообще.
 $drewGuid = "{08c4bc0b-c36c-470e-a0ea-02232f023333}"
-$drewCandidates = @(
+$drewInstalled = @(
     (Join-Path $env:ProgramFiles "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"),
-    (Join-Path $env:LOCALAPPDATA "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"),
-    (Join-Path $ToolsRoot "03_Макросы_и_Плагины\Drw_System_Automation\2_комплект_издания\bin\CADBooster.Drew.Drawing.dll")
-)
-$drewDll = $null
-foreach ($dc in $drewCandidates) {
-    if (Test-Path $dc) { $drewDll = (Resolve-Path $dc).Path; break }
+    (Join-Path $env:LOCALAPPDATA "CAD Booster\Drew\CADBooster.Drew.Drawing.dll")
+) | Where-Object { Test-Path $_ } | Select-Object -First 1
+
+# Если модуль ещё не установлен в Program Files / AppData (чистая машина), обязательно запускаем дистрибутив
+if (-not $drewInstalled) {
+    $drewInstaller = Join-Path $ToolsRoot "03_Макросы_и_Плагины\Drw_System_Automation\install-all.ps1"
+    if (Test-Path $drewInstaller) {
+        Write-Host "  [ИНФО] Установка модуля Drw (CAD Booster Drew 4.3.0) из комплекта поставки..." -ForegroundColor Yellow
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $drewInstaller -Silent -NoActivate
+        $drewInstalled = @(
+            (Join-Path $env:ProgramFiles "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"),
+            (Join-Path $env:LOCALAPPDATA "CAD Booster\Drew\CADBooster.Drew.Drawing.dll")
+        ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    }
 }
+
+$drewDll = if ($drewInstalled) { (Resolve-Path $drewInstalled).Path } else { $null }
 
 if ($drewDll) {
     $drewTitle = "Drew"
@@ -887,16 +904,23 @@ if ($drewDll) {
     if (-not (Test-Path $drewStartupKey)) { New-Item -Path $drewStartupKey -Force | Out-Null }
     Set-ItemProperty -Path $drewStartupKey -Name "(Default)" -Value 1 -Type DWord -ErrorAction SilentlyContinue
 
+    # HKLM регистрация для администраторов
+    if ($isAdmin) {
+        try {
+            $drewHklmAddin = "HKLM:\Software\SolidWorks\AddIns\$drewGuid"
+            if (-not (Test-Path $drewHklmAddin)) { New-Item -Path $drewHklmAddin -Force -ErrorAction SilentlyContinue | Out-Null }
+            Set-ItemProperty -Path $drewHklmAddin -Name "(Default)" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+            Set-ItemProperty -Path $drewHklmAddin -Name "Title" -Value $drewTitle -ErrorAction SilentlyContinue
+
+            $drewHklmStartup = "HKLM:\Software\SolidWorks\AddinsStartup\$drewGuid"
+            if (-not (Test-Path $drewHklmStartup)) { New-Item -Path $drewHklmStartup -Force -ErrorAction SilentlyContinue | Out-Null }
+            Set-ItemProperty -Path $drewHklmStartup -Name "(Default)" -Value 1 -Type DWord -ErrorAction SilentlyContinue
+        } catch { }
+    }
+
     Write-Host "  [OK] Модуль автоматизации чертежей Drw (Drew 4.3.0) интегрирован и активирован." -ForegroundColor Green
 } else {
-    $drewInstaller = Join-Path $ToolsRoot "03_Макросы_и_Плагины\Drw_System_Automation\install-all.ps1"
-    if (Test-Path $drewInstaller) {
-        Write-Host "  [ИНФО] Развертывание модуля Drw из комплекта поставки..." -ForegroundColor Gray
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $drewInstaller -Silent -NoActivate
-        Write-Host "  [OK] Модуль Drw успешно развернут из дистрибутива." -ForegroundColor Green
-    } else {
-        Write-Host "  [ПРЕДУПРЕЖДЕНИЕ] Модуль Drw не найден ни в путях установки, ни в комплекте поставки ($drewInstaller)." -ForegroundColor Yellow
-    }
+    Write-Host "  [ПРЕДУПРЕЖДЕНИЕ] Модуль Drw не найден и не может быть установлен." -ForegroundColor Yellow
 }
 
 # 6. Шрифты ГОСТ
