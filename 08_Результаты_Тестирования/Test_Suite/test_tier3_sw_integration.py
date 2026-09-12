@@ -550,7 +550,7 @@ def run_tier3_tests():
             table_a = win32com.client.dynamic.Dispatch(ann_a._oleobj_)
             rows_a = [" | ".join([str(table_a.Text(r, c) or "").strip() for c in range(table_a.ColumnCount) if str(table_a.Text(r, c) or "").strip()]) for r in range(table_a.TotalRowCount)]
             txt_a = "\n".join(rows_a)
-            res.assert_true("ПРТИ.468211.020" in txt_a and "Стойка" in txt_a and "БЧ" in txt_a, "[Вариант А] Спецификация содержит деталь БЧ (графа Формат=БЧ, наименование Стойка)")
+            res.assert_true("ПРТИ.468211.020" in txt_a and "Стойка" in txt_a and "80х80х4" in txt_a and "L = " in txt_a and "БЧ" in txt_a, "[Вариант А] Спецификация содержит деталь БЧ по ГОСТ 2.109 Черт. 40 (Формат=БЧ, Стойка, сортамент и длина L)")
             res.assert_true("ПРТИ.468211.021" in txt_a and "Пластина опорная нижняя" in txt_a, "[Вариант А] Спецификация содержит стандартную деталь без БЧ")
         path_a_drw = os.path.join(OUTPUT_DIR, "1_Сборочный_чертеж_с_БЧ_спецификацией_на_листе.slddrw")
         drw_a.SaveAs3(path_a_drw, 0, 1)
@@ -574,7 +574,7 @@ def run_tier3_tests():
             table_b = win32com.client.dynamic.Dispatch(ann_b._oleobj_)
             rows_b = [" | ".join([str(table_b.Text(r, c) or "").strip() for c in range(table_b.ColumnCount) if str(table_b.Text(r, c) or "").strip()]) for r in range(table_b.TotalRowCount)]
             txt_b = "\n".join(rows_b)
-            res.assert_true("ПРТИ.468211.020" in txt_b and "Стойка" in txt_b and "БЧ" in txt_b, "[Вариант Б] Отдельная спецификация содержит деталь БЧ (графа Формат=БЧ, наименование Стойка)")
+            res.assert_true("ПРТИ.468211.020" in txt_b and "Стойка" in txt_b and "80х80х4" in txt_b and "L = " in txt_b and "БЧ" in txt_b, "[Вариант Б] Отдельная спецификация содержит деталь БЧ по ГОСТ 2.109 Черт. 40 (Формат=БЧ, Стойка, сортамент и длина L)")
             res.assert_true("ПРТИ.468211.021" in txt_b and "Пластина опорная нижняя" in txt_b, "[Вариант Б] Отдельная спецификация содержит стандартную деталь")
         path_b_drw = os.path.join(OUTPUT_DIR, "2_Спецификация_отдельный_документ_ГОСТ_2.106.slddrw")
         drw_b.SaveAs3(path_b_drw, 0, 1)

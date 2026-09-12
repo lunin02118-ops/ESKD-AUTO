@@ -178,32 +178,22 @@ namespace ESKD.MaterialSync
                     SetProp(cpmGen, "БЧ", "БЧ");
                     SetProp(cpmGen, "Формат", "БЧ");
 
-                    // 2. Наименование детали остаётся чистым для сохранения читаемости штампа:
-                    // если у детали было многословное имя, берём краткое первое слово ("Стойка")
-                    string shortTitle = title;
-                    if (string.IsNullOrWhiteSpace(shortTitle))
-                    {
-                        shortTitle = "Стойка";
-                    }
-                    else
-                    {
-                        int nl = shortTitle.IndexOf('\n');
-                        if (nl > 0) shortTitle = shortTitle.Substring(0, nl).Trim();
-                        // Убираем возможный суффикс БЧ
-                        shortTitle = Regex.Replace(shortTitle, @"\s+БЧ$", "", RegexOptions.IgnoreCase).Trim();
-                    }
-                    SetProp(cpmGen, "Наименование", shortTitle);
-                    SetProp(cpmGen, "Наименование_ФБ", shortTitle);
-
-                    // 3. Расчётная масса заготовки в примечание спецификации
+                    // 2. Формирование канонической записи по ГОСТ 2.109-73 п. 3.3 / Черт. 40:
+                    // В свойство «Наименование» (читается SpecEditor и спецификацией) пишем:
+                    // краткое наименование детали + сортамент заготовки и определяющие размеры (L = ... мм).
                     string bchNote;
-                    BuildGostBchNote(model, out bchNote);
+                    string shortTitle;
+                    string bchSpecTitle = BuildGostBchRecord(model, title, out shortTitle, out bchNote);
+
+                    SetProp(cpmGen, "Наименование", bchSpecTitle);
+                    SetProp(cpmGen, "Наименование_ФБ", shortTitle); // для штампа чертежа детали
+
                     if (!string.IsNullOrEmpty(bchNote))
                     {
                         SetProp(cpmGen, "Примечание", bchNote);
                     }
 
-                    ApplyBchToConfigurations(model, true, shortTitle, bchNote);
+                    ApplyBchToConfigurations(model, true, bchSpecTitle, shortTitle, bchNote);
                     return 1;
                 }
                 else
@@ -216,7 +206,7 @@ namespace ESKD.MaterialSync
                     // Восстановление исходного наименования из имени файла
                     ApplyFileNameDesignationAndTitle(model);
 
-                    ApplyBchToConfigurations(model, false, "", "");
+                    ApplyBchToConfigurations(model, false, "", "", "");
                     return 2;
                 }
             }
@@ -224,25 +214,118 @@ namespace ESKD.MaterialSync
             return 0;
         }
 
-        private static void BuildGostBchNote(ModelDoc2 model, out string bchNote)
+        private static bool GetPartDimensions(ModelDoc2 model, out double minDim, out double midDim, out double maxDim)
         {
-            bchNote = "";
+            minDim = midDim = maxDim = 0.0;
             try
             {
-                CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
-                string massFb = GetProp(cpmGen, "Масса_ФБ") ?? GetProp(cpmGen, "Масса") ?? "";
-                Match mm = Regex.Match(massFb, @"(\d+[.,]\d+)");
-                if (mm.Success)
+                PartDoc part = model as PartDoc;
+                if (part == null) return false;
+                object[] bodies = part.GetBodies2((int)swBodyType_e.swSolidBody, false) as object[];
+                if (bodies != null && bodies.Length > 0)
                 {
-                    bchNote = mm.Groups[1].Value + " кг";
+                    Body2 b = bodies[0] as Body2;
+                    if (b != null)
+                    {
+                        double[] box = b.GetBodyBox() as double[];
+                        if (box != null && box.Length == 6)
+                        {
+                            double dx = Math.Round(Math.Abs(box[3] - box[0]) * 1000.0, 0);
+                            double dy = Math.Round(Math.Abs(box[4] - box[1]) * 1000.0, 0);
+                            double dz = Math.Round(Math.Abs(box[5] - box[2]) * 1000.0, 0);
+                            double[] arr = new double[] { dx, dy, dz };
+                            Array.Sort(arr);
+                            minDim = arr[0];
+                            midDim = arr[1];
+                            maxDim = arr[2];
+                            return true;
+                        }
+                    }
                 }
             }
             catch { }
+            return false;
+        }
+
+        private static string BuildGostBchRecord(ModelDoc2 model, string currentTitle, out string shortTitle, out string bchNote)
+        {
+            bchNote = "";
+            string baseTitle = currentTitle ?? "";
+            if (baseTitle.EndsWith(" БЧ", StringComparison.Ordinal))
+            {
+                baseTitle = baseTitle.Substring(0, baseTitle.Length - 3).TrimEnd();
+            }
+
+            shortTitle = baseTitle;
+            int nl = shortTitle.IndexOf('\n');
+            if (nl > 0) shortTitle = shortTitle.Substring(0, nl).Trim();
+            int sp = shortTitle.IndexOf(' ');
+            if (sp > 0) shortTitle = shortTitle.Substring(0, sp).Trim();
+            if (string.IsNullOrEmpty(shortTitle)) shortTitle = "Деталь";
+
+            CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
+            string sortament = GetProp(cpmGen, "Сортамент") ?? "";
+            string mat = GetProp(cpmGen, "Материал") ?? "";
+            if (mat.StartsWith("\"SW-Material")) mat = "";
+            if (sortament.StartsWith("$")) sortament = "";
+
+            PartDoc part = model as PartDoc;
+            if (part != null && string.IsNullOrEmpty(sortament))
+            {
+                try
+                {
+                    string db;
+                    string fullMat = part.GetMaterialPropertyName2("", out db);
+                    if (!string.IsNullOrEmpty(fullMat))
+                    {
+                        sortament = fullMat.Contains("/") ? fullMat.Split('/')[0].Trim() : fullMat;
+                    }
+                }
+                catch { }
+            }
+
+            double minD, midD, maxD;
+            bool hasDims = GetPartDimensions(model, out minD, out midD, out maxD);
+
+            string massFb = GetProp(cpmGen, "Масса_ФБ") ?? GetProp(cpmGen, "Масса") ?? "";
+            Match mm = Regex.Match(massFb, @"(\d+[.,]\d+)");
+            if (mm.Success)
+            {
+                bchNote = mm.Groups[1].Value + " кг";
+            }
+
+            if (!hasDims)
+            {
+                return baseTitle + " БЧ";
+            }
+
+            string checkStr = ((sortament ?? "") + " " + (mat ?? "")).ToLower();
+            bool isProfile = checkStr.Contains("труба") || checkStr.Contains("уголок") || checkStr.Contains("швеллер") ||
+                             checkStr.Contains("круг") || checkStr.Contains("полоса") || checkStr.Contains("квадрат") ||
+                             checkStr.Contains("двутавр") || checkStr.Contains("профиль");
+            bool isSheet = checkStr.Contains("лист");
+
+            if (isProfile)
+            {
+                // Черт. 40 ГОСТ 2.109-73: наименование, сортамент заготовки и длина L
+                string sortText = !string.IsNullOrEmpty(sortament) ? sortament : "Труба";
+                return string.Format("{0}\n{1}, L = {2} мм", shortTitle, sortText, (int)maxD);
+            }
+            else if (isSheet)
+            {
+                // Черт. 40 ГОСТ 2.109-73: наименование, материал, размеры (толщина х ширина х длина)
+                string sortText = !string.IsNullOrEmpty(sortament) ? sortament : string.Format("Лист {0} мм", (int)minD);
+                return string.Format("{0}\n{1}, {2}х{3} мм", shortTitle, sortText, (int)midD, (int)maxD);
+            }
+            else
+            {
+                return string.Format("{0}, L = {1} мм", baseTitle, (int)maxD);
+            }
         }
 
         // Конфигурационные копии: спецификация/BOM читает свойство конфигурации раньше
         // общего — признак, формат и размеры обязаны совпадать на обоих уровнях.
-        private static void ApplyBchToConfigurations(ModelDoc2 model, bool setBch, string bchTitle, string bchNote)
+        private static void ApplyBchToConfigurations(ModelDoc2 model, bool setBch, string bchSpecTitle, string bchStampTitle, string bchNote)
         {
             try
             {
@@ -257,10 +340,13 @@ namespace ESKD.MaterialSync
                     {
                         SetProp(cpmCfg, "БЧ", "БЧ");
                         SetProp(cpmCfg, "Формат", "БЧ");
-                        if (!string.IsNullOrEmpty(bchTitle))
+                        if (!string.IsNullOrEmpty(bchSpecTitle))
                         {
-                            SetProp(cpmCfg, "Наименование", bchTitle);
-                            SetProp(cpmCfg, "Наименование_ФБ", bchTitle);
+                            SetProp(cpmCfg, "Наименование", bchSpecTitle);
+                        }
+                        if (!string.IsNullOrEmpty(bchStampTitle))
+                        {
+                            SetProp(cpmCfg, "Наименование_ФБ", bchStampTitle);
                         }
                         if (!string.IsNullOrEmpty(bchNote))
                         {
