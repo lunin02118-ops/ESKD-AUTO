@@ -193,12 +193,11 @@ class EskdAlgorithmEmulator:
 
     @classmethod
     def mark_drawingless(cls, title, sortament, length_mm, mass_str, is_bch):
-        """Канонический БЧ по ГОСТ 2.109-73 п. 3.3: формат 'БЧ', краткое имя + сортамент + длина L."""
+        """БЧ по ГОСТ 2.109-73: формат 'БЧ', чистое краткое имя детали для штампа, масса в примечание."""
         if not is_bch:
             short_name = (title or "").split()[0] if title else "Деталь"
-            bch_title = (short_name + "\n" + sortament + ", L = " + str(int(length_mm)) + " мм") if sortament else (short_name + ", L = " + str(int(length_mm)) + " мм")
             bch_note = (mass_str + " кг") if mass_str else ""
-            return 1, "БЧ", bch_title, bch_note
+            return 1, "БЧ", short_name, bch_note
         else:
             return 2, "А3", title, ""
 
@@ -215,14 +214,12 @@ class EskdAlgorithmEmulator:
 class TestEskdUnitAlgorithms(unittest.TestCase):
 
     def test_mark_drawingless_gost(self):
-        # 1. Установка БЧ: формат 'БЧ', наименование по ГОСТ 2.109, масса в примечании
+        # 1. Установка БЧ: формат 'БЧ', чистое краткое наименование, масса в примечании
         code, fmt, title, note = EskdAlgorithmEmulator.mark_drawingless(
             "Стойка направляющая", "80х80х4,0 ГОСТ 8639-82", 300.0, "2,86", False)
         self.assertEqual(code, 1)
         self.assertEqual(fmt, "БЧ")
-        self.assertIn("Стойка", title)
-        self.assertIn("80х80х4,0 ГОСТ 8639-82", title)
-        self.assertIn("L = 300 мм", title)
+        self.assertEqual(title, "Стойка")
         self.assertEqual(note, "2,86 кг")
 
         # 2. Снятие БЧ: формат А3, очистка примечания

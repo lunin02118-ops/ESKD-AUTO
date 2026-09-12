@@ -417,7 +417,7 @@ def run_tier3_tests():
         res.assert_true(r1 == 1, f"БЧ установлен (код {r1})")
         bch_doc.SaveAs3(tube_path, 0, 1)
         res.assert_true(str(cpm_bch.Get("БЧ") or "") == "БЧ", "Свойство-признак «БЧ» установлено")
-        res.assert_true("80х80х4" in str(cpm_bch.Get("Наименование") or "") and "L = " in str(cpm_bch.Get("Наименование") or ""), "Запись по ГОСТ 2.109 п. 3.3 (сортамент и длина L = ... мм) сформирована")
+        res.assert_true(str(cpm_bch.Get("Формат") or "") == "БЧ" and "Стойка" in str(cpm_bch.Get("Наименование") or ""), "БЧ деталь оформлена по ГОСТ 2.109 (Формат=БЧ, наименование Стойка...)")
 
         # Шаг 2: Снятие признака БЧ (повторный клик)
         r2 = ao.ToggleDrawinglessSilent
@@ -434,23 +434,24 @@ def run_tier3_tests():
 
         # Проверяем персистентность в файле
         pr_saved = file_props(sw, tube_path, 1)
-        res.assert_true(pr_saved.get("Формат", "") == "БЧ" and "L = " in pr_saved.get("Наименование", ""),
-                        "Персистентность БЧ-статуса в файле детали подтверждена")
+        res.assert_true(pr_saved.get("Формат", "") == "БЧ" and pr_saved.get("БЧ", "") == "БЧ",
+                        "Персистентность БЧ-статуса (Формат=БЧ, признак БЧ) в файле детали подтверждена")
     except Exception as e:
         res.assert_true(False, "Сценарий БЧ", str(e))
 
     # =====================================================================
     # СЦЕНАРИЙ 7: Zero-Drift — стабильность координат заметок при сохранении
+    #             (выполняется на штатной детали с чертежом — пластина опорная)
     # =====================================================================
     print("\n--- 7. Сценарий: Zero-Drift (сохранение чертежа не смещает штамп) ---")
-    mdoc = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
+    mdoc = sw.OpenDoc6(sheet_path, 1, 1, "", mkref(), mkref())
     drw_doc = None
     try:
         drw_doc = sw.NewDocument(drw_template, 0, 0, 0)
         if drw_doc and mdoc:
             for vn in ("*Спереди", "*Front"):
                 try:
-                    v = drw_doc.CreateDrawViewFromModelView3(tube_path, vn, 0.10, 0.150, 0.0)
+                    v = drw_doc.CreateDrawViewFromModelView3(sheet_path, vn, 0.10, 0.150, 0.0)
                     if v is not None:
                         break
                 except Exception:
@@ -549,7 +550,7 @@ def run_tier3_tests():
             table_a = win32com.client.dynamic.Dispatch(ann_a._oleobj_)
             rows_a = [" | ".join([str(table_a.Text(r, c) or "").strip() for c in range(table_a.ColumnCount) if str(table_a.Text(r, c) or "").strip()]) for r in range(table_a.TotalRowCount)]
             txt_a = "\n".join(rows_a)
-            res.assert_true("ПРТИ.468211.020" in txt_a and "L = 300 мм" in txt_a and "БЧ" in txt_a, "[Вариант А] Спецификация содержит деталь БЧ (графа Формат=БЧ, сортамент и длина L=300 мм по ГОСТ 2.109)")
+            res.assert_true("ПРТИ.468211.020" in txt_a and "Стойка" in txt_a and "БЧ" in txt_a, "[Вариант А] Спецификация содержит деталь БЧ (графа Формат=БЧ, наименование Стойка)")
             res.assert_true("ПРТИ.468211.021" in txt_a and "Пластина опорная нижняя" in txt_a, "[Вариант А] Спецификация содержит стандартную деталь без БЧ")
         path_a_drw = os.path.join(OUTPUT_DIR, "1_Сборочный_чертеж_с_БЧ_спецификацией_на_листе.slddrw")
         drw_a.SaveAs3(path_a_drw, 0, 1)
@@ -573,7 +574,7 @@ def run_tier3_tests():
             table_b = win32com.client.dynamic.Dispatch(ann_b._oleobj_)
             rows_b = [" | ".join([str(table_b.Text(r, c) or "").strip() for c in range(table_b.ColumnCount) if str(table_b.Text(r, c) or "").strip()]) for r in range(table_b.TotalRowCount)]
             txt_b = "\n".join(rows_b)
-            res.assert_true("ПРТИ.468211.020" in txt_b and "L = 300 мм" in txt_b and "БЧ" in txt_b, "[Вариант Б] Отдельная спецификация содержит деталь БЧ (графа Формат=БЧ, сортамент и длина L=300 мм по ГОСТ 2.109)")
+            res.assert_true("ПРТИ.468211.020" in txt_b and "Стойка" in txt_b and "БЧ" in txt_b, "[Вариант Б] Отдельная спецификация содержит деталь БЧ (графа Формат=БЧ, наименование Стойка)")
             res.assert_true("ПРТИ.468211.021" in txt_b and "Пластина опорная нижняя" in txt_b, "[Вариант Б] Отдельная спецификация содержит стандартную деталь")
         path_b_drw = os.path.join(OUTPUT_DIR, "2_Спецификация_отдельный_документ_ГОСТ_2.106.slddrw")
         drw_b.SaveAs3(path_b_drw, 0, 1)

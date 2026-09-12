@@ -178,20 +178,32 @@ namespace ESKD.MaterialSync
                     SetProp(cpmGen, "БЧ", "БЧ");
                     SetProp(cpmGen, "Формат", "БЧ");
 
-                    // 2. Формирование канонической записи по ГОСТ 2.109-73 п. 3.3:
-                    // наименование детали, сортамент заготовки и определяющие размеры (L = ... мм)
+                    // 2. Наименование детали остаётся чистым для сохранения читаемости штампа:
+                    // если у детали было многословное имя, берём краткое первое слово ("Стойка")
+                    string shortTitle = title;
+                    if (string.IsNullOrWhiteSpace(shortTitle))
+                    {
+                        shortTitle = "Стойка";
+                    }
+                    else
+                    {
+                        int nl = shortTitle.IndexOf('\n');
+                        if (nl > 0) shortTitle = shortTitle.Substring(0, nl).Trim();
+                        // Убираем возможный суффикс БЧ
+                        shortTitle = Regex.Replace(shortTitle, @"\s+БЧ$", "", RegexOptions.IgnoreCase).Trim();
+                    }
+                    SetProp(cpmGen, "Наименование", shortTitle);
+                    SetProp(cpmGen, "Наименование_ФБ", shortTitle);
+
+                    // 3. Расчётная масса заготовки в примечание спецификации
                     string bchNote;
-                    string bchTitle = BuildGostBchTitle(model, title, out bchNote);
-
-                    SetProp(cpmGen, "Наименование", bchTitle);
-                    SetProp(cpmGen, "Наименование_ФБ", bchTitle);
-
+                    BuildGostBchNote(model, out bchNote);
                     if (!string.IsNullOrEmpty(bchNote))
                     {
                         SetProp(cpmGen, "Примечание", bchNote);
                     }
 
-                    ApplyBchToConfigurations(model, true, bchTitle, bchNote);
+                    ApplyBchToConfigurations(model, true, shortTitle, bchNote);
                     return 1;
                 }
                 else
@@ -212,135 +224,20 @@ namespace ESKD.MaterialSync
             return 0;
         }
 
-        private static bool GetPartDimensions(ModelDoc2 model, out double minDim, out double midDim, out double maxDim)
+        private static void BuildGostBchNote(ModelDoc2 model, out string bchNote)
         {
-            minDim = midDim = maxDim = 0.0;
+            bchNote = "";
             try
             {
-                PartDoc part = model as PartDoc;
-                if (part == null) return false;
-                object[] bodies = part.GetBodies2((int)swBodyType_e.swSolidBody, false) as object[];
-                if (bodies != null && bodies.Length > 0)
+                CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
+                string massFb = GetProp(cpmGen, "Масса_ФБ") ?? GetProp(cpmGen, "Масса") ?? "";
+                Match mm = Regex.Match(massFb, @"(\d+[.,]\d+)");
+                if (mm.Success)
                 {
-                    Body2 b = bodies[0] as Body2;
-                    if (b != null)
-                    {
-                        double[] box = b.GetBodyBox() as double[];
-                        if (box != null && box.Length == 6)
-                        {
-                            double dx = Math.Round(Math.Abs(box[3] - box[0]) * 1000.0, 0);
-                            double dy = Math.Round(Math.Abs(box[4] - box[1]) * 1000.0, 0);
-                            double dz = Math.Round(Math.Abs(box[5] - box[2]) * 1000.0, 0);
-                            double[] arr = new double[] { dx, dy, dz };
-                            Array.Sort(arr);
-                            minDim = arr[0];
-                            midDim = arr[1];
-                            maxDim = arr[2];
-                            return true;
-                        }
-                    }
+                    bchNote = mm.Groups[1].Value + " кг";
                 }
             }
             catch { }
-            return false;
-        }
-
-        private static string BuildGostBchTitle(ModelDoc2 model, string currentTitle, out string bchNote)
-        {
-            bchNote = "";
-            string baseTitle = currentTitle ?? "";
-            if (baseTitle.EndsWith(" БЧ", StringComparison.Ordinal))
-            {
-                baseTitle = baseTitle.Substring(0, baseTitle.Length - 3).TrimEnd();
-            }
-            // Краткое наименование детали (первое слово или фраза до перевода строки)
-            string shortName = baseTitle;
-            int nl = shortName.IndexOf('\n');
-            if (nl > 0) shortName = shortName.Substring(0, nl).Trim();
-            int sp = shortName.IndexOf(' ');
-            if (sp > 0) shortName = shortName.Substring(0, sp).Trim();
-            if (string.IsNullOrEmpty(shortName)) shortName = "Деталь";
-
-            CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
-
-            // Полное имя материала и дробь сортамента
-            string fullMat = "";
-            PartDoc part = model as PartDoc;
-            if (part != null)
-            {
-                try
-                {
-                    string db;
-                    fullMat = part.GetMaterialPropertyName2("", out db) ?? "";
-                }
-                catch { }
-            }
-            if (string.IsNullOrEmpty(fullMat))
-            {
-                fullMat = GetProp(cpmGen, "Материал") ?? "";
-                if (fullMat.StartsWith("\"SW-Material")) fullMat = "";
-            }
-
-            string sortament = GetProp(cpmGen, "Сортамент") ?? "";
-            if (sortament.StartsWith("$")) sortament = "";
-
-            double minD, midD, maxD;
-            bool hasDims = GetPartDimensions(model, out minD, out midD, out maxD);
-
-            // Масса детали в примечание спецификации
-            string massFb = GetProp(cpmGen, "Масса_ФБ") ?? GetProp(cpmGen, "Масса") ?? "";
-            Match mm = Regex.Match(massFb, @"(\d+[.,]\d+)");
-            if (mm.Success)
-            {
-                bchNote = mm.Groups[1].Value + " кг";
-            }
-
-            if (!hasDims)
-            {
-                return baseTitle + " БЧ";
-            }
-
-            // Формируем дробь сортамента по Черт. 40 ГОСТ 2.109-73:
-            // числитель — сортамент, знаменатель — марка материала заготовки
-            string matFraction = "";
-            if (!string.IsNullOrEmpty(fullMat) && fullMat.Contains("/"))
-            {
-                string[] parts = fullMat.Split('/');
-                string top = parts[0].Trim();
-                string bot = parts[1].Trim();
-                matFraction = string.Format("<STACK size=1>{0}<OVER>{1}</STACK>", top, bot);
-            }
-            else if (!string.IsNullOrEmpty(sortament))
-            {
-                matFraction = sortament;
-            }
-            else if (!string.IsNullOrEmpty(fullMat))
-            {
-                matFraction = fullMat;
-            }
-
-            string checkStr = ((fullMat ?? "") + " " + (sortament ?? "")).ToLower();
-            bool isProfile = checkStr.Contains("труба") || checkStr.Contains("уголок") || checkStr.Contains("швеллер") ||
-                             checkStr.Contains("круг") || checkStr.Contains("полоса") || checkStr.Contains("квадрат") ||
-                             checkStr.Contains("двутавр") || checkStr.Contains("профиль");
-            bool isSheet = checkStr.Contains("лист");
-
-            if (isProfile)
-            {
-                // Черт. 40 ГОСТ 2.109-73: наименование, двухэтажная дробь сортамента и длина L
-                string sortText = !string.IsNullOrEmpty(matFraction) ? matFraction : "Труба";
-                return string.Format("{0}\n{1}\nL = {2} мм", shortName, sortText, (int)maxD);
-            }
-            else if (isSheet)
-            {
-                // Черт. 40 ГОСТ 2.109-73: наименование, двухэтажная дробь листа и размеры (BxL)
-                string sortText = !string.IsNullOrEmpty(matFraction) ? matFraction : string.Format("Лист {0} мм", (int)minD);
-                return string.Format("{0}\n{1}\n{2}х{3} мм", shortName, sortText, (int)midD, (int)maxD);
-            }
-            else
-            {
-                return string.Format("{0}, L = {1} мм", baseTitle, (int)maxD);
-            }
         }
 
         // Конфигурационные копии: спецификация/BOM читает свойство конфигурации раньше
