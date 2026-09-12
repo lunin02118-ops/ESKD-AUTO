@@ -145,6 +145,119 @@ namespace ESKD.MaterialSync
             return string.Format(" <FONT size=1.8><FONT size=3.5><STACK size=1>{0}<OVER>{1}</STACK>", top, bottom);
         }
 
+        // =====================================================================================
+        // Безчертёжные детали (БЧ), ГОСТ 2.109-73 п. 3.3: деталь, на которую не выпускается
+        // чертёж, изготовляется по данным спецификации — в графе «Наименование» спецификации
+        // после наименования указывается индекс «БЧ». Свойство-признак «БЧ»="БЧ" служит
+        // для фильтров PDM/поиска и не даёт конвейеру «забыть» статус при пересинхронизации.
+        //
+        // Возвращает: 0 — документ не деталь (или null); 1 — признак БЧ УСТАНОВЛЕН;
+        //             2 — признак БЧ СНЯТ.
+        // =====================================================================================
+        public static int MarkDrawinglessPart(ModelDoc2 model)
+        {
+            if (model == null) return 0;
+            try
+            {
+                if (model.GetType() != (int)swDocumentTypes_e.swDocPART) return 0;
+
+                CustomPropertyManager cpmGen = model.Extension.get_CustomPropertyManager("");
+                if (cpmGen == null) return 0;
+
+                string bchRaw = GetPropRaw(cpmGen, "БЧ");
+                bool isBch = !string.IsNullOrEmpty(bchRaw);
+
+                string title = GetProp(cpmGen, "Наименование") ?? "";
+                string titleFb = GetProp(cpmGen, "Наименование_ФБ") ?? "";
+
+                if (!isBch)
+                {
+                    SetProp(cpmGen, "БЧ", "БЧ");
+                    if (title.Length > 0 && !title.TrimEnd().EndsWith(" БЧ", StringComparison.Ordinal))
+                    {
+                        SetProp(cpmGen, "Наименование", title.TrimEnd() + " БЧ");
+                    }
+                    if (titleFb.Length > 0)
+                    {
+                        SetProp(cpmGen, "Наименование_ФБ", AppendBchSuffix(titleFb));
+                    }
+                    ApplyBchToConfigurations(model, true);
+                    return 1;
+                }
+                else
+                {
+                    try { cpmGen.Delete2("БЧ"); } catch { }
+                    if (title.TrimEnd().EndsWith(" БЧ", StringComparison.Ordinal))
+                    {
+                        SetProp(cpmGen, "Наименование", title.TrimEnd().Substring(0, title.TrimEnd().Length - 3).TrimEnd());
+                    }
+                    if (titleFb.Length > 0)
+                    {
+                        SetProp(cpmGen, "Наименование_ФБ", RemoveBchSuffix(titleFb));
+                    }
+                    ApplyBchToConfigurations(model, false);
+                    return 2;
+                }
+            }
+            catch { }
+            return 0;
+        }
+
+        // Индекс «БЧ» проставляется в ПОСЛЕДНЕЙ строке наименования (графа 2 может быть
+        // двухстрочной) — на печати БЧ стоит сразу после текста, на той же строке.
+        private static string AppendBchSuffix(string value)
+        {
+            string v = value.TrimEnd();
+            if (v.EndsWith(" БЧ", StringComparison.Ordinal)) return value;
+            return v + " БЧ";
+        }
+
+        private static string RemoveBchSuffix(string value)
+        {
+            string v = value.TrimEnd();
+            if (v.EndsWith(" БЧ", StringComparison.Ordinal))
+            {
+                return v.Substring(0, v.Length - 3).TrimEnd();
+            }
+            return value;
+        }
+
+        // Конфигурационные копии: спецификация/BOM читает свойство конфигурации раньше
+        // общего — признак и индекс обязаны совпадать на обоих уровнях.
+        private static void ApplyBchToConfigurations(ModelDoc2 model, bool setBch)
+        {
+            try
+            {
+                string[] cfgNames = model.GetConfigurationNames() as string[];
+                if (cfgNames == null) return;
+                foreach (string cfg in cfgNames)
+                {
+                    if (string.IsNullOrEmpty(cfg)) continue;
+                    CustomPropertyManager cpmCfg = model.Extension.get_CustomPropertyManager(cfg);
+                    if (cpmCfg == null) continue;
+                    if (setBch)
+                    {
+                        SetProp(cpmCfg, "БЧ", "БЧ");
+                        string t = GetProp(cpmCfg, "Наименование") ?? "";
+                        if (t.Length > 0 && !t.TrimEnd().EndsWith(" БЧ", StringComparison.Ordinal))
+                        {
+                            SetProp(cpmCfg, "Наименование", t.TrimEnd() + " БЧ");
+                        }
+                    }
+                    else
+                    {
+                        try { cpmCfg.Delete2("БЧ"); } catch { }
+                        string t = GetProp(cpmCfg, "Наименование") ?? "";
+                        if (t.TrimEnd().EndsWith(" БЧ", StringComparison.Ordinal))
+                        {
+                            SetProp(cpmCfg, "Наименование", t.TrimEnd().Substring(0, t.TrimEnd().Length - 3).TrimEnd());
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
         public static string FormatEskdTitleFB(string title)
         {
             if (string.IsNullOrWhiteSpace(title)) return "";

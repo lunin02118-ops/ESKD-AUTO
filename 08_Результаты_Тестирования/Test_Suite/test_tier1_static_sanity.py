@@ -209,6 +209,21 @@ def test_favorites_materials_valid(res):
         res.assert_true(False, "Сверка favorites с библиотекой", str(e))
 
 
+
+
+def test_tt_drawingless_section(res):
+    """База технических требований (TT.TXT) обязана содержать раздел безчертёжных
+    деталей (БЧ) с указаниями по ГОСТ 2.109 (файл CP1251)."""
+    print('\n--- ТТ: секция безчертёжных деталей (БЧ) ---')
+    tt = os.path.join(ROOT_DIR, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "ТТ", "TT.TXT")
+    try:
+        text = open(tt, "rb").read().decode("cp1251", errors="ignore")
+        res.assert_true("$$$12. Безчертёжные детали" in text, "Секция '$$$12. Безчертёжные детали (БЧ)' присутствует")
+        res.assert_true("БЧ" in text and "ГОСТ 2.109" in text, "Указания БЧ со ссылкой на ГОСТ 2.109")
+    except Exception as e:
+        res.assert_true(False, "Чтение TT.TXT", str(e))
+
+
 def test_saveaspdf_config(res):
     print("\n--- Проверка конфигурации SaveAsPDF ---")
     ini_path = os.path.join(SWPLUS_DIR, "SaveAsPDF", "SaveAsPDF.ini")
@@ -280,6 +295,7 @@ def run_tier1_tests():
     test_swplus_macros_exist(res)
     test_materials_xml(res)
     test_favorites_materials_valid(res)
+    test_tt_drawingless_section(res)
     test_saveaspdf_config(res)
     test_master_config(res)
     test_no_prohibited_paths(res)

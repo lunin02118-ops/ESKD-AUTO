@@ -5,6 +5,28 @@
 [CmdletBinding()]
 param()
 
+
+# Автодетект установленной версии SolidWorks (унифицировано с Setup_Workstation_SolidWorks.ps1):
+# самая высокая версия в HKCU\Software\SolidWorks\SOLIDWORKS \d{4}, дефолт — SOLIDWORKS 2025.
+function Get-SolidWorksRegistryVersion {
+    $bestName = ""
+    $bestYear = 0
+    if (Test-Path "HKCU:\Software\SolidWorks") {
+        $children = Get-ChildItem "HKCU:\Software\SolidWorks" -ErrorAction SilentlyContinue
+        foreach ($child in $children) {
+            if ($child.PSChildName -match '^SOLIDWORKS (\d{4})$') {
+                $year = [int]$Matches[1]
+                if ($year -gt $bestYear) {
+                    $bestYear = $year
+                    $bestName = $child.PSChildName
+                }
+            }
+        }
+    }
+    if ($bestName) { return $bestName }
+    return "SOLIDWORKS 2025"
+}
+$SwVersion = Get-SolidWorksRegistryVersion
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
@@ -123,7 +145,7 @@ foreach ($og in $oldGuids) {
 # 2.3 Гарантированная видимость вкладки ЕСКД в CommandManager (Деталь, Сборка, Чертеж)
 $contexts = @("PartContext", "AssyContext", "DrwContext")
 foreach ($ctx in $contexts) {
-    $ctxPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\$ctx"
+    $ctxPath = "HKCU:\Software\SolidWorks\$SwVersion\User Interface\CommandManager\$ctx"
     if (-not (Test-Path $ctxPath)) { New-Item -Path $ctxPath -Force | Out-Null }
     
     $found = $false
@@ -166,12 +188,12 @@ Write-Host "`n[3/5] Настройка папок шаблонов свойст�
 if ($toolsRoot) {
     $propFolder = Join-Path $toolsRoot "02_Шаблоны_и_Форматки\Шаблоны свойств"
     if (Test-Path $propFolder) {
-        $extRef = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\ExtReferences"
+        $extRef = "HKCU:\Software\SolidWorks\$SwVersion\ExtReferences"
         if (-not (Test-Path $extRef)) { New-Item -Path $extRef -Force | Out-Null }
         Set-ItemProperty -Path $extRef -Name "Custom Property Folders" -Value $propFolder -ErrorAction SilentlyContinue
         Set-ItemProperty -Path $extRef -Name "Custom Property File" -Value (Join-Path $propFolder "default.prtprp") -ErrorAction SilentlyContinue
 
-        $extFld = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\ExtFolder"
+        $extFld = "HKCU:\Software\SolidWorks\$SwVersion\ExtFolder"
         if (-not (Test-Path $extFld)) { New-Item -Path $extFld -Force | Out-Null }
         Set-ItemProperty -Path $extFld -Name "Custom Property Folders" -Value $propFolder -ErrorAction SilentlyContinue
         Write-Host "  [OK] Папка шаблонов свойств (Task Pane) привязана." -ForegroundColor Green
@@ -264,7 +286,7 @@ foreach ($mIni in $masterInis) {
 Write-Host "  [OK] Master.ini привязан к форматам основных надписей." -ForegroundColor Green
 
 # 4.2 Гарантированное закрепление 9 кнопок макросов SWPlus в верхней панели QAT (Quick Access Toolbar)
-$qatGb0Path = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\QAT\GB0"
+$qatGb0Path = "HKCU:\Software\SolidWorks\$SwVersion\User Interface\CommandManager\QAT\GB0"
 if (-not (Test-Path $qatGb0Path)) { New-Item -Path $qatGb0Path -Force | Out-Null }
 $qatButtons = [ordered]@{
     "Btn11" = "1,33639" # MProp
@@ -281,7 +303,7 @@ foreach ($btn in $qatButtons.Keys) {
     Set-ItemProperty -Path $qatGb0Path -Name $btn -Value $qatButtons[$btn] -Force -ErrorAction SilentlyContinue
 }
 
-$menuCustPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\Menu Customizations"
+$menuCustPath = "HKCU:\Software\SolidWorks\$SwVersion\Menu Customizations"
 if (-not (Test-Path $menuCustPath)) { New-Item -Path $menuCustPath -Force | Out-Null }
 for ($cid = 33639; $cid -le 33647; $cid++) {
     Set-ItemProperty -Path $menuCustPath -Name "$cid" -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
@@ -289,7 +311,7 @@ for ($cid = 33639; $cid -le 33647; $cid++) {
 
 # Очистка фантомных ссылок Toolbars (OnCadTools, SWTools) предотвращающая диалог сброса тулбаров SolidWorks
 $orphanToolbars = @(
-    "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\Toolbars\ToolbarChangesOnUpgrade"
+    "HKCU:\Software\SolidWorks\$SwVersion\User Interface\Toolbars\ToolbarChangesOnUpgrade"
 )
 foreach ($ot in $orphanToolbars) {
     Remove-Item -Path $ot -Recurse -Force -ErrorAction SilentlyContinue

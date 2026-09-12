@@ -5,6 +5,28 @@
 [CmdletBinding()]
 param()
 
+
+# Автодетект установленной версии SolidWorks (унифицировано с Setup_Workstation_SolidWorks.ps1):
+# самая высокая версия в HKCU\Software\SolidWorks\SOLIDWORKS \d{4}, дефолт — SOLIDWORKS 2025.
+function Get-SolidWorksRegistryVersion {
+    $bestName = ""
+    $bestYear = 0
+    if (Test-Path "HKCU:\Software\SolidWorks") {
+        $children = Get-ChildItem "HKCU:\Software\SolidWorks" -ErrorAction SilentlyContinue
+        foreach ($child in $children) {
+            if ($child.PSChildName -match '^SOLIDWORKS (\d{4})$') {
+                $year = [int]$Matches[1]
+                if ($year -gt $bestYear) {
+                    $bestYear = $year
+                    $bestName = $child.PSChildName
+                }
+            }
+        }
+    }
+    if ($bestName) { return $bestName }
+    return "SOLIDWORKS 2025"
+}
+$SwVersion = Get-SolidWorksRegistryVersion
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 $regasm = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
@@ -173,7 +195,7 @@ Set-ItemProperty -Path $startupPath -Name "(Default)" -Value 1 -Type DWord
 # 5. Ensure CommandManager tabs are visible in SolidWorks
 $contexts = @("PartContext", "AssyContext", "DrwContext")
 foreach ($ctx in $contexts) {
-    $ctxPath = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\$ctx"
+    $ctxPath = "HKCU:\Software\SolidWorks\$SwVersion\User Interface\CommandManager\$ctx"
     if (-not (Test-Path $ctxPath)) { New-Item -Path $ctxPath -Force | Out-Null }
 
     $found = $false

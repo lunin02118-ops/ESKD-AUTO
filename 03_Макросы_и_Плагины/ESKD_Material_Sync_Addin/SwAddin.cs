@@ -336,6 +336,17 @@ namespace ESKD.MaterialSync
                         9902,
                         (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem));
 
+                    int cmdIndexBch = cmdGroup.AddCommandItem2(
+                        "Деталь БЧ",
+                        -1,
+                        "Пометить/снять признак безчертёжной детали (БЧ) — ГОСТ 2.109: индекс БЧ попадает в спецификацию",
+                        "Деталь БЧ",
+                        2,
+                        "ToggleDrawingless",
+                        "EnablePartCommand",
+                        9903,
+                        (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem));
+
                     cmdGroup.HasToolbar = true; // Must be true so buttons exist for CommandTabBox
                     cmdGroup.HasMenu = true;
                     try
@@ -361,7 +372,8 @@ namespace ESKD.MaterialSync
 
                     int cmdIDSettings = cmdGroup.get_CommandID(cmdIndexSettings);
                     int cmdIDSync = cmdGroup.get_CommandID(cmdIndexSync);
-                    Log("AddCommandManager: cmdIDSettings=" + cmdIDSettings + ", cmdIDSync=" + cmdIDSync);
+                    int cmdIDBch = cmdGroup.get_CommandID(cmdIndexBch);
+                    Log("AddCommandManager: cmdIDSettings=" + cmdIDSettings + ", cmdIDSync=" + cmdIDSync + ", cmdIDBch=" + cmdIDBch);
 
                     int[] docTypes = new int[] {
                         (int)swDocumentTypes_e.swDocPART,
@@ -438,11 +450,14 @@ namespace ESKD.MaterialSync
                                     }
                                     catch { }
 
-                                    int[] cmdIDs = new int[] { cmdIDSettings, cmdIDSync };
-                                    int[] textTypes = new int[] {
-                                        (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow,
-                                        (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow
-                                    };
+                                    // Кнопка «Деталь БЧ» имеет смысл только в контексте детали
+                                    int[] cmdIDs = (dt == (int)swDocumentTypes_e.swDocPART)
+                                        ? new int[] { cmdIDSettings, cmdIDSync, cmdIDBch }
+                                        : new int[] { cmdIDSettings, cmdIDSync };
+                                    int ttBelow = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
+                                    int[] textTypes = (dt == (int)swDocumentTypes_e.swDocPART)
+                                        ? new int[] { ttBelow, ttBelow, ttBelow }
+                                        : new int[] { ttBelow, ttBelow };
                                     bool addOk = box.AddCommands(cmdIDs, textTypes);
                                     Log("AddCommandManager: box.AddCommands result for dt=" + dt + ": " + addOk);
                                 }
@@ -600,6 +615,66 @@ namespace ESKD.MaterialSync
                 Log("ShowSettings error: " + ex.ToString());
                 MessageBox.Show("Ошибка открытия настроек ЕСКД: " + ex.Message, "ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
+        }
+
+        // =====================================================================================
+        // Безчертёжные детали (БЧ), ГОСТ 2.109: тоггл признака на активной детали.
+        // Метод public — доступен и через COM (GetAddInObject) для автотестов.
+        // =====================================================================================
+        public void ToggleDrawingless()
+        {
+            try
+            {
+                int result = ToggleDrawinglessSilent();
+                if (result == 0)
+                {
+                    MessageBox.Show("Признак БЧ применяется только к деталям (активный документ — не деталь).",
+                        "ЕСКД: Деталь БЧ", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                MessageBox.Show(
+                    result == 1
+                        ? "Деталь помечена как БЕЗЧЕРТЁЖНАЯ (БЧ).\n\nИндекс «БЧ» добавлен к наименованию и попадёт в спецификацию (ГОСТ 2.109); свойство «БЧ» установлено для фильтров PDM."
+                        : "Признак БЧ снят: индекс «БЧ» удалён из наименования и свойств.",
+                    "ЕСКД: Деталь БЧ", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                Log("ToggleDrawingless exception: " + ex.Message);
+            }
+        }
+
+        // Тихий вариант без UI — для автоматизации (COM GetAddInObject) и макросов.
+        // Возвращает 0 — не деталь/нет документа; 1 — БЧ установлен; 2 — БЧ снят.
+        public int ToggleDrawinglessSilent()
+        {
+            try
+            {
+                ModelDoc2 doc = (ModelDoc2)iSwApp.ActiveDoc;
+                if (doc == null) return 0;
+                int result = MaterialSyncEngine.MarkDrawinglessPart(doc);
+                if (result != 0)
+                {
+                    Log("ToggleDrawingless: " + (result == 1 ? "установлен" : "снят") + " для " + doc.GetTitle());
+                }
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Log("ToggleDrawinglessSilent exception: " + ex.Message);
+                return 0;
+            }
+        }
+
+        public int EnablePartCommand()
+        {
+            try
+            {
+                ModelDoc2 doc = (ModelDoc2)iSwApp.ActiveDoc;
+                if (doc == null) return 0;
+                return doc.GetType() == (int)swDocumentTypes_e.swDocPART ? 1 : 0;
+            }
+            catch { return 0; }
         }
 
         public void SyncCurrentDoc()

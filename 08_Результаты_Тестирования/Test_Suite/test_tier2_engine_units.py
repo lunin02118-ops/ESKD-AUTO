@@ -192,6 +192,32 @@ class EskdAlgorithmEmulator:
         return False
 
     @classmethod
+    def mark_drawingless(cls, title, title_fb, is_bch):
+        """Тоггл БЧ (ГОСТ 2.109): индекс добавляется в ПОСЛЕДНЮЮ строку наименования."""
+        def append_bch(v):
+            v = v.rstrip()
+            return v if v.endswith(" БЧ") else v + " БЧ"
+        def remove_bch(v):
+            v = v.rstrip()
+            return v[:-3].rstrip() if v.endswith(" БЧ") else v
+        if not is_bch:
+            new_title = append_bch(title) if title else title
+            if title_fb:
+                parts = title_fb.split('\\n')
+                parts[-1] = append_bch(parts[-1])
+                new_fb = '\\n'.join(parts)
+            else:
+                new_fb = ""
+            return 1, new_title, new_fb, "БЧ"
+        new_title = remove_bch(title) if title else title
+        new_fb = title_fb
+        if title_fb:
+            parts = [remove_bch(x) for x in title_fb.split('\\n')]
+            new_fb = '\\n'.join(parts)
+        return 2, new_title, new_fb, ""
+
+
+    @classmethod
     def parse_mprop_firm_file(cls, lines):
         firms = []
         for i in range(0, len(lines), 2):
@@ -400,6 +426,29 @@ class TestEskdUnitAlgorithms(unittest.TestCase):
         self.assertFalse(EskdAlgorithmEmulator.is_standard_or_purchased_part({"IsFastener": "нет"}))
         self.assertFalse(EskdAlgorithmEmulator.is_standard_or_purchased_part({"IsFastener": "no"}))
         self.assertFalse(EskdAlgorithmEmulator.is_standard_or_purchased_part({"IsFastener": ""}))
+
+    def test_mark_drawingless(self):
+        # Установка: индекс БЧ в наименование и в ПОСЛЕДНЮЮ строку двухстрочного ФБ
+        code, t, fb, bch = EskdAlgorithmEmulator.mark_drawingless(
+            "Стойка опорная", "Стойка\nопорная", False)
+        self.assertEqual(code, 1)
+        self.assertEqual(t, "Стойка опорная БЧ")
+        self.assertEqual(fb, "Стойка\nопорная БЧ")
+        self.assertEqual(bch, "БЧ")
+
+        # Снятие: хвосты « БЧ» удаляются
+        code, t, fb, bch = EskdAlgorithmEmulator.mark_drawingless(
+            "Стойка опорная БЧ", "Стойка\nопорная БЧ", True)
+        self.assertEqual(code, 2)
+        self.assertEqual(t, "Стойка опорная")
+        self.assertEqual(fb, "Стойка\nопорная")
+        self.assertEqual(bch, "")
+
+        # Идемпотентность: повторная установка не дублирует индекс
+        code, t, fb, bch = EskdAlgorithmEmulator.mark_drawingless(
+            "Стойка БЧ", "Стойка БЧ", False)
+        self.assertEqual(t, "Стойка БЧ")
+
 
     def test_mprop_firm_alternating_lines(self):
         # MProp_Firm.txt format: Line 1 = Firm, Line 2 = Classifier

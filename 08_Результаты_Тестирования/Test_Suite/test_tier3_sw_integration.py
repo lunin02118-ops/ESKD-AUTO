@@ -383,7 +383,57 @@ def run_tier3_tests():
                         "Сохранение исходного обозначения SProp")
 
     # =====================================================================
-    # СЦЕНАРИЙ 6: Zero-Drift — стабильность координат заметок при сохранении
+    # СЦЕНАРИЙ 6: Безчертёжные детали (БЧ) — тоггл через COM надстройки
+    # =====================================================================
+    print("\n--- 6b. Сценарий: безчертёжная деталь (БЧ), ГОСТ 2.109 ---")
+    try:
+        raw_sw = win32com.client.GetActiveObject("SldWorks.Application")
+        ao = win32com.client.dynamic.Dispatch(raw_sw.GetAddInObject("ESKD.MaterialSync.SwAddin_v5")._oleobj_)
+        bch_doc = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
+        res.assert_true(bch_doc is not None, "Открыта деталь для БЧ-теста")
+
+        def bch_props(path):
+            pr = file_props(sw, path, 1)
+            return pr.get("БЧ", ""), pr.get("Наименование", "")
+
+        bch_doc.SaveAs3(tube_path, 0, 1)  # открыть без несохранённых изменений
+        close_doc(sw, bch_doc)
+        b0, t0 = bch_props(tube_path)
+        was_bch = (b0 == "БЧ")
+        if was_bch:
+            # привести к чистому состоянию
+            d = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
+            _ = ao.ToggleDrawinglessSilent  # свойство-вызов (без параметров)
+            close_doc(sw, d)
+
+        d = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
+        r1 = ao.ToggleDrawinglessSilent
+        res.assert_true(r1 == 1, f"БЧ установлен (код {r1})")
+        d.SaveAs3(tube_path, 0, 1)
+        close_doc(sw, d)
+        b1, t1 = bch_props(tube_path)
+        res.assert_true(b1 == "БЧ", f"Свойство-признак «БЧ» ('{b1}')")
+        res.assert_true(t1.endswith(" БЧ"), f"Индекс БЧ в наименовании для спецификации ('{t1}')")
+
+        d = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
+        r2 = ao.ToggleDrawinglessSilent
+        res.assert_true(r2 == 2, f"БЧ снят (код {r2})")
+        d.SaveAs3(tube_path, 0, 1)
+        close_doc(sw, d)
+        b2, t2 = bch_props(tube_path)
+        res.assert_true(b2 == "", f"Признак «БЧ» удалён ('{b2}')")
+        res.assert_true(not t2.endswith(" БЧ"), f"Индекс БЧ убран из наименования ('{t2}')")
+
+        if was_bch:
+            # вернуть исходное БЧ-состояние
+            d = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
+            _ = ao.ToggleDrawinglessSilent
+            close_doc(sw, d)
+    except Exception as e:
+        res.assert_true(False, "Сценарий БЧ", str(e))
+
+    # =====================================================================
+    # СЦЕНАРИЙ 7: Zero-Drift — стабильность координат заметок при сохранении
     # =====================================================================
     print("\n--- 7. Сценарий: Zero-Drift (сохранение чертежа не смещает штамп) ---")
     mdoc = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
