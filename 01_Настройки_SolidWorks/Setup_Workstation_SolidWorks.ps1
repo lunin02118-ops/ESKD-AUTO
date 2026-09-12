@@ -723,11 +723,13 @@ if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
 
     # Прямая привязка библиотеки материалов ГОСТ (дубль .reg-импорта: если reg.exe
     # завершился с ошибкой, база материалов всё равно подключится).
+    # Корпоративный стандарт: в путях системы ТОЛЬКО наша библиотека; стандартные
+    # папки SW (sldmaterials, Custom Materials) не подключаются — пользователь
+    # добавит их сам при необходимости.
     $matLibDir = Join-Path $ToolsRoot "04_Библиотеки_Материалов_и_Профилей\Библиотека материалов"
     if (Test-Path $matLibDir) {
-        $matFolders = "$matLibDir;C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\lang\russian\sldmaterials;C:\ProgramData\SolidWorks\SOLIDWORKS 2025\Custom Materials"
-        Set-ItemProperty -Path "$swRegRoot\ExtReferences" -Name "Material Database Folders" -Value $matFolders -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path "$swRegRoot\ExtFolder" -Name "Material Database Folders" -Value $matFolders -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path "$swRegRoot\ExtReferences" -Name "Material Database Folders" -Value $matLibDir -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path "$swRegRoot\ExtFolder" -Name "Material Database Folders" -Value $matLibDir -ErrorAction SilentlyContinue
         Write-Host "  [OK] Библиотека материалов ГОСТ подключена: $matLibDir" -ForegroundColor Green
     }
 

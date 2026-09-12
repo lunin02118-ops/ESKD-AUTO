@@ -280,7 +280,7 @@ class CADConfiguratorApp:
         part_default = os.path.join(doc_templates, "Деталь.prtdot")
         asm_default  = os.path.join(doc_templates, "Сборка.asmdot")
         drw_default  = os.path.join(doc_templates, "Чертеж.drwdot")
-        mat_db_str   = f"{mat_library};C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\lang\\russian\\sldmaterials;C:\\ProgramData\\SolidWorks\\SOLIDWORKS 2025\\Custom Materials"
+        mat_db_str   = mat_library  # корпоративный стандарт: единственная библиотека в путях системы"
         tmpl_folders = f"{doc_templates};{drafting_std}"
 
         def esc(s): return s.replace('\\', '\\\\')
