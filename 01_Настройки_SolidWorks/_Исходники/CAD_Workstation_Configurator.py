@@ -17,6 +17,7 @@ import time
 import ctypes
 import shutil
 import re
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
@@ -111,7 +112,7 @@ class CADConfiguratorApp:
         ttk.Entry(frame_user_grid, textvariable=self.var_author, width=25).grid(row=0, column=1, sticky=tk.W, padx=10, pady=3)
         
         ttk.Label(frame_user_grid, text="Организация (Контора):").grid(row=0, column=2, sticky=tk.W, pady=3)
-        self.var_firm = tk.StringVar(value="Home Made")
+        self.var_firm = tk.StringVar(value="123")
         ttk.Entry(frame_user_grid, textvariable=self.var_firm, width=25).grid(row=0, column=3, sticky=tk.W, padx=10, pady=3)
         
         # 3. Options Group
@@ -944,7 +945,7 @@ class CADConfiguratorApp:
 
                 # HKCU Software\Classes COM registration (guarantees add-in loads without admin rights)
                 try:
-                    codebase_url = "file:///" + addin_dll.replace('\\', '/')
+                    codebase_url = "file:///" + addin_dll.replace(chr(92), "/")
                     clsid_root = rf"Software\Classes\CLSID\{guid_str}"
                     with winreg.CreateKey(winreg.HKEY_CURRENT_USER, clsid_root) as k_c:
                         winreg.SetValueEx(k_c, "", 0, winreg.REG_SZ, "ESKD.MaterialSync.SwAddin")
@@ -996,13 +997,13 @@ class CADConfiguratorApp:
 
                 # ESKD_Settings in HKCU
                 with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\SolidWorks\ESKD_Settings") as k_eskd:
-                    winreg.SetValueEx(k_eskd, "Author", 0, winreg.REG_SZ, author if author else "Шалунов В.В.")
+                    winreg.SetValueEx(k_eskd, "Author", 0, winreg.REG_SZ, author if author else "Лунин В.И.")
                     winreg.SetValueEx(k_eskd, "Checker", 0, winreg.REG_SZ, "")
-                    winreg.SetValueEx(k_eskd, "Organization", 0, winreg.REG_SZ, firm if firm else "Home Made")
+                    winreg.SetValueEx(k_eskd, "Organization", 0, winreg.REG_SZ, firm if firm else "123")
                     winreg.SetValueEx(k_eskd, "AutoMass", 0, winreg.REG_DWORD, 1)
                     winreg.SetValueEx(k_eskd, "MassDecimals", 0, winreg.REG_DWORD, 2)
                     winreg.SetValueEx(k_eskd, "AutoCenterMass", 0, winreg.REG_DWORD, 1)
-                    winreg.SetValueEx(k_eskd, "AuthorList", 0, winreg.REG_SZ, author if author else "Шалунов В.В.")
+                    winreg.SetValueEx(k_eskd, "AuthorList", 0, winreg.REG_SZ, author if author else "Лунин В.И.")
 
                 # Favorite Materials with '/'
                 fav_list = [
@@ -1043,7 +1044,7 @@ class CADConfiguratorApp:
                 with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\SolidWorks\AddinsStartup\{drew_guid}") as k_drew_st:
                     winreg.SetValueEx(k_drew_st, "", 0, winreg.REG_DWORD, 1)
 
-                drew_codebase = "file:///" + drew_dll.replace('\\', '/')
+                drew_codebase = "file:///" + drew_dll.replace(chr(92), "/")
                 drew_clsid = rf"Software\Classes\CLSID\{drew_guid}"
                 full_class = "CADBooster.Drew.Drawing.SolidWorks.Integration.DrewAddin"
                 assembly_nm = "CADBooster.Drew.Drawing, Version=4.3.0.0, Culture=neutral, PublicKeyToken=null"

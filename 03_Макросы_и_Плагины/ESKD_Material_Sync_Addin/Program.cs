@@ -31,6 +31,9 @@ namespace ESKD.MaterialSync
                 }
             }
 
+            // D-8: подключаемся ТОЛЬКО к уже запущенному экземпляру SolidWorks.
+            // Новый экземпляр через Activator.CreateInstance больше не поднимается:
+            // он молча запускал скрытый процесс SW, который оставался висеть после выхода.
             ISldWorks swApp = null;
             try
             {
@@ -40,30 +43,24 @@ namespace ESKD.MaterialSync
 
             if (swApp == null)
             {
-                try
-                {
-                    Type swType = Type.GetTypeFromProgID("SldWorks.Application");
-                    if (swType != null)
-                    {
-                        swApp = (ISldWorks)Activator.CreateInstance(swType);
-                    }
-                }
-                catch { }
+                MessageBox.Show(
+                    "SolidWorks не запущен. Запустите SolidWorks и повторите.",
+                    "ЕСКД",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                System.Environment.ExitCode = 2;
+                return;
             }
 
             if (syncMode)
             {
-                if (swApp == null)
+                ModelDoc2 doc = null;
+                try
                 {
-                    MessageBox.Show(
-                        "SolidWorks не запущен.\nСинхронизация активного документа невозможна.",
-                        "ЕСКД Синхронизация",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                    return;
+                    doc = (ModelDoc2)swApp.ActiveDoc;
                 }
+                catch { }
 
-                ModelDoc2 doc = (ModelDoc2)swApp.ActiveDoc;
                 if (doc == null)
                 {
                     MessageBox.Show(
@@ -71,6 +68,7 @@ namespace ESKD.MaterialSync
                         "ЕСКД Синхронизация",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Information);
+                    ReleaseComObject(swApp);
                     return;
                 }
 
@@ -78,19 +76,19 @@ namespace ESKD.MaterialSync
                 {
                     MaterialSyncEngine.SyncModelProperties(doc, swApp, true);
                     string title = doc.GetTitle();
-                    
-                    NotifyIcon tray = new NotifyIcon();
-                    tray.Icon = System.Drawing.SystemIcons.Information;
-                    tray.Visible = true;
-                    tray.ShowBalloonTip(
-                        2000,
-                        "ЕСКД Синхронизация",
-                        "Синхронизация реквизитов, массы и материала выполнена для: " + title,
-                        ToolTipIcon.Info);
-                    
-                    System.Threading.Thread.Sleep(1500);
-                    tray.Visible = false;
-                    tray.Dispose();
+
+                    // D-22: NotifyIcon освобождается детерминированно через using;
+                    // блокирующий Thread.Sleep удалён.
+                    using (NotifyIcon tray = new NotifyIcon())
+                    {
+                        tray.Icon = System.Drawing.SystemIcons.Information;
+                        tray.Visible = true;
+                        tray.ShowBalloonTip(
+                            2000,
+                            "ЕСКД Синхронизация",
+                            "Синхронизация реквизитов, массы и материала выполнена для: " + title,
+                            ToolTipIcon.Info);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -100,6 +98,11 @@ namespace ESKD.MaterialSync
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Error);
                 }
+                finally
+                {
+                    ReleaseComObject(doc);
+                    ReleaseComObject(swApp);
+                }
                 return;
             }
 
@@ -107,6 +110,18 @@ namespace ESKD.MaterialSync
             using (SettingsForm form = new SettingsForm(swApp))
             {
                 Application.Run(form);
+            }
+            ReleaseComObject(swApp);
+        }
+
+        /// <summary>
+        /// D-8: освобождение полученных COM-ссылок (RCW) после использования.
+        /// </summary>
+        private static void ReleaseComObject(object comObject)
+        {
+            if (comObject != null)
+            {
+                try { Marshal.ReleaseComObject(comObject); } catch { }
             }
         }
     }

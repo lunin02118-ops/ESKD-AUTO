@@ -33,7 +33,8 @@ $assemblyName = "ESKD_Material_Sync_v5, Version=1.0.0.0, Culture=neutral, Public
 $runtimeVersion = "v4.0.30319"
 $title = "ЕСКД: Синхронизация материалов и реквизитов"
 $desc = "Панель инструментов ЕСКД: настройки реквизитов (фамилии, контора, масса), автоматическая синхронизация материалов и центрирование штампа по ГОСТ 2.104"
-$codeBase = ([System.Uri](Resolve-Path $dll).Path).AbsoluteUri
+# DEP-11 (эмпирически 2026-09-12): сырая (unescaped) форма — percent-encoded CLR не активирует
+$codeBase = "file:///" + ((Resolve-Path $dll).Path -replace '\\', '/')
 
 # CLSID
 $clsidKey = "HKCU:\Software\Classes\CLSID\$guid"
@@ -116,7 +117,7 @@ if (-not (Get-ItemProperty -Path $eskdKey -Name "AutoMass" -ErrorAction Silently
 
 $curAuthor = (Get-ItemProperty -Path $eskdKey -Name "Author" -ErrorAction SilentlyContinue).Author
 if ([string]::IsNullOrWhiteSpace($curAuthor)) {
-    $curAuthor = [Environment]::UserName
+    $curAuthor = "Лунин В.И."
     Set-ItemProperty -Path $eskdKey -Name "Author" -Value $curAuthor
     Set-ItemProperty -Path $eskdKey -Name "AuthorList" -Value $curAuthor
 }

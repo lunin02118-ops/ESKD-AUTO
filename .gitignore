@@ -18,3 +18,6 @@ build_temp/
 
 # Allow Drw System Automation distribution binaries
 !03_Макросы_и_Плагины/Drw_System_Automation/**
+
+# Test output artifacts
+08_Результаты_Тестирования/Auto_E2E_Test_Output/

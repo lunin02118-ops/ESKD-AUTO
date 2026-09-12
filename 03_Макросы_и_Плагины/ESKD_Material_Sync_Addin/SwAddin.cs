@@ -53,13 +53,52 @@ namespace ESKD.MaterialSync
         private ICommandManager iCmdMgr;
         private int iSwCookie;
         private bool _isSyncing = false;
-        private readonly HashSet<int> _hookedDocIds = new HashSet<int>();
+
+        /// <summary>
+        /// D-3: подписки FileSaveNotify/FileSaveAsNotify2/DestroyNotify одного документа.
+        /// Делегаты хранятся явно, чтобы их можно было снять оператором -=
+        /// при DestroyNotify документа и в DisconnectFromSW.
+        /// </summary>
+        private class DocEventHooks
+        {
+            public string Key;
+            public ModelDoc2 Doc;
+            public int DocType;
+            public DPartDocEvents_FileSaveNotifyEventHandler PartFileSave;
+            public DPartDocEvents_FileSaveAsNotify2EventHandler PartFileSaveAs;
+            public DPartDocEvents_DestroyNotifyEventHandler PartDestroy;
+            public DAssemblyDocEvents_FileSaveNotifyEventHandler AsmFileSave;
+            public DAssemblyDocEvents_FileSaveAsNotify2EventHandler AsmFileSaveAs;
+            public DAssemblyDocEvents_DestroyNotifyEventHandler AsmDestroy;
+            public DDrawingDocEvents_FileSaveNotifyEventHandler DrwFileSave;
+            public DDrawingDocEvents_FileSaveAsNotify2EventHandler DrwFileSaveAs;
+            public DDrawingDocEvents_DestroyNotifyEventHandler DrwDestroy;
+        }
+
+        // D-3: ключ хука — стабильный (полный путь документа, при его отсутствии — заголовок),
+        // а не нестабильный doc.GetHashCode()
+        private readonly Dictionary<string, DocEventHooks> _docHooks =
+            new Dictionary<string, DocEventHooks>(StringComparer.OrdinalIgnoreCase);
 
         public static void Log(string msg)
         {
             try
             {
                 string logFile = Path.Combine(Path.GetTempPath(), "eskd_material_sync.log");
+
+                // D-15: ротация лога — при превышении 5 МБ файл перезаписывается (обрезается) с пометкой
+                try
+                {
+                    FileInfo fi = new FileInfo(logFile);
+                    if (fi.Exists && fi.Length > 5 * 1024 * 1024)
+                    {
+                        File.WriteAllText(logFile, string.Format(
+                            "[{0:yyyy-MM-dd HH:mm:ss.fff}] LOG ROTATED: eskd_material_sync.log превысил 5 МБ и был усечён\r\n",
+                            DateTime.Now));
+                    }
+                }
+                catch { }
+
                 File.AppendAllText(logFile, string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] {1}\r\n", DateTime.Now, msg));
             }
             catch { }
@@ -120,6 +159,8 @@ namespace ESKD.MaterialSync
             catch (Exception exGlobal)
             {
                 Log("CRITICAL GLOBAL EXCEPTION in ConnectToSW: " + exGlobal.ToString());
+                // D-16: после глобального сбоя инициализации аддин обязан сообщить SolidWorks о неудаче
+                return false;
             }
 
             return true;
@@ -132,7 +173,7 @@ namespace ESKD.MaterialSync
             {
                 RemoveCommandManager();
                 DetachAppEvents();
-                _hookedDocIds.Clear();
+                DetachAllDocEvents();
                 iSwApp = null;
                 Log("DisconnectFromSW finished successfully.");
             }
@@ -569,7 +610,12 @@ namespace ESKD.MaterialSync
                 if (doc != null)
                 {
                     MaterialSyncEngine.SyncModelProperties(doc, iSwApp, true);
-                    doc.ForceRebuild3(true);
+                    // Zero-Drift: ForceRebuild3 смещает заметки чертежа (до 9 мм) — для
+                    // чертежей принудительный ребилд не выполняется.
+                    if (doc.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
+                    {
+                        doc.ForceRebuild3(true);
+                    }
                     Log("SyncCurrentDoc successfully completed for: " + doc.GetTitle());
                 }
                 else
@@ -670,7 +716,9 @@ namespace ESKD.MaterialSync
                 if (doc != null)
                 {
                     AttachDocEvents(doc);
-                    RunSyncSafe(doc);
+                    // D-1: при смене активного документа — ТОЛЬКО лёгкая синхронизация самого чертежа.
+                    // Без перестроения и без записи в ссылочную 3D-модель (SyncMode.OnActivate).
+                    RunSyncSafe(doc, null, false, SyncMode.OnActivate);
                 }
             }
             catch { }
@@ -695,35 +743,101 @@ namespace ESKD.MaterialSync
             return 0;
         }
 
+        /// <summary>
+        /// D-3: стабильный ключ хука документа — полный путь, при его отсутствии — заголовок.
+        /// </summary>
+        private static string GetDocHookKey(ModelDoc2 doc)
+        {
+            if (doc == null) return "";
+            try
+            {
+                string path = doc.GetPathName();
+                if (!string.IsNullOrEmpty(path)) return path;
+            }
+            catch { }
+            try
+            {
+                string title = doc.GetTitle();
+                if (!string.IsNullOrEmpty(title)) return title;
+            }
+            catch { }
+            return "";
+        }
+
         private void AttachDocEvents(ModelDoc2 doc)
         {
             if (doc == null) return;
             try
             {
-                int id = doc.GetHashCode();
-                if (_hookedDocIds.Contains(id)) return;
-                _hookedDocIds.Add(id);
+                string key = GetDocHookKey(doc);
+                if (string.IsNullOrEmpty(key)) return;
+
+                // Уже подписаны под этим ключом?
+                if (_docHooks.ContainsKey(key)) return;
+
+                // D-3: если этот же COM-объект документа уже подписан под устаревшим ключом
+                // (например, после SaveAs/переименования) — перепривязываем запись к новому ключу,
+                // не создавая дублирующих подписок.
+                string staleKey = null;
+                foreach (KeyValuePair<string, DocEventHooks> kv in _docHooks)
+                {
+                    if (kv.Value != null && object.ReferenceEquals(kv.Value.Doc, doc))
+                    {
+                        staleKey = kv.Key;
+                        break;
+                    }
+                }
+                if (staleKey != null)
+                {
+                    DocEventHooks staleHooks = _docHooks[staleKey];
+                    staleHooks.Key = key;
+                    _docHooks.Remove(staleKey);
+                    _docHooks[key] = staleHooks;
+                    return;
+                }
 
                 int docType = doc.GetType();
+                DocEventHooks hooks = new DocEventHooks();
+                hooks.Key = key;
+                hooks.Doc = doc;
+                hooks.DocType = docType;
+                ModelDoc2 docRef = doc;
+
                 if (docType == (int)swDocumentTypes_e.swDocPART)
                 {
                     PartDoc part = (PartDoc)doc;
-                    part.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
-                    part.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
+                    // Полный путь (включая запись в ссылочную модель чертежа и ForceRebuild3)
+                    // зарезервирован для уведомлений сохранения — SyncMode.OnSave по умолчанию.
+                    hooks.PartFileSave = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
+                    hooks.PartFileSaveAs = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
+                    hooks.PartDestroy = delegate { DetachDocEvents(hooks); return 0; };
+                    part.FileSaveNotify += hooks.PartFileSave;
+                    part.FileSaveAsNotify2 += hooks.PartFileSaveAs;
+                    part.DestroyNotify += hooks.PartDestroy;
                 }
                 else if (docType == (int)swDocumentTypes_e.swDocASSEMBLY)
                 {
                     AssemblyDoc asm = (AssemblyDoc)doc;
-                    asm.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
-                    asm.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
+                    hooks.AsmFileSave = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
+                    hooks.AsmFileSaveAs = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
+                    hooks.AsmDestroy = delegate { DetachDocEvents(hooks); return 0; };
+                    asm.FileSaveNotify += hooks.AsmFileSave;
+                    asm.FileSaveAsNotify2 += hooks.AsmFileSaveAs;
+                    asm.DestroyNotify += hooks.AsmDestroy;
                 }
                 else if (docType == (int)swDocumentTypes_e.swDocDRAWING)
                 {
                     DrawingDoc drw = (DrawingDoc)doc;
-                    drw.FileSaveNotify += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
-                    drw.FileSaveAsNotify2 += (string fn) => { RunSyncSafe(doc, fn, false); return 0; };
+                    hooks.DrwFileSave = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
+                    hooks.DrwFileSaveAs = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
+                    hooks.DrwDestroy = delegate { DetachDocEvents(hooks); return 0; };
+                    drw.FileSaveNotify += hooks.DrwFileSave;
+                    drw.FileSaveAsNotify2 += hooks.DrwFileSaveAs;
+                    drw.DestroyNotify += hooks.DrwDestroy;
                     // drw.RegenNotify intentionally removed: regen should not mutate document properties or trigger rebuilds
                 }
+
+                _docHooks[key] = hooks;
             }
             catch (Exception ex)
             {
@@ -731,14 +845,101 @@ namespace ESKD.MaterialSync
             }
         }
 
-        private void RunSyncSafe(ModelDoc2 doc, string targetFileName = null, bool triggerRebuild = true)
+        /// <summary>
+        /// D-3: снятие подписок конкретного документа (вызывается из DestroyNotify)
+        /// с явным -= по сохранённым делегатам.
+        /// </summary>
+        private void DetachDocEvents(DocEventHooks hooks)
+        {
+            if (hooks == null) return;
+            try
+            {
+                ModelDoc2 doc = hooks.Doc;
+                if (doc != null)
+                {
+                    if (hooks.DocType == (int)swDocumentTypes_e.swDocPART)
+                    {
+                        try
+                        {
+                            PartDoc part = (PartDoc)doc;
+                            if (hooks.PartFileSave != null) part.FileSaveNotify -= hooks.PartFileSave;
+                            if (hooks.PartFileSaveAs != null) part.FileSaveAsNotify2 -= hooks.PartFileSaveAs;
+                            if (hooks.PartDestroy != null) part.DestroyNotify -= hooks.PartDestroy;
+                        }
+                        catch { }
+                    }
+                    else if (hooks.DocType == (int)swDocumentTypes_e.swDocASSEMBLY)
+                    {
+                        try
+                        {
+                            AssemblyDoc asm = (AssemblyDoc)doc;
+                            if (hooks.AsmFileSave != null) asm.FileSaveNotify -= hooks.AsmFileSave;
+                            if (hooks.AsmFileSaveAs != null) asm.FileSaveAsNotify2 -= hooks.AsmFileSaveAs;
+                            if (hooks.AsmDestroy != null) asm.DestroyNotify -= hooks.AsmDestroy;
+                        }
+                        catch { }
+                    }
+                    else if (hooks.DocType == (int)swDocumentTypes_e.swDocDRAWING)
+                    {
+                        try
+                        {
+                            DrawingDoc drw = (DrawingDoc)doc;
+                            if (hooks.DrwFileSave != null) drw.FileSaveNotify -= hooks.DrwFileSave;
+                            if (hooks.DrwFileSaveAs != null) drw.FileSaveAsNotify2 -= hooks.DrwFileSaveAs;
+                            if (hooks.DrwDestroy != null) drw.DestroyNotify -= hooks.DrwDestroy;
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+
+            hooks.Doc = null;
+            hooks.PartFileSave = null;
+            hooks.PartFileSaveAs = null;
+            hooks.PartDestroy = null;
+            hooks.AsmFileSave = null;
+            hooks.AsmFileSaveAs = null;
+            hooks.AsmDestroy = null;
+            hooks.DrwFileSave = null;
+            hooks.DrwFileSaveAs = null;
+            hooks.DrwDestroy = null;
+
+            try
+            {
+                if (!string.IsNullOrEmpty(hooks.Key) && _docHooks.ContainsKey(hooks.Key))
+                {
+                    _docHooks.Remove(hooks.Key);
+                }
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// D-3: полное снятие всех документных подписок (вызывается из DisconnectFromSW).
+        /// </summary>
+        private void DetachAllDocEvents()
+        {
+            try
+            {
+                List<DocEventHooks> allHooks = new List<DocEventHooks>(_docHooks.Values);
+                foreach (DocEventHooks h in allHooks)
+                {
+                    DetachDocEvents(h);
+                }
+            }
+            catch { }
+            try { _docHooks.Clear(); } catch { }
+        }
+
+        private void RunSyncSafe(ModelDoc2 doc, string targetFileName = null, bool triggerRebuild = true, SyncMode mode = SyncMode.OnSave)
         {
             if (_isSyncing || doc == null) return;
             if (!MaterialSyncEngine.IsServiceEnabled()) return;
             _isSyncing = true;
             try
             {
-                MaterialSyncEngine.SyncModelProperties(doc, iSwApp, false, triggerRebuild, targetFileName);
+                MaterialSyncEngine.SyncModelProperties(doc, iSwApp, false, triggerRebuild, targetFileName, mode);
             }
             catch (Exception ex)
             {

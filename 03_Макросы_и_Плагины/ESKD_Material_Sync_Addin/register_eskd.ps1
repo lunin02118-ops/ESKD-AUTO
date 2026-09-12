@@ -1,12 +1,9 @@
-# -*- coding: utf-8 -*-
-<#
+﻿<#
 .SYNOPSIS
     Регистрация надстройки ЕСКД и привязка инструментов заполнения штампов SolidWorks 2025
 #>
 [CmdletBinding()]
-param(
-    [switch]$Elevated
-)
+param()
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -36,9 +33,7 @@ foreach ($c in $candidatesDll) {
 
 # Определение ToolsRoot
 $toolsRoot = $null
-for ($i = 0; $i -lt 4; $i++) {
-    if (Test-Path (Join-Path $SuiteRoot "04_Библиотеки_Материалов_и_Профилей")) { $toolsRoot = $SuiteRoot; break }
-}
+if (Test-Path (Join-Path $SuiteRoot "04_Библиотеки_Материалов_и_Профилей")) { $toolsRoot = $SuiteRoot }
 if (-not $toolsRoot -and (Test-Path "D:\Work\_Инструменты_Конструктора")) {
     $toolsRoot = "D:\Work\_Инструменты_Конструктора"
 }
@@ -57,7 +52,10 @@ $guid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
 $progId = "ESKD.MaterialSync.SwAddin_v5"
 $title = "ЕСКД: Синхронизация материалов и реквизитов"
 $desc = "Панель инструментов ЕСКД: настройки реквизитов (фамилии, контора, масса), автоматическая синхронизация материалов и центрирование штампа по ГОСТ 2.104"
-$codeBase = "file:///" + $dllPath.Replace("\", "/")
+# DEP-11 (эмпирически 2026-09-12): CLR на этой конфигурации НЕ активирует сборку по
+# percent-encoded file:///URI с кириллицей — работает ТОЛЬКО сырая (unescaped) форма,
+# которую пишет и RegAsm. Не экранировать!
+$codeBase = "file:///" + $dllPath.Replace('\', '/')
 
 Write-Host "`n[2/5] Регистрация COM-сервера в профиле текущего пользователя (HKCU)..." -ForegroundColor Gray
 
@@ -129,19 +127,22 @@ foreach ($ctx in $contexts) {
     if (-not (Test-Path $ctxPath)) { New-Item -Path $ctxPath -Force | Out-Null }
     
     $found = $false
-    Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | ForEach-Object {
-        $tabPath = $_.PSPath
-        $modName = (Get-ItemProperty -Path $tabPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
-        if ($modName -and ($oldGuids -contains $modName.ToUpper())) {
-            Remove-Item -Path $tabPath -Recurse -Force -ErrorAction SilentlyContinue
-            return
-        }
-        $refName = (Get-ItemProperty -Path $tabPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
-        if (($refName -and ($refName -match "ЕСКД")) -or ($modName -and ($modName.ToUpper() -eq $guid.ToUpper()))) {
-            Set-ItemProperty -Path $tabPath -Name "RefName" -Value "ЕСКД" -Force -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path $tabPath -Name "ModuleName" -Value $guid -Force -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path $tabPath -Name "Tab Props" -Value "ЕСКД,1,1,-1" -Force -ErrorAction SilentlyContinue
-            $found = $true
+    $tabItems = Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue
+    if ($tabItems) {
+        foreach ($item in $tabItems) {
+            $tabPath = $item.PSPath
+            $modName = (Get-ItemProperty -Path $tabPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
+            if ($modName -and ($oldGuids -contains $modName.ToUpper())) {
+                Remove-Item -Path $tabPath -Recurse -Force -ErrorAction SilentlyContinue
+                continue
+            }
+            $refName = (Get-ItemProperty -Path $tabPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
+            if (($refName -and ($refName -match "ЕСКД")) -or ($modName -and ($modName.ToUpper() -eq $guid.ToUpper()))) {
+                Set-ItemProperty -Path $tabPath -Name "RefName" -Value "ЕСКД" -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $tabPath -Name "ModuleName" -Value $guid -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $tabPath -Name "Tab Props" -Value "ЕСКД,1,1,-1" -Force -ErrorAction SilentlyContinue
+                $found = $true
+            }
         }
     }
     if (-not $found) {
@@ -191,13 +192,12 @@ Set-ItemProperty -Path $eskdKey -Name "Author" -Value $curAuth
 Set-ItemProperty -Path $eskdKey -Name "AuthorList" -Value $curAuth
 
 $curOrg = (Get-ItemProperty -Path $eskdKey -Name "Organization" -ErrorAction SilentlyContinue).Organization
-if (-not $curOrg) { $curOrg = "ТОО `"Троя`"" }
+if (-not $curOrg) { $curOrg = "123" }
 Set-ItemProperty -Path $eskdKey -Name "Organization" -Value $curOrg
 Write-Host "  [OK] Параметры ЕСКД сохранены (Конструктор: $curAuth, Организация: $curOrg)." -ForegroundColor Green
 
 Write-Host "`n[4/5] Синхронизация с макросами SWPlus (MProp, DProp, Master)..." -ForegroundColor Gray
 $mpropDirs = @(
-    (Join-Path $SuiteRoot "macros\SWPlus_ESKD\MProp"),
     (Join-Path $toolsRoot "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp")
 )
 
@@ -215,20 +215,29 @@ foreach ($mpropDir in $mpropDirs) {
             if ($fams -notcontains $curAuth) { $fams = @($curAuth) + $fams }
             [System.IO.File]::WriteAllLines($famFile, $fams, [System.Text.Encoding]::GetEncoding(1251))
 
-            $firms = @()
+            $firmPairs = @()
+            $existingFirmNames = @()
             if (Test-Path $firmFile) {
-                $firms = [System.IO.File]::ReadAllLines($firmFile, [System.Text.Encoding]::GetEncoding(1251)) | Where-Object { $_.Trim() }
-            }
-            if ($firms -notcontains $curOrg) { $firms = @($curOrg) + $firms }
-            [System.IO.File]::WriteAllLines($firmFile, $firms, [System.Text.Encoding]::GetEncoding(1251))
-
-            if (Test-Path $iniFile) {
-                $iniLines = [System.IO.File]::ReadAllLines($iniFile, [System.Text.Encoding]::GetEncoding(1251))
-                if ($iniLines.Count -ge 6) {
-                    $iniLines[0] = "0"
-                    $iniLines[5] = $curOrg
-                    [System.IO.File]::WriteAllLines($iniFile, $iniLines, [System.Text.Encoding]::GetEncoding(1251))
+                $rawFirms = [System.IO.File]::ReadAllLines($firmFile, [System.Text.Encoding]::GetEncoding(1251))
+                for ($i = 0; $i -lt $rawFirms.Count; $i += 2) {
+                    $fName = $rawFirms[$i].Trim()
+                    $fCode = if ($i + 1 -lt $rawFirms.Count) { $rawFirms[$i + 1].Trim() } else { "" }
+                    if ($fName) {
+                        $firmPairs += ,@($fName, $fCode)
+                        $existingFirmNames += $fName
+                    }
                 }
+            }
+            if ($curOrg -and ($existingFirmNames -notcontains $curOrg)) {
+                $firmPairs = ,@($curOrg, "") + $firmPairs
+            }
+            $outLines = @()
+            foreach ($pair in $firmPairs) {
+                $outLines += $pair[0]
+                $outLines += $pair[1]
+            }
+            if ($outLines.Count -gt 0) {
+                [System.IO.File]::WriteAllLines($firmFile, $outLines, [System.Text.Encoding]::GetEncoding(1251))
             }
         } catch { }
     }
@@ -237,14 +246,9 @@ Write-Host "  [OK] Списки фамилий и организаций син�
 
 # 4.1 Master.ini и форматки
 $masterInis = @(
-    (Join-Path $SuiteRoot "macros\SWPlus_ESKD\Master\Master.ini"),
     (Join-Path $toolsRoot "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\Master\Master.ini")
 )
-$sheetFormats = if (Test-Path (Join-Path $SuiteRoot "templates\Основные надписи")) {
-    (Join-Path $SuiteRoot "templates\Основные надписи")
-} else {
-    Join-Path $toolsRoot "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\Основные надписи"
-}
+$sheetFormats = Join-Path $toolsRoot "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\Основные надписи"
 
 foreach ($mIni in $masterInis) {
     if ((Test-Path $mIni) -and (Test-Path $sheetFormats)) {
@@ -307,6 +311,21 @@ if ($isAdmin) {
         if (Test-Path $regasm) {
             & $regasm /codebase $dllPath | Out-Null
         }
+
+        # DEP-11 (эмпирически 2026-09-12): RegAsm записывает CodeBase в ESCAPED-форме,
+        # которую CLR не активирует. Для SW, запущенного из elevated-контекста, per-user
+        # HKCU-регистрация игнорируется и активация идёт через HKLM — поэтому ПОСЛЕ RegAsm
+        # восстанавливаем сырую (raw) форму CodeBase в обеих ветках реестра.
+        foreach ($hive in @("HKCU:\Software\Classes\CLSID\$guid\InprocServer32", "HKLM:\Software\Classes\CLSID\$guid\InprocServer32")) {
+            if (Test-Path $hive) {
+                Set-ItemProperty -Path $hive -Name "CodeBase" -Value $codeBase -ErrorAction SilentlyContinue
+                $verKey = Join-Path $hive "1.0.0.0"
+                if (Test-Path $verKey) {
+                    Set-ItemProperty -Path $verKey -Name "CodeBase" -Value $codeBase -ErrorAction SilentlyContinue
+                }
+            }
+        }
+
         Write-Host "  [OK] Системная регистрация HKLM выполнена успешно!" -ForegroundColor Green
     } catch {
         Write-Host "  [ПРЕДУПРЕЖДЕНИЕ] Ошибка записи в HKLM: $_" -ForegroundColor Yellow

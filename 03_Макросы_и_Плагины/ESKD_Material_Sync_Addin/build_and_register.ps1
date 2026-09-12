@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Builds and registers the ESKD Material Sync Zero-Click Add-In for SolidWorks 2025.
 #>
@@ -30,7 +30,7 @@ $sources = @(
     (Join-Path $ScriptDir "SwAddin.cs")
 )
 
-$args = @(
+$cscArgs = @(
     "/target:library",
     "/platform:anycpu",
     "/optimize+",
@@ -45,7 +45,7 @@ $args = @(
     "/r:$swDir\SolidWorks.Interop.swpublished.dll"
 ) + $sources
 
-& $csc $args
+& $csc $cscArgs
 if ($LASTEXITCODE -ne 0) {
     Write-Error "CSC compilation failed with code $LASTEXITCODE"
     exit $LASTEXITCODE
@@ -89,6 +89,9 @@ $className = "ESKD.MaterialSync.SwAddin"
 $assemblyName = "ESKD_Material_Sync_v5, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
 $runtimeVersion = "v4.0.30319"
 $title = "ЕСКД: Синхронизация материалов и реквизитов"
+$desc = "Панель инструментов ЕСКД: настройки реквизитов (фамилии, контора, масса), автоматическая синхронизация материалов и центрирование штампа по ГОСТ 2.104"
+# DEP-11 (эмпирически 2026-09-12): CLR не активирует сборку по percent-encoded URI —
+# используем сырую форму (как RegAsm). Не экранировать!
 $codeBase = "file:///" + ((Resolve-Path $outputDll).Path -replace '\\', '/')
 
 # 3.1. HKCU COM Registration
@@ -130,12 +133,29 @@ Set-ItemProperty -Path $rootProgClsid -Name "(Default)" -Value $guid
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if ($isAdmin) {
     try {
+        # CR#12: проверка кода возврата RegAsm вместо молчаливого пропуска сбоя
         & $regasm /codebase $outputDll 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "RegAsm завершился с кодом $LASTEXITCODE — HKLM-регистрация может быть неполной (HKCU-регистрация выше это компенсирует)."
+        }
         $hklmPath = "HKLM:\Software\SolidWorks\AddIns\$guid"
         if (-not (Test-Path $hklmPath)) { New-Item -Path $hklmPath -Force | Out-Null }
         Set-ItemProperty -Path $hklmPath -Name "(Default)" -Value 1 -Type DWord
         Set-ItemProperty -Path $hklmPath -Name "Title" -Value $title -Type String
         Set-ItemProperty -Path $hklmPath -Name "Description" -Value $desc -Type String
+
+        # DEP-11 (эмпирически 2026-09-12): RegAsm пишет escaped-CodeBase, который CLR не
+        # активирует; для elevated-запусков SW активация идёт через HKLM. Восстанавливаем
+        # сырую (raw) форму в обеих ветках ПОСЛЕ RegAsm.
+        foreach ($hive in @("HKCU:\Software\Classes\CLSID\$guid\InprocServer32", "HKLM:\Software\Classes\CLSID\$guid\InprocServer32")) {
+            if (Test-Path $hive) {
+                Set-ItemProperty -Path $hive -Name "CodeBase" -Value $codeBase -ErrorAction SilentlyContinue
+                $verKey = Join-Path $hive "1.0.0.0"
+                if (Test-Path $verKey) {
+                    Set-ItemProperty -Path $verKey -Name "CodeBase" -Value $codeBase -ErrorAction SilentlyContinue
+                }
+            }
+        }
     } catch { }
 }
 
@@ -157,15 +177,18 @@ foreach ($ctx in $contexts) {
     if (-not (Test-Path $ctxPath)) { New-Item -Path $ctxPath -Force | Out-Null }
 
     $found = $false
-    Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | ForEach-Object {
-        $tabPath = $_.PSPath
-        $modName = (Get-ItemProperty -Path $tabPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
-        $refName = (Get-ItemProperty -Path $tabPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
-        if (($refName -and ($refName -match "ЕСКД")) -or ($modName -and ($modName.ToUpper() -eq $guid.ToUpper()))) {
-            Set-ItemProperty -Path $tabPath -Name "RefName" -Value "ЕСКД" -Force -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path $tabPath -Name "ModuleName" -Value $guid -Force -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path $tabPath -Name "Tab Props" -Value "ЕСКД,1,1,-1" -Force -ErrorAction SilentlyContinue
-            $found = $true
+    $tabItems = Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue
+    if ($tabItems) {
+        foreach ($item in $tabItems) {
+            $tabPath = $item.PSPath
+            $modName = (Get-ItemProperty -Path $tabPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
+            $refName = (Get-ItemProperty -Path $tabPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
+            if (($refName -and ($refName -match "ЕСКД")) -or ($modName -and ($modName.ToUpper() -eq $guid.ToUpper()))) {
+                Set-ItemProperty -Path $tabPath -Name "RefName" -Value "ЕСКД" -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $tabPath -Name "ModuleName" -Value $guid -Force -ErrorAction SilentlyContinue
+                Set-ItemProperty -Path $tabPath -Name "Tab Props" -Value "ЕСКД,1,1,-1" -Force -ErrorAction SilentlyContinue
+                $found = $true
+            }
         }
     }
     if (-not $found) {

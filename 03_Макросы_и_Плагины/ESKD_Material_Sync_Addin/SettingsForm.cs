@@ -22,6 +22,49 @@ namespace ESKD.MaterialSync
     {
         private const string RegPath = @"Software\SolidWorks\ESKD_Settings";
 
+        /// <summary>
+        /// D-12: поиск корня репозитория по маркёрам от каталога сборки вверх:
+        /// файл MProp.ini внутри дерева Макросы_SW_ZTool либо сама папка Макросы_SW_ZTool
+        /// (в корне репо или внутри 03_Макросы_и_Плагины).
+        /// </summary>
+        private static List<string> FindRepoRootsByMarker()
+        {
+            List<string> roots = new List<string>();
+            try
+            {
+                string cur = Path.GetDirectoryName(typeof(SettingsForm).Assembly.Location);
+                for (int i = 0; i < 8 && !string.IsNullOrEmpty(cur); i++)
+                {
+                    bool markerFound = false;
+
+                    // Маркёр 1: MProp.ini из комплекта SWPlus внутри Макросы_SW_ZTool
+                    string markerIni = Path.Combine(cur, "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "MProp", "MProp.ini");
+                    if (File.Exists(markerIni)) markerFound = true;
+
+                    // Маркёр 2: папка Макросы_SW_ZTool в текущем каталоге
+                    if (!markerFound && Directory.Exists(Path.Combine(cur, "Макросы_SW_ZTool"))) markerFound = true;
+
+                    // Маркёр 3: папка Макросы_SW_ZTool внутри 03_Макросы_и_Плагины
+                    if (!markerFound && Directory.Exists(Path.Combine(cur, "03_Макросы_и_Плагины", "Макросы_SW_ZTool"))) markerFound = true;
+
+                    if (markerFound)
+                    {
+                        bool already = false;
+                        foreach (string r in roots)
+                        {
+                            if (string.Equals(r, cur, StringComparison.OrdinalIgnoreCase)) { already = true; break; }
+                        }
+                        if (!already) roots.Add(cur);
+                    }
+
+                    DirectoryInfo p = Directory.GetParent(cur);
+                    cur = p != null ? p.FullName : null;
+                }
+            }
+            catch { }
+            return roots;
+        }
+
         private static string[] FindCandidatePaths(string relativeSubPath)
         {
             List<string> list = new List<string>();
@@ -42,10 +85,41 @@ namespace ESKD.MaterialSync
                 }
             }
             catch { }
-            list.Add(Path.Combine(@"D:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины", relativeSubPath));
-            string fn = Path.GetFileName(relativeSubPath);
-            string parentDir = Path.GetFileName(Path.GetDirectoryName(relativeSubPath));
-            list.Add(Path.Combine(@"D:\Work\_dev\solidworks-eskd-suite\macros\SWPlus_ESKD", parentDir, fn));
+
+            // D-12: fallback от каталога сборки — если жёсткие каталоги не существуют,
+            // вычисляем корень репозитория по маркёрам (MProp.ini / папка Макросы_SW_ZTool)
+            // и строим относительные подпути от него.
+            foreach (string root in FindRepoRootsByMarker())
+            {
+                try
+                {
+                    string fb1 = Path.Combine(root, relativeSubPath);
+                    if (File.Exists(fb1)) list.Add(fb1);
+                    string fb2 = Path.Combine(root, @"03_Макросы_и_Плагины", relativeSubPath);
+                    if (File.Exists(fb2)) list.Add(fb2);
+                }
+                catch { }
+            }
+
+            // Primary: жёсткие пути этой станции (используются, когда существуют)
+            try
+            {
+                string primaryDir = @"D:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины";
+                if (Directory.Exists(primaryDir))
+                {
+                    string cand = Path.Combine(primaryDir, relativeSubPath);
+                    if (File.Exists(cand)) list.Add(cand);
+                }
+                string devDir = @"D:\_dev\solidworks-eskd-suite\macros\SWPlus_ESKD";
+                if (Directory.Exists(devDir))
+                {
+                    string fn = Path.GetFileName(relativeSubPath);
+                    string parentDir = Path.GetFileName(Path.GetDirectoryName(relativeSubPath));
+                    string cand = Path.Combine(devDir, parentDir, fn);
+                    if (File.Exists(cand)) list.Add(cand);
+                }
+            }
+            catch { }
 
             List<string> res = new List<string>();
             foreach (string s in list)
@@ -823,7 +897,7 @@ namespace ESKD.MaterialSync
                     }
                 }
 
-                // 2. Load firms from SWPlus text files
+                // 2. Load firms from SWPlus text files (alternating lines: odd = firm name, even = classifier)
                 HashSet<string> firms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (string firmFile in GetSwPlusFirmPaths())
                 {
@@ -832,9 +906,9 @@ namespace ESKD.MaterialSync
                         try
                         {
                             string[] lines = File.ReadAllLines(firmFile, Encoding.GetEncoding(1251));
-                            foreach (string line in lines)
+                            for (int i = 0; i < lines.Length; i += 2)
                             {
-                                string t = line.Trim();
+                                string t = lines[i].Trim();
                                 if (!string.IsNullOrEmpty(t)) firms.Add(t);
                             }
                         }
@@ -843,9 +917,10 @@ namespace ESKD.MaterialSync
                 }
 
                 // 3. Load from registry
-                string currentAuthor = "Шалунов В.В.";
+                // D-13: канонические дефолты этой станции (HKCU ESKD_Settings)
+                string currentAuthor = "Лунин В.И.";
                 string currentChecker = "";
-                string currentOrg = "Home Made";
+                string currentOrg = "123";
                 int serviceEnabled = 1;
                 int autoSyncMat = 1;
                 int autoMass = 1;
@@ -860,12 +935,12 @@ namespace ESKD.MaterialSync
                         currentAuthor = (key.GetValue("Author") as string) ?? currentAuthor;
                         currentChecker = (key.GetValue("Checker") as string) ?? currentChecker;
                         currentOrg = (key.GetValue("Organization") as string) ?? currentOrg;
-                        serviceEnabled = (int)key.GetValue("ServiceEnabled", 1);
-                        autoSyncMat = (int)key.GetValue("AutoSyncMaterials", 1);
-                        autoMass = (int)key.GetValue("AutoMass", 1);
-                        decimals = (int)key.GetValue("MassDecimals", 2);
-                        autoCenter = (int)key.GetValue("AutoCenterMass", 1);
-                        autoSplit = (int)key.GetValue("AutoSplitName", 1);
+                        serviceEnabled = MaterialSyncEngine.ReadIntSafe(key, "ServiceEnabled", 1);
+                        autoSyncMat = MaterialSyncEngine.ReadIntSafe(key, "AutoSyncMaterials", 1);
+                        autoMass = MaterialSyncEngine.ReadIntSafe(key, "AutoMass", 1);
+                        decimals = MaterialSyncEngine.ReadIntSafe(key, "MassDecimals", 2);
+                        autoCenter = MaterialSyncEngine.ReadIntSafe(key, "AutoCenterMass", 1);
+                        autoSplit = MaterialSyncEngine.ReadIntSafe(key, "AutoSplitName", 1);
 
                         string authorList = key.GetValue("AuthorList") as string;
                         if (!string.IsNullOrEmpty(authorList))
@@ -954,8 +1029,8 @@ namespace ESKD.MaterialSync
 
                 // Also sync back to SWPlus text files so MProp/DProp see the exact same values
                 SyncFullListToSwPlus(GetSwPlusFamPaths(), author, checker, cmbAuthor.Items);
-                SyncFullListToSwPlus(GetSwPlusFirmPaths(), org, null, cmbOrg.Items);
-                SyncToMPropIni(author, org);
+                SyncFirmsToSwPlus(GetSwPlusFirmPaths(), org, cmbOrg.Items);
+                SyncToMPropIni(author);
             }
             catch (Exception ex)
             {
@@ -1024,21 +1099,97 @@ namespace ESKD.MaterialSync
             }
         }
 
-        private void SyncToMPropIni(string author, string org)
+        private void SyncFirmsToSwPlus(string[] paths, string primaryOrg, ComboBox.ObjectCollection existingItems)
+        {
+            List<string> orderedFirms = new List<string>();
+            if (!string.IsNullOrEmpty(primaryOrg)) orderedFirms.Add(primaryOrg);
+
+            if (existingItems != null)
+            {
+                foreach (object item in existingItems)
+                {
+                    string s = item != null ? item.ToString().Trim() : "";
+                    if (!string.IsNullOrEmpty(s) && !orderedFirms.Contains(s))
+                    {
+                        orderedFirms.Add(s);
+                    }
+                }
+            }
+
+            foreach (string path in paths)
+            {
+                try
+                {
+                    Dictionary<string, string> existingClassifiers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    if (File.Exists(path))
+                    {
+                        string[] fileLines = File.ReadAllLines(path, Encoding.GetEncoding(1251));
+                        for (int i = 0; i < fileLines.Length; i += 2)
+                        {
+                            string f = fileLines[i].Trim();
+                            string c = (i + 1 < fileLines.Length) ? fileLines[i + 1].Trim() : "";
+                            if (!string.IsNullOrEmpty(f))
+                            {
+                                if (!existingClassifiers.ContainsKey(f)) existingClassifiers[f] = c;
+                                if (!orderedFirms.Contains(f)) orderedFirms.Add(f);
+                            }
+                        }
+                    }
+
+                    List<string> outputLines = new List<string>();
+                    foreach (string f in orderedFirms)
+                    {
+                        outputLines.Add(f);
+                        string c = "";
+                        if (existingClassifiers.ContainsKey(f)) c = existingClassifiers[f];
+                        outputLines.Add(c);
+                    }
+
+                    string dir = Path.GetDirectoryName(path);
+                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
+                    {
+                        File.WriteAllLines(path, outputLines.ToArray(), Encoding.GetEncoding(1251));
+                    }
+                }
+                catch { }
+            }
+        }
+
+        private void SyncToMPropIni(string author)
         {
             try
             {
                 string[] iniPaths = FindCandidatePaths(@"Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp\MProp.ini");
                 foreach (string iniPath in iniPaths)
                 {
-                    if (File.Exists(iniPath))
+                    if (!File.Exists(iniPath)) continue;
+
+                    // D-7: индекс выбранной в GUI фамилии — позиция в MProp_Fam.txt
+                    // (раньше всегда писался 0, и выбранная фамилия не попадала в MProp).
+                    int authorIndex = 0;
+                    if (!string.IsNullOrEmpty(author))
                     {
-                        List<string> lines = new List<string>(File.ReadAllLines(iniPath, Encoding.GetEncoding(1251)));
-                        while (lines.Count < 6) lines.Add("0");
-                        lines[0] = "0"; // Line 1 (0-based 0): Author index
-                        if (!string.IsNullOrEmpty(org)) lines[5] = org;
-                        File.WriteAllLines(iniPath, lines.ToArray(), Encoding.GetEncoding(1251));
+                        string famPath = Path.Combine(Path.GetDirectoryName(iniPath), "MProp_Fam.txt");
+                        if (File.Exists(famPath))
+                        {
+                            string[] fams = File.ReadAllLines(famPath, Encoding.GetEncoding(1251));
+                            for (int i = 0; i < fams.Length; i++)
+                            {
+                                if (string.Equals(fams[i].Trim(), author.Trim(), StringComparison.OrdinalIgnoreCase))
+                                {
+                                    authorIndex = i;
+                                    break;
+                                }
+                            }
+                        }
                     }
+
+                    List<string> lines = new List<string>(File.ReadAllLines(iniPath, Encoding.GetEncoding(1251)));
+                    while (lines.Count < 5) lines.Add("0");
+                    lines[0] = authorIndex.ToString();
+                    // Note: Line 6 (index 5) is MIni3 which is the Material Database name (.sldmat), NOT organization!
+                    // We preserve line 6 intact so MProp never warns about missing material database.
+                    File.WriteAllLines(iniPath, lines.ToArray(), Encoding.GetEncoding(1251));
                 }
             }
             catch { }
@@ -1054,8 +1205,12 @@ namespace ESKD.MaterialSync
                     ModelDoc2 doc = (ModelDoc2)_swApp.ActiveDoc;
                     if (doc != null)
                     {
-                        MaterialSyncEngine.SyncModelProperties(doc, _swApp, true);
-                        doc.ForceRebuild3(true);
+                        MaterialSyncEngine.SyncModelProperties(doc, _swApp, true, true);
+                        // Zero-Drift: ForceRebuild3 смещает заметки чертежа (до 9 мм)
+                        if (doc.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
+                        {
+                            doc.ForceRebuild3(true);
+                        }
                     }
                 }
                 catch { }
@@ -1077,9 +1232,13 @@ namespace ESKD.MaterialSync
                     ModelDoc2 doc = (ModelDoc2)_swApp.ActiveDoc;
                     if (doc != null)
                     {
-                        MaterialSyncEngine.SyncModelProperties(doc, _swApp, true);
-                        doc.ForceRebuild3(true);
-                        string docTypeTitle = doc.GetType() == (int)swDocumentTypes_e.swDocDRAWING ? "чертежа (штамп и масса)" : "модели";
+                        MaterialSyncEngine.SyncModelProperties(doc, _swApp, true, true);
+                        // Zero-Drift: ForceRebuild3 смещает заметки чертежа (до 9 мм)
+                        if (doc.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
+                        {
+                            doc.ForceRebuild3(true);
+                        }
+                        string docTypeTitle = doc.GetType() == (int)swDocumentTypes_e.swDocDRAWING ? "чертежа (штамп и ссылочная модель)" : "модели";
                         MessageBox.Show(string.Format("Настройки ЕСКД применены к активному документу!\n\nРеквизиты, масса и свойства {0} успешно обновлены.", docTypeTitle),
                             "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         this.Close();
