@@ -929,6 +929,21 @@ class CADConfiguratorApp:
                 if os.path.exists(regasm):
                     subprocess.run([regasm, "/codebase", addin_dll], capture_output=True)
 
+                # DEP-11: RegAsm пишет percent-escaped CodeBase — CLR не активирует
+                # кириллический URI. Прошиваем RAW-форму в HKLM (для SW от администратора).
+                try:
+                    import winreg as _wr
+                    _raw_cb = "file:///" + addin_dll.replace(chr(92), "/")
+                    for _hive in (r"SOFTWARE\Classes\CLSID\{B64E6875-B101-4D5C-B245-FF8D50772E25}\InprocServer32",
+                                  r"SOFTWARE\Classes\CLSID\{B64E6875-B101-4D5C-B245-FF8D50772E25}\InprocServer32\1.0.0.0"):
+                        try:
+                            with _wr.OpenKey(_wr.HKEY_LOCAL_MACHINE, _hive, 0, _wr.KEY_SET_VALUE) as _k:
+                                _wr.SetValueEx(_k, "CodeBase", 0, _wr.REG_SZ, _raw_cb)
+                        except OSError:
+                            pass
+                except Exception:
+                    pass
+
                 guid_str = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
                 title_str = "ЕСКД: Синхронизация материалов и реквизитов"
                 desc_str = "Панель инструментов ЕСКД: настройки реквизитов (фамилии, контора, масса), автоматическая синхронизация материалов и центрирование штампа по ГОСТ 2.104"

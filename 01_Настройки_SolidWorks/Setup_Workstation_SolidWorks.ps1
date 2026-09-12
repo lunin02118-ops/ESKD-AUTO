@@ -663,6 +663,22 @@ Write-Host "`n[5/6] Регистрация нативной надстройки
 $addinDll = Join-Path $ToolsRoot "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\ESKD_Material_Sync_v5.dll"
 $regasm = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
 
+# Автокомпиляция надстройки из исходников, если DLL отсутствует (чистый clone репозитория).
+# Без DLL ниже пропускались бы не только COM-регистрация, но и Избранные материалы,
+# ESKD_Settings и вкладки CommandManager — теперь гарантированно выполняется весь блок.
+if (-not (Test-Path $addinDll)) {
+    $buildScript = Join-Path $ToolsRoot "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\build_and_register.ps1"
+    if (Test-Path $buildScript) {
+        Write-Host "  [ИНФО] DLL надстройки не найдена — автоматическая сборка из исходников..." -ForegroundColor Yellow
+        & powershell -NoProfile -ExecutionPolicy Bypass -File $buildScript
+        if (Test-Path $addinDll) {
+            Write-Host "  [OK] Надстройка скомпилирована: $addinDll" -ForegroundColor Green
+        } else {
+            Write-Host "  [ОШИБКА] Автокомпиляция не удалась — блок [5/6] будет пропущен." -ForegroundColor Red
+        }
+    }
+}
+
 if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
     # DEP-11 (эмпирически 2026-09-12): CLR не активирует сборку по percent-encoded file:///URI
     # с кириллицей — работает только сырая форма (как пишет RegAsm). Не экранировать!
@@ -684,7 +700,16 @@ if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
             Set-ItemProperty -Path $hklmPath -Name "(Default)" -Value 1 -Type DWord -ErrorAction SilentlyContinue
             Set-ItemProperty -Path $hklmPath -Name "Title" -Value $title -ErrorAction SilentlyContinue
             Set-ItemProperty -Path $hklmPath -Name "Description" -Value $desc -ErrorAction SilentlyContinue
-            # CodeBase в HKLM корректно записан самим RegAsm (сырая форма) — фиксап не нужен.
+            # DEP-11: RegAsm записывает CodeBase в percent-escaped форме ("%D0%98..."),
+            # CLR НЕ активирует сборку по такому URI с кириллицей в пути. Прошиваем сырую
+            # (RAW) форму в HKLM вручную — иначе SolidWorks, запущенный от администратора,
+            # не загрузит надстройку (он активирует COM через HKLM, минуя HKCU).
+            foreach ($hive in @("HKLM:\Software\Classes\CLSID\$guid\InprocServer32",
+                                "HKLM:\Software\Classes\CLSID\$guid\InprocServer32\1.0.0.0")) {
+                if (Test-Path $hive) {
+                    Set-ItemProperty -Path $hive -Name "CodeBase" -Value $codebase -ErrorAction SilentlyContinue
+                }
+            }
         } catch { }
     } else {
         Write-Host "  [ИНФО] Без прав администратора: регистрация ЕСКД выполняется только в HKCU." -ForegroundColor DarkGray
@@ -694,6 +719,16 @@ if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
     if (Test-Path $propFolders) {
         Set-ItemProperty -Path "$swRegRoot\ExtReferences" -Name "Custom Property Folders" -Value $propFolders -ErrorAction SilentlyContinue
         Set-ItemProperty -Path "$swRegRoot\ExtFolder" -Name "Custom Property Folders" -Value $propFolders -ErrorAction SilentlyContinue
+    }
+
+    # Прямая привязка библиотеки материалов ГОСТ (дубль .reg-импорта: если reg.exe
+    # завершился с ошибкой, база материалов всё равно подключится).
+    $matLibDir = Join-Path $ToolsRoot "04_Библиотеки_Материалов_и_Профилей\Библиотека материалов"
+    if (Test-Path $matLibDir) {
+        $matFolders = "$matLibDir;C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\lang\russian\sldmaterials;C:\ProgramData\SolidWorks\SOLIDWORKS 2025\Custom Materials"
+        Set-ItemProperty -Path "$swRegRoot\ExtReferences" -Name "Material Database Folders" -Value $matFolders -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path "$swRegRoot\ExtFolder" -Name "Material Database Folders" -Value $matFolders -ErrorAction SilentlyContinue
+        Write-Host "  [OK] Библиотека материалов ГОСТ подключена: $matLibDir" -ForegroundColor Green
     }
 
     # Регистрация COM-сервера в HKCU (для гарантированной работы без прав Администратора)
@@ -758,16 +793,19 @@ if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
     Set-ItemProperty -Path $eskdSettingsPath -Name "AuthorList" -Value $Author
 
     # Избранные материалы с дробным слэшем '/'
+    # Имена и matid СВЕРЕНЫ с фактическим составом библиотеки (2026-09-12): при
+    # несовпадении имени SW молча подставляет материал по matid — получался баг
+    # «выбрал Лист 6,0 — прописался Лист 3,0» (id 1002 = Лист 3,0).
     $favList = @(
-        "Библиотека_Материалов_ГОСТ|Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89|1001",
-        "Библиотека_Материалов_ГОСТ|Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89|1002",
-        "Библиотека_Материалов_ГОСТ|Труба 80х80х4 ГОСТ 8639-82 / В 10 ГОСТ 13663-86|1003",
-        "Библиотека_Материалов_ГОСТ|Труба 57х3,5 ГОСТ 8732-78 / В 10 ГОСТ 8731-74|1005",
-        "Библиотека_Материалов_ГОСТ|Труба 102х4 ГОСТ 8732-78 / В 20 ГОСТ 8731-74|1006",
-        "Библиотека_Материалов_ГОСТ|Сталь 3сп (ГОСТ 380-2005)|1007",
-        "Библиотека_Материалов_ГОСТ|Сталь 20 (ГОСТ 1050-2013)|1008",
-        "Библиотека_Материалов_ГОСТ|Сталь 45 (ГОСТ 1050-2013)|1009",
-        "Библиотека_Материалов_ГОСТ|Сталь 09Г2С (ГОСТ 19281-2014)|1011"
+        "Библиотека_Материалов_ГОСТ|Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89|1003",
+        "Библиотека_Материалов_ГОСТ|Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89|1108",
+        "Библиотека_Материалов_ГОСТ|Труба 80х80х4,0 ГОСТ 8639-82 / В 10 ГОСТ 13663-86|1024",
+        "Библиотека_Материалов_ГОСТ|Труба 57х3,5 ГОСТ 8732-78 / В 10 ГОСТ 8731-74|1109",
+        "Библиотека_Материалов_ГОСТ|Труба 102х4,0 ГОСТ 8732-78 / В 20 ГОСТ 8731-74|1110",
+        "Библиотека_Материалов_ГОСТ|Сталь 3сп (ГОСТ 380-2005)|1111",
+        "Библиотека_Материалов_ГОСТ|Сталь 20 (ГОСТ 1050-2013)|1112",
+        "Библиотека_Материалов_ГОСТ|Сталь 45 (ГОСТ 1050-2013)|1113",
+        "Библиотека_Материалов_ГОСТ|Сталь 09Г2С (ГОСТ 19281-2014)|1114"
     )
     $matKey = "$swRegRoot\Material"
     if (-not (Test-Path $matKey)) { New-Item -Path $matKey -Force | Out-Null }
