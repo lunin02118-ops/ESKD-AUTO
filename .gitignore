@@ -24,3 +24,6 @@ build_temp/
 
 # Registry deployment backups (machine-specific)
 01_Настройки_SolidWorks/Реестровые_Профили/Backups/
+
+# Прогоны автотестов 09_Тесты (журналы, копии фикстур, отчёты)
+08_Результаты_Тестирования/runs/

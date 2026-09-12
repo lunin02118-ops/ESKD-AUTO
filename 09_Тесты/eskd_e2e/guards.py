@@ -1,0 +1,216 @@
+# -*- coding: utf-8 -*-
+"""Защита рабочего места во время прогона: реестр, диалоги, файлы, процессы."""
+import ctypes
+import ctypes.wintypes as wt
+import os
+import threading
+import time
+import winreg
+from pathlib import Path
+
+import psutil
+
+ESKD_SETTINGS_KEY = r"Software\SolidWorks\ESKD_Settings"
+
+
+def solidworks_processes():
+    out = []
+    for p in psutil.process_iter(["name", "pid"]):
+        try:
+            if (p.info["name"] or "").lower() == "sldworks.exe":
+                out.append(p)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    return out
+
+
+class RegistrySnapshot:
+    """Снимок значений ключа HKCU; restore() возвращает ключ в исходное состояние."""
+
+    def __init__(self, subkey=ESKD_SETTINGS_KEY):
+        self.subkey = subkey
+        self.existed = False
+        self.values = {}
+
+    def capture(self):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.subkey, 0, winreg.KEY_READ) as key:
+                self.existed = True
+                i = 0
+                while True:
+                    try:
+                        name, value, kind = winreg.EnumValue(key, i)
+                    except OSError:
+                        break
+                    self.values[name] = (value, kind)
+                    i += 1
+        except FileNotFoundError:
+            self.existed = False
+        return self
+
+    def apply(self, values):
+        """values: {имя: значение}; int → REG_DWORD, остальное → REG_SZ."""
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, self.subkey, 0, winreg.KEY_WRITE) as key:
+            for name, value in values.items():
+                if isinstance(value, int):
+                    winreg.SetValueEx(key, name, 0, winreg.REG_DWORD, value)
+                else:
+                    winreg.SetValueEx(key, name, 0, winreg.REG_SZ, str(value))
+
+    def restore(self):
+        if not self.existed:
+            try:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, self.subkey)
+            except OSError:
+                pass
+            return
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, self.subkey, 0,
+                                winreg.KEY_READ | winreg.KEY_WRITE) as key:
+            current = []
+            i = 0
+            while True:
+                try:
+                    current.append(winreg.EnumValue(key, i)[0])
+                except OSError:
+                    break
+                i += 1
+            for name in current:
+                if name not in self.values:
+                    winreg.DeleteValue(key, name)
+            for name, (value, kind) in self.values.items():
+                winreg.SetValueEx(key, name, 0, kind, value)
+
+
+# --------------------------------------------------------------------------- диалоги
+user32 = ctypes.WinDLL("user32", use_last_error=True)
+WNDENUMPROC = ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+user32.EnumWindows.argtypes = [WNDENUMPROC, wt.LPARAM]
+user32.EnumChildWindows.argtypes = [wt.HWND, WNDENUMPROC, wt.LPARAM]
+user32.GetWindowThreadProcessId.argtypes = [wt.HWND, ctypes.POINTER(wt.DWORD)]
+user32.GetClassNameW.argtypes = [wt.HWND, wt.LPWSTR, ctypes.c_int]
+user32.GetWindowTextW.argtypes = [wt.HWND, wt.LPWSTR, ctypes.c_int]
+user32.IsWindowVisible.argtypes = [wt.HWND]
+user32.PostMessageW.argtypes = [wt.HWND, wt.UINT, wt.WPARAM, wt.LPARAM]
+WM_CLOSE = 0x0010
+
+
+def _class_name(hwnd):
+    buf = ctypes.create_unicode_buffer(256)
+    user32.GetClassNameW(hwnd, buf, 256)
+    return buf.value
+
+
+def _text(hwnd):
+    buf = ctypes.create_unicode_buffer(1024)
+    user32.GetWindowTextW(hwnd, buf, 1024)
+    return buf.value
+
+
+def dialogs_of(pid):
+    """Видимые окна-диалоги (#32770) процесса: [(hwnd, заголовок, тексты)]."""
+    found = []
+
+    def on_window(hwnd, _):
+        proc = wt.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(proc))
+        if proc.value == pid and user32.IsWindowVisible(hwnd) and _class_name(hwnd) == "#32770":
+            texts = []
+
+            def on_child(child, __):
+                cls = _class_name(child)
+                if cls in ("Static", "Button") and _text(child).strip():
+                    texts.append(_text(child).strip())
+                return True
+
+            user32.EnumChildWindows(hwnd, WNDENUMPROC(on_child), 0)
+            found.append((hwnd, _text(hwnd), texts))
+        return True
+
+    user32.EnumWindows(WNDENUMPROC(on_window), 0)
+    return found
+
+
+class DialogWatchdog(threading.Thread):
+    """Следит за модальными диалогами SolidWorks.
+
+    Неожиданный диалог фиксируется (заголовок, тексты), закрывается WM_CLOSE и считается
+    провалом текущего теста. Тест может заранее объявить ожидаемый диалог через expect().
+    """
+
+    def __init__(self, pid, interval=0.5):
+        super().__init__(daemon=True)
+        self.pid = pid
+        self.interval = interval
+        self._stop = threading.Event()
+        self._lock = threading.Lock()
+        self._expected = []
+        self.unexpected = []
+        self.handled = []
+
+    def expect(self, title_part, close=True):
+        with self._lock:
+            self._expected.append((title_part, close))
+
+    def pop_unexpected(self):
+        with self._lock:
+            items, self.unexpected = self.unexpected, []
+        return items
+
+    def stop(self):
+        self._stop.set()
+
+    def run(self):
+        seen = set()
+        while not self._stop.is_set():
+            try:
+                for hwnd, title, texts in dialogs_of(self.pid):
+                    if hwnd in seen:
+                        continue
+                    time.sleep(0.3)
+                    seen.add(hwnd)
+                    record = {"title": title, "texts": texts, "time": time.strftime("%H:%M:%S")}
+                    with self._lock:
+                        match = next((e for e in self._expected if e[0] in title or any(e[0] in t for t in texts)), None)
+                        if match:
+                            self._expected.remove(match)
+                            self.handled.append(record)
+                        else:
+                            self.unexpected.append(record)
+                    user32.PostMessageW(hwnd, WM_CLOSE, 0, 0)
+            except Exception:
+                pass
+            self._stop.wait(self.interval)
+
+
+# --------------------------------------------------------------------------- файлы репозитория
+PROTECTED_EXTENSIONS = (".sldprt", ".sldasm", ".slddrw", ".prtdot", ".asmdot", ".drwdot", ".slddrt",
+                        ".sldmat", ".sldbomtbt", ".swp", ".ini", ".txt")
+
+
+def snapshot_tree(root, exclude):
+    """Время изменения и размер файлов SolidWorks и справочников в дереве root, кроме exclude."""
+    root = Path(root)
+    exclude = [Path(e).resolve() for e in exclude]
+    state = {}
+    for dirpath, dirnames, filenames in os.walk(root):
+        d = Path(dirpath).resolve()
+        if any(str(d).lower().startswith(str(e).lower()) for e in exclude):
+            dirnames[:] = []
+            continue
+        dirnames[:] = [n for n in dirnames if n not in (".git", "__pycache__", "bin", "obj")]
+        for name in filenames:
+            if name.lower().endswith(PROTECTED_EXTENSIONS):
+                p = d / name
+                try:
+                    st = p.stat()
+                    state[str(p)] = (st.st_mtime_ns, st.st_size)
+                except OSError:
+                    pass
+    return state
+
+
+def diff_trees(before, after):
+    changed = [p for p in after if p in before and after[p] != before[p]]
+    created = [p for p in after if p not in before]
+    deleted = [p for p in before if p not in after]
+    return {"changed": sorted(changed), "created": sorted(created), "deleted": sorted(deleted)}
