@@ -21,3 +21,6 @@ build_temp/
 
 # Test output artifacts
 08_Результаты_Тестирования/Auto_E2E_Test_Output/
+
+# Registry deployment backups (machine-specific)
+01_Настройки_SolidWorks/Реестровые_Профили/Backups/
