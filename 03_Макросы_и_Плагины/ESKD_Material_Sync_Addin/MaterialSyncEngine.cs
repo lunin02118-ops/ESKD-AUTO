@@ -1243,10 +1243,10 @@ namespace ESKD.MaterialSync
                         return;
                     }
                 }
-                // Свойства-выражения ($PRP:"SW-File Name" из шаблонов prtdot/asmdot) не
-                // перезаписываются через Add3/ReplaceValue — сначала удаляем, затем создаём
-                // как обычное текстовое свойство.
-                if (curRaw != null && curRaw.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0)
+                // Удаляем свойство перед перезаписью, если старое значение отличается:
+                // в SolidWorks API Add3(ReplaceValue) может не обновить краевые пробелы (например «СБ» -> « СБ»)
+                // или expression-формулы ($PRP), если свойство не пересоздано с нуля.
+                if (curRaw != null && !string.Equals(curRaw, value ?? "", StringComparison.Ordinal))
                 {
                     try { cpm.Delete2(name); } catch { }
                 }
@@ -1317,7 +1317,7 @@ namespace ESKD.MaterialSync
             {
                 string val = null, resVal = null;
                 cpm.Get4(name, false, out val, out resVal);
-                if (!string.IsNullOrWhiteSpace(val)) return val.Trim();
+                if (val != null) return val;
             }
             catch { }
             return null;
@@ -1630,7 +1630,9 @@ namespace ESKD.MaterialSync
                         SetProp(cpmGen, "Сборка1_ФБ", assemblyCodeFB);
                         // ГОСТ 2.109: под наименованием сборочного чертежа указывают
                         // «Сборочный чертёж» (вторая строка графы 2, заметка MYPRP3).
-                        if (string.IsNullOrWhiteSpace(GetProp(cpmGen, "Сборка2_ФБ")))
+                        // Заменяем устаревшие легаси-теги <FONT... из шаблона Сборка.asmdot
+                        string curSb2 = GetProp(cpmGen, "Сборка2_ФБ");
+                        if (string.IsNullOrWhiteSpace(curSb2) || curSb2.Contains("<FONT") || curSb2.Contains("$PRP"))
                         {
                             SetProp(cpmGen, "Сборка2_ФБ", "Сборочный чертёж");
                         }
@@ -1745,7 +1747,8 @@ namespace ESKD.MaterialSync
                                     if (!string.IsNullOrEmpty(assemblyCodeFB))
                                     {
                                         SetProp(cpmCfg, "Сборка1_ФБ", assemblyCodeFB);
-                                        if (string.IsNullOrWhiteSpace(GetProp(cpmCfg, "Сборка2_ФБ")))
+                                        string curCfgSb2 = GetProp(cpmCfg, "Сборка2_ФБ");
+                                        if (string.IsNullOrWhiteSpace(curCfgSb2) || curCfgSb2.Contains("<FONT") || curCfgSb2.Contains("$PRP"))
                                         {
                                             SetProp(cpmCfg, "Сборка2_ФБ", "Сборочный чертёж");
                                         }

@@ -37,6 +37,9 @@ ROOT_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, "..", ".."))
 TEMPLATES_DIR = os.path.join(ROOT_DIR, "02_Шаблоны_и_Форматки")
 MATERIALS_DIR = os.path.join(ROOT_DIR, "04_Библиотеки_Материалов_и_Профилей", "Библиотека материалов")
 OUTPUT_DIR = os.path.join(ROOT_DIR, "08_Результаты_Тестирования", "Auto_E2E_Test_Output")
+SPEC_DIR = os.path.join(ROOT_DIR, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "SpecEditor")
+BOM_TPL = os.path.join(SPEC_DIR, "SpecEditor_sp.sldbomtbt")
+SP1_FMT = os.path.join(SPEC_DIR, "SP-1.slddrt")
 
 MAT_DB = os.path.join(MATERIALS_DIR, "Библиотека_Материалов_ГОСТ.sldmat")
 MAT_TUBE = "Труба 80х80х4,0 ГОСТ 8639-82 / В 10 ГОСТ 13663-86"
@@ -150,6 +153,9 @@ def run_tier3_tests():
         sw = get_sw()
         rev = str(sw.RevisionNumber)
         res.assert_true(sw is not None, f"Подключение к SolidWorks (Ревизия: {rev})")
+        ao_raw = sw.GetAddInObject("ESKD.MaterialSync.SwAddin_v5")
+        ao = win32com.client.dynamic.Dispatch(ao_raw._oleobj_) if ao_raw else None
+        res.assert_true(ao is not None, "Надстройка ESKD.MaterialSync.SwAddin_v5 подключена через COM")
     except Exception as e:
         res.assert_true(False, "Подключение к SolidWorks", str(e))
         return False
@@ -163,6 +169,15 @@ def run_tier3_tests():
     tube_path = os.path.join(OUTPUT_DIR, "ПРТИ.468211.020 Стойка направляющая из профильной трубы.sldprt")
     sheet_path = os.path.join(OUTPUT_DIR, "ПРТИ.468211.021 Пластина опорная нижняя.sldprt")
     asm_path = os.path.join(OUTPUT_DIR, "ПРТИ.468211.030 СБ Рама кондуктора сварная.sldasm")
+
+    # Гарантированно закрываем открытые документы перед очисткой файлов
+    try:
+        while sw.GetDocumentCount() > 0:
+            sw.CloseDoc(sw.ActiveDoc.GetTitle)
+    except Exception:
+        pass
+    time.sleep(1)
+
     for p in (tube_path, sheet_path, asm_path):
         if os.path.isfile(p):
             try:
@@ -387,48 +402,40 @@ def run_tier3_tests():
     # =====================================================================
     print("\n--- 6b. Сценарий: безчертёжная деталь (БЧ), ГОСТ 2.109 ---")
     try:
-        raw_sw = win32com.client.GetActiveObject("SldWorks.Application")
-        ao = win32com.client.dynamic.Dispatch(raw_sw.GetAddInObject("ESKD.MaterialSync.SwAddin_v5")._oleobj_)
         bch_doc = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
         res.assert_true(bch_doc is not None, "Открыта деталь для БЧ-теста")
+        sw.ActivateDoc3(bch_doc.GetTitle, False, 0, mkref())
 
-        def bch_props(path):
-            pr = file_props(sw, path, 1)
-            return pr.get("БЧ", ""), pr.get("Наименование", "")
+        cpm_bch = bch_doc.Extension.CustomPropertyManager("")
+        # Если деталь уже имела статус БЧ, снимаем его для чистого старта
+        if str(cpm_bch.Get("БЧ") or "") == "БЧ":
+            _ = ao.ToggleDrawinglessSilent
+            bch_doc.SaveAs3(tube_path, 0, 1)
 
-        bch_doc.SaveAs3(tube_path, 0, 1)  # открыть без несохранённых изменений
-        close_doc(sw, bch_doc)
-        b0, t0 = bch_props(tube_path)
-        was_bch = (b0 == "БЧ")
-        if was_bch:
-            # привести к чистому состоянию
-            d = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
-            _ = ao.ToggleDrawinglessSilent  # свойство-вызов (без параметров)
-            close_doc(sw, d)
-
-        d = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
+        # Шаг 1: Установка признака БЧ (кнопка «Деталь БЧ» на вкладке ЕСКД)
         r1 = ao.ToggleDrawinglessSilent
         res.assert_true(r1 == 1, f"БЧ установлен (код {r1})")
-        d.SaveAs3(tube_path, 0, 1)
-        close_doc(sw, d)
-        b1, t1 = bch_props(tube_path)
-        res.assert_true(b1 == "БЧ", f"Свойство-признак «БЧ» ('{b1}')")
-        res.assert_true(t1.endswith(" БЧ"), f"Индекс БЧ в наименовании для спецификации ('{t1}')")
+        bch_doc.SaveAs3(tube_path, 0, 1)
+        res.assert_true(str(cpm_bch.Get("БЧ") or "") == "БЧ", "Свойство-признак «БЧ» установлено")
+        res.assert_true(str(cpm_bch.Get("Наименование") or "").endswith(" БЧ"), "Индекс «БЧ» добавлен в наименование для спецификации")
 
-        d = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
+        # Шаг 2: Снятие признака БЧ (повторный клик)
         r2 = ao.ToggleDrawinglessSilent
         res.assert_true(r2 == 2, f"БЧ снят (код {r2})")
-        d.SaveAs3(tube_path, 0, 1)
-        close_doc(sw, d)
-        b2, t2 = bch_props(tube_path)
-        res.assert_true(b2 == "", f"Признак «БЧ» удалён ('{b2}')")
-        res.assert_true(not t2.endswith(" БЧ"), f"Индекс БЧ убран из наименования ('{t2}')")
+        bch_doc.SaveAs3(tube_path, 0, 1)
+        res.assert_true(str(cpm_bch.Get("БЧ") or "") == "", "Признак «БЧ» удален")
+        res.assert_true(not str(cpm_bch.Get("Наименование") or "").endswith(" БЧ"), "Индекс «БЧ» удален из наименования")
 
-        if was_bch:
-            # вернуть исходное БЧ-состояние
-            d = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
-            _ = ao.ToggleDrawinglessSilent
-            close_doc(sw, d)
+        # Шаг 3: Повторно помечаем стойку как БЧ для сценария 8 спецификации
+        r3 = ao.ToggleDrawinglessSilent
+        res.assert_true(r3 == 1, "Стойка переведена в статус БЧ для формирования спецификации")
+        bch_doc.SaveAs3(tube_path, 0, 1)
+        close_doc(sw, bch_doc)
+
+        # Проверяем персистентность в файле
+        pr_saved = file_props(sw, tube_path, 1)
+        res.assert_true(pr_saved.get("БЧ", "") == "БЧ" and pr_saved.get("Наименование", "").endswith(" БЧ"),
+                        "Персистентность БЧ-статуса в файле детали подтверждена")
     except Exception as e:
         res.assert_true(False, "Сценарий БЧ", str(e))
 
@@ -506,6 +513,75 @@ def run_tier3_tests():
             close_doc(sw, drw_doc)
         if mdoc:
             close_doc(sw, mdoc)
+
+    # =====================================================================
+    # СЦЕНАРИЙ 8: Спецификации по ГОСТ 2.106 (Вариант А — на листе, Вариант Б — отдельно SP-1)
+    #             с проверкой попадания БЧ-деталей по ГОСТ 2.109
+    # =====================================================================
+    print("\n--- 8. Сценарий: Спецификации ГОСТ 2.106 (на листе и отдельно SP-1) + деталь БЧ ---")
+    import pywintypes
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("swgen", r"C:\Temp\gen_py\3.12\83A33D31-27C5-11CE-BFD4-00400513BB57x0x33x0.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    # 0. Гарантируем, что стойка имеет статус БЧ для отображения в спецификациях
+    pdoc_check = sw.OpenDoc6(tube_path, 1, 1, "", mkref(), mkref())
+    if pdoc_check and ao:
+        sw.ActivateDoc3(pdoc_check.GetTitle, False, 0, mkref())
+        cpm_chk = pdoc_check.Extension.CustomPropertyManager("")
+        if str(cpm_chk.Get("БЧ") or "") != "БЧ":
+            _ = ao.ToggleDrawinglessSilent
+            pdoc_check.SaveAs3(tube_path, 0, 1)
+        close_doc(sw, pdoc_check)
+        time.sleep(1)
+
+    asm_open = sw.OpenDoc6(asm_path, 2, 1, "", mkref(), mkref())
+    try:
+        # Вариант А: на листе сборочного чертежа над штампом
+        drw_a = sw.NewDocument(drw_template, 0, 0, 0)
+        view_a = drw_a.CreateDrawViewFromModelView3(asm_path, "*Спереди", 0.140, 0.180, 0.0)
+        time.sleep(2)
+        viewT_a = mod.IView(view_a._oleobj_.QueryInterface(pywintypes.IID("{83A33D50-27C5-11CE-BFD4-00400513BB57}"), pythoncom.IID_IDispatch))
+        ann_a = viewT_a.InsertBomTable2(False, 0.415, 0.060, 4, 1, "00", BOM_TPL)
+        res.assert_true(ann_a is not None, "[Вариант А] Вставка спецификации на сборочном чертеже над штампом")
+        if ann_a:
+            table_a = win32com.client.dynamic.Dispatch(ann_a._oleobj_)
+            rows_a = [" | ".join([str(table_a.Text(r, c) or "").strip() for c in range(table_a.ColumnCount) if str(table_a.Text(r, c) or "").strip()]) for r in range(table_a.TotalRowCount)]
+            txt_a = "\n".join(rows_a)
+            res.assert_true("ПРТИ.468211.020" in txt_a and "профильной трубы БЧ" in txt_a, "[Вариант А] Спецификация содержит деталь БЧ с индексом в графе Наименование")
+            res.assert_true("ПРТИ.468211.021" in txt_a and "Пластина опорная нижняя" in txt_a, "[Вариант А] Спецификация содержит стандартную деталь без БЧ")
+        path_a_drw = os.path.join(OUTPUT_DIR, "ПРТИ.468211.030 СБ_Спецификация_на_листе.slddrw")
+        drw_a.SaveAs3(path_a_drw, 0, 1)
+        res.assert_true(os.path.isfile(path_a_drw), "[Вариант А] Сохранение сборочного чертежа со спецификацией (.SLDDRW)")
+        close_doc(sw, drw_a)
+
+        # Вариант Б: отдельный документ спецификации А4 на форматке SP-1 (SpecEditor)
+        drw_b = sw.NewDocument(drw_template, 0, 0, 0)
+        # Добавляем лист спецификации SP1 на форматке SP-1.slddrt
+        ok_sp1 = drw_b.NewSheet3("SP1", 12, 12, 1.0, 1.0, True, SP1_FMT, 0.210, 0.297, "")
+        view_b = drw_b.CreateDrawViewFromModelView3(asm_path, "*Спереди", -0.10, 0.0, 0.0)
+        time.sleep(2)
+        try:
+            drw_b.SuppressView()
+        except Exception:
+            pass
+        viewT_b = mod.IView(view_b._oleobj_.QueryInterface(pywintypes.IID("{83A33D50-27C5-11CE-BFD4-00400513BB57}"), pythoncom.IID_IDispatch))
+        ann_b = viewT_b.InsertBomTable2(False, 0.020, 0.292, 1, 1, "00", BOM_TPL)
+        res.assert_true(ann_b is not None, "[Вариант Б] Вставка спецификации в отдельный документ А4 (форматка SP-1)")
+        if ann_b:
+            table_b = win32com.client.dynamic.Dispatch(ann_b._oleobj_)
+            rows_b = [" | ".join([str(table_b.Text(r, c) or "").strip() for c in range(table_b.ColumnCount) if str(table_b.Text(r, c) or "").strip()]) for r in range(table_b.TotalRowCount)]
+            txt_b = "\n".join(rows_b)
+            res.assert_true("ПРТИ.468211.020" in txt_b and "профильной трубы БЧ" in txt_b, "[Вариант Б] Отдельная спецификация содержит деталь БЧ по ГОСТ 2.109")
+            res.assert_true("ПРТИ.468211.021" in txt_b and "Пластина опорная нижняя" in txt_b, "[Вариант Б] Отдельная спецификация содержит стандартную деталь")
+        path_b_drw = os.path.join(OUTPUT_DIR, "ПРТИ.468211.030 СП Спецификация_отдельная.slddrw")
+        drw_b.SaveAs3(path_b_drw, 0, 1)
+        res.assert_true(os.path.isfile(path_b_drw), "[Вариант Б] Сохранение отдельного документа спецификации (.SLDDRW)")
+        close_doc(sw, drw_b)
+    finally:
+        if asm_open:
+            close_doc(sw, asm_open)
 
     print("\n" + "=" * 70)
     print(f"  ИТОГ TIER 3: Успешно: {res.passed}, Провалено: {res.failed}, Предупреждений: {res.warnings}")
