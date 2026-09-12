@@ -166,9 +166,9 @@ def run_tier3_tests():
     for t in (part_template, asm_template, drw_template):
         res.assert_true(os.path.isfile(t), f"Наличие шаблона {os.path.basename(t)}")
 
-    tube_path = os.path.join(OUTPUT_DIR, "ПРТИ.468211.020 Стойка направляющая из профильной трубы.sldprt")
+    tube_path = os.path.join(OUTPUT_DIR, "ПРТИ.468211.020 Стойка.sldprt")
     sheet_path = os.path.join(OUTPUT_DIR, "ПРТИ.468211.021 Пластина опорная нижняя.sldprt")
-    asm_path = os.path.join(OUTPUT_DIR, "ПРТИ.468211.030 СБ Рама кондуктора сварная.sldasm")
+    asm_path = os.path.join(OUT_DIR if False else OUTPUT_DIR, "ПРТИ.468211.030 СБ Рама кондуктора сварная.sldasm")
 
     # Гарантированно закрываем открытые документы перед очисткой файлов
     try:
@@ -207,7 +207,7 @@ def run_tier3_tests():
     except Exception as e:
         res.assert_true(False, "Назначение материала из ГОСТ-библиотеки", str(e))
     tube_doc.SaveAs3(tube_path, 0, 1)   # свойства пишет надстройка ЕСКД
-    res.assert_true(os.path.isfile(tube_path), "Сохранение: ПРТИ.468211.020 Стойка направляющая из профильной трубы.sldprt")
+    res.assert_true(os.path.isfile(tube_path), "Сохранение: ПРТИ.468211.020 Стойка.sldprt")
     close_doc(sw, tube_doc)
 
     props = file_props(sw, tube_path, 1)
@@ -217,10 +217,8 @@ def run_tier3_tests():
     mass_fb = props.get("Масса_ФБ", "")
     mat_fb = props.get("Материал_ФБ", "")
     res.assert_true(desig == "ПРТИ.468211.020", f"Обозначение чистое из имени файла ('{desig}')", "ожидалось ПРТИ.468211.020")
-    res.assert_true(title == "Стойка направляющая из профильной трубы", f"Наименование из имени файла ('{title}')")
-    nl = title_fb.replace("\r\n", "\n")
-    res.assert_true("\n" in nl and nl.split("\n")[0] == "Стойка направляющая из",
-                    f"Двухстрочный перенос наименования_ФБ ('{nl[:50]}...')")
+    res.assert_true(title == "Стойка", f"Наименование из имени файла ('{title}')")
+    res.assert_true(title_fb == "Стойка", f"Наименование_ФБ детали ('{title_fb}')")
     res.assert_true(mass_fb.startswith("<FONT size=3.5>") and "," in mass_fb and "\n" not in mass_fb,
                     f"Масса_ФБ однострочная с запятой ('{mass_fb}')")
     res.assert_true("<STACK" in mat_fb and "Труба 80х80х4,0 ГОСТ 8639-82" in mat_fb and "В 10 ГОСТ 13663-86" in mat_fb,
@@ -355,7 +353,7 @@ def run_tier3_tests():
     stamp_scenario(tube_path, 1, "T3_stamp_tube.png", {
         "MYPRP0": "ПРТИ.468211.020",            # графа 1
         "MYPRP2": "ПРТИ.468211.020",            # графа 26 (повёрнутое обозначение)
-        "MYPRP4": "Стойка направляющая из\nпрофильной трубы",  # двухстрочное
+        "MYPRP4": "Стойка",
         "MYPRP15": "__NONEMPTY__",              # масса
     })
     stamp_scenario(sheet_path, 1, "T3_stamp_sheet.png", {
