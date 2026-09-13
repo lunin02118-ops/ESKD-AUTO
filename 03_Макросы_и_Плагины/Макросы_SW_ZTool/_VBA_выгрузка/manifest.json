@@ -20,15 +20,14 @@
   }
  },
  "SpecEditor/SpecEditor.swp": {
-  "sha256": "6792a9ea53e6f265238df6316e50543fa7de524f84fbaf28ea7faf65eac2d00c",
+  "sha256": "ba4de8c696534c250b4a4aa5e4244b5e2bd7936243a81cee61c95edd793292a5",
   "modules": {
    "FrmSpecEditor.frm.txt": 5083,
    "FrmSpecEditor_Doc.frm.txt": 209,
    "FrmSpecEditor_Pref.frm.txt": 357,
-   "SpecEditor_run.bas.txt": 321,
+   "SpecEditor_run.bas.txt": 454,
    "SpecEditor_top.bas.txt": 65,
-   "ThisLibrary.cls.txt": 9,
-   "VBA_P-code.txt.txt": 27745
+   "ThisLibrary.cls.txt": 9
   }
  },
  "DProp/DProp.swp": {
@@ -42,14 +41,13 @@
   }
  },
  "Master/Master.swp": {
-  "sha256": "453e171ef69c884e2f39add4b7bcdd36b09b81885c9194b5fa8cb15fd51fd844",
+  "sha256": "a81a3004f438814962db840cd152fe56cc30ed818a0c396e46ae3b12d378ac16",
   "modules": {
    "FrmMaster.frm.txt": 1026,
    "FrmMaster_Pref.frm.txt": 290,
    "Master_run.bas.txt": 182,
    "Master_top.bas.txt": 64,
-   "ThisLibrary.cls.txt": 9,
-   "VBA_P-code.txt.txt": 6326
+   "ThisLibrary.cls.txt": 9
   }
  }
 }

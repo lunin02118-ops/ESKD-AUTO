@@ -329,34 +329,41 @@ def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def main():
-    apply = "--apply" in sys.argv
+def run(edits, archive, argv):
+    """Пробная проверка или (--apply) архив, правка и запись SHA-256; edits — {путь .swp: {модуль: [(было, стало)]}},
+    «было» = None — дописать в конец модуля."""
+    apply = "--apply" in argv
     problems, record = [], {}
-    for rel, edits in EDITS.items():
-        swp = SWPLUS / rel
-        problems += plan(swp, with_helpers(edits))
+    for rel, module_edits in edits.items():
+        problems += plan(SWPLUS / rel, module_edits)
     if problems:
         print("\n".join(problems))
         return 1
     if not apply:
-        print("правки находят свои места:", ", ".join(EDITS))
+        print("правки находят свои места:", ", ".join(edits))
         return 0
-    ARCHIVE.mkdir(parents=True, exist_ok=True)
-    for rel, edits in EDITS.items():
+    archive.mkdir(parents=True, exist_ok=True)
+    record_path = archive / "patch_record.json"
+    if record_path.exists():
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    for rel, module_edits in edits.items():
         swp = SWPLUS / rel
-        backup = ARCHIVE / rel
+        backup = archive / rel
         backup.parent.mkdir(parents=True, exist_ok=True)
         if not backup.exists():
             shutil.copyfile(swp, backup)
-        full = with_helpers(edits)
         tmp = swp.with_suffix(".patched.swp")
-        report = vba_patch.patch(swp, tmp, full)
+        report = vba_patch.patch(swp, tmp, module_edits)
         record[rel] = {"sha256_before": sha256(backup), "sha256_after": sha256(tmp), "archive": str(backup.relative_to(ROOT)),
                        "report": report, "date": datetime.now().isoformat(timespec="seconds")}
         tmp.replace(swp)
-    (ARCHIVE / "patch_record.json").write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(json.dumps(record, ensure_ascii=False, indent=1))
+    record_path.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
+    print(json.dumps({k: v["sha256_after"] for k, v in record.items()}, ensure_ascii=False, indent=1))
     return 0
+
+
+def main():
+    return run({rel: with_helpers(e) for rel, e in EDITS.items()}, ARCHIVE, sys.argv)
 
 
 if __name__ == "__main__":

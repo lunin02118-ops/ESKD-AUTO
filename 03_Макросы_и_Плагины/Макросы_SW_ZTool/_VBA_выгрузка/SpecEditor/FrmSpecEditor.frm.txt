@@ -1968,8 +1968,8 @@ For i = 0 To nNumRow - 2 - n ' (-1 т.к с 0, -1 т.к. пропускаем п
                 End If
                 If CboType.ListIndex = 0 Or CboType.ListIndex = 1 Then  ' Спецификация или Групповая спецификация
                     If sSpecData(k, j) = "Сборочные единицы" Then ' Заменяем формат у сборок
-                        sSpecData(k, 0) = "A4"
-                        swTable.Text(k1 + 1, 0) = "A4"
+                        sSpecData(k, 0) = "А4" ' ЕСКД Д-16: кириллицей
+                        swTable.Text(k1 + 1, 0) = "А4"
                     End If
                 Else ' Ведомость покупных
                     If sSpecData(k, nNumColumn - 5) = "Прочие изделия" Or sSpecData(k, nNumColumn - 5) = "Стандартные изделия" Then
@@ -3077,7 +3077,7 @@ For i = 1 To nNumRow - 1
         End If
     End If
 Next i
-
+If CboType.ListIndex = 0 Or CboType.ListIndex = 1 Then SwpLayoutRecords swTable, 3, 4, 5, nNumColumn - 1, 2 ' ЕСКД WP-4.3: запись БЧ по ГОСТ (Р-15, S-2f)
 ' Перенос раздела Электромонтаж на новый лист для первого листа
 If CboType.ListIndex = 0 Or CboType.ListIndex = 1 Then  ' Спецификация или Групповая спецификация
     nNumRow = swTable.RowCount

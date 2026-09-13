@@ -247,7 +247,7 @@ If mRun = 0 Or mExist = 0 Or MIni = 1 Then ' Будем создавать фо�
         ok = swDraw.Extension.SelectByID2("Format@Формат листа1", "NOTE", 0, 0, 0, False, 0, Nothing, 0)
         Set swSelMgr = swDraw.SelectionManager
         Set swNote = swSelMgr.GetSelectedObject2(1)
-        swNote.SetText "Формат " & FormatText
+        swNote.SetText "Формат " & Replace(FormatText, "A", "А") ' ЕСКД Д-16: буква формата кириллицей
         
         ' Удаление лишнего
     
@@ -333,7 +333,7 @@ If mRun = 0 Or mExist = 0 Or MIni = 1 Then ' Будем создавать фо�
         ok = swDraw.Extension.SelectByID2("Format@Формат листа2", "NOTE", 0, 0, 0, False, 0, Nothing, 0)
         Set swSelMgr = swDraw.SelectionManager
         Set swNote = swSelMgr.GetSelectedObject2(1)
-        swNote.SetText "Формат " & FormatText
+        swNote.SetText "Формат " & Replace(FormatText, "A", "А") ' ЕСКД Д-16: буква формата кириллицей
     
         ' Удаление лишнего
     
