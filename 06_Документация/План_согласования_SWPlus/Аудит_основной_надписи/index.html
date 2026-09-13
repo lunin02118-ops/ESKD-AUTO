@@ -1,0 +1,450 @@
+<title>Аудит основной надписи</title>
+<meta name="description" content="Глубокий аудит заполнения основной надписи: надстройка ЕСКД и MProp, детали и сборки, все форматки листа 1, шрифты и геометрия надписей, причины и эталон штампа.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=PT+Serif:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #f3f4f1; --sheet: #fbfbf9; --ink: #18202b; --muted: #586271; --rule: #cdd2d8; --frame: #2a3340;
+  --head: #e8ebe7; --code-bg: #e6e9e4; --accent: #24509a; --accent-soft: #e2e9f5;
+  --crit: #a3241c; --high: #b25a00; --med: #76630a; --ok: #2d6a44; --focus: #24509a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111419; --sheet: #161a21; --ink: #e4e7ec; --muted: #9aa3b0; --rule: #2c323c; --frame: #aab3c0;
+    --head: #1c2129; --code-bg: #20262f; --accent: #8db1f2; --accent-soft: #1b2638;
+    --crit: #ff8a80; --high: #ffb368; --med: #dcc35e; --ok: #86d19c; --focus: #8db1f2;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111419; --sheet: #161a21; --ink: #e4e7ec; --muted: #9aa3b0; --rule: #2c323c; --frame: #aab3c0;
+  --head: #1c2129; --code-bg: #20262f; --accent: #8db1f2; --accent-soft: #1b2638;
+  --crit: #ff8a80; --high: #ffb368; --med: #dcc35e; --ok: #86d19c; --focus: #8db1f2;
+}
+* { box-sizing: border-box; }
+body { background: var(--paper); color: var(--ink); font-family: "Golos Text", "Segoe UI", system-ui, sans-serif; font-size: 16px; line-height: 1.6; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 96px; }
+h1, h2, h3 { font-family: "PT Serif", Georgia, serif; text-wrap: balance; line-height: 1.25; }
+h2 { font-size: 28px; margin: 60px 0 14px; padding-top: 16px; border-top: 2px solid var(--frame); }
+h3 { font-size: 20px; margin: 30px 0 10px; }
+p { margin: 0 0 12px; }
+.prose { max-width: 76ch; }
+ul, ol { margin: 0 0 12px; padding-left: 22px; }
+li { margin: 3px 0; }
+code, .mono { font-family: "JetBrains Mono", Consolas, monospace; }
+code { font-size: .86em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+.titleblock { background: var(--sheet); border: 2px solid var(--frame); display: grid; grid-template-columns: minmax(0, 2.2fr) repeat(2, minmax(0, 1fr)); }
+.titleblock > div { border-right: 1px solid var(--frame); border-bottom: 1px solid var(--frame); padding: 8px 12px; min-width: 0; }
+.titleblock > div:nth-child(3n) { border-right: 0; }
+.titleblock .name { grid-row: span 3; border-bottom: 0; display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 18px 20px; }
+.titleblock .name h1 { margin: 0; font-size: 34px; }
+.titleblock .name p { margin: 0; color: var(--muted); font-size: 15px; }
+.titleblock .cell:nth-last-child(-n+2) { border-bottom: 0; }
+.label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: block; }
+.value { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+@media (max-width: 860px) {
+  .titleblock { grid-template-columns: 1fr 1fr; }
+  .titleblock .name { grid-column: 1 / -1; grid-row: auto; border-right: 0; border-bottom: 1px solid var(--frame); }
+  .titleblock > div:nth-child(3n) { border-right: 1px solid var(--frame); }
+  .titleblock .cell:nth-child(odd) { border-right: 0; }
+}
+.lead { font-size: 18px; max-width: 72ch; }
+.keys { list-style: none; padding: 0; display: grid; gap: 8px; max-width: 84ch; }
+.keys li { padding: 10px 0; border-bottom: 1px solid var(--rule); margin: 0; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 10px 0 8px; }
+@media (max-width: 860px) { .pair { grid-template-columns: 1fr; } }
+figure { margin: 0; background: var(--sheet); border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+figure img { display: block; width: 100%; height: auto; background: #fff; }
+figcaption { padding: 8px 12px; font-size: 14px; color: var(--muted); }
+figcaption b { color: var(--ink); font-weight: 600; }
+.case { margin: 24px 0 8px; }
+.case h3 { margin: 0 0 6px; }
+.case .facts { font-size: 15px; max-width: 94ch; }
+.tbl { overflow-x: auto; margin: 0 0 20px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; line-height: 1.5; }
+th, td { text-align: left; vertical-align: top; padding: 8px 11px; border-bottom: 1px solid var(--rule); }
+th { background: var(--head); font-weight: 600; font-size: 13px; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bad { color: var(--crit); font-weight: 600; }
+.warn { color: var(--high); font-weight: 600; }
+.good { color: var(--ok); font-weight: 600; }
+.chip { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; font-weight: 500; }
+.sev-crit { color: var(--crit); background: color-mix(in srgb, var(--crit) 12%, transparent); }
+.sev-high { color: var(--high); background: color-mix(in srgb, var(--high) 12%, transparent); }
+.sev-med { color: var(--med); background: color-mix(in srgb, var(--med) 12%, transparent); }
+.finding { padding: 14px 0; border-top: 1px solid var(--rule); max-width: 94ch; }
+.fhead { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: baseline; margin-bottom: 4px; }
+.fid { font-family: "JetBrains Mono", Consolas, monospace; color: var(--accent); font-weight: 500; }
+.ftitle { font-weight: 600; font-size: 16.5px; }
+.ev { font-family: "JetBrains Mono", Consolas, monospace; font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.callout { background: var(--accent-soft); padding: 14px 18px; border-radius: 4px; max-width: 94ch; margin: 12px 0 20px; }
+.callout p:last-child, .callout ul:last-child { margin-bottom: 0; }
+.steps { counter-reset: s; list-style: none; padding: 0; max-width: 94ch; display: grid; gap: 10px; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 10px; margin: 0; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.steps li::before { content: counter(s); font-family: "PT Serif", Georgia, serif; font-size: 22px; color: var(--accent); line-height: 1.1; }
+footer { margin-top: 60px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 12px; }
+</style>
+
+<div class="wrap">
+
+<header class="titleblock">
+  <div class="name">
+    <h1>Аудит основной надписи</h1>
+    <p>Как заполняется штамп чертежа: надстройка ЕСКД и MProp, детали и сборки, все форматки листа 1</p>
+  </div>
+  <div class="cell"><span class="label">Дата</span><span class="value">13.09.2026</span></div>
+  <div class="cell"><span class="label">Режим</span><span class="value">Только копии, код не менялся</span></div>
+  <div class="cell"><span class="label">Прогон штампа</span><span class="value mono">stamp_matrix_20260913_195225</span></div>
+  <div class="cell"><span class="label">Прогон надписей</span><span class="value mono">format_audit_20260913_200535</span></div>
+  <div class="cell"><span class="label">Связанный план</span><span class="value"><a href="https://claude.ai/code/artifact/42eecb55-f95a-4d7a-a7dd-b315dea3cdc3">План согласования ЕСКД с SWPlus</a></span></div>
+  <div class="cell"><span class="label">Итог</span><span class="value">Штамп неконсистентен, 8 причин</span></div>
+</header>
+
+<section>
+<h2>Коротко</h2>
+<p class="lead">Вид штампа сейчас зависит от того, кто последним записал свойства — надстройка или MProp — и от того, деталь это или сборка. Сами форматки между собой согласованы: все девять форматок листа 1 дают одинаковый результат. Проблема в том, что форматки и две программы рассчитаны на разные правила записи.</p>
+<ul class="keys">
+  <li><b>После MProp</b> наименование опускается на 1,4–2,8 мм, масса ложится почти на нижнюю линию, пропадает «Разраб.». Так на всех 9 форматках, у деталей и у сборок.</li>
+  <li><b>У сборки</b> наименование после MProp наезжает на «Сборочный чертёж» (наложение 4,6 мм). У детали вторая строка пустая, поэтому наложения не видно.</li>
+  <li><b>Длинное наименование</b> MProp пишет одной строкой шрифтом 5: 98 мм при ширине графы 70 мм. Надстройка переносит на две строки, и всё помещается.</li>
+  <li><b>Лёгкая деталь</b> у надстройки получает массу «0,01», у MProp — «9.4 г».</li>
+  <li><b>Главная причина.</b> 08.09.2026 форматки перерисованы: шрифт Arial Narrow заменён на GOST type A, наименование стало 5 мм вместо 3,5, надписи переставлены под однострочный текст надстройки. Разметка MProp рассчитана на прежнюю геометрию и в новой сползает.</li>
+  <li><b>Что делать.</b> Утвердить один эталон штампа: одна разметка (MProp) и форматки, выставленные под неё. Проверять автоматически прогоном штампа на всех форматках, для деталей и сборок, после надстройки и после MProp.</li>
+</ul>
+</section>
+
+<section>
+<h2>Как проверяли</h2>
+<div class="prose">
+<ul>
+  <li><b>Документы.</b> Копии корпуса А в отдельной папке прогона:
+    <ul>
+      <li>пластина с дробью из библиотеки;</li>
+      <li>сборка «ПРТИ.468211.100 СБ Кондуктор сварочный»;</li>
+      <li>планка с исполнениями;</li>
+      <li>кронштейн с длинным наименованием;</li>
+      <li>болт как обычная деталь;</li>
+      <li>новая деталь массой 9,4 г.</li>
+    </ul>
+  </li>
+  <li><b>Состояния каждого документа:</b>
+    <ol>
+      <li>сохранение с надстройкой;</li>
+      <li>MProp «применить без правок» — тот же вызов, что делает DProp;</li>
+      <li>сохранение;</li>
+      <li>MProp повторно;</li>
+      <li>сохранение;</li>
+      <li>MProp из чертежа.</li>
+    </ol>
+    MProp запускался из копии папки SWPlus, окон-вопросов не было.
+  </li>
+  <li><b>Что снималось в каждом состоянии.</b> Свойства по уровням, текст и габарит каждой надписи штампа относительно граф формы 1 (ГОСТ 2.104), PDF и снимок штампа.</li>
+  <li><b>Форматки.</b> Пластина и болт прогнаны по всем 9 форматкам листа 1, с записью надстройки и с записью MProp, а также по историческим версиям A3-A-1 и A4-P-1: оригинал SWPlus 2018, коммиты 11a6d98 и 2349909.</li>
+  <li><b>Параметры надписей через API SolidWorks</b> — гарнитура, высота, интервал, выравнивание, позиция:
+    <ul>
+      <li>18 текущих форматок и их версии до 08.09;</li>
+      <li>оригиналы SWPlus;</li>
+      <li>формы SpecEditor;</li>
+      <li>встроенная форматка шаблона чертежа;</li>
+      <li>форматки внутри фикстур-чертежей;</li>
+      <li>шаблоны Master.</li>
+    </ul>
+  </li>
+</ul>
+<p>«Смещение центра» ниже — это расстояние по вертикали от середины текста до середины графы: плюс — выше, минус — ниже.</p>
+</div>
+</section>
+
+<section>
+<h2>Что видно на штампе</h2>
+
+<div class="case">
+  <h3>Деталь: надстройка → MProp</h3>
+  <div class="pair">
+    <figure><img src="img/plate_addin.png" alt="Штамп пластины после надстройки: наименование и масса 0,63 по центру граф"><figcaption><b>После надстройки.</b> Наименование +0,1 мм, масса «0,63» +0,3 мм — по центру. «Разраб.» заполнен.</figcaption></figure>
+    <figure><img src="img/plate_mprop.png" alt="Штамп пластины после MProp: наименование ниже, масса 0.63 у нижней линии, Разраб. пусто"><figcaption><b>После MProp.</b> Наименование −2,8 мм, масса «0.63» −2,6 мм: до нижней линии 0 мм. «Разраб.» пусто.</figcaption></figure>
+  </div>
+  <p class="facts">В свойствах MProp заменил «Наименование_ФБ» на <code>&lt;FONT size=4&gt; ⏎&lt;FONT size=5&gt;Пластина опорная</code> и «Масса_ФБ» на формулу SW-Mass с пустой строкой сверху. Он поставил «Единицы» = True, стёр «Конструктор» и создал пустые «Сборка1_ФБ» и «Сборка2_ФБ». Надстройка при сохранении вернула «Конструктор», повторный MProp снова его стёр. Это переписывание по кругу подтверждено на всех документах.</p>
+</div>
+
+<div class="case">
+  <h3>Сборка: надстройка → MProp</h3>
+  <div class="pair">
+    <figure><img src="img/asm_addin.png" alt="Штамп сборки после надстройки: Кондуктор сварочный и ниже Сборочный чертёж"><figcaption><b>После надстройки.</b> Наименование +0,2 мм, «Сборочный чертёж» ниже, без наложения.</figcaption></figure>
+    <figure><img src="img/asm_mprop.png" alt="Штамп сборки после MProp: наименование наехало на Сборочный чертёж, масса у нижней линии"><figcaption><b>После MProp.</b> Наименование −2,6 мм наехало на «Сборочный чертёж» (наложение 4,6 мм), масса «11.39» у нижней линии.</figcaption></figure>
+  </div>
+  <p class="facts">У сборки с «СБ» в имени файла MProp поставил «RenameSWP» = 1 (ручное обозначение): после этого надстройка перестаёт вести обозначение. Ещё он создал пустой «Материал_ФБ». Это разные последствия для деталей и сборок из-за одного и того же нажатия.</p>
+</div>
+
+<div class="case">
+  <h3>Длинное наименование</h3>
+  <div class="pair">
+    <figure><img src="img/long_addin.png" alt="Надстройка: Кронштейн направляющий удлинённый на двух строках внутри графы"><figcaption><b>После надстройки.</b> Две строки, ширина 66,9 мм — в графе.</figcaption></figure>
+    <figure><img src="img/long_mprop.png" alt="MProp: наименование одной строкой вылезает из графы"><figcaption><b>После MProp.</b> Одна строка шрифтом 5: 98,3 мм при графе 70 мм — вылезает на 14 мм с каждой стороны.</figcaption></figure>
+  </div>
+</div>
+
+<div class="case">
+  <h3>Лёгкая деталь и болт как обычная деталь</h3>
+  <div class="pair">
+    <figure><img src="img/light_addin.png" alt="Деталь 9,4 г после надстройки: масса 0,01"><figcaption><b>Шайба 9,4 г, надстройка.</b> «0,01» — килограммы с двумя знаками, масса фактически потеряна.</figcaption></figure>
+    <figure><img src="img/bolt_mprop.png" alt="Болт после MProp: Болт в графе обозначения, М6-6gх20.58 ГОСТ 7798-70 вылезает из графы 1, масса 9.4 г"><figcaption><b>Болт, MProp.</b> «Болт» ушёл в обозначение, остаток имени — в наименование и вылезает (71,4 мм). Масса «9.4 г» у нижней линии.</figcaption></figure>
+  </div>
+  <p class="facts">Надстройка считает, что в имени «Болт М6-6gх20.58 ГОСТ 7798-70» обозначения нет, и пишет его целиком в наименование на двух строках. MProp делит имя по первому пробелу.</p>
+</div>
+</section>
+
+<section>
+<h2>Корень проблемы: две разметки × две геометрии</h2>
+<p class="prose">Одна и та же пластина на двух версиях форматки A3-A-1: оригинал SWPlus 2018 года и текущая после 08.09. Каждая форматка правильно показывает только «свою» запись.</p>
+<div class="tbl">
+<table>
+<thead><tr><th></th><th>Запись надстройки</th><th>Запись MProp</th></tr></thead>
+<tbody>
+<tr>
+  <th>Оригинал SWPlus 2018<br><span class="label">Arial Narrow</span></th>
+  <td><figure><img src="img/orig_addin.png" alt="Оригинальная форматка с записью надстройки: наименование прижато к верху графы"><figcaption><span class="warn">Наименование у верхнего края</span> (+10,0 мм), масса высоко (+3,6 мм)</figcaption></figure></td>
+  <td><figure><img src="img/orig_mprop.png" alt="Оригинальная форматка с записью MProp: наименование в верхней части графы, масса по центру"><figcaption><span class="good">Так задумал SWPlus:</span> наименование в верхней части графы 1 (+6,2 мм), под «Сборочный чертёж» оставлено место (−7,5 мм), масса +1,9 мм</figcaption></figure></td>
+</tr>
+<tr>
+  <th>Текущая (с 08.09)<br><span class="label">GOST type A</span></th>
+  <td><figure><img src="img/cur_addin.png" alt="Текущая форматка с записью надстройки: всё по центру"><figcaption><span class="good">Выставлена под надстройку:</span> наименование +0,1 мм, масса +0,3 мм</figcaption></figure></td>
+  <td><figure><img src="img/cur_mprop.png" alt="Текущая форматка с записью MProp: наименование и масса съехали вниз"><figcaption><span class="bad">Сползает:</span> наименование −2,8 мм, масса −1,8 мм, вторая строка графы 1 налезает</figcaption></figure></td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h3>Параметры надписей по версиям (API SolidWorks)</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>Надпись</th><th>SWPlus 2018 и 11a6d98 (до 08.09)</th><th>Текущие 18 форматок, шаблон чертежа, фикстуры</th><th>Шаблоны Master</th></tr></thead>
+<tbody>
+<tr><td>Гарнитура всех надписей</td><td>Arial Narrow</td><td>GOST type A</td><td>GOST type A</td></tr>
+<tr><td>MYPRP0 — обозначение (графа 2)</td><td class="num">5 мм, y 55,1</td><td class="num">7 мм, y 56,8</td><td class="num">7 мм, y 56,8</td></tr>
+<tr><td>MYPRP4 — наименование (графа 1)</td><td class="num">3,5 мм, y 45,08, интервал 2</td><td class="num"><span class="bad">5 мм, y 36,0</span>, интервал 2</td><td class="num">5 мм, y 36,0</td></tr>
+<tr><td>MYPRP3 — «Сборочный чертёж» (графа 1)</td><td class="num">2,5 мм, y 27,52</td><td class="num">2,5 мм, y 27,52</td><td class="num">2,5 мм, y 27,52</td></tr>
+<tr><td>MYPRP15 — масса (графа 5)</td><td class="num">3,5 мм, y 38,53 (2018) / 34,53 (11a6d98), интервал 2</td><td class="num">3,5 мм, y 34,7, <span class="bad">интервал 1</span></td><td class="num"><span class="warn">3,5 мм, y 35,0, интервал 2</span></td></tr>
+<tr><td>MYPRP16 — материал (графа 3)</td><td class="num">1,8 мм, y 19,29</td><td class="num">1,8 мм, y 19,2</td><td class="num">1,8 мм, y 19,2</td></tr>
+</tbody>
+</table>
+</div>
+<p class="prose">Все 9 текущих форматок листа 1 между собой одинаковы: позиции смещены только на ширину листа, шрифт и высоты те же. Встроенная форматка шаблона «Чертеж.drwdot» и форматки внутри фикстур A-10 и A-11 совпадают с текущими. Формы SpecEditor тоже переведены на GOST type A; оригиналы были Arial Narrow. Исключение — A4-A-1 коммита 11a6d98: она уже была в новой геометрии и, судя по всему, послужила образцом для правки 08.09.</p>
+
+<h3>Все форматки листа 1: смещение центра текста</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>Графа</th><th>Запись надстройки (9 форматок)</th><th>Запись MProp (9 форматок)</th><th>Оригинал SWPlus, запись MProp</th></tr></thead>
+<tbody>
+<tr><td>2 — обозначение</td><td class="num good">−0,3…+0,4</td><td class="num good">−0,2…+0,6</td><td class="num">−0,4</td></tr>
+<tr><td>1 — наименование, одна строка</td><td class="num good">+0,1…+0,9</td><td class="num bad">−2,8…−1,4</td><td class="num">+6,2</td></tr>
+<tr><td>1 — «Сборочный чертёж»</td><td class="num">−6,3 (сборка)</td><td class="num warn">−7,5…−7,2, наложение 4,1–4,6 мм</td><td class="num">−7,5, без наложения</td></tr>
+<tr><td>5 — масса</td><td class="num good">+0,2…+0,9</td><td class="num bad">−1,8…−0,6; до линии 1,4…2,8 мм, в отдельных состояниях 0</td><td class="num">+1,9</td></tr>
+<tr><td>3 — материал, дробь</td><td class="num good">+0,3…+1,6</td><td class="num">по PDF в графе; габарит API после MProp недостоверен</td><td class="num">+0,5</td></tr>
+<tr><td>1 — длинное наименование</td><td class="num good">в графе (две строки)</td><td class="num bad">вне графы на всех 9 (71–98 мм)</td><td class="num bad">вне графы</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2>Детали и сборки: почему по-разному</h2>
+<div class="tbl">
+<table>
+<thead><tr><th>Что</th><th>Деталь</th><th>Сборка</th><th>Почему</th></tr></thead>
+<tbody>
+<tr><td>Графа 1</td><td>Одна строка; вторая надпись пустая</td><td>Наименование и «Сборочный чертёж» — две надписи с жёсткими позициями</td><td>Графа 1 собрана из двух надписей (MYPRP4 и MYPRP3). Центр наименования не может быть одновременно правильным для одной строки и для пары строк.</td></tr>
+<tr><td>После MProp</td><td>Наложение есть, но вторая строка пустая — не видно</td><td>Наименование наезжает на «Сборочный чертёж»</td><td>Разметка MProp опускает наименование на 2,6–2,8 мм.</td></tr>
+<tr><td>Код «СБ» и вторая строка</td><td>—</td><td>Надстройка: « СБ» и «Сборочный чертёж» (ё, без разметки). MProp и SpecEditor: «СБ» и разметка с «чертеж»</td><td>Разные форматы у разных программ (план, Н-09, Н-10)</td></tr>
+<tr><td>Ручное обозначение</td><td>«RenameSWP» = 0</td><td>«RenameSWP» = 1 после MProp</td><td>MProp не узнаёт код «СБ» в имени файла (план, Н-05, Р-9)</td></tr>
+<tr><td>Графа 3</td><td>Дробь из библиотеки</td><td>Пусто; MProp создаёт пустой «Материал_ФБ»</td><td>Материала у сборки нет — это верно, но свойство появляется только после MProp</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2>Причины</h2>
+
+<div class="finding"><div class="fhead"><span class="fid">1</span><span class="ftitle">Две разметки для одних и тех же граф</span><span class="chip sev-crit">критично</span></div>
+<p>Надстройка пишет текст без служебных строк. MProp добавляет пустую мелкую строку сверху, шрифт 5 для наименования и двухстрочную запись массы. Вид штампа зависит от того, кто писал последним. DProp запускает MProp сам.</p>
+<p class="ev">stamp_matrix: S1 против S2…S6 для всех документов; FrmMProp:2636–2659, 2832–2862; FrmDProp:550</p></div>
+
+<div class="finding"><div class="fhead"><span class="fid">2</span><span class="ftitle">Форматки 08.09 перерисованы под надстройку</span><span class="chip sev-crit">критично</span></div>
+<p>Коммит 2349909 (08.09.2026):</p>
+<ul>
+  <li>гарнитура Arial Narrow → GOST type A;</li>
+  <li>обозначение 5 → 7 мм;</li>
+  <li>наименование 3,5 → 5 мм, надпись опущена с y 45,08 до 36,0;</li>
+  <li>у массы интервал 2 → 1.</li>
+</ul>
+<p>Разметка MProp рассчитана на старую геометрию и в новой сползает вниз.</p>
+<p class="ev">format_audit: SWPlus 2018 / 11a6d98 против текущих; git log «Основные надписи»</p></div>
+
+<div class="finding"><div class="fhead"><span class="fid">3</span><span class="ftitle">Графа 1 из двух надписей с жёсткими позициями</span><span class="chip sev-high">высоко</span></div>
+<p>У детали строка одна, у сборки две. Одна геометрия не центрирует оба случая. При разметке MProp строки налезают друг на друга.</p>
+<p class="ev">MYPRP4 y 36,0 и MYPRP3 y 27,52; наложение 4,1–4,6 мм</p></div>
+
+<div class="finding"><div class="fhead"><span class="fid">4</span><span class="ftitle">Длина строки ничем не ограничена</span><span class="chip sev-high">высоко</span></div>
+<p>GOST type A заметно шире Arial Narrow: одна строка шрифтом 5 выходит за 70 мм уже примерно при 23 знаках. MProp не переносит наименование. Имя материала одной строкой (когда вместо дроби стоит формула «материал SW») тоже вылезает.</p>
+<p class="ev">long_name S2: 98,3 мм; bolt S2: 71,4 мм; скриншот владельца «Болт»</p></div>
+
+<div class="finding"><div class="fhead"><span class="fid">5</span><span class="ftitle">Масса лёгких деталей у надстройки теряется</span><span class="chip sev-high">высоко</span></div>
+<p>Килограммы с двумя знаками дают «0,01» для 9,4 г. У MProp — «9.4 г».</p>
+<p class="ev">light_part S1 / S2; bolt S1 «0,01»</p></div>
+
+<div class="finding"><div class="fhead"><span class="fid">6</span><span class="ftitle">Положение массы после MProp нестабильно</span><span class="chip sev-med">средне</span></div>
+<p>С одним и тем же текстом нижний отступ массы меняется между состояниями: 1,4 мм ↔ −0,2 мм, высота габарита 8,6 ↔ 10,2 мм. Служебная пустая строка шрифтом 1 то учитывается, то нет.</p>
+<p class="ev">plate S2 −0,22 / S3 1,41 / S5 −0,22</p></div>
+
+<div class="finding"><div class="fhead"><span class="fid">7</span><span class="ftitle">Старые чертежи хранят свою форматку</span><span class="chip sev-med">средне</span></div>
+<p>Встроенная форматка чертежа — копия той версии, с которой он создан или перезагружен. Архивные чертежи до 08.09, скорее всего, на Arial Narrow. Замена файла <code>.slddrt</code> их не меняет, нужна перезагрузка форматки, как в DProp.</p>
+<p class="ev">format_audit: шаблон и фикстуры совпадают с текущими; оригиналы — Arial Narrow; архив не проверялся</p></div>
+
+<div class="finding"><div class="fhead"><span class="fid">8</span><span class="ftitle">Шаблоны Master отличаются в надписи массы</span><span class="chip sev-med">средне</span></div>
+<p>Интервал 2 и y 35,0 против 1 и 34,7. Пересоздание форматок через Master откатит массу.</p>
+<p class="ev">format_audit: Master_Template_Sheet1; план, Н-13</p></div>
+
+<p class="prose">Не воспроизвелось: окно «Не удалось определить вид из свойств листа» (план, Н-29). У всех чертежей прогона свойство листа «По умолчанию», и MProp из чертежа отработал без окна. Окно появилось на вашем чертеже, созданном вручную. Нужно прочитать его значение — это спайк к правке Н-29.</p>
+</section>
+
+<section>
+<h2>Что делать: эталон штампа</h2>
+<div class="callout">
+<p><b>Цель:</b> у детали и у сборки, на любой форматке, после надстройки и после MProp штамп выглядит одинаково, и каждый текст стоит в своей графе на заданном месте.</p>
+</div>
+<ol class="steps">
+  <li><div><b>Утвердить эталон штампа.</b> Для каждой графы — шрифт, высота, строки и точка центра:
+    <ul>
+      <li>шрифт GOST type A (ГОСТ 2.304);</li>
+      <li>обозначение 7 мм по центру графы 2;</li>
+      <li>масса 3,5 мм по центру графы 5, граммы и килограммы;</li>
+      <li>материал — дробь или одна строка по центру графы 3;</li>
+      <li>раскладка графы 1 — решение ниже.</li>
+    </ul>
+  </div></li>
+  <li><div><b>Одна разметка.</b> Надстройка пишет ровно так же, как MProp (решения плана Р-1…Р-3). Тогда вид не зависит от того, кто писал последним, и автоприменение из DProp ничего не меняет.</div></li>
+  <li><div><b>Форматки под эталон.</b> Надписи MYPRP0, MYPRP3, MYPRP4, MYPRP15, MYPRP16 переставляются так, чтобы разметка MProp давала эталон:
+    <ul>
+      <li>во всех 18 форматках;</li>
+      <li>в шаблоне чертежа;</li>
+      <li>в формах SpecEditor;</li>
+      <li>в шаблонах Master.</li>
+    </ul>
+    Координаты подбираются прогоном штампа, а не на глаз.
+  </div></li>
+  <li><div><b>Перенос.</b> Наименование длиннее границы (для GOST type A 5 мм около 22 знаков) — две строки, как уже решено в Р-2, с правкой MProp. Материал одной строкой длиннее примерно 35 знаков — две строки, в многострочной форме MProp.</div></li>
+  <li><div><b>Масса</b> — по правилу MProp: до 0,1 кг в граммах с «г» (решения Р-1, Р-7). Одновременно проверить устойчивость положения служебной строки (причина 6); при необходимости поправить интервал надписи массы.</div></li>
+  <li><div><b>Существующие чертежи.</b> Пакетная перезагрузка форматок, как «Перезагрузка форматки» в DProp, с резервными копиями и отчётом. Запускается только по решению владельца.</div></li>
+  <li><div><b>Приёмка — автотест штампа.</b> Прогон, выполненный в этом аудите, превращается в тест:
+    <ul>
+      <li>все форматки листа 1;</li>
+      <li>деталь, сборка;</li>
+      <li>короткое и длинное наименование;</li>
+      <li>килограммы и граммы;</li>
+      <li>дробь и одна строка;</li>
+      <li>надстройка и MProp.</li>
+    </ul>
+    Требования: текст внутри графы, центр на эталонном месте ±0,5 мм, нет наложений, снимки после надстройки и после MProp совпадают.
+  </div></li>
+</ol>
+
+<h3>Нужно решение владельца: раскладка графы 1</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>Вариант</th><th>Как выглядит</th><th>Плюсы</th><th>Минусы</th></tr></thead>
+<tbody>
+<tr><td><b>А. Две зоны (рекомендую)</b></td><td>Наименование всегда в верхней части графы 1, наименование документа («Сборочный чертёж») — в нижней. У детали нижняя зона пустая.</td><td>Одинаково у деталей и сборок; ничего не налезает; так было задумано в SWPlus; делается только перестановкой надписей.</td><td>У детали наименование не строго по центру графы, а выше.</td></tr>
+<tr><td><b>Б. По центру</b></td><td>У детали наименование по центру; у сборки наименование и «Сборочный чертёж» — парой по центру.</td><td>Визуально ровнее у деталей.</td><td>С двумя жёсткими надписями не получается. Нужна одна общая надпись с вертикальным центрированием — сначала спайк; если SolidWorks так не умеет, вариант отпадает.</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section>
+<h2>Проверка варианта А: двустрочное наименование</h2>
+<div class="callout">
+<p><b>Решение владельца 13.09.2026:</b> вариант А — наименование в верхней зоне графы 1, наименование документа в нижней; стандарты российские (ГОСТ Р 2.104-2023, ГОСТ Р 2.109-2023). Перед утверждением — проверить двустрочное наименование.</p>
+</div>
+<div class="prose">
+<p><b>Как проверяли.</b> Копия пластины A-01 и чертежа A-10, надстройка выключена. В форматке A3-A-1 чертежа надписи переставлены через API. Свойства записаны ровно в разметке MProp:</p>
+<ul>
+  <li>одна строка — пустая строка 4 мм и текст 5 мм;</li>
+  <li>две строки — пустая строка 2 мм, перевод CR LF, текст 5 мм;</li>
+  <li>три строки — текст 3,5 мм;</li>
+  <li>«Сборочный чертеж» — пустая строка 1 мм и текст 2,5 мм.</li>
+</ul>
+<p><b>Геометрии</b> (высота якоря надписи над низом листа):</p>
+<ul>
+  <li>G0 — текущая: наименование 36,0, «Сборочный чертеж» 27,52, масса 34,7;</li>
+  <li>G1 — как в SWPlus: наименование 45,08, масса 38,53;</li>
+  <li>G2 — подбор: наименование 44,5, «Сборочный чертеж» 25,5, масса 38,0.</li>
+</ul>
+</div>
+<div class="pair">
+  <figure><img src="img/a_cur_2l_asm.png" alt="Текущая геометрия: двустрочное наименование сборки наезжает на Сборочный чертеж"><figcaption><b>G0, текущая, сборка, две строки.</b> Наименование налезает на «Сборочный чертеж» и выходит за нижнюю границу графы.</figcaption></figure>
+  <figure><img src="img/a_g2_2l_asm.png" alt="Геометрия G2: две строки наименования сверху, Сборочный чертеж снизу"><figcaption><b>G2, сборка, две строки.</b> Обе строки в верхней зоне, «Сборочный чертеж» в нижней, промежуток есть.</figcaption></figure>
+</div>
+<div class="pair">
+  <figure><img src="img/a_g2_2l_part.png" alt="Геометрия G2: деталь с двустрочным наименованием"><figcaption><b>G2, деталь, две строки.</b> То же место, нижняя зона пустая.</figcaption></figure>
+  <figure><img src="img/a_g2_1l_asm.png" alt="Геометрия G2: одна строка у сборки"><figcaption><b>G2, сборка, одна строка.</b> Наименование в верхней зоне, у детали — на том же месте.</figcaption></figure>
+</div>
+<div class="pair">
+  <figure><img src="img/a_g2_3l_asm.png" alt="Геометрия G2: три строки наименования у сборки"><figcaption><b>G2, сборка, три строки (3,5 мм).</b> Помещаются над «Сборочный чертеж».</figcaption></figure>
+  <figure><img src="img/a_g1_2l_asm.png" alt="Геометрия G1: две строки, Сборочный чертеж впритык"><figcaption><b>G1, как в SWPlus, сборка, две строки.</b> Помещается, но «Сборочный чертеж» почти впритык ко второй строке.</figcaption></figure>
+</div>
+<div class="tbl">
+<table>
+<thead><tr><th>Наименование</th><th>G0 текущая</th><th>G1 как SWPlus</th><th>G2 подбор</th></tr></thead>
+<tbody>
+<tr><td>Одна строка</td><td class="num bad">наложение 4,6 мм</td><td class="num good">промежуток 4,6 мм</td><td class="num good">промежуток 6,0 мм</td></tr>
+<tr><td>Две строки</td><td class="num bad">наложение 9,7 мм, вне графы</td><td class="num warn">наложение габаритов 0,5 мм (впритык)</td><td class="num good">промежуток 0,9 мм по габаритам, визуально 2–3 мм</td></tr>
+<tr><td>Три строки (3,5 мм)</td><td class="num bad">наложение 7,8 мм</td><td class="num good">промежуток 0,9 мм</td><td class="num good">промежуток 2,3 мм</td></tr>
+<tr><td>Масса, смещение центра</td><td class="num bad">−2,5…−1,8</td><td class="num">+1,3…+1,9</td><td class="num good">+0,8…+1,5</td></tr>
+</tbody>
+</table>
+</div>
+<div class="prose">
+<p>Габарит в API включает служебные пустые строки разметки, поэтому видимый промежуток больше расчётного.</p>
+<p><b>Вывод.</b> Вариант А работает и с двумя, и с тремя строками при геометрии G2 — у детали и у сборки одинаково. Текущая геометрия с разметкой MProp не работает ни с одной строкой, ни с двумя.</p>
+<p><b>Ограничения варианта А:</b></p>
+<ul>
+  <li>строка шрифтом 5 мм в GOST type A — не длиннее примерно 22 знаков («Кронштейн направляющий» — 66,9 мм из 70), поэтому перенос по правилу плана (Р-2) обязателен;</li>
+  <li>окончательные координаты подбираются для всех 9 форматок автотестом, а не по одному A3.</li>
+</ul>
+</div>
+</section>
+
+<section>
+<h2>Новые находки для плана</h2>
+<div class="tbl">
+<table>
+<thead><tr><th>№</th><th>Находка</th><th>Серьёзность</th><th>Пакет</th></tr></thead>
+<tbody>
+<tr><td class="mono">Н-27</td><td>Форматки 08.09 выставлены под разметку надстройки; разметка MProp сползает во всех 9 форматках (причины 1, 2)</td><td><span class="chip sev-crit">критично</span></td><td>Новый WP-4.6 «Эталон штампа»</td></tr>
+<tr><td class="mono">Н-28</td><td>Текст выходит за графу: наименование шрифтом 5 одной строкой, материал одной строкой (причина 4)</td><td><span class="chip sev-high">высоко</span></td><td>WP-2.2, WP-3.1, WP-4.6</td></tr>
+<tr><td class="mono">Н-31</td><td>Графа 1 у деталей и сборок раскладывается по-разному; наложение у сборок (причина 3)</td><td><span class="chip sev-high">высоко</span></td><td>WP-4.6, решение по раскладке</td></tr>
+<tr><td class="mono">Н-32</td><td>Масса лёгких деталей у надстройки «0,01»; положение массы после MProp нестабильно (причины 5, 6)</td><td><span class="chip sev-high">высоко</span></td><td>WP-2.1, WP-4.6</td></tr>
+<tr><td class="mono">Н-33</td><td>Старые чертежи хранят форматку своей версии, шрифт Arial Narrow (причина 7)</td><td><span class="chip sev-med">средне</span></td><td>Новый WP-4.7 «Перезагрузка форматок»</td></tr>
+<tr><td class="mono">Н-34</td><td>Шаблоны Master отличаются в надписи массы (причина 8; подтверждает Н-13 через API)</td><td><span class="chip sev-med">средне</span></td><td>WP-4.1</td></tr>
+</tbody>
+</table>
+</div>
+<p class="prose">Живым прогоном подтверждены и прежние находки плана:</p>
+<ul class="prose">
+  <li>Н-04 — «Конструктор» стирается и заполняется по кругу;</li>
+  <li>Н-05 — «RenameSWP» = 1 у сборки с «СБ»;</li>
+  <li>Н-02 — масса двух форматов;</li>
+  <li>Н-03 — наименование MProp одной строкой;</li>
+  <li>Н-30 — разбор имени «Болт М6…».</li>
+</ul>
+</section>
+
+<footer>
+  Данные: <span class="mono">08_Результаты_Тестирования/runs/stamp_matrix_20260913_195225</span> (result.json, PDF, снимки) и <span class="mono">format_audit_20260913_200535</span> (formats.json). Габарит надписи из API после MProp для дробей недостоверен: положение материала сверено по PDF.
+</footer>
+
+</div>

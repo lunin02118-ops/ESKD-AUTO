@@ -1,0 +1,1486 @@
+<title>План согласования ЕСКД с SWPlus</title>
+<meta name="description" content="План рефакторинга надстройки ЕСКД под формат записи MProp и SpecEditor, ред. 2 после независимого аудита: находки, решения владельца, шаги работ, критерии приёмки.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=PT+Serif:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --paper: #f3f4f1;
+  --sheet: #fbfbf9;
+  --ink: #18202b;
+  --muted: #586271;
+  --rule: #cdd2d8;
+  --frame: #2a3340;
+  --head: #e8ebe7;
+  --code-bg: #e6e9e4;
+  --accent: #24509a;
+  --accent-soft: #e2e9f5;
+  --crit: #a3241c;
+  --high: #b25a00;
+  --med: #76630a;
+  --low: #586271;
+  --info: #2d6a44;
+  --focus: #24509a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111419;
+    --sheet: #161a21;
+    --ink: #e4e7ec;
+    --muted: #9aa3b0;
+    --rule: #2c323c;
+    --frame: #aab3c0;
+    --head: #1c2129;
+    --code-bg: #20262f;
+    --accent: #8db1f2;
+    --accent-soft: #1b2638;
+    --crit: #ff8a80;
+    --high: #ffb368;
+    --med: #dcc35e;
+    --low: #9aa3b0;
+    --info: #86d19c;
+    --focus: #8db1f2;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111419;
+  --sheet: #161a21;
+  --ink: #e4e7ec;
+  --muted: #9aa3b0;
+  --rule: #2c323c;
+  --frame: #aab3c0;
+  --head: #1c2129;
+  --code-bg: #20262f;
+  --accent: #8db1f2;
+  --accent-soft: #1b2638;
+  --crit: #ff8a80;
+  --high: #ffb368;
+  --med: #dcc35e;
+  --low: #9aa3b0;
+  --info: #86d19c;
+  --focus: #8db1f2;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Golos Text", "Segoe UI", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+.wrap {
+  max-width: 1260px;
+  margin: 0 auto;
+  padding: 28px 24px 96px;
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  gap: 44px;
+}
+nav.toc {
+  position: sticky;
+  top: 20px;
+  align-self: start;
+  font-size: 14px;
+  line-height: 1.45;
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+nav.toc .toc-title { font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 4px 0 10px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+nav.toc ol ol { margin: 6px 0 2px 14px; gap: 4px; font-size: 13px; }
+nav.toc a { color: var(--ink); text-decoration: none; }
+nav.toc a:hover { color: var(--accent); text-decoration: underline; }
+main { min-width: 0; }
+.prose { max-width: 74ch; }
+h1, h2, h3 { font-family: "PT Serif", Georgia, "Times New Roman", serif; text-wrap: balance; line-height: 1.25; }
+h2 { font-size: 30px; margin: 64px 0 14px; padding-top: 18px; border-top: 2px solid var(--frame); }
+h3 { font-size: 21px; margin: 36px 0 10px; }
+h4 { font-size: 16px; margin: 22px 0 6px; font-weight: 600; }
+p { margin: 0 0 12px; }
+ul, ol { margin: 0 0 12px; padding-left: 22px; }
+li { margin: 3px 0; }
+code, .mono { font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; }
+code { font-size: .86em; background: var(--code-bg); padding: 1px 5px; border-radius: 3px; overflow-wrap: anywhere; }
+pre { font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace; font-size: 13px; line-height: 1.5; background: var(--code-bg); padding: 14px 16px; border-radius: 4px; overflow-x: auto; margin: 0 0 16px; }
+blockquote { margin: 14px 0 18px; padding: 4px 0 4px 18px; border-left: 2px solid var(--frame); font-family: "PT Serif", Georgia, serif; font-size: 18px; }
+blockquote cite { display: block; font-family: "Golos Text", system-ui, sans-serif; font-style: normal; font-size: 13px; color: var(--muted); margin-top: 6px; }
+
+.titleblock { background: var(--sheet); border: 2px solid var(--frame); display: grid; grid-template-columns: minmax(0, 2.2fr) repeat(2, minmax(0, 1fr)); }
+.titleblock > div { border-right: 1px solid var(--frame); border-bottom: 1px solid var(--frame); padding: 8px 12px; min-width: 0; }
+.titleblock > div:nth-child(3n) { border-right: 0; }
+.titleblock .name { grid-row: span 4; border-bottom: 0; display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 18px 20px; }
+.titleblock .name h1 { margin: 0; font-size: 34px; }
+.titleblock .name p { margin: 0; color: var(--muted); font-size: 15px; }
+.titleblock .cell:nth-last-child(-n+2) { border-bottom: 0; }
+.titleblock .label { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); display: block; }
+.titleblock .value { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.titleblock .value.mono { font-size: 13.5px; }
+@media (max-width: 960px) {
+  .wrap { grid-template-columns: 1fr; gap: 24px; }
+  nav.toc { position: static; max-height: none; border-bottom: 1px solid var(--rule); padding-bottom: 16px; }
+  .titleblock { grid-template-columns: 1fr 1fr; }
+  .titleblock .name { grid-column: 1 / -1; grid-row: auto; border-right: 0; border-bottom: 1px solid var(--frame); }
+  .titleblock > div:nth-child(3n) { border-right: 1px solid var(--frame); }
+  .titleblock .cell:nth-child(odd) { border-right: 0; }
+}
+
+.lead { font-size: 18px; max-width: 70ch; }
+.keys { list-style: none; padding: 0; display: grid; gap: 10px; max-width: 80ch; }
+.keys li { padding: 10px 0; border-bottom: 1px solid var(--rule); margin: 0; }
+.keys b { font-weight: 600; }
+
+.tbl { overflow-x: auto; margin: 0 0 20px; border: 1px solid var(--rule); border-radius: 4px; background: var(--sheet); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; line-height: 1.5; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+th { background: var(--head); font-weight: 600; font-size: 13px; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.nowrap { white-space: nowrap; }
+.num { font-variant-numeric: tabular-nums; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+tr.total td { font-weight: 600; background: var(--head); }
+
+.chip { display: inline-block; font-size: 12px; line-height: 1.5; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; font-weight: 500; vertical-align: 1px; }
+.sev-crit { color: var(--crit); background: color-mix(in srgb, var(--crit) 12%, transparent); }
+.sev-high { color: var(--high); background: color-mix(in srgb, var(--high) 12%, transparent); }
+.sev-med { color: var(--med); background: color-mix(in srgb, var(--med) 12%, transparent); }
+.sev-low { color: var(--low); background: color-mix(in srgb, var(--low) 10%, transparent); }
+.sev-info { color: var(--info); background: color-mix(in srgb, var(--info) 12%, transparent); }
+.st { color: var(--muted); border-style: dashed; background: transparent; }
+.new { color: var(--accent); background: var(--accent-soft); }
+
+.counts { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 6px 0 22px; font-size: 15px; }
+.counts span b { font-variant-numeric: tabular-nums; font-size: 20px; font-family: "PT Serif", Georgia, serif; margin-right: 4px; }
+
+.finding { padding: 16px 0 14px; border-top: 1px solid var(--rule); max-width: 92ch; }
+.finding:last-of-type { border-bottom: 1px solid var(--rule); }
+.fhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-bottom: 6px; }
+.fid { font-family: "JetBrains Mono", Consolas, monospace; font-weight: 500; color: var(--accent); font-size: 14px; }
+.ftitle { font-weight: 600; font-size: 16.5px; }
+.fgrid { display: grid; grid-template-columns: 138px minmax(0, 1fr); gap: 4px 14px; font-size: 15px; }
+.fgrid dt { color: var(--muted); font-size: 13px; padding-top: 2px; }
+.fgrid dd { margin: 0; }
+.ev { font-family: "JetBrains Mono", Consolas, monospace; font-size: 12.5px; color: var(--muted); line-height: 1.55; overflow-wrap: anywhere; }
+@media (max-width: 640px) { .fgrid { grid-template-columns: 1fr; } .fgrid dt { padding-top: 6px; } }
+
+.decision { padding: 16px 0; border-top: 1px solid var(--rule); max-width: 92ch; }
+.decision .q { font-family: "PT Serif", Georgia, serif; font-size: 17px; margin: 4px 0 8px; }
+
+.wp { padding: 18px 0 8px; border-top: 1px solid var(--rule); }
+.wp h3 { margin-top: 0; }
+.wp .meta { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; color: var(--muted); margin: -2px 0 10px; }
+.wp .meta b { color: var(--ink); font-weight: 500; }
+.sub { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 12px; max-width: 94ch; }
+.sub > li { margin: 0; display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 2px 12px; }
+.sub .sid { font-family: "JetBrains Mono", Consolas, monospace; font-size: 13.5px; color: var(--accent); padding-top: 2px; }
+.sub p { margin: 0 0 4px; }
+.sub .why { font-size: 14px; color: var(--muted); }
+
+.note { font-size: 14px; color: var(--muted); max-width: 90ch; }
+.callout { background: var(--accent-soft); padding: 14px 18px; border-radius: 4px; max-width: 94ch; margin: 12px 0 20px; }
+.callout p:last-child, .callout ul:last-child { margin-bottom: 0; }
+.crit-list { display: grid; gap: 10px; padding: 0; list-style: none; max-width: 94ch; }
+.crit-list li { display: grid; grid-template-columns: 52px minmax(0,1fr); gap: 12px; margin: 0; padding: 10px 0; border-bottom: 1px solid var(--rule); }
+.crit-list .cid { font-family: "JetBrains Mono", Consolas, monospace; color: var(--accent); font-size: 14px; }
+.crit-list .tests { display: block; font-size: 13px; color: var(--muted); margin-top: 4px; }
+footer { margin-top: 64px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--rule); padding-top: 14px; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Содержание">
+  <div class="toc-title">Содержание</div>
+  <ol>
+    <li><a href="#s1">1. Коротко</a></li>
+    <li><a href="#s2">2. Изменения ред. 3 и ред. 2</a></li>
+    <li><a href="#s3">3. Почему меняем</a></li>
+    <li><a href="#s4">4. Что найдено</a>
+      <ol>
+        <li><a href="#s4-1">4.1 Кто пишет свойства</a></li>
+        <li><a href="#s4-2">4.2 Находки Н-01…Н-35</a></li>
+        <li><a href="#s4-3">4.3 Что уже совместимо</a></li>
+      </ol>
+    </li>
+    <li><a href="#s5">5. Решения</a></li>
+    <li><a href="#s6">6. Правила записи: было → станет</a></li>
+    <li><a href="#s7">7. План работ по шагам</a></li>
+    <li><a href="#s8">8. Критерии приёмки</a></li>
+    <li><a href="#s9">9. Риски</a></li>
+    <li><a href="#s9a">9а. Связь с ТЗ-01 «Сетевая установка»</a></li>
+    <li><a href="#s10">10. Вне рамок плана</a></li>
+    <li><a href="#s11">11. Что ещё предстоит решить</a></li>
+    <li><a href="#app">Приложения А–Д</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<header class="titleblock">
+  <div class="name">
+    <h1>План согласования надстройки ЕСКД с макросами SWPlus</h1>
+    <p>Рефакторинг записи свойств SolidWorks: одна форма записи для надстройки, MProp и SpecEditor</p>
+  </div>
+  <div class="cell"><span class="label">Редакция</span><span class="value">3 — аудит штампа, вариант А, ГОСТ Р</span></div>
+  <div class="cell"><span class="label">Дата</span><span class="value num">13.09.2026</span></div>
+  <div class="cell"><span class="label">Ветка и коммит</span><span class="value mono">refactor/v6-eskd · b65ac3e</span></div>
+  <div class="cell"><span class="label">Аудит</span><span class="value"><a href="https://claude.ai/code/artifact/38b00ddd-6cef-471f-bd2e-1eb84ab9f957">Принят с корректировками И-1…И-14</a></span></div>
+  <div class="cell"><span class="label">Реализация</span><span class="value">Не начата, код не менялся</span></div>
+  <div class="cell"><span class="label">Решения владельца</span><span class="value">Р-1…Р-13 приняты; 12 вопросов по библиотеке открыты</span></div>
+  <div class="cell"><span class="label">Разработал</span><span class="value">Claude (Opus 5) по заданию владельца</span></div>
+  <div class="cell"><span class="label">Оценка</span><span class="value num">≈ 24 рабочих дня</span></div>
+</header>
+
+<section id="s1">
+<h2>1. Коротко</h2>
+<p class="lead">Одни и те же свойства модели SolidWorks пишут надстройка ЕСКД, макрос MProp и SpecEditor, а через кнопку DProp — снова MProp. Каждая программа пишет по-своему. Поэтому значения в штампе и спецификации меняются туда-обратно, а запись безчертёжной детали теряется.</p>
+<ul class="keys">
+  <li><b>Требование владельца.</b> Открыли MProp, применили без правок — ничего не изменилось. Надстройка записывает свойство ровно так, как записал бы MProp; то же для SProp.</li>
+  <li><b>Главная находка.</b> DProp при перезагрузке основной надписи сам запускает MProp и сам нажимает в нём «применить» (<a href="#n01">Н-01</a>).</li>
+  <li><b>Что предлагается.</b> Образец записи — MProp, для строк спецификации — SpecEditor. Надстройка пишет байт в байт так же. MProp правится в пяти местах по решениям владельца:
+    <ul>
+      <li>перенос наименования;</li>
+      <li>защита записи БЧ;</li>
+      <li>разбор кода «СБ» в имени файла;</li>
+      <li>разбор имени без обозначения;</li>
+      <li>выбор вида для свойств листа.</li>
+    </ul>
+    Форматки, шаблон чертежа, формы SpecEditor и шаблоны Master приводятся к одному эталону штампа под разметку MProp. Библиотека материалов приводится к действующим российским стандартам. Всё закрепляется тестом «применили MProp — ничего не изменилось» (пишется до правок) и автотестом штампа.</li>
+  <li><b>Аудит штампа (ред. 3).</b> <a href="https://claude.ai/code/artifact/432fa38d-db37-4caa-b0d7-c65b799a1229">Отчёт аудита</a> показал: форматки 08.09 перерисованы под однострочный текст надстройки, поэтому разметка MProp сползает на всех 9 форматках листа 1. У сборок наименование наезжает на «Сборочный чертеж», длинные наименования вылезают из графы (<a href="#n27">Н-27</a>…<a href="#n34">Н-34</a>). Принят вариант А раскладки графы 1 и проверен с одно-, двух- и трёхстрочными наименованиями (<a href="#r12">Р-12</a>).</li>
+  <li><b>Аудит.</b> Все 17 находок, проверяемых по коду, подтверждены. Выбор образца признан обоснованным. Все 14 корректировок внесены (<a href="#s2">раздел 2</a>). Добавлено шесть новых находок (<a href="#n21">Н-21</a>…<a href="#n26">Н-26</a>).</li>
+  <li><b>Решения владельца после аудита.</b> Единицы массы надстройка переключает как MProp (<a href="#r7">Р-7</a>). Все три правки VBA разрешены (<a href="#r8">Р-8</a>). Архив с «СБ» в имени файла не переименовывается — MProp научится понимать код (<a href="#r9">Р-9</a>). Библиотека — «как правильно по ГОСТ» (<a href="#r10">Р-10</a>): исследование выполнено, осталось 12 вопросов (<a href="#app-d">приложение Д</a>). Ещё две правки MProp разрешены (<a href="#r11">Р-11</a>). Графа 1 — вариант А (<a href="#r12">Р-12</a>). Стандарты — российские: ГОСТ Р 2.104-2023, ГОСТ Р 2.109-2023, ГОСТ Р 2.106-2019 (<a href="#r13">Р-13</a>).</li>
+</ul>
+</section>
+
+<section id="s2">
+<h2>2. Изменения ред. 3 и ред. 2</h2>
+<h3>Что добавлено в ред. 3</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>Источник</th><th>Что показал</th><th>Как учтено в ред. 3</th></tr></thead>
+<tbody>
+<tr><td>Ручная проверка владельца, 13.09 вечер (скриншоты «Узел», «Болт», «Кронштейн»)</td><td>После запуска MProp съезжают наименование и масса; сборки и детали заполняются по-разному; окно «Не удалось определить вид из свойств листа»; «Болт» ушёл в обозначение</td><td>Находки <a href="#n27">Н-27</a>…<a href="#n31">Н-31</a>; решение <a href="#r11">Р-11</a></td></tr>
+<tr><td><a href="https://claude.ai/code/artifact/432fa38d-db37-4caa-b0d7-c65b799a1229">Аудит основной надписи</a>: прогон штампа 6 документов × 6 состояний, 9 форматок × 2 записи, параметры надписей через API</td><td>Две разметки × две геометрии форматок; причина — перерисовка форматок 08.09 (коммит 2349909); шаблоны Master отличаются; старые чертежи хранят свою форматку</td><td>Находки <a href="#n27">Н-27</a>, <a href="#n28">Н-28</a>, <a href="#n31">Н-31</a>…<a href="#n34">Н-34</a>; пакеты <a href="#step3">WP-4.6</a> «Эталон штампа», <a href="#step5">WP-4.7</a> «Перезагрузка форматок»; критерий <a href="#k12">К-12</a></td></tr>
+<tr><td>Спайк варианта А (layout_a_spike_20260913_202705)</td><td>При геометрии G2 наименование в 1, 2 и 3 строки помещается над «Сборочный чертеж» у детали и сборки; текущая геометрия налезает</td><td>Решение <a href="#r12">Р-12</a>; эталон в <a href="#s6">разделе 6</a></td></tr>
+<tr><td>Исследование ГОСТ по библиотеке (35 групп)</td><td>Дробь положена только сортовому прокату; грубые ошибки (ГОСТ 34359-2017 — сейфы, «Сталь 3сп»); 8 стандартов заменены; плотность 7820 и ABS 1380 неверны; ГОСТ 2.104-2006 и 2.109-73 в РФ заменены ГОСТ Р</td><td>Находки <a href="#n25">Н-25</a> (уточнена), <a href="#n35">Н-35</a>; решение <a href="#r13">Р-13</a>; <a href="#app-d">приложение Д</a> с 12 вопросами</td></tr>
+<tr><td>ТЗ-01 «Сетевая установка» (ред. 2, 13.09)</td><td>Общие ветка, макросы, форматки и тесты. ТЗ запрещает менять надстройку и макросы. По коду: MProp пишет файлы в свою папку при каждом применении; макросы находят друг друга по соседним папкам; Master «Настроить» переписывает формы SpecEditor; запасной путь к библиотеке из локальной папки не найдётся</td><td><a href="#s9a">Раздел 9а</a>: факты СВ-1…СВ-6, предложения к ТЗ ТЗ-п1…ТЗ-п6, порядок работ; риск 16</td></tr>
+<tr><td>Решения владельца 13.09 вечер</td><td>Две доп. правки MProp — «Разрешаю!»; графа 1 — вариант А после проверки двух строк; страна — Россия</td><td><a href="#r11">Р-11</a>, <a href="#r12">Р-12</a>, <a href="#r13">Р-13</a></td></tr>
+</tbody>
+</table>
+</div>
+<h3>Аудит плана и изменения ред. 2</h3>
+<div class="prose">
+<p>Независимый аудит проверял план ред. 1 и код ветки после пакетов WP-R1…WP-R3 только чтением. Вердикт: <b>план принять с корректировками</b>. Шесть корректировок существенные (меняют результат или порядок), восемь уточняют правила и тесты. Ниже — как учтена каждая. Отклонённых корректировок нет. Новые утверждения аудита перепроверены по исходникам: тест C06, шаблон детали, библиотека материалов.</p>
+</div>
+<div class="tbl">
+<table>
+<thead><tr><th>№</th><th>Корректировка аудита</th><th>Как учтено в ред. 2</th></tr></thead>
+<tbody>
+<tr><td class="mono">И-1</td><td>Проверку К-1 строить до правок, а не после</td><td>Шаг 2: WP-1.4 — тесты К-1 и К-2 с пометками известных дефектов; каждый подпункт WP-2 снимает свою пометку (<a href="#step2">шаг 2</a>, <a href="#r-p6">П-6</a>)</td></tr>
+<tr><td class="mono">И-2</td><td>Golden master ужесточить до WP-2 (Д-43)</td><td>WP-0.3 на шаге 0; новые разрешённые отличия AD-26… — в том же коммите, что и правка (<a href="#n24">Н-24</a>)</td></tr>
+<tr><td class="mono">И-3</td><td>Правило массы записать целиком</td><td><a href="#r1">Р-1</a>, <a href="#s6">раздел 6</a>: суффикс « г» после кавычки, три единицы и знаки, флаг «Единицы»; удаляемый код перечислен в WP-2.1</td></tr>
+<tr><td class="mono">И-4</td><td>Наименование: три варианта разметки и CR LF</td><td><a href="#r2">Р-2</a>, <a href="#s6">раздел 6</a>, WP-3.1 — место правки 2648–2653</td></tr>
+<tr><td class="mono">И-5</td><td>«Сборка2_ФБ» писать только при отсутствии свойства</td><td><a href="#s6">Раздел 6</a>, WP-2.3</td></tr>
+<tr><td class="mono">И-6</td><td>Убрать «Материал_ФБ» = $PRP:"Материал" из шаблона детали</td><td>Новая находка <a href="#n21">Н-21</a>, WP-4.4 на шаге 3</td></tr>
+<tr><td class="mono">И-7</td><td>Семантика «RenameSWP» и «Исполнение»</td><td><a href="#s6">Раздел 6</a>, WP-2.4; исполнение в имени файла больше не удваивается</td></tr>
+<tr><td class="mono">И-8</td><td>Библиотека — источник истины, значит её данные входят в план (Д-42)</td><td>Новая находка <a href="#n25">Н-25</a>, решение <a href="#r10">Р-10</a>, WP-4.5, критерий К-11, <a href="#app-d">приложение Д</a></td></tr>
+<tr><td class="mono">И-9</td><td>Критерии привязать к каталогу сценариев</td><td><a href="#s8">Раздел 8</a>: у каждого критерия номера тестов; остаток каталога — <a href="#app-v">приложение В</a></td></tr>
+<tr><td class="mono">И-10</td><td>Состав коммита фикстур и происхождение</td><td>WP-0.1: без документов регламента КТО; отметки в manifest.json и allowed_diffs</td></tr>
+<tr><td class="mono">И-11</td><td>Архив с «СБ» в имени: переименование или правка разбора имени в MProp</td><td>Владелец выбрал правку MProp — <a href="#r9">Р-9</a>, WP-3.3</td></tr>
+<tr><td class="mono">И-12</td><td>Сообщение о замене материала — уровень Warning</td><td>Новая находка <a href="#n23">Н-23</a>, WP-2.6, К-7</td></tr>
+<tr><td class="mono">И-13</td><td>Что дописать в документацию</td><td>WP-7 на шаге 6</td></tr>
+<tr><td class="mono">И-14</td><td>Оценки и Definition of Done</td><td><a href="#s7">Раздел 7</a>: оценки по шагам и общий DoD</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Ответы аудитора на вопросы ред. 1</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>№</th><th>Вопрос</th><th>Ответ аудита</th><th>Как применено</th></tr></thead>
+<tbody>
+<tr><td class="mono">В-1</td><td>Достаточен ли перечень К-1</td><td>Да, при сравнении по уровням и сырым значениям. Служебные свойства MProp заранее не создавать. Удаление MProp общих копий, созданных надстройкой, считать нарушением.</td><td>К-1 уточнён; принцип <a href="#r-p7">П-7</a>; находка <a href="#n22">Н-22</a></td></tr>
+<tr><td class="mono">В-2</td><td>Менять ли единицы массы при сохранении</td><td>Только осознанным решением владельца; если да — полностью как MProp и с предупреждением</td><td>Владелец: «да, как MProp» — <a href="#r7">Р-7</a></td></tr>
+<tr><td class="mono">В-3</td><td>«ПРТИ.468211.100СБ» слитно</td><td>Соответствует: по ГОСТ 2.201-80 код документа примыкает к обозначению изделия; пробел — практика, не требование</td><td><a href="#r3">Р-3</a> без изменений, риск закрыт</td></tr>
+<tr><td class="mono">В-4</td><td>Запись БЧ в «Наименовании» и правка MProp</td><td>Выбор верен; условия — спайк S-2, три места записи в MProp, проверить путь многострочного ввода</td><td><a href="#r4">Р-4</a>, WP-3.2</td></tr>
+<tr><td class="mono">В-5</td><td>Порядок правок VBA</td><td>Добавить копию в архив, сверку скомпилированного кода с исходником, прогон К-1 и раздел руководства</td><td><a href="#vba-proc">Порядок правки макросов</a></td></tr>
+<tr><td class="mono">В-6</td><td>Полнота списка программ</td><td>Не хватает «Очистки v5», самого SolidWorks, Toolbox, вкладки свойств, Roughness, MCP-сервера; проверить Drew</td><td><a href="#s4-1">Раздел 4.1</a>, находка <a href="#n26">Н-26</a>, спайк S-7</td></tr>
+<tr><td class="mono">В-7</td><td>Выпустить раньше «ЭМ-» и личные данные</td><td>Да</td><td><a href="#step1">Шаг 1</a></td></tr>
+<tr><td class="mono">В-8</td><td>Правильно ли определено «вне рамок»</td><td>Да, но известное поведение DProp (<a href="#n18">Н-18</a>) должно быть в харнессе</td><td><a href="#s10">Раздел 10</a></td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section id="s3">
+<h2>3. Почему меняем</h2>
+<div class="prose">
+<p>Надстройка переписана как v6 на ветке <code>refactor/v6-eskd</code>. Пакеты устранения замечаний WP-R1…WP-R3 выполнены, полный прогон с исправленными фикстурами — 94 из 94 (<code>08_Результаты_Тестирования/runs/20260913_143501</code>). 13.09.2026 владелец принял решение «библиотека выигрывает» (Д-46), а затем сформулировал требование шире:</p>
+<blockquote>Нужно сделать, чтобы при открытии MProp ничего не перезаписывалось. Если ЕСКД переписал, то он должен переписать так, как это сделала бы MProp. И точно так же по SProp — чтобы избежать лишних перезаписей свойств и конфликтов.
+<cite>Владелец, 13.09.2026. Опечатки исправлены.</cite></blockquote>
+<p><b>Как искали.</b> Из файлов <code>.swp</code> извлечены исходники VBA макросов MProp, SProp, SpecEditor, DProp и Master; главные формы прочитаны целиком. Каждая запись сравнена с кодом надстройки. Форматки и шаблоны Master разобраны побайтно. Ключевые утверждения перепроверены по строкам кода, затем ещё раз независимым аудитом.</p>
+<p><b>Почему точечными исправлениями не обойтись.</b> Надстройка v6 ввела собственные форматы, удобные для вида штампа: масса текстом с запятой, перенос без разметки, « СБ» с пробелом, «чертёж» через «ё», запись БЧ в «Наименовании». При этом не учитывалось, как эти свойства читают и пишут MProp и SpecEditor. Требование владельца выполнимо, только если на каждое свойство есть одно правило записи и тест, который его держит.</p>
+<p><b>Почему образец — MProp, а не надстройка.</b></p>
+<ul>
+  <li>На записи MProp построены основные надписи, строки SpecEditor и документы архива.</li>
+  <li>DProp запускает MProp без спроса. Если надстройка пишет как MProp, это становится безвредным.</li>
+  <li>VBA правится вручную и без тестов форм, а надстройка покрыта тестами.</li>
+  <li>Дробь материала из библиотеки уже сделана байт в байт как в MProp, и конфликтов в ней нет.</li>
+</ul>
+</div>
+</section>
+
+<section id="s4">
+<h2>4. Что найдено</h2>
+
+<h3 id="s4-1">4.1 Кто пишет свойства</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>Кто</th><th>Когда пишет</th><th>Как пишет</th></tr></thead>
+<tbody>
+<tr><td><b>Надстройка ЕСКД</b></td><td>Сохранение детали и сборки; после «Сохранить как»; после смены материала (в памяти); у нового документа — подписи в пустые поля; кнопки «Синхронизировать» и «Деталь БЧ». При открытии не пишет.</td><td>Во все конфигурации; только при отличии значения; только производные значения. Документы SProp, Toolbox и покупные пропускает.</td></tr>
+<tr><td><b>«Очистка v5»</b> (<code>ESKD_Sync.exe /clean</code>)</td><td>Явный запуск по файлам и папкам.</td><td>Пишет «Конструктор», «Проверил», «Контора», «Масса», «Материал», «Формат», «Сборка1_ФБ» и удаляет лишние свойства (<code>Core/LegacyMigration.cs</code>). Обязана следовать тем же правилам.</td></tr>
+<tr><td><b>MProp</b></td><td>«Внести изменения», «Применить и закрыть». При открытии — только после «Да» на вопросы. «Закрыть» не пишет.</td><td>Все поля формы безусловно в активную конфигурацию; общие копии удаляет; единицы массы, свет, BOM, «Сводка». Не сохраняет.</td></tr>
+<tr><td><b>DProp</b></td><td>«Перезагрузка форматки» на первом листе.</td><td>Запускает MProp в режиме автоприменения. Сам при открытии формы переименовывает листы, пишет «Лист/Листов».</td></tr>
+<tr><td><b>SProp</b></td><td>OK.</td><td>При текущем <code>SProp.ini</code> удаляет все свойства и «Сводку», затем пишет свои общие свойства покупного изделия.</td></tr>
+<tr><td><b>SpecEditor</b></td><td>«Создать», «Сортировать», «Внести свойства».</td><td>В конфигурацию сборки: поля первичного применения, «Сборка1_ФБ», «Сборка2_ФБ». Строки берёт из таблицы BOM.</td></tr>
+<tr><td><b>Master</b></td><td>«Создать», «Авто»; из DProp — при добавлении и замене листа.</td><td>Свойства моделей не пишет; пересоздаёт форматки <code>.slddrt</code> в корпоративной папке.</td></tr>
+<tr><td><b>SolidWorks</b></td><td>Всегда.</td><td>Подставляет имя файла в формулы SW-Mass (тест C06); ведёт «Сводку → Автор».</td></tr>
+<tr><td><b>Toolbox</b></td><td>Вставка стандартных изделий.</td><td>Свойства стандартных изделий; надстройка их пропускает.</td></tr>
+<tr><td><b>Вкладка свойств</b> (<code>.prtprp</code>)</td><td>Ввод пользователя.</td><td>На уровнях Global и Config, по шаблону вкладки.</td></tr>
+<tr><td><b>Roughness</b></td><td>Кнопка макроса.</td><td>«Обработка» в чертеже; к свойствам модели не относится.</td></tr>
+<tr><td><b>MCP-сервер</b></td><td>Запросы ассистента.</td><td>После Д-20 делегирует запись надстройке; удерживается тестом T0.</td></tr>
+<tr><td><b>Drew</b> (AutoDrawing)</td><td>Не проверено.</td><td>Пишет ли свойства моделей — спайк S-7.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="s4-2">4.2 Находки</h3>
+<p class="note">Серьёзность: <span class="chip sev-crit">критично</span> — теряются данные или ломается штамп и спецификация; <span class="chip sev-high">высоко</span> — значения переписываются по кругу или неверны в типовом сценарии; <span class="chip sev-med">средне</span> — частные случаи и дефекты без прямой потери данных; <span class="chip sev-low">низко</span> — лишние изменения без вреда. Статус: «код» — строки кода; «файл» — разбор бинарного файла; «не проверено» — нужен спайк; <span class="chip new">ред. 2</span> — добавлено или уточнено по аудиту. Ссылки на VBA — строки выгрузки модуля (<a href="#app-a">приложение А</a>), на C# — пути от <code>03_Макросы_и_Плагины/ESKD_Material_Sync_Addin</code>.</p>
+<div class="counts" aria-label="Число находок по серьёзности">
+  <span><b>3</b>критично</span><span><b>15</b>высоко</span><span><b>15</b>средне</span><span><b>1</b>низко</span><span><b>1</b>без конфликта</span>
+</div>
+
+<h4>Скрытый запуск MProp</h4>
+<div class="finding" id="n01">
+  <div class="fhead"><span class="fid">Н-01</span><span class="ftitle">DProp сам запускает автоприменение MProp</span><span class="chip sev-crit">критично</span><span class="chip st">код</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>После перезагрузки форматки первого листа DProp вызывает <code>RunMacro(Source3, "MProp_run", "main_reload")</code>. В этом режиме MProp после чтения сам выполняет «Применить и закрыть».</dd>
+    <dt>Чем грозит</dt><dd>Все расхождения Н-02…Н-09 и Н-21, Н-22 срабатывают без действий пользователя.</dd>
+    <dt>Доказательства</dt><dd class="ev">FrmDProp:503–552; MProp_run:142–145 (mRun = 1); FrmMProp:2391–2393, 3176–3184</dd>
+    <dt>Закрывается</dt><dd>Шаги 2–4 (надстройка пишет как MProp), критерий <a href="#k1">К-1</a>. DProp не меняется.</dd>
+  </dl>
+</div>
+
+<h4>Надстройка ↔ MProp</h4>
+<div class="finding" id="n02">
+  <div class="fhead"><span class="fid">Н-02</span><span class="ftitle">Масса в графе 5 записывается в двух разных форматах</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>
+      <p>Надстройка пишет во все конфигурации текст с запятой: <code>&lt;FONT size=3.5&gt;0,63</code>.</p>
+      <p>MProp пишет в активную конфигурацию формулу <code>&lt;FONT size=1&gt; ⏎&lt;FONT size=3.5&gt;"SW-Mass@@00@&lt;имя&gt;.SLDPRT"</code>. SolidWorks показывает её с точкой. При граммах после закрывающей кавычки дописывается « г».</p>
+      <p>При применении MProp выставляет единицы документа: пользовательскую систему единиц, длину, массу, объём и число знаков. Правило: масса больше 0,1 кг — м, кг, м³ и 2 знака; иначе — см, г, см³ и 1 знак. Флаг «Единицы» = «False» или «0» означает пользовательские единицы: тогда MProp их не меняет.</p>
+    </dd>
+    <dt>Чем грозит</dt><dd>После MProp в одной модели масса оформлена по-разному: у активного исполнения «0.63» или «63.4 г», у остальных «0,63».</dd>
+    <dt>Доказательства</dt><dd class="ev">Sw/SyncService.cs:471–523; Core/SwPlusMarkup.cs:67–70; FrmMProp:2339–2357, 2447–2468, 2760–2765, 2832–2862, 3331–3369</dd>
+    <dt>Закрывается</dt><dd><a href="#r1">Р-1</a>, <a href="#r7">Р-7</a>, WP-2.1</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n03">
+  <div class="fhead"><span class="fid">Н-03</span><span class="ftitle">Наименование в графе 1: перенос надстройки теряется в MProp</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>
+      <p>Надстройка переносит длинное наименование и пишет его без разметки.</p>
+      <p>MProp, если имя файла равно «Обозначение Наименование», берёт наименование из имени файла одной строкой. Разметка MProp зависит от числа строк:</p>
+      <ul>
+        <li>одна строка: <code>&lt;FONT size=4&gt; </code>, перевод строки LF, <code>&lt;FONT size=5&gt;</code>;</li>
+        <li>две строки: <code>&lt;FONT size=2&gt; </code>, перевод строки <b>CR LF</b>, <code>&lt;FONT size=5&gt;</code>;</li>
+        <li>три строки: только <code>&lt;FONT size=3.5&gt;</code>.</li>
+      </ul>
+      <p>При флажке ChkFont вместо 5 ставится 3.5; ChkFont — состояние формы, в модели не хранится. Значение с разметкой надстройка потом не обновляет.</p>
+    </dd>
+    <dt>Чем грозит</dt><dd>Длинное наименование в штампе одной строкой крупным шрифтом; после «Сохранить как» графа 1 остаётся старой.</dd>
+    <dt>Доказательства</dt><dd class="ev">Core/SwPlusMarkup.cs:31–55; Sw/SyncService.cs:251–257; FrmMProp:333–339, 1553–1557, 1652–1690, 2636–2659</dd>
+    <dt>Закрывается</dt><dd><a href="#r2">Р-2</a>, WP-2.2, WP-3.1</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n04">
+  <div class="fhead"><span class="fid">Н-04</span><span class="ftitle">«Конструктор» стирается и заполняется по кругу</span><span class="chip sev-high">высоко</span><span class="chip st">код</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>MProp заполняет «Разработал» из «Сводка → Автор» и безусловно пишет обратно в оба поля, в том числе пустое значение. Надстройка пишет только «Конструктор».</dd>
+    <dt>Чем грозит</dt><dd>При пустом «Авторе» MProp очищает «Конструктор», надстройка при сохранении заполняет снова. При заполненном «Авторе» MProp подменяет конструктора.</dd>
+    <dt>Доказательства</dt><dd class="ev">FrmMProp:1906, 2718–2724; Sw/SyncService.cs:320–324</dd>
+    <dt>Закрывается</dt><dd>WP-2.5</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n05">
+  <div class="fhead"><span class="fid">Н-05</span><span class="ftitle">MProp молча помечает обозначение ручным</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Если имя файла не равно «Обозначение Наименование», MProp смотрит на «RenameSWP». При «0» он спрашивает «Файл был переименован?». Если флага нет или он «1», MProp молча включает ручной режим и при применении пишет «1». Надстройка «RenameSWP» не пишет, а «1» считает ручным обозначением.</dd>
+    <dt>Чем грозит</dt><dd>У сборок с «СБ» в имени файла и у деталей с записью БЧ надстройка перестаёт вести обозначение, в том числе при «Сохранить как».</dd>
+    <dt>Доказательства</dt><dd class="ev">FrmMProp:1550–1575, 2595–2601; Sw/SyncService.cs:157, 165–168, 209</dd>
+    <dt>Закрывается</dt><dd>WP-2.4, WP-3.2, WP-3.3</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n06">
+  <div class="fhead"><span class="fid">Н-06</span><span class="ftitle">Исполнения: суффикс ставится и снимается по кругу или удваивается</span><span class="chip sev-med">средне</span><span class="chip st">код</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>При «Исполнение» = 1 или 2 MProp берёт суффикс из текущего обозначения конфигурации после последнего «-»; иначе пишет корень и удаляет конфигурационные копии наименования. Надстройка определяет исполнение по имени конфигурации и ставит «Исполнение» только в пустое поле. Если исполнение задано в имени файла («…-01 Имя»), надстройка ставит «2», и MProp дописывает суффикс ещё раз: «…-01-01».</dd>
+    <dt>Чем грозит</dt><dd>Обозначение исполнения меняется при каждом применении и сохранении.</dd>
+    <dt>Доказательства</dt><dd class="ev">Sw/SyncService.cs:180–206; FrmMProp:1498–1518, 2542–2548, 2677–2704</dd>
+    <dt>Закрывается</dt><dd>WP-2.4</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n07">
+  <div class="fhead"><span class="fid">Н-07</span><span class="ftitle">Пустая графа 3 блокирует дробь из библиотеки</span><span class="chip sev-high">высоко</span><span class="chip st">код</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>При пустой графе 3 MProp включает режим «материал SW» и пишет формулу <code>"SW-Material@@&lt;конф&gt;@&lt;имя&gt;.SLDPRT"</code>. Надстройка считает её выбором пользователя.</dd>
+    <dt>Чем грозит</dt><dd>После назначения материала из библиотеки дроби нет: в графе 3 имя материала одной строкой.</dd>
+    <dt>Доказательства</dt><dd class="ev">FrmMProp:703–729, 2919–2925; Core/MaterialRecord.cs:118–139</dd>
+    <dt>Закрывается</dt><dd><a href="#r6">Р-6</a>, WP-2.6</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n08">
+  <div class="fhead"><span class="fid">Н-08</span><span class="ftitle">MProp стирает запись безчертёжной детали</span><span class="chip sev-crit">критично</span><span class="chip st">код</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Кнопка «Деталь БЧ» кладёт в «Наименование» запись «наименование ⏎ дробь ⏎ размер». MProp перезаписывает общее «Наименование» коротким и удаляет копии в конфигурациях без исполнения.</dd>
+    <dt>Чем грозит</dt><dd>Строка БЧ в спецификации теряет дробь и размер, при DProp — незаметно.</dd>
+    <dt>Доказательства</dt><dd class="ev">Sw/BchService.cs:92–114; FrmMProp:2628–2633, 2660–2674, 2677–2704</dd>
+    <dt>Закрывается</dt><dd><a href="#r4">Р-4</a>, WP-2.7, WP-3.2</dd>
+  </dl>
+</div>
+
+<h4>Надстройка ↔ SpecEditor</h4>
+<div class="finding" id="n09">
+  <div class="fhead"><span class="fid">Н-09</span><span class="ftitle">«Сборка1_ФБ» и «Сборка2_ФБ» переписываются по кругу</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>
+      <p>SpecEditor при каждом построении и MProp при применении пишут «СБ» и <code>&lt;FONT size=1&gt; ⏎&lt;FONT size=2.5&gt;Сборочный чертеж</code>.</p>
+      <p>В режиме «спецификация на листе» SpecEditor записывает обе строки пустыми, а не удаляет свойства.</p>
+      <p>Надстройка при сохранении пишет « СБ» и «Сборочный чертёж», если в имени файла есть код. Если кода нет, «СБ» удаляет. Пустое значение считает шаблонным и возвращает.</p>
+    </dd>
+    <dt>Чем грозит</dt><dd>Код и вторая строка графы 1 сборки меняются при каждом построении спецификации и сохранении.</dd>
+    <dt>Доказательства</dt><dd class="ev">Sw/SyncService.cs:209–234; Core/Settings.cs:30; FrmSpecEditor:672–730 (699–708), 1578–1579; FrmMProp:3056–3070</dd>
+    <dt>Закрывается</dt><dd><a href="#r3">Р-3</a>, WP-2.3</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n10">
+  <div class="fhead"><span class="fid">Н-10</span><span class="ftitle">Сборочный чертёж обозначен в штампе и спецификации по-разному</span><span class="chip sev-med">средне</span><span class="chip st">код</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Строку «Сборочный чертеж» SpecEditor строит без свойств: <code>$PRPSHEET:"Обозначение"</code>, сразу за ним «СБ», наименование через «е». Штамп при записи надстройки показывает « СБ» с пробелом и «ё».</dd>
+    <dt>Чем грозит</dt><dd>«ПРТИ.468211.100 СБ» в штампе против «ПРТИ.468211.100СБ» в спецификации. По ГОСТ 2.201-80 слитная запись верна (ответ аудита В-3).</dd>
+    <dt>Доказательства</dt><dd class="ev">FrmSpecEditor:1362, 2510–2539; Sw/SyncService.cs:213, 221</dd>
+    <dt>Закрывается</dt><dd><a href="#r3">Р-3</a>: везде «…СБ» и «чертеж», WP-2.3</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n11">
+  <div class="fhead"><span class="fid">Н-11</span><span class="ftitle">Код документа из имени файла попадает в обозначение детали</span><span class="chip sev-med">средне</span><span class="chip st">код</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Для «ПРТИ.123 СБ Рама.sldprt» надстройка пишет обозначение «ПРТИ.123 СБ». SpecEditor без одноимённого <code>.SLDASM</code> кладёт деталь в «Детали». MProp делит имя по первому пробелу: обозначение «ПРТИ.123», наименование «СБ Рама».</dd>
+    <dt>Чем грозит</dt><dd>Неверные обозначение, раздел и наименование.</dd>
+    <dt>Доказательства</dt><dd class="ev">Sw/SyncService.cs:153–154; FrmSpecEditor:1960–1966; FrmMProp:1550–1557</dd>
+    <dt>Закрывается</dt><dd><a href="#r9">Р-9</a>, WP-2.9, WP-3.3</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n12">
+  <div class="fhead"><span class="fid">Н-12</span><span class="ftitle">Отрисовка дроби БЧ в ячейке спецификации не проверялась</span><span class="chip sev-med">средне</span><span class="chip st">не проверено</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Графа «Наименование» спецификации привязана к свойству «Наименование» и выводит его как есть. Рисует ли таблица BOM <code>&lt;STACK&gt;</code> и три строки, не проверял ни один тест.</dd>
+    <dt>Доказательства</dt><dd class="ev">FrmSpecEditor:1803–1816, 3026–3077; tests/test_e2e_bch.py — только свойства модели</dd>
+    <dt>Закрывается</dt><dd>Спайк S-2, тест S03</dd>
+  </dl>
+</div>
+
+<h4>Форматки, шаблоны, библиотека</h4>
+<div class="finding" id="n13">
+  <div class="fhead"><span class="fid">Н-13</span><span class="ftitle">Master затирает выровненные форматки старыми образцами</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip st">файл</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Master пересоздаёт <code>.slddrt</code> в корпоративной папке из <code>Master_Template_Sheet1/2.SLDDRW</code>: «Сохранить как», затем удаление старого файла и переименование, без копии. Шаблоны не нормализованы: у заметки массы MYPRP15 другие положение и интервал, отличаются MYPRP4 и MYPRP16.</dd>
+    <dt>Чем грозит</dt><dd>Графа 5 съезжает на новых чертежах; кратный формат ломает тесты T0 и D09.</dd>
+    <dt>Доказательства</dt><dd class="ev">FrmMaster:135–230, 374–389, 448; разбор байтов шаблонов и форматок</dd>
+    <dt>Закрывается</dt><dd>WP-4.1</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n14">
+  <div class="fhead"><span class="fid">Н-14</span><span class="ftitle">Личные данные и свойства v5 в шаблонах Master и 18 форматках</span><span class="chip sev-med">средне</span><span class="chip st">файл</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>14 свойств v5 с фамилией владельца, организацией «123» и датами (коммит 92cfc6b).</dd>
+    <dt>Доказательства</dt><dd class="ev">Разбор строк .slddrt и шаблонов Master; Core/PropertyDictionary.cs:60–66</dd>
+    <dt>Закрывается</dt><dd>WP-4.2, спайк S-6</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n21">
+  <div class="fhead"><span class="fid">Н-21</span><span class="ftitle">Шаблон детали нарушает К-1 у каждой новой детали без материала</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>В шаблоне детали у конфигурации «00» задано «Материал_ФБ» = <code>$PRP:"Материал"</code>. MProp читает это как текст пользователя. При применении без правок он записывает в графу 3 <code>&lt;FONT size=1.8&gt; ⏎&lt;FONT size=3.5&gt;$PRP:"Материал"</code>, а в таблицу — <code>$PRP:"Материал"</code>.</dd>
+    <dt>Чем грозит</dt><dd>Критерий К-1 не выполним ни для одной новой детали.</dd>
+    <dt>Доказательства</dt><dd class="ev">09_Тесты/tools/normalize_templates.py:29–30; FrmMProp:703–729, 2907–2918</dd>
+    <dt>Закрывается</dt><dd>WP-4.4 (И-6)</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n25">
+  <div class="fhead"><span class="fid">Н-25</span><span class="ftitle">Ошибки библиотеки попадут в графу 3 без проверки</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>
+      <p>После Р-5 «Обозначение_ГОСТ» записывается в графу 3 дословно. Из 114 записей у 41 знаменатель дроби не равен «Марка_Материала ГОСТ_Материал»:</p>
+      <ul>
+        <li>21 плита (ЛДСП 11, МДФ 7, ДВП 2, ХДФ 1): в знаменателе только стандарт, без марки;</li>
+        <li>7 записей фанеры: «Береза ГОСТ 3916.1-96» вместо марки «ФК» или «ФСФ»;</li>
+        <li>8 кромок (ПВХ, ABS): в знаменателе марка без стандарта;</li>
+        <li>5 пластиков (HPL, полиэтилен, полипропилен, полиамид): в знаменателе только стандарт или только марка.</li>
+      </ul>
+      <p>Аудит насчитал 45 записей по более широкому признаку.</p>
+      <p><b>Исследование стандартов (ред. 3, <a href="#app-d">приложение Д</a>) показало больше.</b></p>
+      <ul>
+        <li>Дробь положена только сортовому прокату — это ГОСТ 2.109-73 п. 2.3 и ГОСТ Р 2.109-2023. Около 15 групп записаны дробью, хотя их стандарт — ТУ с однострочным обозначением: плиты, фанера, кромка, пластики, алюминий, водогазопроводная труба, рифлёный лист.</li>
+        <li>Грубые ошибки:
+          <ul>
+            <li>у кромок ГОСТ 34359-2017 — это стандарт на сейфы;</li>
+            <li>ГОСТ 10589-87 — не ПА 6;</li>
+            <li>«Сталь 3сп» вместо «Ст3сп»;</li>
+            <li>у холоднокатаного листа код «Б» вместо «БТ»;</li>
+            <li>лист Ст3сп тоньше 4 мм записан по ГОСТ 14637, который начинается с 4 мм.</li>
+          </ul>
+        </li>
+        <li>Восемь стандартов заменены новыми редакциями: 14637-89, 14918-80, 22233-2001, 32289-2013, 32274-2013, 4598-86, 3916.1-96, 10589-87.</li>
+        <li>Плотность 7820 у шести труб не обоснована: таблицы масс ГОСТ считаны при 7850. У кромки ABS 1380 вместо примерно 1050.</li>
+        <li>У трёх записей описание скопировано от листа; у алюминиевого профиля нет шифра профиля.</li>
+      </ul>
+    </dd>
+    <dt>Чем грозит</dt><dd>Неверная запись материала на чертежах и в спецификациях всех деталей из этих материалов.</dd>
+    <dt>Доказательства</dt><dd class="ev">Библиотека_Материалов_ГОСТ.sldmat (разбор); 09_Тесты/defects.json — Д-42 open; scratchpad/gost_library_research.md (источники со ссылками)</dd>
+    <dt>Закрывается</dt><dd><a href="#r10">Р-10</a>, WP-4.5, К-11 (И-8)</dd>
+  </dl>
+</div>
+
+<h4>Ошибки надстройки и проверки</h4>
+<div class="finding" id="n15">
+  <div class="fhead"><span class="fid">Н-15</span><span class="ftitle">Надстройка не заполняет «ЭМ-Детали» и «ЭМ-Сборочные единицы»</span><span class="chip sev-high">высоко</span><span class="chip st">код</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Документ пропускается целиком, если «Раздел» начинается с «ЭМ-».</dd>
+    <dt>Доказательства</dt><dd class="ev">Sw/SyncService.cs:119–121; SpecEditor_Sections.txt</dd>
+    <dt>Закрывается</dt><dd>WP-2.8, тест M18</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n22">
+  <div class="fhead"><span class="fid">Н-22</span><span class="ftitle">Надстройка поддерживает общие копии, которые MProp удаляет</span><span class="chip sev-med">средне</span><span class="chip st">код</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Надстройка обновляет общую «Масса_ФБ» у документов с одной конфигурацией и общую «Сборка1_ФБ». MProp общие копии удаляет: «Масса_ФБ», «Материал_ФБ», «Сборка1_ФБ», «Сборка2_ФБ», «Проект».</dd>
+    <dt>Чем грозит</dt><dd>Нарушение К-1: после MProp копии исчезают, надстройка при сохранении создавать их не должна.</dd>
+    <dt>Доказательства</dt><dd class="ev">Sw/SyncService.cs:228–233, 510–517; FrmMProp:2802–2804, 2834, 2904, 3056, 3060</dd>
+    <dt>Закрывается</dt><dd>WP-2.1, WP-2.3, <a href="#r-p7">П-7</a> (В-1)</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n23">
+  <div class="fhead"><span class="fid">Н-23</span><span class="ftitle">Замена материала не видна пользователю</span><span class="chip sev-med">средне</span><span class="chip st">код</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Замена чужого текста записью библиотеки пишется в журнал уровнем Info. В строку состояния попадают только предупреждения отчёта.</dd>
+    <dt>Доказательства</dt><dd class="ev">Sw/SyncService.cs:382–384; Sw/EventHub.cs:414–421</dd>
+    <dt>Закрывается</dt><dd>WP-2.6, К-7 (И-12)</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n24">
+  <div class="fhead"><span class="fid">Н-24</span><span class="ftitle">Golden master R01 не заметит регрессию</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Неиспользуемое правило разрешённых отличий не проваливает R01, а правила AD-17, AD-21, AD-22 не ограничивают прежнее значение. Шаги 3 и 4 изменят формат у всех сценариев R01.</dd>
+    <dt>Чем грозит</dt><dd>R01 «объяснит» и правку, и регрессию.</dd>
+    <dt>Доказательства</dt><dd class="ev">09_Тесты/defects.json — Д-43 open; 09_Тесты/baseline/allowed_diffs.json</dd>
+    <dt>Закрывается</dt><dd>WP-0.3 (И-2)</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n26">
+  <div class="fhead"><span class="fid">Н-26</span><span class="ftitle">Не все программы, пишущие свойства, были учтены</span><span class="chip sev-med">средне</span><span class="chip st">код</span><span class="chip st">не проверено</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>«Очистка v5» пишет те же свойства по своим правилам. Пишет ли свойства Drew (AutoDrawing), не проверено.</dd>
+    <dt>Доказательства</dt><dd class="ev">Core/LegacyMigration.cs; Sw/MigrationService.cs:44–68</dd>
+    <dt>Закрывается</dt><dd>WP-2.10, спайк S-7 (В-6)</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n19">
+  <div class="fhead"><span class="fid">Н-19</span><span class="ftitle">Совместимость с макросами не проверяется ни одним тестом</span><span class="chip sev-med">средне</span><span class="chip st">код</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>MProp, DProp и Master в тестах не вызываются; у SpecEditor автоматическая только проверка S07. Все находки прошли мимо 94 зелёных тестов.</dd>
+    <dt>Закрывается</dt><dd>WP-1.4, WP-5</dd>
+  </dl>
+</div>
+
+<h4>Основная надпись (ред. 3)</h4>
+<p class="note">Подробности, картинки и замеры — в <a href="https://claude.ai/code/artifact/432fa38d-db37-4caa-b0d7-c65b799a1229">отчёте аудита основной надписи</a>. Прогоны: <code>stamp_matrix_20260913_195225</code>, <code>format_audit_20260913_200535</code>, <code>layout_a_spike_20260913_202705</code>.</p>
+
+<div class="finding" id="n27">
+  <div class="fhead"><span class="fid">Н-27</span><span class="ftitle">Форматки 08.09 выставлены под надстройку — разметка MProp сползает</span><span class="chip sev-crit">критично</span><span class="chip st">код</span><span class="chip new">ред. 3</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Коммит 2349909 (08.09.2026) перерисовал форматки:
+      <ul>
+        <li>шрифт Arial Narrow → GOST type A;</li>
+        <li>обозначение 5 → 7 мм;</li>
+        <li>наименование 3,5 → 5 мм, надпись опущена с 45,08 до 36,0 мм над низом листа;</li>
+        <li>масса — интервал 2 → 1.</li>
+      </ul>
+      Геометрия подогнана под однострочный текст надстройки, а разметка MProp (пустая строка сверху, шрифт 5) рассчитана на прежнюю. После MProp на всех 9 форматках листа 1 наименование на 1,4–2,8 мм ниже центра графы, масса — на 0,6–1,8 мм ниже, в отдельных состояниях на нижней линии.</dd>
+    <dt>Чем грозит</dt><dd>Вид штампа зависит от того, кто писал последним. DProp запускает MProp сам (<a href="#n01">Н-01</a>).</dd>
+    <dt>Доказательства</dt><dd class="ev">format_audit (SWPlus 2018 и 11a6d98 против текущих); stamp_matrix S1 против S2…S6, перебор форматок; скриншоты владельца</dd>
+    <dt>Закрывается</dt><dd><a href="#r12">Р-12</a>, WP-4.6, <a href="#k12">К-12</a></dd>
+  </dl>
+</div>
+
+<div class="finding" id="n28">
+  <div class="fhead"><span class="fid">Н-28</span><span class="ftitle">Текст выходит за графу</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip new">ред. 3</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>MProp пишет наименование одной строкой шрифтом 5. В GOST type A «Кронштейн направляющий удлинённый» занимает 98 мм, «М6-6gх20.58 ГОСТ 7798-70» — 71 мм при ширине графы 70 мм. Имя материала одной строкой (формула «материал SW» вместо дроби) тоже вылезает. В строку шрифтом 5 мм помещается около 22 знаков.</dd>
+    <dt>Доказательства</dt><dd class="ev">stamp_matrix long_name S2 (98,3 мм), bolt S2 (71,4 мм); скриншоты владельца «Болт», «Кронштейн»</dd>
+    <dt>Закрывается</dt><dd><a href="#r2">Р-2</a>, WP-2.2, WP-3.1, WP-4.6; перенос материала — WP-2.6</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n29">
+  <div class="fhead"><span class="fid">Н-29</span><span class="ftitle">MProp и DProp не узнают вид для свойств листа в SolidWorks 2025</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip st">не воспроизведено</span><span class="chip new">ред. 3</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>MProp_run выбирает вид по свойству листа: узнаёт только «По умолчанию» и «Default», иначе ищет вид по имени, а если не находит — показывает модальное окно «Не удалось определить вид из свойств листа». В SpecEditor это место заплатано (<a href="#n17">Н-17</a>), в MProp и DProp — нет. На чертеже владельца окно появилось; на чертежах прогона (фикстуры и шаблон) свойство равно «По умолчанию» и окна нет.</dd>
+    <dt>Чем грозит</dt><dd>Окно при каждом запуске MProp из такого чертежа; модальное окно останавливает автоприменение из DProp.</dd>
+    <dt>Доказательства</dt><dd class="ev">MProp_run:178–193; FrmDProp (то же сообщение); stamp_matrix: custom_property_view = «По умолчанию»; скриншот владельца</dd>
+    <dt>Закрывается</dt><dd><a href="#r11">Р-11</a>, спайк S-8, WP-3.5</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n30">
+  <div class="fhead"><span class="fid">Н-30</span><span class="ftitle">Имя файла без обозначения MProp и надстройка разбирают по-разному</span><span class="chip sev-med">средне</span><span class="chip st">код</span><span class="chip new">ред. 3</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>«Болт М6-6gх20.58 ГОСТ 7798-70.sldprt» как обычная деталь. MProp делит имя по первому пробелу: обозначение «Болт», наименование «М6-6gх20.58 ГОСТ 7798-70». Надстройка обозначения не видит (в первом слове нет цифр) и пишет имя целиком в наименование.</dd>
+    <dt>Доказательства</dt><dd class="ev">stamp_matrix bolt_as_part S1/S2; FrmMProp:1550–1557; Core/NameParsing.cs:69–74</dd>
+    <dt>Закрывается</dt><dd><a href="#r11">Р-11</a>, WP-3.6</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n31">
+  <div class="fhead"><span class="fid">Н-31</span><span class="ftitle">Детали и сборки заполняют графу 1 по-разному</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip new">ред. 3</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Графа 1 собрана из двух надписей с жёсткими позициями: наименование (MYPRP4) и «Сборочный чертеж» (MYPRP3). У детали вторая строка пустая, у сборки есть. После MProp наименование сборки наезжает на «Сборочный чертеж» на 4,1–4,6 мм, двустрочное — на 9,7 мм. Кроме того, после MProp у сборки с «СБ» в имени появляется «RenameSWP» = 1 и пустой «Материал_ФБ».</dd>
+    <dt>Доказательства</dt><dd class="ev">stamp_matrix assembly S1/S2; layout_a_spike G0; скриншот владельца «Узел»</dd>
+    <dt>Закрывается</dt><dd><a href="#r12">Р-12</a> (вариант А), WP-4.6; RenameSWP — WP-3.3</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n32">
+  <div class="fhead"><span class="fid">Н-32</span><span class="ftitle">Масса лёгких деталей теряется; положение массы после MProp нестабильно</span><span class="chip sev-high">высоко</span><span class="chip st">код</span><span class="chip new">ред. 3</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Надстройка пишет килограммы с двумя знаками: деталь 9,4 г получает «0,01». MProp пишет «9.4 г». С одним и тем же текстом нижний отступ массы после MProp меняется между состояниями: 1,4 ↔ −0,2 мм, высота габарита 8,6 ↔ 10,2 мм.</dd>
+    <dt>Доказательства</dt><dd class="ev">stamp_matrix light_part S1/S2, bolt S1; plate S2/S3/S5</dd>
+    <dt>Закрывается</dt><dd><a href="#r1">Р-1</a>, <a href="#r7">Р-7</a>, WP-2.1, WP-4.6</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n33">
+  <div class="fhead"><span class="fid">Н-33</span><span class="ftitle">Старые чертежи хранят форматку своей версии</span><span class="chip sev-med">средне</span><span class="chip st">код</span><span class="chip new">ред. 3</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Встроенная форматка чертежа — копия той версии, с которой он создан или перезагружен. Чертежи до 08.09, скорее всего, на Arial Narrow со старой геометрией. Замена файлов <code>.slddrt</code> их не меняет, нужна перезагрузка форматки, как в DProp.</dd>
+    <dt>Доказательства</dt><dd class="ev">format_audit: шаблон и фикстуры совпадают с текущими, оригиналы — Arial Narrow; архив не проверялся</dd>
+    <dt>Закрывается</dt><dd>WP-4.7</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n34">
+  <div class="fhead"><span class="fid">Н-34</span><span class="ftitle">Шаблоны Master отличаются от форматок в надписи массы</span><span class="chip sev-med">средне</span><span class="chip st">код</span><span class="chip new">ред. 3</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>Интервал 2 и позиция 35,0 против 1 и 34,7 в текущих форматках. Пересоздание форматок через Master откатит надпись массы. Это подтверждает <a href="#n13">Н-13</a> через API.</dd>
+    <dt>Доказательства</dt><dd class="ev">format_audit: Master_Template_Sheet1</dd>
+    <dt>Закрывается</dt><dd>WP-4.1 (вместе с WP-4.6)</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n35">
+  <div class="fhead"><span class="fid">Н-35</span><span class="ftitle">Проект ссылается на заменённые стандарты ЕСКД</span><span class="chip sev-med">средне</span><span class="chip st">не проверено полностью</span><span class="chip new">ред. 3</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>С 01.03.2024 в РФ вместо ГОСТ 2.104-2006 и ГОСТ 2.109-73 действуют ГОСТ Р 2.104-2023 и ГОСТ Р 2.109-2023; спецификация — по ГОСТ Р 2.106-2019. Руководство, комментарии кода, тесты и сообщения коммитов ссылаются на прежние («черт. 40 ГОСТ 2.109-73», «ГОСТ 2.104»). Полный текст ГОСТ Р 2.109-2023 исследованием не прочитан: правило дроби для сортамента подтверждено только по фрагменту.</dd>
+    <dt>Доказательства</dt><dd class="ev">protect.gost.ru (карточки ГОСТ Р 2.104-2023, ГОСТ Р 2.109-2023); поиск по репозиторию — WP-7.4</dd>
+    <dt>Закрывается</dt><dd><a href="#r13">Р-13</a>, WP-7.4</dd>
+  </dl>
+</div>
+
+<h4>Ошибки в самих макросах</h4>
+<div class="finding" id="n16">
+  <div class="fhead"><span class="fid">Н-16</span><span class="ftitle">Д-16 не исправлен: латинская «A4»</span><span class="chip sev-med">средне</span><span class="chip st">код</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>SpecEditor ставит у сборочных единиц «A4» латиницей; у Master латинская «A» в списке форматов и в заметке «Формат A4».</dd>
+    <dt>Доказательства</dt><dd class="ev">FrmSpecEditor:1971–1972; FrmMaster:104–108, 250</dd>
+    <dt>Закрывается</dt><dd>WP-4.3 (разрешено, <a href="#r8">Р-8</a>)</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n17">
+  <div class="fhead"><span class="fid">Н-17</span><span class="ftitle">SpecEditor: исходник и скомпилированный код расходятся</span><span class="chip sev-med">средне</span><span class="chip st">код</span><span class="chip new">ред. 2</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>После коммита 2652461 в исходнике <code>CustomPropertyView &lt;&gt; "ОТСУТСТВУЕТ"</code>, а в скомпилированном коде <code>&lt;&gt; "По умолчанию"</code>. В P-code литерала «ОТСУТСТВУЕТ» нет вовсе, «По умолчанию» встречается 8 раз. Значит, скорее всего, выполняется скомпилированный код.</dd>
+    <dt>Чем грозит</dt><dd>Возможная ошибка 91 в режиме «спецификация на листе СБ»; любая правка в редакторе перекомпилирует проект и незаметно поменяет поведение.</dd>
+    <dt>Доказательства</dt><dd class="ev">SpecEditor_run:267; FrmSpecEditor:1006, 1697; дизассемблирование P-code</dd>
+    <dt>Закрывается</dt><dd>Спайк S-5, WP-4.3</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n18">
+  <div class="fhead"><span class="fid">Н-18</span><span class="ftitle">DProp меняет чертёж уже при открытии формы</span><span class="chip sev-low">низко</span><span class="chip st">код</span></div>
+  <dl class="fgrid">
+    <dt>Что происходит</dt><dd>При открытии формы DProp переименовывает листы в DRW1…n, выставляет масштаб, вставляет ЛРИ, пишет «Лист» и «Листов».</dd>
+    <dt>Доказательства</dt><dd class="ev">FrmDProp:401–402, 733–817</dd>
+    <dt>Закрывается</dt><dd>Вне рамок; в харнессе — как известное поведение (<a href="#s10">раздел 10</a>)</dd>
+  </dl>
+</div>
+
+<div class="finding" id="n20">
+  <div class="fhead"><span class="fid">Н-20</span><span class="ftitle">SProp: конфликтов с надстройкой нет</span><span class="chip sev-info">без конфликта</span><span class="chip st">код</span></div>
+  <dl class="fgrid">
+    <dt>Вывод</dt><dd>SProp при OK сносит все свойства и пишет свои, так задумано для покупных. Надстройка такие документы пропускает целиком. Менять ничего не нужно.</dd>
+    <dt>Доказательства</dt><dd class="ev">FrmSProp:211–236, 565–566; Sw/SyncService.cs:114–131</dd>
+  </dl>
+</div>
+
+<h3 id="s4-3">4.3 Что уже совместимо</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>№</th><th>Что</th><th>Почему в порядке</th><th>Доказательства</th></tr></thead>
+<tbody>
+<tr><td class="mono">С-1</td><td>Материал из библиотеки: дробь и одна строка</td><td>Надстройка пишет байт в байт то же, что MProp в режимах «Сортамент» и «Материал пользователя».</td><td class="ev">FrmMProp:2913, 2918, 2932, 2937, 3517–3524; Core/MaterialRecord.cs:20–23, 36–56</td></tr>
+<tr><td class="mono">С-2</td><td>«Масса_Таблица»</td><td>SolidWorks сам подставляет в формулу настоящее имя файла, поэтому «.SLDPRT» от MProp и имя от надстройки дают одно значение. <span class="chip new">ред. 2</span></td><td class="ev">tests/test_contract.py:156–164 (C06); FrmMProp:2862</td></tr>
+<tr><td class="mono">С-3</td><td>«Проверил», «Контора»</td><td>Одинаковый уровень; надстройка пишет только в пустые поля.</td><td class="ev">FrmMProp:1482–1485, 3083–3085; Sw/SyncService.cs:325–337</td></tr>
+<tr><td class="mono">С-4</td><td>Строки спецификации</td><td>SpecEditor не читает «Наименование_ФБ», «Масса_ФБ», «Материал_*», «Материал_Строка».</td><td class="ev">FrmSpecEditor:1803–1822</td></tr>
+<tr><td class="mono">С-5</td><td>Покупные изделия</td><td>Разделы и группы от SProp дают верные разделы спецификации.</td><td class="ev">FrmSpecEditor:1974–1985</td></tr>
+<tr><td class="mono">С-6</td><td>Открытие MProp</td><td>Форма при открытии не пишет, кроме ответов «Да» на вопросы.</td><td class="ev">FrmMProp:1274–2401</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section id="s5">
+<h2>5. Решения</h2>
+<p class="prose">Р-1…Р-6 владелец принял 13.09.2026 до аудита, Р-7…Р-10 — после аудита, Р-11…Р-13 — после аудита основной надписи. Р-4 владелец поручил принять исполнителю; аудит признал выбор верным. П-1…П-7 — принципы плана.</p>
+
+<div class="decision" id="r1">
+  <div class="fhead"><span class="fid">Р-1</span><span class="ftitle">Масса в графе 5 — как MProp</span><span class="chip new">уточнено по И-3</span></div>
+  <p class="q">«Точка без правки, но чтобы у мелких была масса в граммах.»</p>
+  <ul>
+    <li>«Масса_ФБ»: <code>&lt;FONT size=1&gt; </code>, перевод строки LF, <code>&lt;FONT size=3.5&gt;"SW-Mass@@конф@файл.SLDPRT"</code>. При граммах после закрывающей кавычки дописывается « г». При prpFontSize = 0 разметки нет.</li>
+    <li>Единицы документа — по правилу MProp и массе активной конфигурации: больше 0,1 кг — м, кг, м³ и 2 знака; иначе — см, г, см³ и 1 знак; система единиц — пользовательская. При «Единицы» = «False» или «0» единицы не трогаются (<a href="#r7">Р-7</a>).</li>
+    <li>MProp не правится. Точка в графе 5 — решение владельца, в руководстве это описывается как отступление от привычной записи с запятой.</li>
+    <li>Удаляется из кода: разбор вычисленного значения (<code>TryParseResolvedMass</code>, <code>ConfigurationMass</code>), ограничение знаков точностью документа, текст с запятой, обновление общей копии. Решение Д-36 пересмотрено.</li>
+  </ul>
+</div>
+
+<div class="decision" id="r2">
+  <div class="fhead"><span class="fid">Р-2</span><span class="ftitle">Длинное наименование — с переносом, одинаково в надстройке и MProp</span><span class="chip new">уточнено по И-4</span></div>
+  <p class="q">«Перенос, чтобы было как в ЕСКД.»</p>
+  <ul>
+    <li>Правило записи содержит все три формы MProp: одна строка — LF и <code>size=5</code>; две строки — CR LF и <code>size=5</code>; три строки — <code>size=3.5</code>; вариант ChkFont — <code>size=3.5</code>. Запись байт в байт: у двух строк CR LF, у одной LF.</li>
+    <li>Граница переноса и размер шрифта — по спайку S-4 на реальной форматке.</li>
+    <li>MProp правится в месте 2648–2653: если наименование длиннее границы, применяется то же правило переноса и двухстрочная форма 2643/2645 (WP-3.1).</li>
+  </ul>
+</div>
+
+<div class="decision" id="r3">
+  <div class="fhead"><span class="fid">Р-3</span><span class="ftitle">«СБ» — как у MProp</span></div>
+  <p class="q">«Как у MProp.»</p>
+  <ul>
+    <li>«Сборка1_ФБ» = «СБ» без пробела. Код ставят шаблон сборки, MProp и SpecEditor. Надстройка код не пишет и не удаляет; прежнее « СБ» приводится к «СБ».</li>
+    <li>«Сборка2_ФБ» = <code>&lt;FONT size=1&gt; ⏎&lt;FONT size=2.5&gt;Сборочный чертеж</code>, как у MProp и SpecEditor.</li>
+    <li>В штампе и спецификации «ПРТИ.468211.100СБ» слитно. Это соответствует ГОСТ 2.201-80 (ответ аудита В-3).</li>
+  </ul>
+</div>
+
+<div class="decision" id="r4">
+  <div class="fhead"><span class="fid">Р-4</span><span class="ftitle">Безчертёжная деталь — запись в «Наименовании», MProp её не трогает</span><span class="chip new">условия по В-4</span></div>
+  <p class="q">«Нужно принять решение, чтобы всё попадало качественно в спецификацию, как положено по ГОСТ, с дробью, массой, длиной и т. д.»</p>
+  <ul>
+    <li>«Наименование»: строка 1 — наименование, строка 2 — дробь из библиотеки, строка 3 — размер заготовки («L = 300 мм», «250х400 мм»). «Формат» = «БЧ». «Примечание» — масса как у MProp: формула и « кг» или « г». «Наименование_ФБ» — краткое.</li>
+    <li>Признак своей записи — «Формат» = «БЧ» вместе с «Формат_до_БЧ». Надстройка обновляет запись при сохранении, если сменились материал или размеры. При снятии БЧ запись убирается, как сейчас.</li>
+    <li>Правка MProp (WP-3.2): три места записи (2628–2633, 2672–2673, 2702–2703) и сравнение имени файла с первой строкой наименования (1552–1553). Отдельно проверить путь многострочного ввода (2629–2630).</li>
+    <li>Сначала спайк S-2. Если таблица BOM дробь не рисует, вид строки утверждает владелец.</li>
+    <li>Отклонены два варианта. Первый — без правки MProp: у детали снова появится ручное обозначение и вопрос при каждом открытии, у нескольких конфигураций запись удаляется. Второй — сборка строки в SpecEditor: большая правка, ячейки теряют связь со свойствами.</li>
+  </ul>
+</div>
+
+<div class="decision" id="r5">
+  <div class="fhead"><span class="fid">Р-5</span><span class="ftitle">Библиотека — источник истины</span></div>
+  <p class="q">«Библиотека — источник истины!»</p>
+  <ul>
+    <li>Графа 3 и дробь БЧ всегда берутся из материала SolidWorks по корпоративной библиотеке (Д-46). Другой текст из MProp заменяется при сохранении с предупреждением в строке состояния. За пользователем остаются «-» и «См. таблицу».</li>
+    <li>Поскольку данные библиотеки идут в документы без проверки, сама библиотека приводится к ГОСТ (<a href="#r10">Р-10</a>).</li>
+  </ul>
+</div>
+
+<div class="decision" id="r6">
+  <div class="fhead"><span class="fid">Р-6</span><span class="ftitle">«Материал SW» в пустой графе 3 заменяется дробью</span></div>
+  <p class="q">«Да.»</p>
+  <ul><li>Формула SW-Material перестаёт быть зарезервированной, если материал конфигурации из библиотеки. MProp затем читает дробь как «Сортамент» и оставляет её.</li></ul>
+</div>
+
+<div class="decision" id="r7">
+  <div class="fhead"><span class="fid">Р-7</span><span class="ftitle">Единицы массы при сохранении надстройка переключает как MProp</span><span class="chip new">после аудита</span></div>
+  <p class="q">«Да, как MProp.»</p>
+  <ul>
+    <li>Полностью по правилу MProp (Р-1). При переключении — предупреждение в строке состояния, например «единицы массы переключены на граммы по конфигурации 01».</li>
+    <li>У исполнений по разные стороны от 100 г единицы следуют активной конфигурации, как у MProp. Это закрепляется тестом на такой детали.</li>
+  </ul>
+</div>
+
+<div class="decision" id="r8">
+  <div class="fhead"><span class="fid">Р-8</span><span class="ftitle">Правки VBA разрешены</span><span class="chip new">после аудита</span></div>
+  <p class="q">«MProp: перенос наименования; MProp: запись БЧ; SpecEditor и Master: Д-16.»</p>
+  <ul>
+    <li>WP-3.1 — перенос наименования; WP-3.2 — защита записи БЧ; WP-3.3 — разбор кода в имени файла (Р-9); WP-4.3 — Д-16 и перекомпиляция SpecEditor.</li>
+    <li>Порядок внесения и проверки — <a href="#vba-proc">раздел 7</a>.</li>
+  </ul>
+</div>
+
+<div class="decision" id="r9">
+  <div class="fhead"><span class="fid">Р-9</span><span class="ftitle">Архив с «СБ» в имени файла не переименовывается — MProp понимает код</span><span class="chip new">после аудита</span></div>
+  <p class="q">«Правка MProp.»</p>
+  <ul>
+    <li>Третья правка MProp в 1550–1557: код документа между обозначением и наименованием («ПРТИ.468211.100 СБ Кондуктор») распознаётся так же, как в надстройке (<code>DesignationParser</code>). Обозначение — «ПРТИ.468211.100», наименование — «Кондуктор», ручной режим не включается.</li>
+    <li>Надстройка код в обозначение детали не дописывает. Предупреждения о переименовании нет.</li>
+    <li>Тестовые сборки с «СБ» в имени остаются как есть.</li>
+  </ul>
+</div>
+
+<div class="decision" id="r10">
+  <div class="fhead"><span class="fid">Р-10</span><span class="ftitle">Библиотека материалов — «как правильно по ГОСТ»</span><span class="chip new">после аудита</span></div>
+  <p class="q">«Как правильно по ГОСТ!»</p>
+  <ul>
+    <li>Форма записи каждой группы материалов (дробь или одна строка, что в числителе и знаменателе) определяется по примеру условного обозначения в действующем стандарте на продукцию и по ГОСТ Р 2.109-2023 (<a href="#r13">Р-13</a>), со ссылками на источники.</li>
+    <li>Исследование выполнено (ред. 3): итоги по 35 группам, статус стандартов, плотности и 12 вопросов владельцу — в <a href="#app-d">приложении Д</a>.</li>
+    <li>Правка библиотеки — WP-4.5, после ответов на 12 вопросов: скрипт с резервной копией; имена материалов и matid не меняются; тест T0 проверяет форму записи и плотность (К-11). Перечень правок перед применением показывается владельцу.</li>
+  </ul>
+</div>
+
+<div class="decision" id="r11">
+  <div class="fhead"><span class="fid">Р-11</span><span class="ftitle">Ещё две правки MProp разрешены</span><span class="chip new">ред. 3</span></div>
+  <p class="q">«Разрешаю!»</p>
+  <ul>
+    <li>WP-3.5: выбор вида для свойств листа (<a href="#n29">Н-29</a>). MProp_run и DProp берут вид так же, как SpecEditor после заплатки. Какое значение возвращает SolidWorks 2025 на проблемном чертеже, выясняет спайк S-8.</li>
+    <li>WP-3.6: разбор имени файла без обозначения (<a href="#n30">Н-30</a>) — так же, как в надстройке. Первое слово без цифр — не обозначение, всё имя идёт в наименование. Правится в том же месте, что WP-3.3.</li>
+  </ul>
+</div>
+
+<div class="decision" id="r12">
+  <div class="fhead"><span class="fid">Р-12</span><span class="ftitle">Графа 1 — вариант А: наименование сверху, наименование документа снизу</span><span class="chip new">ред. 3</span></div>
+  <p class="q">«А. Но проверь, как будет с двустрочным наименованием.»</p>
+  <ul>
+    <li>Наименование изделия всегда в верхней зоне графы 1, наименование документа («Сборочный чертеж») в нижней. У детали нижняя зона пустая, наименование на том же месте, что у сборки.</li>
+    <li>Проверено спайком на A3. При якорях надписей G2 (наименование 44,5 мм над низом листа, «Сборочный чертеж» 25,5, масса 38,0) наименование в одну, две и три строки помещается над «Сборочный чертеж» у детали и сборки. Текущая геометрия налезает во всех случаях.</li>
+    <li>Окончательные координаты для всех 9 форматок листа 1 подбираются автотестом штампа (WP-4.6); G2 — отправная точка.</li>
+    <li>Строка наименования шрифтом 5 мм — не длиннее примерно 22 знаков, поэтому перенос обязателен (<a href="#r2">Р-2</a>).</li>
+  </ul>
+</div>
+
+<div class="decision" id="r13">
+  <div class="fhead"><span class="fid">Р-13</span><span class="ftitle">Стандарты — российские</span><span class="chip new">ред. 3</span></div>
+  <p class="q">«Россия.»</p>
+  <ul>
+    <li>Основная надпись — ГОСТ Р 2.104-2023, материалы на чертежах — ГОСТ Р 2.109-2023, спецификация и детали без чертежа — ГОСТ Р 2.106-2019; шрифт — ГОСТ 2.304 (GOST type A).</li>
+    <li>Библиотека материалов — по действующим в РФ редакциям стандартов на продукцию (<a href="#app-d">приложение Д</a>).</li>
+    <li>Ссылки на ГОСТ 2.104-2006 и ГОСТ 2.109-73 в руководстве, коде и тестах заменяются (<a href="#n35">Н-35</a>, WP-7.4).</li>
+    <li>Организация зарегистрирована как ТОО, но применяются российские стандарты: это решение владельца.</li>
+  </ul>
+</div>
+
+<h3>Принципы</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>№</th><th>Принцип</th><th>Зачем</th></tr></thead>
+<tbody>
+<tr><td class="mono">П-1</td><td>Образец записи — MProp; для строк спецификации — SpecEditor.</td><td>На них построены штампы, спецификации и архив.</td></tr>
+<tr><td class="mono">П-2</td><td>Надстройка подстраивается под образец; VBA правится только в местах, разрешённых Р-8.</td><td>Правки VBA ручные и без тестов форм.</td></tr>
+<tr><td class="mono">П-3</td><td>«Без лишних перезаписей» проверяется критериями К-1 и К-2.</td><td>Иначе требование не проверяемо.</td></tr>
+<tr><td class="mono">П-4</td><td>Все строки формата — в одном модуле, каждая сверена тестом со строкой VBA.</td><td>Чтобы расхождение не появилось снова.</td></tr>
+<tr><td class="mono">П-5</td><td>Библиотека — единственный источник графы 3, и её данные проверяются по ГОСТ.</td><td>Р-5, Р-10.</td></tr>
+<tr id="r-p6"><td class="mono">П-6</td><td>Сначала красный тест совместимости, потом правка.</td><td>Правки не идут вслепую (И-1).</td></tr>
+<tr id="r-p7"><td class="mono">П-7</td><td>Не эмулировать служебные записи MProp: не создавать его служебные свойства заранее и не поддерживать общие копии, которые MProp удаляет.</td><td>Эмуляция разойдётся со следующей версией макроса (В-1).</td></tr>
+<tr><td class="mono">П-8</td><td>Геометрия штампа подбирается и принимается автотестом штампа, а не на глаз: все форматки листа 1, деталь и сборка, после надстройки и после MProp.</td><td>Форматки уже однажды «выровняли» под одну программу и сломали другую (<a href="#n27">Н-27</a>).</td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section id="s6">
+<h2>6. Правила записи: было → станет</h2>
+<p class="prose">Эта таблица становится документом «Правила записи свойств SWPlus» (WP-1.1). ⏎ — перевод строки LF, если не сказано иначе.</p>
+<div class="tbl">
+<table>
+<thead><tr><th>Свойство, уровень</th><th>Сейчас пишет надстройка (v6.1)</th><th>Станет</th><th>Основание</th></tr></thead>
+<tbody>
+<tr><td>«Масса_ФБ», конфигурация</td><td><code>&lt;FONT size=3.5&gt;0,63</code></td><td><code>&lt;FONT size=1&gt; ⏎&lt;FONT size=3.5&gt;"SW-Mass@@00@ПРТИ.468211.101 Пластина опорная.SLDPRT"</code>; при граммах « г» после кавычки; при prpFontSize = 0 без FONT; «-» и «См. таблицу» не трогаются</td><td>Р-1, Н-02</td></tr>
+<tr><td>Единицы массы документа</td><td>Не трогает</td><td>Пользовательская система единиц; больше 0,1 кг — м, кг, м³, 2 знака; иначе — см, г, см³, 1 знак; по массе активной конфигурации; при «Единицы» = «False»/«0» не трогаются; при переключении — предупреждение</td><td>Р-1, Р-7</td></tr>
+<tr><td>«Масса_Таблица», конфигурация</td><td><code>"SW-Mass@@конф@файл"</code></td><td>Без изменений: имя файла SolidWorks подставляет сам</td><td>С-2</td></tr>
+<tr><td>«Наименование_ФБ», общее</td><td>Без разметки; длиннее 24 знаков — две строки</td><td>Одна строка: <code>&lt;FONT size=4&gt; </code>+LF+<code>&lt;FONT size=5&gt;</code>; две: <code>&lt;FONT size=2&gt; </code>+CR LF+<code>&lt;FONT size=5&gt;</code>; три: <code>&lt;FONT size=3.5&gt;</code>; граница переноса — по S-4; MProp после WP-3.1 пишет так же</td><td>Р-2, Н-03</td></tr>
+<tr><td>«Наименование», общее</td><td>Из имени файла</td><td>Без изменений; у БЧ — запись БЧ</td><td>Р-4</td></tr>
+<tr><td>Разбор имени файла</td><td>Код документа из имени — в обозначение детали и в «Сборка1_ФБ» сборки</td><td>Код распознаётся и отбрасывается из обозначения и наименования; никуда не пишется. MProp после WP-3.3 разбирает так же</td><td>Р-9, Н-11</td></tr>
+<tr><td>«Сборка1_ФБ», конфигурация</td><td>« СБ» из имени файла; без кода в имени — удаляет «СБ»</td><td>Не пишет и не удаляет; прежнее « СБ» → «СБ» (правило из LegacyMigration); флаг <code>LegacyAssemblyCodeSpace</code> снят</td><td>Р-3, Н-09</td></tr>
+<tr><td>«Сборка2_ФБ», конфигурация</td><td>«Сборочный чертёж»; FONT удаляет; пустое возвращает</td><td>Только если свойства <b>нет</b> и «Сборка1_ФБ» = «СБ»: <code>&lt;FONT size=1&gt; ⏎&lt;FONT size=2.5&gt;Сборочный чертеж</code>; пустое не трогается; прежнее «Сборочный чертёж» → формат MProp</td><td>Р-3, Н-09, И-5</td></tr>
+<tr><td>«RenameSWP», общее</td><td>Не пишет</td><td>«0» только когда обозначение выведено из имени файла; при ручном обозначении не пишет ничего</td><td>Н-05, И-7</td></tr>
+<tr><td>Обозначения конфигураций, «Исполнение»</td><td>По имени конфигурации; «Исполнение» — только в пустое; при исполнении в имени файла «2»</td><td>Суффикс из имени конфигурации — «корень-XX» и «Исполнение» = 2 (MProp берёт суффикс из обозначения); «Исполнение» = 0 от MProp — без суффикса; исполнение в имени файла — «Исполнение» = 0, иначе MProp удвоит суффикс</td><td>Н-06, И-7</td></tr>
+<tr><td>«Конструктор» + «Сводка → Автор»</td><td>Только «Конструктор»</td><td>Оба одинаково, только в пустые (или по настройке «перезаписывать подписи»)</td><td>Н-04</td></tr>
+<tr><td>«Материал_ФБ», «Материал_Таблица»</td><td>Дробь или строка библиотеки; формулу SW-Material не трогает; замена — в журнал</td><td>Формат тот же; SW-Material заменяется при материале из библиотеки; замена чужого текста — предупреждение в строке состояния</td><td>Р-5, Р-6, Н-07, Н-23</td></tr>
+<tr><td>Запись БЧ</td><td>По кнопке; «Примечание» = «2,86 кг»</td><td>По Р-4; «Примечание» = <code>"SW-Mass@@конф@файл.SLDPRT" кг</code> или « г»; обновляется при сохранении</td><td>Р-4, Н-08</td></tr>
+<tr><td>Общие копии «Масса_ФБ», «Материал_ФБ», «Сборка1_ФБ», «Сборка2_ФБ»</td><td>Обновляет общую «Масса_ФБ» при одной конфигурации и общую «Сборка1_ФБ»</td><td>Не создаёт и не поддерживает</td><td>П-7, Н-22</td></tr>
+<tr><td>Шаблон детали: «Материал_ФБ» у «00»</td><td><code>$PRP:"Материал"</code></td><td>Свойство удалено из шаблона; пустая графа 3 у детали без материала — штатное состояние</td><td>Н-21, И-6</td></tr>
+<tr><td>Раздел «ЭМ-Детали», «ЭМ-Сборочные единицы»</td><td>Документ пропускается</td><td>Заполняется как обычный</td><td>Н-15</td></tr>
+<tr><td>«Материал_Строка», «Формат_до_БЧ», «Примечание_до_БЧ», «Проверил», «Контора»</td><td>Как сейчас</td><td>Без изменений</td><td>С-3</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="s6-stamp">Эталон основной надписи (ред. 3)</h3>
+<p class="prose">Эталон задаёт, как текст каждой графы стоит в штампе. Он одинаков у деталей и сборок и не зависит от того, писала надстройка или MProp. Координаты — стартовые, для A3 (спайк G2). Окончательные значения для всех форматок подбираются автотестом штампа (WP-4.6) и записываются в документ правил.</p>
+<div class="tbl">
+<table>
+<thead><tr><th>Графа, надпись</th><th>Шрифт и строки</th><th>Где стоит</th><th>Старт на A3 (якорь, мм над низом листа)</th><th>Правило записи</th></tr></thead>
+<tbody>
+<tr><td>2 — обозначение (MYPRP0)</td><td>GOST type A 7 мм, одна строка</td><td>по центру графы 2</td><td class="mono">56,8 (как сейчас)</td><td>«Обозначение» + «Сборка1_ФБ» слитно («…100СБ»)</td></tr>
+<tr><td>1 — наименование (MYPRP4)</td><td>GOST type A 5 мм, 1–2 строки; 3 строки — 3,5 мм</td><td>верхняя зона графы 1, у детали и сборки одинаково</td><td class="mono">44,5 (было 36,0)</td><td>разметка MProp по числу строк; перенос при длине строки более ≈22 знаков (5 мм) или ≈31 (3,5 мм)</td></tr>
+<tr><td>1 — наименование документа (MYPRP3)</td><td>GOST type A 2,5 мм, одна строка</td><td>нижняя зона графы 1</td><td class="mono">25,5 (было 27,52)</td><td><code>&lt;FONT size=1&gt; ⏎&lt;FONT size=2.5&gt;Сборочный чертеж</code>; у детали пусто</td></tr>
+<tr><td>5 — масса (MYPRP15)</td><td>GOST type A 3,5 мм, одна строка</td><td>по центру графы 5</td><td class="mono">38,0 (было 34,7); интервал — по автотесту (<a href="#n32">Н-32</a>)</td><td>формула SW-Mass MProp; до 0,1 кг — «г»</td></tr>
+<tr><td>3 — материал (MYPRP16)</td><td>GOST type A 3,5 мм: дробь или 1–2 строки</td><td>по центру графы 3</td><td class="mono">19,2 (проверить автотестом)</td><td>дробь или строка из библиотеки; строка длиннее ≈35 знаков — две строки в многострочной форме MProp <code>&lt;FONT size=5.0&gt; &lt;FONT size=3.5&gt;</code> + текст с ⏎</td></tr>
+<tr><td>9, подписи, масштаб, листы</td><td>как сейчас</td><td>как сейчас</td><td class="mono">без изменений</td><td>без изменений; проверяются автотестом на выход за графу</td></tr>
+</tbody>
+</table>
+</div>
+<p class="note">Эталон применяется к 9 форматкам листа 1 и 9 листа 2 (графа 2 формы 2а), встроенной форматке шаблона «Чертеж.drwdot», формам SpecEditor (SP, GSP, VP, LRI — их основные надписи по форме 2) и шаблонам Master. Существующие чертежи получают эталон только перезагрузкой форматки (WP-4.7).</p>
+
+<p class="note">В документ правил входят ещё два фиксированных перечня. Первый — имена служебных свойств, которые MProp вправе добавить при первом применении (в том числе «Единицы», «Плотность_ФБ», «Number», «Description», «Сборка», «Классификатор», «Удален», «Формат_ФБ», «Проект_ФБ», «Заимствование», «Код_ФБ», «Литера_*»). Второй — известный дрейф MProp: пустая литера и пустая «Сборка2_ФБ» получают пробел, пустая «Контора» — «123». Перечни собираются по выгрузке FrmMProp:2533–3108.</p>
+</section>
+
+<section id="s7">
+<h2>7. План работ по шагам</h2>
+<div class="callout">
+<p><b>Общий DoD пакета (И-14).</b></p>
+<ul>
+  <li>Smoke зелёный; целевые тесты без пометок известных дефектов.</li>
+  <li>R01 без необъяснённых отличий; новые разрешённые отличия — со статусом «на утверждение».</li>
+  <li>Для шагов 3 и 4 — три полных прогона подряд.</li>
+  <li>Руководство обновлено в том же коммите.</li>
+  <li>Для правок VBA — новый SHA-256 в приложении А и совпадение скомпилированного кода с исходником.</li>
+  <li>Каждый пакет — отдельный коммит на ветке, без push. Перед прогоном с SolidWorks проверяется, что он не запущен пользователем; живой реестр станции не меняется.</li>
+</ul>
+</div>
+<div class="tbl">
+<table>
+<thead><tr><th>Шаг</th><th>Пакеты</th><th>Условие начала</th><th>Готово, когда</th><th class="num">Дни</th></tr></thead>
+<tbody>
+<tr><td class="mono"><a href="#step0">0</a></td><td>WP-0.1 коммит фикстур; WP-0.2 выгрузки VBA в git; WP-0.3 golden master строже; спайки S-1…S-8 (S-1 уже подтверждён живым прогоном)</td><td>—</td><td>T0 «выгрузка = .swp»; R01 падает на неиспользуемом правиле; итоги спайков в журнале решений</td><td class="num">2,5</td></tr>
+<tr><td class="mono"><a href="#step1">1</a></td><td>WP-2.8 «ЭМ-»; WP-4.2 личные данные</td><td>S-6</td><td>M18 и T0 «нет личных данных» зелёные</td><td class="num">1</td></tr>
+<tr><td class="mono"><a href="#step2">2</a></td><td>WP-1.1…1.4 правила записи, модуль формата, тесты против VBA, красные К-1 и К-2</td><td>S-1, S-3, S-4</td><td>Каждая строка формата сверена со строкой VBA; К-1 красный ровно по Н-02…Н-09, Н-21, Н-22</td><td class="num">2,5</td></tr>
+<tr><td class="mono"><a href="#step3">3</a></td><td>WP-2.1…2.7, 2.9, 2.10; WP-4.4 шаблон детали</td><td>Шаг 2; Р-6, Р-7 приняты</td><td>К-1, К-2, К-3, К-4, К-7 зелёные; три полных прогона; R01 объяснён правилами AD-26…</td><td class="num">4,5</td></tr>
+<tr><td class="mono"><a href="#step3a">3а</a></td><td>WP-4.6 эталон основной надписи: форматки, шаблон чертежа, формы SpecEditor, шаблоны Master; автотест штампа</td><td>Шаг 2 (правила записи); Р-12 принято; можно параллельно с шагом 3</td><td>К-12 зелёный на всех форматках листа 1 и 2 для детали и сборки, после надстройки и после MProp</td><td class="num">3</td></tr>
+<tr><td class="mono"><a href="#step4">4</a></td><td>WP-3.1…3.6 правки MProp (перенос, БЧ, код «СБ», проверка, выбор вида, имя без обозначения); WP-4.3 Д-16 и перекомпиляция SpecEditor; WP-6 корпус</td><td>Р-8, Р-9, Р-11 приняты; S-2, S-5, S-8</td><td>К-5, К-6 зелёные; окна выбора вида нет; SHA-256 новых .swp в приложении А; P-code совпадает с исходником</td><td class="num">3,5</td></tr>
+<tr><td class="mono"><a href="#step5">5</a></td><td>WP-4.1 шаблоны Master; WP-4.5 библиотека по российским стандартам; WP-4.7 перезагрузка форматок в старых чертежах; WP-5.2…5.6 спецификация, штамп, статические тесты, переписанные тесты</td><td>S-2, S-3; ответы владельца на 12 вопросов приложения Д</td><td>К-6, К-9, К-11, К-13 зелёные; каталог сценариев — 52 из 60</td><td class="num">5</td></tr>
+<tr><td class="mono"><a href="#step6">6</a></td><td>WP-7 документация (в том числе ссылки на ГОСТ Р, WP-7.4) и план рефакторинга ред. 3; WP-8 приёмка</td><td>—</td><td>Три полных прогона подряд; ручной чек-лист владельца; тег без push</td><td class="num">2</td></tr>
+<tr class="total"><td colspan="4">Итого (оценка аудита 16 дней; ред. 2 — третья правка MProp и библиотека; ред. 3 — эталон штампа, перезагрузка форматок, две правки MProp, библиотека по исследованию, ссылки на ГОСТ Р)</td><td class="num">≈ 24</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="wp" id="step0">
+  <h3>Шаг 0. Подготовка и спайки</h3>
+  <div class="meta"><span>Закрывает: <b>Н-12, Н-17, Н-24, Н-26 (частично)</b></span><span>Код надстройки: <b>не меняется</b></span></div>
+  <ul class="sub">
+    <li><span class="sid">0.1</span><div>
+      <p><b>Коммит пакета фикстур.</b> Входят: фикстуры, корпус Б, тесты, allowed_diffs, руководство, README.</p>
+      <p><b>Не входит</b> папка «06_Документация/Регламент_КТО_Металл» — другая работа.</p>
+      <p><b>Отметки о происхождении:</b></p>
+      <ul>
+        <li>в manifest.json у A-14 — «пересохранена 13.09 без надстройки, свойства v5 сохранены»;</li>
+        <li>в allowed_diffs у AD-25 — <code>"input_changed": true</code> для сценариев A04, A05, A08, A09, A11.</li>
+      </ul>
+      <p class="why">И-10.</p>
+    </div></li>
+    <li><span class="sid">0.2</span><div><p>Текстовые выгрузки VBA пяти макросов, скрипт выгрузки и SHA-256 <code>.swp</code> — в репозиторий; T0 «выгрузка соответствует .swp».</p><p class="why">Доказательства плана и будущие правки VBA видны в diff.</p></div></li>
+    <li><span class="sid">0.3</span><div><p>Golden master строже: неиспользуемое правило проваливает R01; правила ограничивают прежнее значение (<code>old</code>, <code>optional</code>); это первая часть подготовленного пакета WP-R4.</p><p class="why">Н-24, И-2.</p></div></li>
+    <li><span class="sid">S-1</span><div><p>Вызов «применить без правок» MProp из тестов (<code>RunMacro … "MProp_run", "main_reload"</code>) и снимок свойств по уровням до и после.</p><p class="why">Если окна-вопросы блокируют — на шаге 2 пишется эмулятор чтения и записи MProp по выгрузке (1550–1575, 2540–2548, 2636–2659, 2832–2862, 2904–2946, 3056–3070).</p></div></li>
+    <li><span class="sid">S-2</span><div><p>Рисует ли таблица BOM с шаблоном <code>SpecEditor_sp.sldbomtbt</code> дробь <code>&lt;STACK&gt;</code> и три строки в ячейке.</p><p class="why">Если нет — вид строки БЧ утверждает владелец до WP-2.7.</p></div></li>
+    <li><span class="sid">S-3</span><div><p>Вид графы 5 в формате MProp (граммы и килограммы) на нормализованных форматках.</p><p class="why">Если число прижимается к краю — правится положение заметки MYPRP15 в форматках, MProp не трогается.</p></div></li>
+    <li><span class="sid">S-4</span><div><p>Граница переноса и размер шрифта для графы 1 в разметке MProp.</p></div></li>
+    <li><span class="sid">S-5</span><div><p>Какой код SpecEditor исполняется и есть ли ошибка 91 в режиме «спецификация на листе СБ».</p></div></li>
+    <li><span class="sid">S-6</span><div><p>Переносит ли SolidWorks свойства форматки в чертёж при создании и замене листа.</p></div></li>
+    <li><span class="sid">S-7</span><div><p>Пишет ли Drew (AutoDrawing) свойства моделей. Если да — добавить в таблицу 4.1 и в правила.</p><p class="why">В-6.</p></div></li>
+    <li><span class="sid">S-8</span><div><p>Какое значение возвращает <code>Sheet.CustomPropertyView</code> на чертеже, где MProp показал окно «Не удалось определить вид из свойств листа». Кандидат — чертёж владельца «Болт М6-6gх20.58 ГОСТ 7798-70.SLDDRW» в рабочей папке теста R04; читается только копия. Отдельно проверить, как этот чертёж создан: из шаблона или пустым документом.</p><p class="why">Н-29; результат определяет правку WP-3.5 и, возможно, свойство листа в шаблоне чертежа.</p></div></li>
+  </ul>
+  <p class="note">S-1 уже подтверждён 13.09: <code>RunMacro2(&lt;копия MProp.swp&gt;, "MProp_run", "main_reload", 1, err)</code> выполняет применение MProp без окон примерно за 1 с. MProp запускается из копии папок SWPlus внутри каталога прогона, потому что пишет файлы рядом с собой.</p>
+</div>
+
+<div class="wp" id="step1">
+  <h3>Шаг 1. Независимые исправления</h3>
+  <div class="meta"><span>Закрывает: <b>Н-15, Н-14</b></span><span>Можно выпустить до остального плана (В-7)</span></div>
+  <ul class="sub">
+    <li><span class="sid">2.8</span><div><p>Убрать пропуск по <code>StartsWith("эм-")</code> (SyncService.cs:121). ЭМ-Стандартные, ЭМ-Прочие и ЭМ-Материалы по-прежнему пропускаются по словам. Новый тест M18 — деталь с разделом «ЭМ-Детали».</p></div></li>
+    <li><span class="sid">4.2</span><div><p>Сначала тест T0 «нет личных данных». Затем свойства v5 удаляются из шаблонов Master и 18 форматок сессией SolidWorks по скрипту, как <code>normalize_templates.py</code>. При необходимости (S-6) — ещё и из чертежей через «Очистку v5».</p></div></li>
+  </ul>
+</div>
+
+<div class="wp" id="step2">
+  <h3>Шаг 2. Правила записи и красные тесты совместимости</h3>
+  <div class="meta"><span>Закрывает: <b>основу для Н-02…Н-11, Н-19, Н-21, Н-22</b></span><span>Условие: <b>S-1, S-3, S-4</b></span></div>
+  <ul class="sub">
+    <li><span class="sid">1.1</span><div><p>Документ «Правила записи свойств SWPlus»: <a href="#s6">раздел 6</a>, формы по режимам MProp, перечни служебных свойств и дрейфа, правило единиц, правило переноса, запись БЧ.</p></div></li>
+    <li><span class="sid">1.2</span><div><p>Модуль <code>Core/SwPlusFormat.cs</code>: все строки формата в одном месте; <code>SwPlusMarkup</code>, <code>MaterialRecord</code>, <code>BchRecord</code> берут строки из него.</p></div></li>
+    <li><span class="sid">1.3</span><div><p>Юнит-тесты: каждая строка формата сверяется со строкой выгрузки VBA (например, FrmMProp:2850).</p></div></li>
+    <li><span class="sid">1.4</span><div><p>Тесты К-1 и К-2 (M03 расширить, M04 новый) на корпусе. Сейчас они падают, поэтому по каждой находке ставится пометка известного дефекта Д-47…. Каждый подпункт шага 3 снимает свою пометку. При блокировке S-1 здесь же пишется эмулятор MProp.</p><p class="why">И-1, П-6.</p></div></li>
+  </ul>
+</div>
+
+<div class="wp" id="step3">
+  <h3>Шаг 3. Надстройка пишет по правилам</h3>
+  <div class="meta"><span>Закрывает: <b>Н-01…Н-11, Н-21…Н-23, Н-26</b></span><span>Файлы: <b>Sw/SyncService.cs, Sw/BchService.cs, Core/*, Core/LegacyMigration.cs, 09_Тесты/tools/normalize_templates.py</b></span></div>
+  <ul class="sub">
+    <li><span class="sid">2.1</span><div><p><b>Масса (Р-1, Р-7).</b> Формула MProp во всех конфигурациях, « г» и три единицы с числом знаков, флаг «Единицы», предупреждение о переключении.</p><p class="why">Удалить: <code>TryParseResolvedMass</code>, <code>ConfigurationMass</code>, ограничение знаков, текст с запятой, общую копию. Переписать M06, D01, D11, P03, P04, P16 и юнит-тесты массы.</p></div></li>
+    <li><span class="sid">2.2</span><div><p><b>Наименование (Р-2).</b> Три формы разметки MProp с переносом по S-4; запись байт в байт.</p></div></li>
+    <li><span class="sid">2.3</span><div><p><b>«СБ» (Р-3).</b> «Сборка1_ФБ» не писать и не удалять; « СБ» → «СБ»; флаг <code>LegacyAssemblyCodeSpace</code> снять. «Сборка2_ФБ» — только при отсутствии свойства; общие копии не поддерживать. Переписать M11, P05, юнит-тесты кода СБ.</p></div></li>
+    <li><span class="sid">2.4</span><div><p><b>Обозначение.</b> «RenameSWP» = 0 только при выводе из имени файла; «Исполнение» по <a href="#s6">разделу 6</a>, включая исполнение в имени файла.</p></div></li>
+    <li><span class="sid">2.5</span><div><p><b>Конструктор.</b> «Конструктор» и «Сводка → Автор» одинаково.</p></div></li>
+    <li><span class="sid">2.6</span><div><p><b>Материал (Р-5, Р-6).</b> SW-Material заменяется при библиотечном материале; замена чужого текста — предупреждение отчёта (попадает в строку состояния).</p></div></li>
+    <li><span class="sid">2.7</span><div><p><b>БЧ (Р-4).</b> «Примечание» — формула MProp; запись обновляется при сохранении, если своя; вид — по S-2.</p></div></li>
+    <li><span class="sid">2.9</span><div><p><b>Разбор имени (Р-9).</b> Код документа отбрасывается из обозначения и наименования, никуда не пишется.</p></div></li>
+    <li><span class="sid">2.10</span><div><p><b>Прежние форматы и «Очистка v5».</b> Однократно при сохранении и в «Очистке»:</p><ul><li>масса текстом → формула;</li><li>« СБ» → «СБ»;</li><li>«Сборочный чертёж» → формат MProp;</li><li>«2,86 кг» → формула.</li></ul><p><code>LegacyMigration</code> следует тем же правилам.</p><p class="why">Н-26: пробный прогон «Очистки» с отчётом.</p></div></li>
+    <li><span class="sid">4.4</span><div><p><b>Шаблон детали.</b> Удалить «Материал_ФБ» = <code>$PRP:"Материал"</code> через <code>normalize_templates.py</code>; обновить тест I03.</p><p class="why">Н-21, И-6.</p></div></li>
+  </ul>
+</div>
+
+<div class="wp" id="step3a">
+  <h3>Шаг 3а. Эталон основной надписи (WP-4.6)</h3>
+  <div class="meta"><span>Закрывает: <b>Н-27, Н-28, Н-31, Н-32, Н-34</b></span><span>Условие: <b>шаг 2, Р-12</b></span><span>Инструменты: <b>автотест штампа на основе прогона stamp_matrix</b></span></div>
+  <ul class="sub">
+    <li><span class="sid">4.6.1</span><div><p><b>Автотест штампа К-12 до правки форматок.</b> Прогон аудита превращается в тест харнесса. Матрица:</p><ul><li>все форматки листа 1 и листа 2;</li><li>деталь и сборка;</li><li>наименование в 1, 2, 3 строки;</li><li>масса в кг и в г;</li><li>материал дробью и строкой;</li><li>запись надстройки и запись MProp.</li></ul><p>Проверки: текст внутри графы, центр на эталонном месте с допуском, нет наложений, снимки штампа после надстройки и после MProp совпадают. До правки тест красный.</p><p class="why">П-6, П-8.</p></div></li>
+    <li><span class="sid">4.6.2</span><div><p><b>Подбор координат.</b> Для каждой форматки скрипт переставляет MYPRP4, MYPRP3, MYPRP15 и при необходимости MYPRP16, стартуя с G2 (<a href="#s6-stamp">эталон</a>), и проверяет матрицу. Интервал надписи массы подбирается так, чтобы её положение не зависело от служебной строки (<a href="#n32">Н-32</a>).</p></div></li>
+    <li><span class="sid">4.6.3</span><div><p><b>Применение к данным.</b> Координаты записываются через сессию SolidWorks по скрипту (как <code>normalize_templates.py</code>) в:</p><ul><li>18 форматок «Основные надписи»;</li><li>встроенную форматку «Чертеж.drwdot»;</li><li>формы SpecEditor (SP, GSP, VP, LRI);</li><li>шаблоны Master (вместе с WP-4.1 — <a href="#n34">Н-34</a>).</li></ul><p>Резервные копии, SHA-256 и отчёт — в каталоге прогона.</p></div></li>
+    <li><span class="sid">4.6.4</span><div><p><b>Фикстуры и эталонные изображения.</b> Встроенные форматки фикстур A-10, A-11 и копий корпуса Б перезагружаются. Эталоны D07 и снимки К-12 переснимаются. Отличия R01 — на утверждение владельцу.</p></div></li>
+  </ul>
+</div>
+
+<div class="wp" id="step4">
+  <h3>Шаг 4. Правки макросов и корпус</h3>
+  <div class="meta"><span>Закрывает: <b>Н-03, Н-05, Н-08, Н-11, Н-16, Н-17</b></span><span>Разрешено: <b>Р-8, Р-9</b></span></div>
+  <ul class="sub">
+    <li><span class="sid">3.1</span><div><p><b>MProp, перенос наименования</b> (2648–2653): правило переноса WP-1 и двухстрочная форма 2643/2645.</p></div></li>
+    <li><span class="sid">3.2</span><div><p><b>MProp, запись БЧ:</b> не перезаписывать и не удалять «Наименование» с записью БЧ (2628–2633, 2672–2673, 2702–2703); сравнивать имя файла с первой строкой (1552–1553); проверить путь многострочного ввода (2629–2630).</p></div></li>
+    <li><span class="sid">3.3</span><div><p><b>MProp, разбор кода документа в имени файла</b> (1550–1557) — как <code>DesignationParser</code> надстройки.</p></div></li>
+    <li><span class="sid">3.4</span><div><p><b>Проверка:</b> К-1 на корпусе, в том числе на сборках «… СБ …», деталях БЧ и длинных наименованиях.</p></div></li>
+    <li><span class="sid">3.5</span><div><p><b>MProp и DProp, выбор вида для свойств листа</b> (Р-11, Н-29): MProp_run:178–193 и соответствующее место FrmDProp. Вид берётся так же, как в SpecEditor после заплатки; при нераспознанном значении — первый вид без окна. Точное условие — по спайку S-8.</p></div></li>
+    <li><span class="sid">3.6</span><div><p><b>MProp, разбор имени без обозначения</b> (Р-11, Н-30): FrmMProp:1550–1557 — в том же месте, что 3.3. Если в первом слове нет цифр, обозначение пустое, всё имя идёт в наименование, как в <code>DesignationParser</code>. Проверка: К-1 на «Болт М6-6gх20.58 ГОСТ 7798-70» как обычной детали.</p></div></li>
+    <li><span class="sid">4.3</span><div><p><b>SpecEditor и Master:</b> кириллическая «А4» (FrmSpecEditor:1971–1972; FrmMaster:104–108, 250); перекомпиляция SpecEditor, чтобы исходник совпал со скомпилированным кодом.</p></div></li>
+    <li><span class="sid">6</span><div><p><b>Корпус.</b> Добавить:</p><ul><li>деталь БЧ с сортаментом из библиотеки;</li><li>деталь «ЭМ-Детали»;</li><li>деталь легче 100 г;</li><li>деталь с исполнениями по обе стороны порога 100 г;</li><li>деталь с длинным наименованием;</li><li>файл с исполнением в имени.</li></ul><p>Сборки с «СБ» в имени остаются (Р-9).</p></div></li>
+  </ul>
+  <h4 id="vba-proc">Порядок правки макросов (В-5)</h4>
+  <ol class="prose">
+    <li>Прежний <code>.swp</code> копируется в <code>99_Архив</code>, его SHA-256 записывается для отката.</li>
+    <li>Правка вносится в редакторе VBA SolidWorks.</li>
+    <li>После сохранения — выгрузка текста и дизассемблирование P-code изменённых процедур: исходник и скомпилированный код должны совпасть.</li>
+    <li>Прогон К-1 на корпусе и smoke.</li>
+    <li>Новый SHA-256 — в приложение А; коммит отдельным пакетом.</li>
+    <li>В руководство администратора — раздел «Как править и проверять макросы SWPlus».</li>
+  </ol>
+</div>
+
+<div class="wp" id="step5">
+  <h3>Шаг 5. Master, библиотека, спецификация и штамп</h3>
+  <div class="meta"><span>Закрывает: <b>Н-12, Н-13, Н-25, Н-19</b></span><span>Условие: <b>S-2, S-3; итоги приложения Д показаны владельцу</b></span></div>
+  <ul class="sub">
+    <li><span class="sid">4.1</span><div><p><b>Шаблоны Master.</b> Привести к нормализованным форматкам (MYPRP4, MYPRP15, MYPRP16). Статический тест: заметки шаблонов Master совпадают с форматками.</p></div></li>
+    <li><span class="sid">4.5</span><div><p><b>Библиотека по российским стандартам (Р-10, Р-13).</b> После ответов владельца на 12 вопросов <a href="#app-d">приложения Д</a>:</p><ul><li>формы записи по группам;</li><li>действующие редакции стандартов;</li><li>плотности (сталь 7850, ABS около 1050);</li><li>описания;</li><li>исправление грубых ошибок: ГОСТ кромки, «Ст3сп», код «БТ», полиамид.</li></ul><p>Скрипт с резервной копией, имена и matid не меняются; генератор <code>generate_materials.py</code> исправляется вместе с данными. Спорные строки перед массовой правкой сверяются по protect.gost.ru.</p><p class="why">К-11, К-13: T0 проверяет форму записи, стандарт и плотность.</p></div></li>
+    <li><span class="sid">4.7</span><div><p><b>Перезагрузка форматок в существующих чертежах</b> (Н-33): утилита «пакетная перезагрузка форматки» — повтор действия DProp через API для каждого листа.</p><ul><li>пробный прогон с отчётом о версии встроенной форматки (шрифт, геометрия);</li><li>резервные копии;</li><li>открытые пользователем документы пропускаются;</li><li>запуск на архиве — только по решению владельца.</li></ul><p class="why">Иначе старые чертежи остаются с Arial Narrow и прежней геометрией.</p></div></li>
+    <li><span class="sid">5.2</span><div><p><b>Спецификация.</b> Таблица BOM с привязками граф, как у SpecEditor, по сборке с деталью БЧ. Текст PDF и изображение против эталона (S01, S02, S03, B04).</p></div></li>
+    <li><span class="sid">5.3</span><div><p><b>Штамп.</b> Графа 5 (граммы и килограммы, точка), графа 1 (перенос), графа 2 («…СБ») — D01, D11, M08.</p></div></li>
+    <li><span class="sid">5.4</span><div><p><b>Статические тесты:</b> правила против выгрузки VBA; шаблоны Master против форматок; нет личных данных; библиотека.</p></div></li>
+    <li><span class="sid">5.5</span><div><p><b>Переписать тесты</b>, ожидающие прежние форматы (<a href="#app-b">приложение Б</a>).</p></div></li>
+    <li><span class="sid">5.6</span><div><p><b>R01.</b> Новые разрешённые отличия — только после утверждения владельцем.</p></div></li>
+  </ul>
+</div>
+
+<div class="wp" id="step6">
+  <h3>Шаг 6. Документация и приёмка</h3>
+  <ul class="sub">
+    <li><span class="sid">7</span><div>
+      <p><b>Руководство:</b></p>
+      <ul>
+        <li>как править макросы;</li>
+        <li>DProp запускает MProp;</li>
+        <li>единицы массы и порог 100 г;</li>
+        <li>точка в графе 5;</li>
+        <li>«Сборка1_ФБ» ставят шаблон и MProp;</li>
+        <li>чего надстройка больше не выводит из имени файла;</li>
+        <li>библиотека по ГОСТ;</li>
+        <li>зависимость надстройки от расположения корпоративной библиотеки.</li>
+      </ul>
+      <p><b>План рефакторинга ред. 3:</b></p>
+      <ul>
+        <li>§3.2 с новыми правилами;</li>
+        <li>§3.8 флаги по <code>Settings.cs</code>;</li>
+        <li>§2 дефекты;</li>
+        <li>решения Р-1…Р-13.</li>
+      </ul>
+      <p><b>Реестр дефектов:</b> Н-01…Н-35 как Д-47…; Д-36 — «пересмотрено Р-1».</p>
+      <p><b>7.4 Ссылки на стандарты</b> (Н-35, Р-13): в руководстве, README, коде, тестах и эталонах заменить ГОСТ 2.104-2006 → ГОСТ Р 2.104-2023, ГОСТ 2.109-73 → ГОСТ Р 2.109-2023, спецификацию → ГОСТ Р 2.106-2019. Номера пунктов — по полному тексту стандартов. Тест T0 ищет ссылки на заменённые стандарты.</p>
+      <p><b>Эталон штампа:</b> раздел руководства с раскладкой граф (<a href="#s6-stamp">эталон</a>) и правилом «форматки меняются только через автотест штампа».</p>
+    </div></li>
+    <li><span class="sid">8</span><div>
+      <p>Три полных прогона подряд.</p>
+      <p>Ручная проверка владельцем:</p>
+      <ul>
+        <li>MProp: открыл, применил, сохранил;</li>
+        <li>DProp: перезагрузка основной надписи;</li>
+        <li>SpecEditor: построение и сортировка;</li>
+        <li>деталь БЧ;</li>
+        <li>«Сохранить как»;</li>
+        <li>смена материала;</li>
+        <li>деталь легче 100 г.</li>
+      </ul>
+      <p>Тег без push.</p>
+    </div></li>
+  </ul>
+</div>
+</section>
+
+<section id="s8">
+<h2>8. Критерии приёмки</h2>
+<ul class="crit-list">
+  <li id="k1"><span class="cid">К-1</span><div>
+    <p>«Применить без правок» MProp (напрямую или через перезагрузку в DProp) не меняет ни одного значения из перечня. Сравнение — по каждому уровню (общие и каждая конфигурация) и по сырым значениям.</p>
+    <ul>
+      <li>Обозначение, «RenameSWP», «Исполнение»;</li>
+      <li>Наименование, «Наименование_ФБ»;</li>
+      <li>«Сборка1_ФБ», «Сборка2_ФБ»;</li>
+      <li>Конструктор, «Сводка → Автор», Проверил, Контора;</li>
+      <li>«Масса_ФБ», «Масса_Таблица», «Материал_ФБ», «Материал_Таблица»;</li>
+      <li>Формат, Примечание, Раздел;</li>
+      <li>единицы массы документа.</li>
+    </ul>
+    <p>MProp не задаёт вопросов. Добавиться могут только имена из фиксированного перечня служебных свойств; любое другое новое имя — провал теста. Удаление MProp общей копии, созданной надстройкой, — тоже провал.</p>
+    <span class="tests">Тесты: M03 (расширить), M04 (новый)</span></div></li>
+  <li><span class="cid">К-2</span><div>Сохранение после применения MProp: журнал операций надстройки пуст.<span class="tests">Тесты: M03, M04</span></div></li>
+  <li><span class="cid">К-3</span><div>После построения спецификации SpecEditor, в том числе в режиме «спецификация на листе», и сохранения сборки надстройка ничего не пишет. Обозначение сборочного чертежа одинаково в штампе и спецификации.<span class="tests">Тесты: S01, S02 (новые), M11</span></div></li>
+  <li><span class="cid">К-4</span><div>Графа 5: у деталей легче 0,1 кг — «63.4 г», у остальных — «0.63»; у всех исполнений; положение числа совпадает с утверждённым эталоном; при переключении единиц — предупреждение.<span class="tests">Тесты: D01, D11</span></div></li>
+  <li><span class="cid">К-5</span><div>Графа 1: длинное наименование на двух строках — одинаково после надстройки и после MProp.<span class="tests">Тесты: M08, D01</span></div></li>
+  <li><span class="cid">К-6</span><div>Строка БЧ в спецификации: наименование, дробь, размер; «Формат» = «БЧ»; масса в «Примечании». Запись переживает применение MProp и «Сортировать» SpecEditor; изображение совпадает с эталоном.<span class="tests">Тесты: S03, B04 (новые)</span></div></li>
+  <li><span class="cid">К-7</span><div>Графа 3: материал из библиотеки → дробь, в том числе после «материал SW» от MProp. Чужой текст заменён, в строке состояния предупреждение.<span class="tests">Тесты: P15, P16, M12</span></div></li>
+  <li><span class="cid">К-8</span><div>«ЭМ-Детали» и «ЭМ-Сборочные единицы» заполняются как обычные.<span class="tests">Тест: M18 (новый)</span></div></li>
+  <li><span class="cid">К-9</span><div>Заметки шаблонов Master совпадают с форматками; личных данных и свойств v5 нет.<span class="tests">Тест: T0</span></div></li>
+  <li><span class="cid">К-10</span><div>Все прежние и новые тесты зелёные в трёх полных прогонах подряд; отличия R01 — только утверждённые владельцем; неиспользуемое правило проваливает R01.<span class="tests">full × 3, R01</span></div></li>
+  <li><span class="cid">К-11</span><div>Библиотека: у каждой группы форма записи по приложению Д; плотности и описания сверены; имена и matid прежние.<span class="tests">Тест: T0 (новые проверки)</span></div></li>
+  <li id="k12"><span class="cid">К-12</span><div>
+    <p><b>Основная надпись одинакова для всех.</b> Матрица:</p>
+    <ul>
+      <li>все форматки листа 1 и листа 2 (включая «Чертеж.drwdot», формы SpecEditor и шаблоны Master);</li>
+      <li>деталь и сборка;</li>
+      <li>наименование в 1, 2, 3 строки;</li>
+      <li>масса в кг и в г;</li>
+      <li>материал дробью и строкой;</li>
+      <li>запись надстройкой и запись MProp.</li>
+    </ul>
+    <p>Требования:</p>
+    <ul>
+      <li>каждое значение внутри своей графы;</li>
+      <li>центр по высоте — на эталонном месте с допуском ±0,5 мм;</li>
+      <li>между наименованием и «Сборочный чертеж» зазор не меньше 1 мм;</li>
+      <li>снимки штампа после надстройки и после MProp совпадают.</li>
+    </ul>
+    <p>Проверка — по PDF и по габаритам заметок; при ненадёжных габаритах дроби решает PDF.</p>
+    <span class="tests">Тест: D12 (новый, автотест штампа)</span></div></li>
+  <li id="k13"><span class="cid">К-13</span><div>Библиотека по действующим в РФ стандартам:
+    <ul>
+      <li>дробь только у сортового проката;</li>
+      <li>у ТУ с однострочным обозначением — одна строка;</li>
+      <li>нет заменённых и ошибочных стандартов из <a href="#app-d">приложения Д</a>;</li>
+      <li>у стали плотность 7850;</li>
+      <li>спорные группы записаны по ответам владельца.</li>
+    </ul>
+    <span class="tests">Тест: T0 (перечень заменённых стандартов и правило «дробь ↔ сортамент»)</span></div></li>
+</ul>
+</section>
+
+<section id="s9">
+<h2>9. Риски</h2>
+<div class="tbl">
+<table>
+<thead><tr><th>№</th><th>Риск</th><th>Влияние</th><th>Мера</th></tr></thead>
+<tbody>
+<tr><td class="mono">1</td><td>Масса с точкой вместо запятой</td><td>Вид графы 5 и «Примечания» БЧ</td><td>Решение Р-1; отступление описывается в руководстве</td></tr>
+<tr><td class="mono">2</td><td>Надстройка меняет единицы документа при сохранении; у исполнений по обе стороны от 100 г единицы следуют активной конфигурации</td><td>Другие выводы массы в граммах; разовые изменения при смене активной конфигурации</td><td>Решение Р-7; предупреждение; тест на деталь с исполнениями по обе стороны порога</td></tr>
+<tr><td class="mono">3</td><td>Правки VBA без автоматического теста форм</td><td>Ошибка в MProp у всех пользователей</td><td>Порядок правки макросов; К-1 через S-1; ручной чек-лист</td></tr>
+<tr><td class="mono">4</td><td>Окна-вопросы MProp блокируют автоматический вызов</td><td>Нет автоматического К-1</td><td>Таймаут = провал; эмулятор MProp на шаге 2</td></tr>
+<tr><td class="mono">5</td><td>Таблица BOM не рисует дробь</td><td>Строка БЧ не по ГОСТ 2.109</td><td>S-2 до WP-2.7; вид утверждает владелец</td></tr>
+<tr><td class="mono">6</td><td>Документы v5 и v6.x меняются при первом сохранении</td><td>Отличия файлов, R01</td><td>Пробный прогон «Очистки» с резервными копиями; отличия утверждает владелец</td></tr>
+<tr><td class="mono">7</td><td>Какой код SpecEditor исполняется; перекомпиляция может изменить поведение</td><td>Ошибка 91 или другой выбор вида</td><td>S-5 до правки; сверка P-code после</td></tr>
+<tr><td class="mono">8</td><td>Master снова затрёт форматки</td><td>Графа 5 съезжает</td><td>WP-4.1 и статический тест</td></tr>
+<tr><td class="mono">9</td><td>Исследование ГОСТ даст неоднозначный ответ по отдельным группам</td><td>Спорная форма записи материала</td><td>Для таких групп — решение владельца по фактам со ссылками; до решения запись группы не меняется</td></tr>
+<tr><td class="mono">10</td><td>Предупреждения одного документа затирают предупреждения другого (общий <code>_lastWarnings</code>)</td><td>Пользователь не видит предупреждение</td><td>Отметить в коде и руководстве; исправление вне плана</td></tr>
+<tr><td class="mono">11</td><td>Правка разбора имени в MProp (Р-9) расходится с разбором в надстройке</td><td>Разные обозначения у MProp и надстройки</td><td>Юнит-тесты разбора на тех же именах, что тест MProp; К-1 на сборках «… СБ …»</td></tr>
+<tr><td class="mono">12</td><td>Координаты G2 подобраны на A3; на A4 и A1 штамп тот же, но положение надписей листа в форматках может отличаться</td><td>На части форматов наложения останутся</td><td>Подбор по каждой форматке автотестом К-12 (шаг 3а), а не перенос чисел</td></tr>
+<tr><td class="mono">13</td><td>Старые чертежи хранят свою копию форматки</td><td>Исправление не видно в архиве до перезагрузки форматки</td><td>WP-4.7: пробный прогон, резервные копии, решение владельца по архиву</td></tr>
+<tr><td class="mono">14</td><td>Длинное наименование не помещается даже в три строки (около 22 знаков в строке при 5 мм, около 31 при 3,5 мм)</td><td>Текст выходит за графу 1</td><td>Правка переноса MProp (WP-3.1) и надстройки используют одну таблицу ширин; сверх трёх строк — предупреждение в строке состояния</td></tr>
+<tr><td class="mono">15</td><td>12 вопросов по библиотеке остаются без ответа; полные тексты части стандартов не прочитаны</td><td>WP-4.5 не начинается</td><td>WP-4.5 стоит в конце шага 5; без ответов меняются только бесспорные ошибки (ГОСТ кромки, «Ст3сп», «БТ», ПА, 7850)</td></tr>
+<tr><td class="mono">16</td><td>Сетевая установка (ТЗ-01) выйдет раньше этого плана или сохранит на ПК старые форматки и макросы как «файлы состояния»</td><td>Исправления штампа и MProp не доходят до конструкторов; двойное обновление 13 ПК</td><td>Порядок работ и предложения ТЗ-п2, ТЗ-п3 из <a href="#s9a">раздела 9а</a></td></tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<section id="s9a">
+<h2>9а. Связь с ТЗ-01 «Сетевая установка»</h2>
+<div class="prose">
+<p><b>Что это.</b> ТЗ-01 (<code>06_Документация/ТЗ/ТЗ-01_Сетевая_установка_инструментария_ЕСКД.md</code>, ред. 2 от 13.09.2026) переводит инструментарий в общую папку на NAS. Конфигуратор ставит на ПК локальную копию надстройки и тех макросов SWplus, которые мешают друг другу в сети.</p>
+<p><b>Где пересекается с этим планом.</b> Оба документа работают на ветке <code>refactor/v6-eskd</code> и затрагивают одни и те же макросы, форматки, библиотеку и тесты. ТЗ-01 запрещает менять надстройку и макросы (§6 п. 1), а этот план меняет и то и другое. Поэтому важен порядок работ.</p>
+</div>
+
+<h3>Что проверено по коду для ТЗ-01</h3>
+<p class="note">Проверено чтением выгрузок VBA и надстройки. При каких именно действиях пользователя срабатывает каждая запись, покажет спайк С-1 из ТЗ.</p>
+<div class="tbl">
+<table>
+<thead><tr><th>№</th><th>Факт</th><th>Где</th><th>Что это значит для сети</th></tr></thead>
+<tbody>
+<tr id="t1"><td class="mono">СВ-1</td><td>MProp при каждом «Применить» перезаписывает <code>MProp_Prof.txt</code> рядом с собой. При новом проекте дописывает <code>MProp_Project.txt</code>. Пишет также <code>SpecEditor\MyProperties_2.ini</code> и свой <code>MProp.ini</code></td><td class="ev">FrmMProp:2437, 2480, 3844; FrmMProp_Pref:100</td><td>С папкой «только чтение» MProp упадёт при применении, а с правами записи пользователи затрут профили друг друга. Вывод: <b>MProp — локальный</b>, гипотеза ТЗ «проверить» заменяется на «локальный». Мой прогон 13.09 это подтверждает: MProp записал эти файлы в свою копию</td></tr>
+<tr><td class="mono">СВ-2</td><td>Макросы находят друг друга по соседним папкам: DProp ищет <code>..\MProp\MProp.swp</code>; MProp, DProp и Master ищут <code>..\SpecEditor\MyProperties.swp</code> и <code>MyProperties_1.ini</code>/<code>_2.ini</code>. SProp читает группы из <code>..\SpecEditor\</code></td><td class="ev">FrmDProp:222–227; FrmMProp:1298, 1302; FrmMaster:83–96; FrmSProp:410–411</td><td>Нельзя сделать MProp локальным, а SpecEditor — сетевым: локальный MProp не найдёт <code>SpecEditor\</code>. <b>MProp, DProp, SpecEditor (с MyProperties), Master, SProp — одна группа</b> и размещаются вместе (ТЗ, §5.4, условие 4)</td></tr>
+<tr><td class="mono">СВ-3</td><td>DProp, SpecEditor, SProp и Master переписывают свои <code>.ini</code>. DProp и SpecEditor также пишут <code>SpecEditor\MyProperties_2.ini</code></td><td class="ev">FrmDProp:1658, FrmDProp_Pref:63; FrmSpecEditor:4801, FrmSpecEditor_Pref:250; FrmSProp_Pref:66; FrmMaster_Pref:123</td><td>Нужен список файлов состояния для Т-26</td></tr>
+<tr id="t4"><td class="mono">СВ-4</td><td>Master «Сменить формат» удаляет и переименовывает форматки. Кнопка «Настроить» переименовывает и перезаписывает <b>формы SpecEditor</b> (SP-1, SP-2, GSP-1/2, VP-1/2, SP-LRI, LRI, VP-LRI) и свои шаблоны листов</td><td class="ev">FrmMaster:374–389; FrmMaster_Pref:156–202</td><td>Master меняет не только «Основные надписи», но и формы SpecEditor. Если его запустить на общей папке, пострадает эталон штампа (К-12) у всех. Локальный запуск после обновления меняет только копию на этом ПК</td></tr>
+<tr id="t5"><td class="mono">СВ-5</td><td>Запасной путь к корпоративной библиотеке надстройка ищет вверх от папки DLL (до 6 уровней): <code>04_Библиотеки_Материалов_и_Профилей\Библиотека материалов\Библиотека_Материалов_ГОСТ.sldmat</code></td><td class="ev">Core/MaterialCatalog.cs:132–147</td><td>Из <code>%LOCALAPPDATA%\ESKD\Toolkit\…</code> файл не найдётся. Если библиотеки нет в списке баз SolidWorks, дробь из библиотеки не узнаётся и не заменяется (Д-39). В ТЗ, §3.3 и Т-24 этого нет</td></tr>
+<tr><td class="mono">СВ-6</td><td>В описании надстройки в конфигураторе осталось «центрирование массы в штампе»</td><td class="ev">CAD_Workstation_Configurator.py:584 (по ТЗ, §4)</td><td>Совпадает с этим планом: масса пишется как у MProp (Р-1), фразу убрать</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Правки ТЗ-01 (внесены в ТЗ-01 ред. 3, 13.09.2026)</h3>
+<p class="note">Владелец: ТЗ-01 написано в расчёте на уже отлаженные макросы, поэтому его выполняют после этого плана, а в само ТЗ правки внесены. Добавлены: предусловие, раздел 3.4 (СВ-1…СВ-5), гипотеза §5.4, Т-24, Т-26, новое Т-26а, §6 п. 1, этап Э0, N05, N13, П-1 шаг 5.</p>
+<ul class="crit-list">
+  <li><span class="cid">ТЗ-п1</span><div><b>§5.4, гипотеза.</b> MProp — «локальный» по <a href="#t1">СВ-1</a>. Группа MProp + DProp + SpecEditor (с MyProperties) + Master + SProp размещается вместе по СВ-2. С-1 это подтверждает или опровергает, но не начинает с нуля.</div></li>
+  <li><span class="cid">ТЗ-п2</span><div><b>Т-26, файлы выпуска и файлы состояния.</b> Прямо записать, что <code>.swp</code>, форматки «Основные надписи», формы SpecEditor (<code>*.slddrt</code>), шаблоны Master и <code>MyStandard.sldstd</code> — файлы выпуска: при обновлении они всегда заменяются. Иначе исправленный штамп (WP-4.6) и правки макросов (WP-3.x, WP-4.3) не дойдут до ПК. К файлам состояния относятся только <code>*.ini</code>, <code>MProp_Prof.txt</code>, <code>MProp_Project.txt</code>, <code>MyProperties_2.ini</code> — перечень уточнит С-1.</div></li>
+  <li><span class="cid">ТЗ-п3</span><div><b>Master «Настроить» и «Сменить формат».</b> Эти действия меняют форматки и формы (<a href="#t4">СВ-4</a>). Решение: при обновлении локальные изменения заменяются эталоном выпуска, с предупреждением в отчёте. Настройка форматок для всех — только у администратора в репозитории и через автотест К-12.</div></li>
+  <li><span class="cid">ТЗ-п4</span><div><b>Т-24, служебная копия.</b> Добавить <code>04_Библиотеки_Материалов_и_Профилей\Библиотека материалов\Библиотека_Материалов_ГОСТ.sldmat</code> (<a href="#t5">СВ-5</a>). Второй вариант — принять, что без библиотеки в списке баз SolidWorks запасной путь не работает, и проверять это в <code>Check</code>. Код надстройки при этом не меняется.</div></li>
+  <li><span class="cid">ТЗ-п5</span><div><b>N13.</b> Кроме словаря, проверять <code>MaterialCatalog.LocateCorporateLibrary</code> для DLL в локальном экземпляре.</div></li>
+  <li><span class="cid">ТЗ-п6</span><div><b>§6 п. 1 и порядок работ.</b> Ссылка на этот план: правки надстройки и макросов идут только по нему. Первый сетевой выпуск публикуется после шага 6 этого плана.</div></li>
+</ul>
+
+<h3>Порядок работ</h3>
+<ol class="prose">
+  <li><b>Сейчас:</b> закоммитить пакет фикстур (WP-0.1). От этого коммита ветвятся обе работы.</li>
+  <li><b>Параллельно, без конфликтов:</b>
+    <ul>
+      <li>шаги 0–6 этого плана на <code>refactor/v6-eskd</code>;</li>
+      <li>спайки ТЗ-01 С-1…С-7 и этапы Э1–Э3 (движок, публикация) на <code>feat/tz-01-network-setup</code>. Надстройку и макросы они не трогают.</li>
+    </ul>
+  </li>
+  <li><b>Общие файлы:</b> <code>09_Тесты/tests/test_static.py</code>, <code>test_e2e_install.py</code> (I03), <code>README.md</code>, руководство. Ветку ТЗ-01 перебазировать на <code>refactor/v6-eskd</code> после каждого шага плана. Если правки в одном месте теста расходятся, приоритет у плана, ТЗ-01 дописывает свои проверки.</li>
+  <li><b>После шага 6:</b> этапы Э4–Э6 ТЗ-01. Первый сетевой выпуск содержит исправленные макросы, форматки, шаблоны и библиотеку. Иначе 13 ПК получат старый штамп, а через неделю — второе обновление.</li>
+  <li><b>Приёмка П-1 ТЗ-01, шаг 5:</b> сценарий MProp на ПК из сетевой установки включает К-1 (применить без правок — ничего не меняется) и снимок штампа К-12.</li>
+</ol>
+<p class="note">Оценка плана (≈ 24 дня) не меняется. ТЗ-01 оценивается отдельно. На согласование — 0,5 дня в шаге 0: сверка перечня файлов выпуска и состояния с С-1.</p>
+</section>
+
+<section id="s10">
+<h2>10. Вне рамок плана</h2>
+<ul class="prose">
+  <li><b>SProp</b> не меняется (<a href="#n20">Н-20</a>).</li>
+  <li><b>DProp</b> не меняется. Его автоприменение MProp становится безвредным при выполнении К-1. Поведение при открытии формы (<a href="#n18">Н-18</a>) заносится в харнесс как известное: тесты, вызывающие DProp, ожидают переименование листов (В-8).</li>
+  <li><b>Прочие дефекты макросов</b> (сортировка SpecEditor, границы групп материалов, английский вариант Master, собственный дрейф MProp) — только в реестр.</li>
+  <li><b>Сводная ведомость материалов и лимитная карта.</b></li>
+  <li><b>Остаток каталога сценариев</b> (P08, P13, P14, D07, D08, D10, R02, I01, I02, I04, I05) — после плана (<a href="#app-v">приложение В</a>).</li>
+</ul>
+</section>
+
+<section id="s11">
+<h2>11. Что ещё предстоит решить</h2>
+<ul class="crit-list">
+  <li><span class="cid">О-1</span><div>Библиотека: закрыто 13.09 — вопрос 1 «коротко», вопросы 2–12 «как есть» (<a href="#app-d-q">приложение Д</a>).</div></li>
+  <li><span class="cid">О-2</span><div>Если спайк S-2 покажет, что таблица BOM не рисует дробь, — вид строки БЧ в спецификации.</div></li>
+  <li><span class="cid">О-3</span><div>Решено аудитом штампа: масса MProp стоит в графе 5 после подбора координат (шаг 3а); MProp не правится. Остаётся утвердить эталонные снимки К-12.</div></li>
+  <li><span class="cid">О-4</span><div>Если спайк S-7 покажет, что Drew пишет свойства, — включить его в правила записи.</div></li>
+  <li><span class="cid">О-5</span><div>По итогам S-8 — точное условие выбора вида в MProp и DProp (WP-3.5).</div></li>
+  <li><span class="cid">О-6</span><div>Перезагружать ли форматки в архивных чертежах (WP-4.7), и в каких папках.</div></li>
+</ul>
+</section>
+
+<section id="app">
+<h2>Приложения</h2>
+
+<h3 id="app-a">А. Доказательная база</h3>
+<div class="prose">
+<p><b>Состояние.</b> Ветка <code>refactor/v6-eskd</code>, HEAD <code>b65ac3e</code>. Незакоммичен пакет фикстур (прогон 94/94). Код надстройки в незакоммиченных изменениях не участвует. В рабочем дереве есть посторонняя папка «06_Документация/Регламент_КТО_Металл» — в пакеты плана не входит.</p>
+</div>
+<div class="tbl">
+<table>
+<thead><tr><th>Файл макроса</th><th>SHA-256</th><th>Главный модуль, строк</th></tr></thead>
+<tbody>
+<tr><td class="nowrap">MProp/MProp.swp</td><td class="ev">86d9871b0ed55f83167651b8d5845f9bc5773107ca515a97a19a4560e8129126</td><td class="num">FrmMProp — 3906</td></tr>
+<tr><td class="nowrap">SProp/SProp.swp</td><td class="ev">6a03a55bdb5f12fe80c905e50d685610e3b8ad8c7e0e1121dedfd2d892661c04</td><td class="num">FrmSProp — 1115</td></tr>
+<tr><td class="nowrap">SpecEditor/SpecEditor.swp</td><td class="ev">6792a9ea53e6f265238df6316e50543fa7de524f84fbaf28ea7faf65eac2d00c</td><td class="num">FrmSpecEditor — 5083</td></tr>
+<tr><td class="nowrap">DProp/DProp.swp</td><td class="ev">fbb27065778e9e8495737ee9f393dc3b394afe423a1e1b992372c713b964824f</td><td class="num">FrmDProp — 1713</td></tr>
+<tr><td class="nowrap">Master/Master.swp</td><td class="ev">453e171ef69c884e2f39add4b7bcdd36b09b81885c9194b5fa8cb15fd51fd844</td><td class="num">FrmMaster — 1026</td></tr>
+</tbody>
+</table>
+</div>
+<div class="prose">
+<p><b>Метод.</b> Модули VBA извлечены из <code>.swp</code> библиотекой oletools (<code>VBA_Parser.extract_macros</code>), по модулю в текстовый файл с переводами строк LF. Ссылка <code>FrmMProp:2850</code> — строка 2850 выгрузки модуля. Аудит считал строки тем же методом; расхождение в одну строку в числе строк модулей — из-за последнего перевода строки. Скомпилированный код SpecEditor сверен дизассемблированием P-code (олевба) и подсчётом литералов.</p>
+</div>
+<pre>from pathlib import Path
+from oletools.olevba import VBA_Parser
+
+root = Path(r"…\SWPlusMacro_v_2018_SP0.0")
+for rel in ["MProp/MProp.swp", "SProp/SProp.swp", "SpecEditor/SpecEditor.swp",
+            "DProp/DProp.swp", "Master/Master.swp"]:
+    parser = VBA_Parser(str(root / rel))
+    for _, _, name, code in parser.extract_macros():
+        Path(f"{Path(rel).stem}__{name}.txt").write_text(code.replace("\r\n", "\n"), encoding="utf-8")</pre>
+<div class="prose">
+<p><b>Бинарные файлы.</b> Форматки и шаблоны Master разобраны распаковкой сжатых потоков и извлечением строк. Геометрия заметок (Н-13) и свойства (Н-14) — по разбору файла, аудитом не перепроверялись.</p>
+<p><b>Проверки.</b> Три независимых прохода чтения исполнителя, повторная сверка ключевых строк, затем <a href="https://claude.ai/code/artifact/38b00ddd-6cef-471f-bd2e-1eb84ab9f957">независимый аудит</a>: 17 из 17 проверяемых находок подтверждены. SolidWorks при анализе не запускался.</p>
+</div>
+
+<h3 id="app-b">Б. Тесты, которые изменятся или появятся</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>Тест</th><th>Что ожидает сейчас или что проверит</th><th>Причина</th></tr></thead>
+<tbody>
+<tr><td class="ev">tests/test_e2e_drawing.py:44, 124 (D01, D11)</td><td>Графа 5 «0,63», «0,19»</td><td>Р-1</td></tr>
+<tr><td class="ev">tests/test_e2e_drawing.py:95</td><td>MYPRP3 = «Сборочный чертёж»</td><td>Р-3</td></tr>
+<tr><td class="ev">tests/test_e2e_model.py:136, 272 (M06 и др.)</td><td>«Масса_ФБ» с запятой</td><td>Р-1</td></tr>
+<tr><td class="ev">tests/test_e2e_model.py:321–322 (M11)</td><td>« СБ», «Сборочный чертёж»</td><td>Р-3</td></tr>
+<tr><td class="ev">tests/test_e2e_persistence.py:25, 125 (P03, P04, P05, P16)</td><td>Масса <code>&lt;FONT size=3.5&gt;0,63</code>; « СБ»</td><td>Р-1, Р-3</td></tr>
+<tr><td class="ev">tests/test_e2e_bch.py</td><td>Запись БЧ и «Примечание» текстом</td><td>Р-4</td></tr>
+<tr><td class="ev">tests/test_e2e_install.py (I03)</td><td>Шаблон детали с «Материал_ФБ»</td><td>Н-21</td></tr>
+<tr><td class="ev">unit/CoreTests.cs:28, 32, 71</td><td>Код « СБ» при разборе имени</td><td>Р-3, Р-9</td></tr>
+<tr><td class="ev">unit/CoreTests.cs:106–159</td><td>Перенос без разметки</td><td>Р-2</td></tr>
+<tr><td class="ev">unit/CoreTests.cs:165–209, 411</td><td>Масса текстом с запятой</td><td>Р-1</td></tr>
+<tr><td class="ev">unit/CoreTests.cs:452–461, 477, 512, 568–569</td><td>«2,86 кг», миграция « СБ»</td><td>Р-1, Р-3, Р-4</td></tr>
+<tr><td class="ev">Новые: M04, M18, S01, S02, S03, B04</td><td>К-1/К-2, «ЭМ-», спецификация, БЧ</td><td>Раздел 8</td></tr>
+<tr><td class="ev">Новый: D12 (автотест штампа)</td><td>Матрица К-12: форматки × деталь/сборка × 1–3 строки × кг/г × дробь/строка × надстройка/MProp; PDF-снимки против эталона</td><td>Н-27…Н-34, Р-12</td></tr>
+<tr><td class="ev">Новые: M19 (выбор вида MProp), M20 (имя без обозначения)</td><td>MProp без окна на листе SolidWorks 2025; «Болт М6…» как обычная деталь</td><td>Р-11</td></tr>
+<tr><td class="ev">T0 (расширить)</td><td>Библиотека: заменённые стандарты, «дробь ↔ сортамент», плотности; документация без ссылок на ГОСТ 2.104-2006 и 2.109-73</td><td>К-13, Р-13</td></tr>
+<tr><td class="ev">tests/test_e2e_drawing.py (D07 эталоны)</td><td>Снимки штампа прежней геометрии</td><td>WP-4.6</td></tr>
+<tr><td class="ev">baseline/allowed_diffs.json (R01)</td><td>Строже по WP-0.3; новые AD-26… на утверждение</td><td>Н-24</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="app-v">В. Связь с прежними работами</h3>
+<ul class="prose">
+  <li><b>План устранения замечаний аудита.</b> WP-R1…WP-R3 выполнены. Первая часть WP-R4 (golden master) входит в WP-0.3. Остальные подготовленные пакеты WP-R4…WP-R8 применяются после сверки с решениями Р-1…Р-10. Затронуты как минимум D07 (PDF), B04 (БЧ), I04 (поле «Масса в графе 5» на вкладке свойств: при формуле SW-Mass поле может показывать выражение).</li>
+  <li><b>Каталог сценариев.</b> После плана закрыто 52 из 60. Остаются P08, P13, P14, D07, D08, D10, R02, I01, I02, I04, I05.</li>
+  <li><b>Дефекты.</b> Д-36 пересмотрен Р-1; Д-46 подтверждён Р-5; Д-8 закрыт Р-3; Д-16 закрывается WP-4.3; Д-42 — WP-4.5; Д-43 — WP-0.3.</li>
+</ul>
+
+<h3 id="app-g">Г. Словарь</h3>
+<div class="tbl">
+<table>
+<thead><tr><th>Термин</th><th>Значение</th></tr></thead>
+<tbody>
+<tr><td>Надстройка ЕСКД</td><td>COM-надстройка SolidWorks на C# (v6), пишет реквизиты при сохранении.</td></tr>
+<tr><td>SWPlus</td><td>Макросы VBA 2018 года: MProp (свойства детали и сборки), SProp (покупные изделия), SpecEditor (спецификация), DProp (свойства чертежа), Master (форматки).</td></tr>
+<tr><td>Графа 1, 3, 5</td><td>Графы основной надписи по ГОСТ 2.104: наименование, материал, масса.</td></tr>
+<tr><td>БЧ</td><td>Безчертёжная деталь по ГОСТ 2.109: данные для изготовления — в спецификации.</td></tr>
+<tr><td>Автоприменение MProp</td><td>Режим <code>main_reload</code>: MProp читает форму и сразу выполняет «Применить и закрыть».</td></tr>
+<tr><td>SW-Mass, SW-Material</td><td>Формулы, которые SolidWorks вычисляет сам: масса конфигурации (с точкой) и имя материала.</td></tr>
+<tr><td>FONT, STACK</td><td>Коды форматирования текста SolidWorks: размер шрифта и дробь.</td></tr>
+<tr><td>P-code</td><td>Скомпилированный код VBA внутри <code>.swp</code>; SolidWorks обычно исполняет его, а не текст модуля.</td></tr>
+<tr><td>«По кругу»</td><td>Одна программа записывает значение, другая переписывает по-своему, первая возвращает своё.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="app-d">Д. Формы записи материалов по ГОСТ</h3>
+<div class="prose">
+<p><b>Правило.</b> Материал записывается так, как его обозначает стандарт (или ТУ) на этот материал. Дробь нужна только для сортового проката, когда важен профиль и размер: вверху — сортамент с размером и его стандарт, внизу — марка и стандарт на марку. Пример: «Круг 40 ГОСТ 1133-71 / У10 ГОСТ 1435-99». В знаменателе слово «Сталь» не пишут. Если стандарт — технические условия с однострочным обозначением, пишется одна строка. Основание: ГОСТ 2.109-73 п. 2.2–2.3; правило сохранено в ГОСТ Р 2.109-2023, но номер пункта по полному тексту не сверен. Для БЧ та же запись идёт в «Наименование» спецификации (ГОСТ Р 2.106-2019).</p>
+<p><b>Стандарты ЕСКД.</b> С 01.03.2024 в РФ ГОСТ 2.104-2006 и ГОСТ 2.109-73 не применяются. Действуют ГОСТ Р 2.104-2023 и ГОСТ Р 2.109-2023 (карточки protect.gost.ru).</p>
+<p><b>Грубые ошибки библиотеки</b> (исправляются без вопросов владельцу):</p>
+<ul>
+  <li>кромка ПВХ/ABS со ссылкой на ГОСТ 34359-2017 — это стандарт на сейфы и хранилища;</li>
+  <li>полиамид ПА 6 по ГОСТ 10589-87 — это стандарт на ПА 610, отменён; марка ПА 6-210/311 выпускается по ОСТ 6-06-С9-93;</li>
+  <li>«Сталь 3сп ГОСТ 380-2005» — марка пишется «Ст3сп»;</li>
+  <li>холоднокатаный лист ГОСТ 19904-90 — точность по толщине «БТ», а не «Б»;</li>
+  <li>лист Ст3сп тоньше 4 мм по ГОСТ 14637 — стандарт охватывает только 4–160 мм; тонкий лист — ГОСТ 16523-97;</li>
+  <li>знаменатель «ГОСТ 10632-2014» у ЛДСП — стандарт не распространяется на облицованные плиты;</li>
+  <li>плотность стали 7820 у профильных труб — таблицы сортаментов считаны при 7850;</li>
+  <li>ABS 1380 — ориентир около 1050.</li>
+</ul>
+<p><b>Заменённые стандарты:</b></p>
+<ul>
+  <li>14637-89 → 14637-2024;</li>
+  <li>14918-80 → 14918-2020;</li>
+  <li>22233-2001 → 22233-2018;</li>
+  <li>32289-2013 → 32289-2025 (с 01.07.2026);</li>
+  <li>32274-2013 → 32274-2021;</li>
+  <li>4598-86 → 4598-2018;</li>
+  <li>3916.1-96 → 3916.1-2018.</li>
+</ul>
+<p>Статус ГОСТ 21631-76 и 21631-2019 противоречив. ГОСТ 26020-83 действует, параллельно введён ГОСТ 35087-2024.</p>
+</div>
+<div class="tbl">
+<table>
+<thead><tr><th>Группа (записей)</th><th>Форма</th><th>Пример исправленной строки</th><th>Уверенность</th></tr></thead>
+<tbody>
+<tr><td>Лист 19903 / Ст3сп, t ≥ 4</td><td>дробь</td><td>Лист Б-ПН-НО 6 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-2024</td><td>высокая</td></tr>
+<tr><td>Лист 19903 / Ст3сп, t &lt; 4</td><td>дробь</td><td>Лист Б-ПН-НО 2,5 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97</td><td>высокая по стандарту</td></tr>
+<tr><td>Лист 19903 / 09Г2С (1)</td><td>дробь</td><td>Лист Б-ПН-НО 6 ГОСТ 19903-2015 / 09Г2С ГОСТ 19281-2014</td><td>средняя</td></tr>
+<tr><td>Лист рифлёный 8568 (1)</td><td>одна строка</td><td>Лист ромб 4 Ст3сп ГОСТ 8568-77</td><td>средняя-высокая</td></tr>
+<tr><td>Лист х/к 19904 / 16523 (4)</td><td>дробь</td><td>Лист БТ-ПО 0,8 ГОСТ 19904-90 / 08пс ГОСТ 16523-97</td><td>высокая по «БТ»</td></tr>
+<tr><td>Лист оцинкованный (2)</td><td>дробь</td><td>Лист БТ-ПН-О 0,95 ГОСТ 19904-90 / 01-Ц ГОСТ 14918-2020</td><td>низкая по знаменателю</td></tr>
+<tr><td>Труба 8732 / 8731 (2)</td><td>дробь, группа слитно</td><td>Труба 57×3,5 ГОСТ 8732-78 / В10 ГОСТ 8731-74</td><td>средняя-высокая</td></tr>
+<tr><td>Труба 8639, 8645 / 13663 (25)</td><td>дробь, группа перед маркой</td><td>Труба 40×20×2 ГОСТ 8645-68 / ВСт3сп ГОСТ 13663-86</td><td>средняя</td></tr>
+<tr><td>Труба 8644 плоскоовальная (8)</td><td>дробь, тип А/Б/В вместо «ПО»</td><td>Труба А 30×15×1,2 ГОСТ 8644-68 / В08пс ГОСТ 13663-86</td><td>средняя, тип проверить</td></tr>
+<tr><td>Труба 10704 / 10705 (14)</td><td>дробь, группа через дефис</td><td>Труба 16×1,5 ГОСТ 10704-91 / В-08пс ГОСТ 10705-80</td><td>средняя</td></tr>
+<tr><td>Труба ВГП 3262 (1)</td><td>одна строка без марки</td><td>Труба 50×3,5 ГОСТ 3262-75</td><td>высокая</td></tr>
+<tr><td>Двутавр 26020 / 535 (1)</td><td>дробь</td><td>без изменений</td><td>высокая</td></tr>
+<tr><td>Сталь 380 (1)</td><td>одна строка</td><td>Ст3сп ГОСТ 380-2005</td><td>высокая</td></tr>
+<tr><td>Сталь 20, 45 по 1050 (2)</td><td>одна строка</td><td>без изменений</td><td>высокая</td></tr>
+<tr><td>Сталь 09Г2С 19281 (1)</td><td>одна строка</td><td>без изменений</td><td>средняя</td></tr>
+<tr><td>Профиль АД31Т1 (1)</td><td>одна строка с шифром профиля</td><td>Профиль &lt;шифр&gt; АД31Т1 ГОСТ 22233-2018</td><td>высокая по сути</td></tr>
+<tr><td>Лист АМг2М (2)</td><td>одна строка</td><td>Лист АМг2.М 1,5 ГОСТ 21631-76</td><td>высокая по форме</td></tr>
+<tr><td>ЛДСП (11)</td><td>одна строка</td><td>Плита ЛДСП 16 ГОСТ 32289-2025</td><td>средняя</td></tr>
+<tr><td>МДФ, ХДФ (8)</td><td>одна строка</td><td>Плита МДФ 6 ГОСТ 32274-2021</td><td>средняя-высокая</td></tr>
+<tr><td>ДВП (2)</td><td>одна строка</td><td>ДВП, Т, гр А, 2,5 ГОСТ 4598-2018</td><td>средняя</td></tr>
+<tr><td>Фанера (7)</td><td>одна строка, порода внутри</td><td>Фанера, береза ФК, II/III, E1, Ш2, 6 ГОСТ 3916.1-2018</td><td>высокая</td></tr>
+<tr><td>Кромка ПВХ/ABS (8)</td><td>одна строка по ТУ</td><td>Кромка ПВХ 0,4×19 ТУ &lt;изготовителя&gt;</td><td>высокая, что ГОСТ ошибочен</td></tr>
+<tr><td>HPL (2)</td><td>одна строка</td><td>Пластик HPL 0,8 ТУ &lt;поставщика&gt;</td><td>низкая</td></tr>
+<tr><td>Полиэтилен 16338 (1)</td><td>одна строка</td><td>Полиэтилен 20908-040 ГОСТ 16338-85</td><td>высокая</td></tr>
+<tr><td>Полипропилен 26996 (1)</td><td>одна строка</td><td>Полипропилен 01030 ГОСТ 26996-86</td><td>средняя-высокая</td></tr>
+<tr><td>Полиамид (1)</td><td>одна строка, другой документ</td><td>Полиамид ПА 6-210/311 ОСТ 6-06-С9-93</td><td>высокая по ошибке</td></tr>
+</tbody>
+</table>
+</div>
+<h4 id="app-d-q">Вопросы владельцу по библиотеке</h4>
+<p class="note"><b>Ответ владельца 13.09.2026:</b> вопрос 1 — коротко («марка ГОСТ»). Вопросы 2–12 — оставить как есть: по этим пунктам записи библиотеки не меняются. Грубые ошибки из списка выше исправляются по плану.</p>
+<ol class="prose">
+  <li><b>Знаменатель проката</b> (16523-97, 14637-2024, 19281-2014, 14918-2020): коротко «марка ГОСТ» или полностью (класс прочности, категория, группа отделки)? Рекомендация — коротко.</li>
+  <li><b>Индекс группы у труб</b> (13663-86, 10705-80): писать всегда, опускать или хранить отдельно? Написание — «В10» или «В-10» — по примеру каждого стандарта.</li>
+  <li><b>Лист Ст3сп тоньше 4 мм:</b> знаменатель ГОСТ 16523-97 или убрать такие толщины?</li>
+  <li><b>Плиты</b> (ЛДСП, МДФ, ХДФ, ДВП, фанера): полная кодовая строка или сокращённая «Плита МДФ 6 ГОСТ 32274-2021»?</li>
+  <li><b>ЛДСП:</b> сразу ГОСТ 32289-2025 или -2013 для уже выпущенной документации?</li>
+  <li><b>Кромка ПВХ/ABS:</b> ТУ конкретного поставщика или без нормативного документа?</li>
+  <li><b>HPL 0,8:</b> ТУ или EN 438 поставщика, либо ГОСТ 9590-76 с толщиной от 1,0?</li>
+  <li><b>Профиль АД31Т1:</b> записи на конкретные шифры по ГОСТ 22233-2018 или стандарт общего назначения?</li>
+  <li><b>Лист АМг2М:</b> ГОСТ 21631-76 или 21631-2019?</li>
+  <li><b>Оцинкованный лист:</b> нужен текст приложения ГОСТ 14918-2020 для кода знаменателя. Кто даёт текст или какую марку указывать?</li>
+  <li><b>Двутавр:</b> ГОСТ 26020-83 или ГОСТ 35087-2024?</li>
+  <li><b>Разделители:</b> «Б-ПН-НО 2,5» или «Б-ПН-НО-2,5»; «×» или «х»; «4» или «4,0»?</li>
+</ol>
+<div class="callout prose">
+<p><b>Ограничения.</b> Полные тексты ГОСТ Р 2.109-2023, 14918-2020, 14637-2024, 35087-2024 и схем обозначения 16523-97 и 19904-90 не прочитаны: сайты отдают изображения. Там, где пересказы расходились, уверенность понижена. Перед массовой правкой спорные строки сверяются по protect.gost.ru. Полный отчёт со ссылками — <code>gost_library_research.md</code> (передаётся вместе с планом).</p>
+</div>
+</section>
+
+<footer>
+  Ред. 3 от 13.09.2026 подготовлена без изменения кода. Номера строк и хеши относятся к ветке <span class="mono">refactor/v6-eskd @ b65ac3e</span>.
+</footer>
+
+</main>
+</div>
