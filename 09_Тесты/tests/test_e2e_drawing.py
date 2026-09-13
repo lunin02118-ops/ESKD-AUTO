@@ -9,6 +9,11 @@ from eskd_e2e.testing import SwTestCase, known_defect, tags
 
 A01 = "ПРТИ.468211.101 Пластина опорная.sldprt"
 A10 = "ПРТИ.468211.101 Пластина опорная.slddrw"
+A09 = "ПРТИ.468211.100 СБ Кондуктор сварочный.sldasm"
+A09_COMPONENTS = ("ПРТИ.468211.110 СБ Узел опоры.sldasm", A01, "Болт М6-6gх20.58 ГОСТ 7798-70.sldprt",
+                  "ПРТИ.468211.102 Стойка.sldprt", "ПРТИ.468211.103 Планка.sldprt", "Электродвигатель АИР71А4.sldprt",
+                  "ПРТИ.468211.104 Кронштейн направляющий удлинённый.sldprt", "ПРТИ.468211.105 Рама сварная.sldprt")
+A11 = "ПРТИ.468211.100 СБ Кондуктор сварочный.slddrw"
 
 
 class Drawing(SwTestCase):
@@ -34,12 +39,61 @@ class Drawing(SwTestCase):
         self.assertEqual("ПРТИ.468211.101", text.get("MYPRP0"), "графа 2 — обозначение")
         self.assertEqual("Пластина опорная", text.get("MYPRP4"), "графа 1 — наименование")
         self.assertEqual("Тестов Т.Т.", text.get("MYPRP8"), "разработал")
-        self.assertEqual("ООО «Испытание»", text.get("MYPRP7"), "графа 8 — организация")
+        self.assertEqual("ООО «Испытание»", text.get("MYPRP7"), "графа 9 — организация")
         self.assertIn("0,63", text.get("MYPRP15", ""), "графа 5 — масса")
         self.assertIn("Лист", text.get("MYPRP16", ""), "графа 3 — материал")
         cells = oracles.form1_cells(420)
         for note, cell in (("MYPRP0", "g2_designation"), ("MYPRP4", "g1_title"), ("MYPRP16", "g3_material"),
-                           ("MYPRP15", "g5_mass"), ("MYPRP7", "g8_firm")):
+                           ("MYPRP15", "g5_mass"), ("MYPRP7", "g9_firm")):
+            with self.subTest(note=note):
+                self.assertTrue(oracles.inside(stamp[note]["extent_mm"], cells[cell], tol=1.0),
+                                f"{note} {stamp[note]['extent_mm']} вне графы {cell} {cells[cell]}")
+        self.s.close(drw)
+
+    def test_D02_sheet2_form2a_designation_and_sheet_numbers(self):
+        """D02: лист 2 (форма 2а) — обозначение в графе 2, номер листа «2» в графе 7; на листе 1 — заметки «Sheet1» и
+        «Sheet2» в графах 7 и 8: в них DProp пишет «Лист 1» и «Листов N» (ГОСТ 2.104 не заполняет номер у однолистового
+        документа, поэтому это не системное свойство)."""
+        self._prepare_model()
+        drw = self.s.open(self.copy_fixture(A10))
+        notes = oracles.stamp(drw)
+        self.assertEqual(2, len(notes), f"листы A-10: {list(notes)}")
+        first, second = (notes[name] for name in notes)
+        texts = {k: v["text"].replace("\r\n", "\n") for k, v in second.items()}
+        cells = oracles.form2a_cells(210)
+        self.assertEqual("ПРТИ.468211.101", texts.get("MYPRP0"), "графа 2 листа 2 — обозначение")
+        self.assertTrue(oracles.inside(second["MYPRP0"]["extent_mm"], cells["g2_designation"], tol=1.0),
+                        f"обозначение {second['MYPRP0']['extent_mm']} вне графы 2 {cells['g2_designation']}")
+        sheet_no = [k for k, v in second.items() if "Current Sheet" in v["linked"]]
+        self.assertEqual(1, len(sheet_no), "заметка номера листа на форме 2а")
+        self.assertEqual("2", texts[sheet_no[0]].strip(), f"графа 7 листа 2: {second[sheet_no[0]]}")
+        self.assertTrue(oracles.inside(second[sheet_no[0]]["extent_mm"], cells["g7_sheet"], tol=1.0),
+                        f"номер листа {second[sheet_no[0]]['extent_mm']} вне графы 7 {cells['g7_sheet']}")
+        form1 = oracles.form1_cells(420)
+        for note, cell in (("Sheet1", "g7_sheet"), ("Sheet2", "g8_sheets")):
+            with self.subTest(note=note):
+                self.assertIn(note, first, f"на форме 1 нет заметки {note}, которую заполняет DProp")
+                self.assertTrue(oracles.inside(first[note]["extent_mm"], form1[cell], tol=1.0),
+                                f"{note} {first[note]['extent_mm']} вне графы {cell} {form1[cell]}")
+        self.s.close(drw)
+
+    def test_D03_assembly_drawing_code_and_second_title_line(self):
+        """D03: сборочный чертёж (A-11, форма 1 на А2) — графа 2 «ПРТИ.468211.100 СБ», графа 1 — наименование и второй
+        строкой «Сборочный чертёж»; тексты в своих графах."""
+        for component in A09_COMPONENTS:
+            self.copy_fixture(component)
+        assembly = self.copy_fixture(A09)
+        doc = self.s.open(assembly)
+        self.s.save(doc)
+        self.s.close_all()
+        drw = self.s.open(self.copy_fixture(A11))
+        stamp = next(iter(oracles.stamp(drw).values()))
+        text = {k: v["text"].replace("\r\n", "\n") for k, v in stamp.items()}
+        self.assertEqual("ПРТИ.468211.100 СБ", text.get("MYPRP0"), "графа 2 — обозначение с кодом документа")
+        self.assertEqual("Кондуктор сварочный", text.get("MYPRP4"), "графа 1 — наименование")
+        self.assertEqual("Сборочный чертёж", text.get("MYPRP3"), "графа 1 — вторая строка")
+        cells = oracles.form1_cells(594)
+        for note, cell in (("MYPRP0", "g2_designation"), ("MYPRP4", "g1_title"), ("MYPRP3", "g1_title")):
             with self.subTest(note=note):
                 self.assertTrue(oracles.inside(stamp[note]["extent_mm"], cells[cell], tol=1.0),
                                 f"{note} {stamp[note]['extent_mm']} вне графы {cell} {cells[cell]}")
@@ -118,7 +172,8 @@ class SheetFormats(SwTestCase):
     @known_defect("Д-30")
     def test_D09_sheet_formats_follow_gost_2_301_and_2_104(self):
         """D09: форматки основных надписей — размер по ГОСТ 2.301, рамка 20/5/5/5, основная надпись формы 1 или 2а
-        у правого нижнего угла, у А4 — вдоль короткой стороны, все линии в пределах листа."""
+        у правого нижнего угла, у А4 — вдоль короткой стороны, все линии в пределах листа; обозначение, номер листа и
+        заметки «Sheet1»/«Sheet2», которые заполняет DProp, — в своих графах."""
         sys.path.insert(0, str(paths.TESTS / "tools"))
         from clean_format_notes import load
         problems = {}
@@ -132,8 +187,24 @@ class SheetFormats(SwTestCase):
             drw = load(self.s, fmt, (width, height))
             props = com.as_list(com.dyn(drw.GetCurrentSheet).GetProperties2)
             lines = template_lines(drw)
+            notes = next(iter(oracles.stamp(drw).values()))
             self.s.close(drw)
             found = []
+            # Заметки, по которым пишут DProp («Лист 1», «Листов N») и системное свойство номера листа, — в своих графах.
+            if m.group(3) == "1":
+                cells = oracles.form1_cells(width)
+                expected_notes = (("MYPRP0", "g2_designation"), ("Sheet1", "g7_sheet"), ("Sheet2", "g8_sheets"))
+            else:
+                cells = oracles.form2a_cells(width)
+                current = [k for k, v in notes.items() if "Current Sheet" in v["linked"]]
+                expected_notes = (("MYPRP0", "g2_designation"),) + tuple((k, "g7_sheet") for k in current[:1])
+                if len(current) != 1:
+                    found.append(f"заметок номера листа (Current Sheet): {len(current)}")
+            for note, cell in expected_notes:
+                if note not in notes:
+                    found.append(f"нет заметки {note}")
+                elif not oracles.inside(notes[note]["extent_mm"], cells[cell], tol=1.0):
+                    found.append(f"{note} {notes[note]['extent_mm']} вне графы {cell}")
             if (round(props[5] * 1000), round(props[6] * 1000)) != (width, height):
                 found.append(f"лист {props[5] * 1000:.0f}×{props[6] * 1000:.0f} вместо {width}×{height}")
             right, top = width - 5, height - 5

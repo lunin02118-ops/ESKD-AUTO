@@ -8,6 +8,7 @@
     python 09_Тесты/run_tests.py smoke             # быстрый набор перед коммитом
     python 09_Тесты/run_tests.py full              # всё
     python 09_Тесты/run_tests.py e2e -k P0         # фильтр по части имени теста
+    python 09_Тесты/run_tests.py e2e -k M12,P11    # несколько фильтров через запятую
 
 Сценарии с SolidWorks запускаются только при закрытом SolidWorks: тесты поднимают
 собственную сессию и никогда не трогают документы пользователя.
@@ -91,7 +92,7 @@ def load(names, pattern):
             print(f"  [пропуск] модуль {name} не загружен:\n{traceback.format_exc()}")
             continue
         for test in iter_tests(mod_suite):
-            if pattern and pattern.lower() not in test.id().lower():
+            if pattern and not any(part.strip().lower() in test.id().lower() for part in pattern.split(",") if part.strip()):
                 continue
             suite.addTest(test)
     return suite
@@ -148,7 +149,7 @@ def write_reports(records, out_dir, title, started):
 def main():
     ap = argparse.ArgumentParser(description="Автотесты системы ЕСКД")
     ap.add_argument("suite", choices=sorted(SUITES))
-    ap.add_argument("-k", dest="pattern", default="", help="фильтр по части идентификатора теста")
+    ap.add_argument("-k", dest="pattern", default="", help="фильтр по части идентификатора теста; несколько — через запятую")
     ap.add_argument("--eskd-dll", default=None, help="проверять другую сборку надстройки")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")

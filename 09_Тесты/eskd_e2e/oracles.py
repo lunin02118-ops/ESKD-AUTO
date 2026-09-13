@@ -104,10 +104,31 @@ def notes_of_view(view):
     return out
 
 
+def each_sheet(drw):
+    """(имя листа, вид листа, виды модели) по листам, каждый — активным.
+
+    Вид листа неактивного листа отдаёт заметки форматки активного листа (SolidWorks 2025 SP3): лист 2 формы 2а
+    читался как копия листа 1. Листы по очереди активируются (признак изменения документа не ставится),
+    в конце активным снова становится исходный лист."""
+    names = [str(n) for n in com.as_list(drw.GetSheetNames)]
+    if len(names) <= 1:
+        yield from sheet_views(drw)
+        return
+    original = str(com.dyn(drw.GetCurrentSheet).GetName)
+    try:
+        for name in names:
+            drw.ActivateSheet(name)
+            for item in sheet_views(drw):
+                if item[0] == name:
+                    yield item
+    finally:
+        drw.ActivateSheet(original)
+
+
 def stamp(drw):
     """Заметки форматок всех листов: {лист: {имя заметки: запись}}."""
     result = {}
-    for sheet_name, sheet_view, _ in sheet_views(drw):
+    for sheet_name, sheet_view, _ in each_sheet(drw):
         result[sheet_name] = {n["name"]: n for n in notes_of_view(sheet_view)}
     return result
 
@@ -115,7 +136,7 @@ def stamp(drw):
 def note_positions(drw):
     """Координаты всех заметок всех видов в мм — для проверки нулевого смещения."""
     out = {}
-    for sheet_name, sheet_view, model_views in sheet_views(drw):
+    for sheet_name, sheet_view, model_views in each_sheet(drw):
         for view in [sheet_view] + model_views:
             vname = str(view.GetName2 or "")
             for n in notes_of_view(view):
@@ -169,7 +190,9 @@ def form1_cells(sheet_width_mm):
         "g1_title": (r - 120.0, r - 50.0, 20.0, 45.0),
         "g3_material": (r - 120.0, r - 50.0, 5.0, 20.0),
         "g5_mass": (r - 35.0, r - 18.0, 25.0, 40.0),
-        "g8_firm": (r - 50.0, r, 5.0, 20.0),
+        "g7_sheet": (r - 50.0, r - 30.0, 20.0, 25.0),
+        "g8_sheets": (r - 30.0, r, 20.0, 25.0),
+        "g9_firm": (r - 50.0, r, 5.0, 20.0),
     }
 
 

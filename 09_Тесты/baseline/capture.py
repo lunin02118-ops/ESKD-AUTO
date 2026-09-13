@@ -238,9 +238,10 @@ def main():
     ap.add_argument("label", help="имя снимка: v5, v6 …")
     ap.add_argument("--dll", default=None)
     ap.add_argument("-k", dest="only", default="")
+    ap.add_argument("--out", default=None, help="каталог снимка (по умолчанию baseline/<label>)")
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
-    out_dir = HERE / args.label
+    out_dir = Path(args.out) if args.out else HERE / args.label
     out_dir.mkdir(parents=True, exist_ok=True)
     run_dir = paths.RUNS / f"baseline_{args.label}_{time.strftime('%Y%m%d_%H%M%S')}"
     failures = []

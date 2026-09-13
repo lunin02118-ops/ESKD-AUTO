@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""E2E, группа R — реальные корпуса и миграция файлов v5 (план, §4.7). R01 и R02 добавляются с корпусами Б и В."""
+"""E2E, группа R — golden master на корпусах А и Б и миграция файлов v5 (план, §4.7). R02 добавляется с корпусом В."""
 import csv
 import hashlib
+import json
 import subprocess
 import unittest
 from pathlib import Path
@@ -104,6 +105,37 @@ class Migration(SwTestCase):
         again, report_again, _ = self._clean(False, self.path("report_again.csv"))
         self.assertEqual([], [r for r in self._rows(report_again) if r["Действие"] != "пропуск"],
                          f"повторный прогон нашёл изменения: {again}")
+
+
+class GoldenMaster(SwTestCase):
+
+    def test_R01_behaviour_differs_from_v5_only_by_explained_changes(self):
+        """R01: сценарии golden master (корпуса А и Б) на текущей надстройке — каждое отличие от снимка baseline/v5
+        объяснено правилом baseline/allowed_diffs.json со ссылкой на устранённый дефект."""
+        from baseline import capture, compare
+
+        snapshot = self.path("snapshot_v6")
+        snapshot.mkdir(parents=True, exist_ok=True)
+        failures = {}
+        for name, scenario in capture.SCENARIOS:
+            log = oracles.AddinLog()
+            try:
+                snap = scenario(self.s, name)
+            except Exception as exc:  # сценарий упал — фиксируем и идём дальше, итог проверяется ниже
+                failures[name] = repr(exc)
+                self.s.close_all()
+                continue
+            snap["addin_log_errors"] = log.errors()
+            snap["unexpected_dialogs"] = self.s.watchdog.pop_unexpected()
+            snap = capture.normalize(snap, self.s.run_dir)
+            (snapshot / f"{name}.json").write_text(json.dumps(snap, ensure_ascii=False, indent=1, sort_keys=True),
+                                                  encoding="utf-8")
+        self.assertEqual({}, failures, "сценарии golden master упали")
+        rules = json.loads((paths.TESTS / "baseline" / "allowed_diffs.json").read_text(encoding="utf-8"))["rules"]
+        all_diffs, missing = compare.diffs(paths.TESTS / "baseline" / "v5", snapshot)
+        self.assertEqual([], missing, "сценарии снимка v5 без пары")
+        unexplained, used = compare.explain(all_diffs, rules)
+        self.assertEqual([], [compare.describe(d) for d in unexplained], "отличия от v5 без правила в allowed_diffs.json")
 
 
 if __name__ == "__main__":
