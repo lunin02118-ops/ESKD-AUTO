@@ -235,8 +235,16 @@ class StaticRepository(StaticTestCase):
 
     @known_defect("Д-21")
     def test_T0_single_sheet_format_set(self):
-        """T0: один комплект форматок — «02_…/База шаблонов» убран (Д-21)."""
+        """T0: один комплект форматок — «02_…/База шаблонов» убран, профиль реестра и конфигуратор на него не ссылаются (Д-21)."""
         self.assertFalse((ROOT / "02_Шаблоны_и_Форматки" / "База шаблонов").exists())
+        reg = (ROOT / "01_Настройки_SolidWorks" / "Реестровые_Профили" / "01_SW2025_Корпоративный_Стандарт_ЕСКД.reg").read_bytes().decode("utf-16")
+        configurator = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
+        self.assertNotIn("База шаблонов", reg)
+        self.assertNotIn("База шаблонов", configurator)
+        sheet_formats = set(re.findall(r'^"Sheet Format Folders"="([^"]*)"', reg, flags=re.M))
+        self.assertTrue(sheet_formats, "в профиле нет Sheet Format Folders")
+        self.assertTrue(all(v.endswith("SWPlusMacro_v_2018_SP0.0\\\\Основные надписи") for v in sheet_formats), sheet_formats)
+        self.assertEqual(19, len(list(paths.SHEET_FORMATS.glob("*.slddrt"))), "комплект основных надписей SWPlus")
 
     @known_defect("Д-20")
     def test_T0_mcp_server_writes_no_legacy_aliases(self):

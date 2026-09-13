@@ -182,7 +182,6 @@ class CADConfiguratorApp:
         
         required_dirs = [
             ("Шаблоны документов", os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблоны документов")),
-            ("База шаблонов", os.path.join(root_p, "02_Шаблоны_и_Форматки", "База шаблонов")),
             ("Основные надписи (SWPlus)", os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "Основные надписи")),
             ("Макросы SWPlus", os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0")),
             ("Профили сварных деталей", os.path.join(root_p, "04_Библиотеки_Материалов_и_Профилей", "Профили сварных деталей")),
@@ -252,7 +251,8 @@ class CADConfiguratorApp:
             
         # 3. Path mappings
         doc_templates   = os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблоны документов")
-        drafting_std    = os.path.join(root_p, "02_Шаблоны_и_Форматки", "База шаблонов")
+        # Один комплект форматок — SWPlus «Основные надписи» (WP-3.2); стандарт оформления MyStandard.sldstd лежит в SpecEditor
+        drafting_std    = os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "SpecEditor")
         sheet_formats   = os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "Основные надписи")
         weld_profiles   = os.path.join(root_p, "04_Библиотеки_Материалов_и_Профилей", "Профили сварных деталей")
         thread_profiles = os.path.join(root_p, "04_Библиотеки_Материалов_и_Профилей", "Профили резьбы")
@@ -281,7 +281,7 @@ class CADConfiguratorApp:
         asm_default  = os.path.join(doc_templates, "Сборка.asmdot")
         drw_default  = os.path.join(doc_templates, "Чертеж.drwdot")
         mat_db_str   = mat_library  # корпоративный стандарт: единственная библиотека в путях системы"
-        tmpl_folders = f"{doc_templates};{drafting_std}"
+        tmpl_folders = doc_templates
 
         def esc(s): return s.replace('\\', '\\\\')
 
