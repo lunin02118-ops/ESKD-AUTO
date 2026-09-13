@@ -56,7 +56,7 @@ namespace ESKD.MaterialSync.Sw
             PropertyWriter w = new PropertyWriter(doc, !apply);
             bool transfer = !isDrawing && !SyncService.IsProtected(w, doc);
             PropertyLevels levels = Read(w, isDrawing);
-            result.Operations.AddRange(LegacyMigration.Plan(levels, dict, isDrawing, !settings.LegacyAssemblyCodeSpace, transfer));
+            result.Operations.AddRange(LegacyMigration.Plan(levels, dict, isDrawing, true, transfer));
             if (!apply) return result;
             foreach (MigrationOperation op in result.Operations)
             {

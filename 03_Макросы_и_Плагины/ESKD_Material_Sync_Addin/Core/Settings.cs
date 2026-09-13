@@ -26,7 +26,6 @@ namespace ESKD.MaterialSync.Core
         public bool FixCopies;
         public bool OverwriteSignatures;
         public bool LegacyAliases;
-        public bool LegacyAssemblyCodeSpace = true;
         public bool DryRun;
         public string DictionaryPath = "";
 
@@ -51,7 +50,6 @@ namespace ESKD.MaterialSync.Core
                     s.FixCopies = Int(key, "FixCopies", 0) == 1;
                     s.OverwriteSignatures = Int(key, "OverwriteSignatures", 0) == 1;
                     s.LegacyAliases = Int(key, "LegacyAliases", 0) == 1;
-                    s.LegacyAssemblyCodeSpace = Int(key, "LegacyAssemblyCodeSpace", 1) == 1;
                     s.DryRun = Int(key, "DryRun", 0) == 1;
                     s.DictionaryPath = Str(key, "DictionaryPath");
                 }

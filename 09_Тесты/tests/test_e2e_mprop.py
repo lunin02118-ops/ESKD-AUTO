@@ -47,12 +47,12 @@ class MPropCompatibility(SwTestCase):
         found = self._mprop_round_trip(doc)
         self.assertEqual([], found, f"MProp «Применить без правок» изменил документ {name}")
 
-    @known_defect("Д-48")
+    @known_defect("Д-68")
     def test_M04_mprop_apply_changes_nothing_plate(self):
         """M04 (К-1): пластина A-01 — масса, наименование, подписи, материал после MProp те же (Н-02, Н-03, Н-04, Н-05)."""
         self._assert_k1(A01)
 
-    @known_defect("Д-52")
+    @known_defect("Д-68")
     def test_M04_mprop_apply_changes_nothing_executions(self):
         """M04 (К-1): планка A-03 с исполнениями 00/01/02 — обозначения исполнений и «Исполнение» те же (Н-06)."""
         self._assert_k1(A03)
@@ -67,12 +67,12 @@ class MPropCompatibility(SwTestCase):
         """M04 (К-1): прокладка A-17 (18,8 г) — масса в граммах « г» и единицы документа как у MProp (Н-32, Р-7)."""
         self._assert_k1(A17)
 
-    @known_defect("Д-48")
+    @known_defect("Д-68")
     def test_M04_mprop_apply_changes_nothing_mass_threshold(self):
         """M04 (К-1): A-18 — исполнения 50,2 г и 175,8 г по обе стороны порога 100 г; единица одна на документ (И-20)."""
         self._assert_k1(A18)
 
-    @known_defect("Д-55")
+    @known_defect("Д-51")
     def test_M04_mprop_apply_changes_nothing_assembly(self):
         """M04 (К-1): сборка A-08 «… СБ …» — «Сборка1_ФБ», «Сборка2_ФБ», обозначение, вопросы MProp (Н-09, И-21)."""
         self._assert_k1(A08, A01, A04)

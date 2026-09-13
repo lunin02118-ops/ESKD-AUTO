@@ -84,18 +84,20 @@ class Drawing(SwTestCase):
         self.s.close(drw)
 
     def test_D03_assembly_drawing_code_and_second_title_line(self):
-        """D03: сборочный чертёж (A-11, форма 1 на А2) — графа 2 «ПРТИ.468211.100 СБ», графа 1 — наименование и второй
+        """D03: сборочный чертёж (A-11, форма 1 на А2) — графа 2 «ПРТИ.468211.100СБ», графа 1 — наименование и второй
         строкой «Сборочный чертёж»; тексты в своих графах."""
         for component in A09_COMPONENTS:
             self.copy_fixture(component)
         assembly = self.copy_fixture(A09)
         doc = self.s.open(assembly)
+        with self.s.eskd_muted():
+            build.props(doc, {"Сборка1_ФБ": "СБ"}, str(doc.GetActiveConfiguration.Name))  # как в шаблоне сборки и у MProp
         self.s.save(doc)
         self.s.close_all()
         drw = self.s.open(self.copy_fixture(A11))
         stamp = next(iter(oracles.stamp(drw).values()))
         text = {k: v["text"].replace("\r\n", "\n") for k, v in stamp.items()}
-        self.assertEqual("ПРТИ.468211.100 СБ", text.get("MYPRP0"), "графа 2 — обозначение с кодом документа")
+        self.assertEqual("ПРТИ.468211.100СБ", plain(text.get("MYPRP0")), "графа 2 — обозначение с кодом документа слитно, как у MProp и SpecEditor (Р-3)")
         self.assertEqual("Кондуктор сварочный", plain(text.get("MYPRP4")), "графа 1 — наименование")
         self.assertIn(plain(text.get("MYPRP3")), ("Сборочный чертёж", "Сборочный чертеж"), "графа 1 — вторая строка")
         cells = oracles.form1_cells(594)

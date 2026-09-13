@@ -132,6 +132,8 @@ class PersistenceSave(SwTestCase):
         """P05: сборка «Сохранить как» — новое обозначение и код СБ в конфигурации."""
         self.copy_fixtures(A01, A04)
         path, doc = self.open_copy(A08)
+        with self.s.eskd_muted():
+            build.props(doc, {"Сборка1_ФБ": "СБ"}, "00")  # как в шаблоне сборки и у MProp
         self.s.save(doc)
         target = self.path("ПРТИ.468211.132 СБ Узел новый.sldasm")
         self.s.save_as(doc, target)
@@ -140,7 +142,7 @@ class PersistenceSave(SwTestCase):
         new = self.persisted(target)
         self.assertEqual("ПРТИ.468211.132", V(new, "Обозначение"))
         self.assertEqual("Узел новый", V(new, "Наименование"))
-        self.assertEqual(" СБ", V(new, "Сборка1_ФБ", "00"))
+        self.assertEqual("СБ", V(new, "Сборка1_ФБ", "00"), "код без пробела (Р-3)")
 
     def test_P06_save_as_keeps_manual_designation(self):
         """P06: «Сохранить как» детали с ручным обозначением (RenameSWP = 1) — обозначение сохраняется."""

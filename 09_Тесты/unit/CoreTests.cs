@@ -526,7 +526,7 @@ namespace ESKD.Tests
             PropertyLevels assembly = new PropertyLevels();
             assembly.AddConfiguration("00");
             assembly.Set("00", "Сборка1_ФБ", " СБ");
-            Assert.AreEqual(0, LegacyMigration.Plan(assembly, Dict, false, false).Count, "« СБ» остаётся, пока действует LegacyAssemblyCodeSpace");
+            Assert.AreEqual(1, LegacyMigration.Plan(assembly, Dict, false, true).Count, "« СБ» → «СБ» (Р-3)");
             PropertyLevels normalized = LegacyMigration.Apply(assembly, LegacyMigration.Plan(assembly, Dict, false, true));
             Assert.AreEqual("СБ", normalized.Get("00", "Сборка1_ФБ"), "код без пробела по D-8");
         }

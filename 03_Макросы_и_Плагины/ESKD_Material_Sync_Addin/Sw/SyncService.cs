@@ -153,13 +153,14 @@ namespace ESKD.MaterialSync.Sw
             }
 
             string code = now.DocCode;
-            string expected = DesignationParser.Build(now.Root, now.Execution, isAssembly ? "" : code);
+            // Код документа из имени файла отбрасывается и никуда не пишется (Р-9, Н-11): его ставят шаблон и MProp.
+            string expected = DesignationParser.Build(now.Root, now.Execution, "");
             string expectedBefore = before != null && before.HasDesignation
-                ? DesignationParser.Build(before.Root, before.Execution, isAssembly ? "" : before.DocCode) : null;
+                ? DesignationParser.Build(before.Root, before.Execution, "") : null;
             bool manual = (w.Raw("", "RenameSWP") ?? "").Trim() == "1";
             string current = w.Raw("", number);
-            // Миграция v5: у сборки в обозначении мог остаться код « СБ» — это производное значение.
-            if (isAssembly && current != null && !string.IsNullOrEmpty(code) &&
+            // Миграция v5 и v6.1: в обозначении мог остаться код « СБ» — это производное значение.
+            if (current != null && !string.IsNullOrEmpty(code) &&
                 string.Equals(current.Trim(), DesignationParser.Build(now.Root, now.Execution, code), StringComparison.Ordinal))
             {
                 current = "";
@@ -190,7 +191,7 @@ namespace ESKD.MaterialSync.Sw
                     string cfgExpected;
                     if (recognized)
                     {
-                        cfgExpected = DesignationParser.Build(now.Root, isBase ? now.Execution : execution, isAssembly ? "" : code);
+                        cfgExpected = DesignationParser.Build(now.Root, isBase ? now.Execution : execution, "");
                     }
                     else if (!PropertyWriter.IsEmptyOrTemplate(cfgCurrent) && !DerivedFromBefore(cfgCurrent, before, isAssembly))
                     {
@@ -201,38 +202,36 @@ namespace ESKD.MaterialSync.Sw
                         cfgExpected = expected;
                     }
                     w.Set(cfg, number, cfgExpected);
-                    string exec, docCode;
-                    DesignationParser.StripExecutionSuffix(cfgExpected, out exec, out docCode);
-                    w.SetIfEmpty(cfg, "Исполнение", string.IsNullOrEmpty(exec) ? "0" : "2");
+                    // «Исполнение» = 2 — номер исполнения из имени конфигурации (MProp добавляет его к обозначению документа);
+                    // номер из имени файла уже входит в обозначение документа — «Исполнение» = 0, иначе MProp удвоит суффикс
+                    // (FrmMProp:2677–2690, прогон К-1 A-20).
+                    bool fromConfiguration = recognized && !isBase && !string.IsNullOrEmpty(execution);
+                    string executionFlag = w.Raw(cfg, "Исполнение");
+                    if (string.IsNullOrWhiteSpace(executionFlag)) w.Set(cfg, "Исполнение", fromConfiguration ? "2" : "0");
+                    else if (executionFlag.Trim() == "2" && !fromConfiguration) w.Set(cfg, "Исполнение", "0");
                 }
             }
 
-            // Сборки: код документа и вторая строка графы 1 (уровень конфигурации, как у MProp)
-            if (isAssembly && designationDerived)
+            // Сборки: «Сборка1_ФБ» ставят шаблон и MProp — надстройка его не пишет и не удаляет, только « СБ» → «СБ» (Р-3);
+            // «Сборка2_ФБ» — в формате MProp, только если свойства нет; общие копии MProp удаляет (FrmMProp:3055–3069).
+            if (isAssembly)
             {
                 string codeProp = dict[Role.DocCode];
                 string codeText = dict[Role.DocDescription];
-                string codeValue = string.IsNullOrEmpty(code) ? "" : (settings.LegacyAssemblyCodeSpace ? " " + code : code);
                 foreach (string cfg in w.ConfigurationNames())
                 {
-                    if (codeValue.Length > 0)
-                    {
-                        w.Set(cfg, codeProp, codeValue);
-                        string second = w.Raw(cfg, codeText);
-                        if (PropertyWriter.IsEmptyOrTemplate(second) || second.IndexOf("<FONT", StringComparison.OrdinalIgnoreCase) >= 0)
-                            w.Set(cfg, codeText, "Сборочный чертёж");
-                    }
-                    else if (IsDerivedCode(w.Raw(cfg, codeProp)))
-                    {
-                        w.Delete(cfg, codeProp);
-                    }
+                    string codeValue = w.Raw(cfg, codeProp);
+                    if (codeValue != null && codeValue != codeValue.Trim() && IsDerivedCode(codeValue))
+                        w.Set(cfg, codeProp, codeValue.Trim());
+                    string second = w.Raw(cfg, codeText);
+                    bool isAssemblyDrawing = (w.Raw(cfg, codeProp) ?? "").Trim() == SwPlusFormat.AssemblyCode;
+                    if ((second == null && isAssemblyDrawing) || IsLegacyDocDescription(second))
+                        w.Set(cfg, codeText, SwPlusFormat.DocDescription(SwPlusFormat.AssemblyDrawingText, dict.SmallFontMarkup));
                 }
                 string generalCode = w.Raw("", codeProp);
-                if (generalCode != null && IsDerivedCode(generalCode))
-                {
-                    if (codeValue.Length > 0) w.Set("", codeProp, codeValue);
-                    else w.Delete("", codeProp);
-                }
+                if (generalCode != null && IsDerivedCode(generalCode)) w.Delete("", codeProp);
+                string generalText = w.Raw("", codeText);
+                if (generalText != null && (IsLegacyDocDescription(generalText) || IsMPropDocDescription(generalText))) w.Delete("", codeText);
             }
 
             // Наименование и «Наименование_ФБ» — общие свойства
@@ -287,6 +286,20 @@ namespace ESKD.MaterialSync.Sw
             if (before == null || !before.HasDesignation || string.IsNullOrEmpty(value)) return false;
             string root = DesignationParser.Build(before.Root, null, "");
             return value.StartsWith(root, StringComparison.Ordinal);
+        }
+
+        /// <summary>«Сборка2_ФБ», которую писала надстройка до v6.2: «Сборочный чертёж» без разметки.</summary>
+        private static bool IsLegacyDocDescription(string value)
+        {
+            if (value == null) return false;
+            string t = value.Trim();
+            return t == "Сборочный чертёж" || t == SwPlusFormat.AssemblyDrawingText;
+        }
+
+        private static bool IsMPropDocDescription(string value)
+        {
+            string t = MaterialRecord.Normalize(value ?? "");
+            return t.StartsWith(SwPlusFormat.DocDescriptionPrefix, StringComparison.Ordinal);
         }
 
         private static bool IsDerivedCode(string value)

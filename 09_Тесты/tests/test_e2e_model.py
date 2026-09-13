@@ -340,16 +340,30 @@ class ModelNames(SwTestCase):
 
     @known_defect("Д-09")
     def test_M11_assembly_code_and_second_line_in_configuration(self):
-        """M11: сборка — код СБ и «Сборочный чертёж» в конфигурации, обозначение без кода."""
+        """M11: сборка — «Сборка1_ФБ» ставят шаблон и MProp: прежнее « СБ» v6.1 → «СБ», вторая строка графы 1 в формате MProp;
+        без кода в конфигурации надстройка код не придумывает (Р-3), обозначение без кода."""
         self.copy_fixtures(A01, A04)
         path, doc = self.open_copy(A08)
+        with self.s.eskd_muted():
+            build.props(doc, {"Сборка1_ФБ": " СБ"}, "00")
+            build.props(doc, {"Сборка1_ФБ": " СБ"})
         self.s.save(doc)
         self.s.close(doc)
         disk = self.persisted(path)
         self.assertEqual("ПРТИ.468211.110", V(disk, "Обозначение"))
-        self.assertEqual(" СБ", V(disk, "Сборка1_ФБ", "00"))
-        self.assertEqual("Сборочный чертёж", V(disk, "Сборка2_ФБ", "00"))
+        self.assertEqual("СБ", V(disk, "Сборка1_ФБ", "00"), "« СБ» v6.1 → «СБ» (Р-3)")
+        self.assertEqual("<FONT size=1> \n<FONT size=2.5>Сборочный чертеж", (V(disk, "Сборка2_ФБ", "00") or "").replace("\r\n", "\n"),
+                         "вторая строка графы 1 в формате MProp (FrmMProp:3066)")
+        self.assertIsNone(V(disk, "Сборка1_ФБ"), "общей копии кода нет — MProp её удаляет")
         self.assertIn('"SW-Mass@@00@ПРТИ.468211.110 СБ Узел опоры.SLDASM"', V(disk, "Масса_ФБ", "00") or "", "масса сборки выражением MProp")
+        bare_path, bare = self.s.workspace_copy(paths.FIXTURES_A / A08, name="ПРТИ.468211.111 СБ Узел без кода.sldasm",
+                                                subdir=self._case_name()), None
+        bare = self.s.open(bare_path)
+        self.s.save(bare)
+        self.s.close(bare)
+        bare_disk = self.persisted(bare_path)
+        self.assertIsNone(V(bare_disk, "Сборка1_ФБ", "00"), "код из имени файла не пишется (Р-3, Р-9)")
+        self.assertIsNone(V(bare_disk, "Сборка2_ФБ", "00"), "без «СБ» вторая строка не добавляется")
 
     @known_defect("Д-10")
     def test_M01_live_mass_and_material_expressions_kept(self):
