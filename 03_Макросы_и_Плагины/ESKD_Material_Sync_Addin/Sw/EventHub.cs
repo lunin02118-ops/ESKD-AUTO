@@ -47,12 +47,14 @@ namespace ESKD.MaterialSync.Sw
             public string Kind;
             public string TargetPath;
             public string PreviousPath;
+            public string Text;
         }
 
         private readonly ISldWorks _app;
         private readonly SldWorks _events;
         private readonly List<DocState> _docs = new List<DocState>();
         private readonly Queue<IdleTask> _idle = new Queue<IdleTask>();
+        private readonly List<string> _lastWarnings = new List<string>();
         private bool _resaving;
         private bool _processingIdle;
 
@@ -60,6 +62,12 @@ namespace ESKD.MaterialSync.Sw
         {
             _app = app;
             _events = (SldWorks)app;
+        }
+
+        /// <summary>Предупреждения последней автоматической синхронизации: сохранение, «Сохранить как», смена материала.</summary>
+        public string LastWarnings
+        {
+            get { return string.Join("\n", _lastWarnings.ToArray()); }
         }
 
         public void Attach()
@@ -219,10 +227,16 @@ namespace ESKD.MaterialSync.Sw
             if (task.Doc == null) return;
             if (task.Kind == "material")
             {
-                SyncService.SyncModel(_app, task.Doc, new SyncRequest
+                Remember(task.Doc, SyncService.SyncModel(_app, task.Doc, new SyncRequest
                 {
                     Reason = "смена материала", Names = false, Signatures = false, Mass = false
-                });
+                }));
+                return;
+            }
+            if (task.Kind == "status")
+            {
+                Frame frame = _app.Frame() as Frame;
+                if (frame != null) frame.SetStatusBarText(task.Text);
                 return;
             }
             if (task.Kind == "saveas")
@@ -248,6 +262,7 @@ namespace ESKD.MaterialSync.Sw
             {
                 Reason = reason, TargetPath = targetPath, PreviousPath = previousPath
             });
+            Remember(doc, report);
             if (report.Changes == 0) return;
             int errors = 0, warnings = 0;
             _resaving = true;
@@ -319,12 +334,12 @@ namespace ESKD.MaterialSync.Sw
                 Settings settings = Settings.Read();
                 if (!settings.ServiceEnabled || !settings.SyncOnSave) return 0;
                 if (s.Type == (int)swDocumentTypes_e.swDocDRAWING) return 0;
-                SyncService.SyncModel(_app, s.Doc, new SyncRequest
+                Remember(s.Doc, SyncService.SyncModel(_app, s.Doc, new SyncRequest
                 {
                     Reason = _resaving ? "пересохранение" : "сохранение",
                     TargetPath = SafePath(s.Doc),
                     PreviousPath = s.LastPath
-                });
+                }));
             }
             catch (Exception ex)
             {
@@ -389,6 +404,20 @@ namespace ESKD.MaterialSync.Sw
             Untrack(s);
             _docs.Remove(s);
             return 0;
+        }
+
+        /// <summary>
+        /// Предупреждения видны пользователю (Д-38): после автоматической синхронизации — в строке состояния SolidWorks
+        /// (выставляется в простое, иначе её затирает сообщение о записи файла), полностью — по кнопке «Синхронизировать»
+        /// и в журнале.
+        /// </summary>
+        private void Remember(ModelDoc2 doc, SyncReport report)
+        {
+            if (report == null || report.Skipped) return;
+            _lastWarnings.Clear();
+            _lastWarnings.AddRange(report.Warnings);
+            if (report.Warnings.Count > 0 && doc != null)
+                _idle.Enqueue(new IdleTask { Doc = doc, Kind = "status", Text = report.StatusLine() });
         }
 
         // ------------------------------------------------------------------ учёт документов

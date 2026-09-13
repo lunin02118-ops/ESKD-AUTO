@@ -241,6 +241,45 @@ class StaticRepository(StaticTestCase):
                           if re.search(r"\.(Add3|Delete2|Set2)\(", src.read_text(encoding="utf-8"))})
         self.assertEqual(["PropertyWriter.cs"], writers, "свойства пишутся в обход PropertyWriter")
 
+    def test_T0_property_name_literals_are_declared(self):
+        """T0: имя свойства литералом в коде надстройки — из словаря SWPlus, служебных имён SWPlus, лишних имён v5, имён
+        надстройки или шаблона (PropertyDictionary); белый список M01 — словарь, служебные имена и имена надстройки (А-5)."""
+        dictionary_cs = (ADDIN / "Core" / "PropertyDictionary.cs").read_text(encoding="utf-8")
+        consts = {}
+        for src in addin_sources():
+            consts.update(re.findall(r'const string (\w+) = "([^"]*)"', src.read_text(encoding="utf-8")))
+
+        def declared(array):
+            m = re.search(r"public static readonly string\[\] %s = new string\[\]\s*\{(.*?)\};" % array, dictionary_cs, flags=re.S)
+            self.assertIsNotNone(m, f"PropertyDictionary.{array} не найден")
+            body = m.group(1)
+            return set(re.findall(r'"([^"]+)"', body)) | {consts[ref.split(".")[-1]] for ref in re.findall(r"\b[A-Z]\w*\.\w+", body)}
+
+        groups = {a: declared(a) for a in ("DefaultNames", "SwPlusServiceNames", "LegacyExtraNames", "AddinNames", "TemplateNames")}
+        self.assertEqual({"Материал_Строка", "Формат_до_БЧ", "Примечание_до_БЧ"}, groups["AddinNames"])
+        known = set().union(*groups.values())
+
+        call = re.compile(r'\b(?:Set|SetIfEmpty|Raw|Resolved|Delete|Exists|Get)\(\s*(?:"[^"]*"|[^,()"]*)\s*,\s*"([^"]+)"')
+        live = re.compile(r'\bRestoreLive\(\s*\w+\s*,\s*\w+\s*,\s*"([^"]+)"')
+        loop = re.compile(r'foreach \(string (\w+) in new\[\] \{([^}]*)\}\)')
+        used = {}
+        for src in addin_sources():
+            text = src.read_text(encoding="utf-8")
+            names = set(call.findall(text)) | set(live.findall(text))
+            names |= {v for k, v in re.findall(r'const string (\w+Property) = "([^"]*)"', text)}
+            for m in loop.finditer(text):
+                body = text[m.end():m.end() + 400]
+                if re.search(r"\b(?:Set|SetIfEmpty|Raw|Resolved|Delete)\([^;]*?,\s*%s\b" % m.group(1), body):
+                    names |= set(re.findall(r'"([^"]+)"', m.group(2)))
+            for name in names:
+                used.setdefault(name, set()).add(src.name)
+        self.assertTrue({"Исполнение", "Материал_Строка", "Масса", "Наименование_ВП", "Разраб."} <= set(used), sorted(used))
+        self.assertEqual({}, {n: sorted(f) for n, f in used.items() if n not in known}, "имена свойств вне PropertyDictionary")
+
+        from tests import test_e2e_model
+        allowed = groups["DefaultNames"] | groups["SwPlusServiceNames"] | groups["AddinNames"]
+        self.assertEqual(set(), test_e2e_model.ALLOWED_NEW - allowed, "M01 разрешает имена вне словаря и имён надстройки")
+
     @tags("smoke")
     def test_T0_material_library_fields_consistent(self):
         """T0: в библиотеке материалов дробь «Обозначение_ГОСТ» согласована с «Сортаментом» и «Обозначением_Строкой» (Д-27)."""

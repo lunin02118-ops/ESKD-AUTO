@@ -245,35 +245,49 @@ namespace ESKD.MaterialSync
             }
         }
 
+        /// <summary>Кнопка «Синхронизировать»: итог в строке состояния, предупреждения — окном (только по нажатию, Д-38).</summary>
         public void SyncCurrentDoc()
         {
-            int changes = SyncActiveDocumentSilent();
+            SyncReport report = RunExplicitSync();
+            if (report == null || report.Skipped) return;
             try
             {
-                if (changes > 0) StatusText("ЕСКД: обновлено свойств — " + changes);
-                else if (changes == 0) StatusText("ЕСКД: реквизиты актуальны");
+                StatusText(report.Changes > 0 ? "ЕСКД: обновлено свойств — " + report.Changes : "ЕСКД: реквизиты актуальны");
+                if (report.Warnings.Count > 0)
+                    MessageBox.Show(string.Join("\n\n", report.Warnings.ToArray()), "ЕСКД: предупреждения синхронизации",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             catch (Exception ex)
             {
-                Core.Log.Error("SetStatusBarText", ex);
+                Core.Log.Error("SyncCurrentDoc: итог", ex);
             }
         }
 
         /// <summary>Синхронизация активного документа без интерфейса: число изменённых свойств или -1.</summary>
         public int SyncActiveDocumentSilent()
         {
+            SyncReport report = RunExplicitSync();
+            return report == null || report.Skipped ? -1 : report.Changes;
+        }
+
+        private SyncReport RunExplicitSync()
+        {
             try
             {
                 ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
-                if (doc == null) return -1;
-                SyncReport report = SyncService.SyncExplicit(_app, doc);
-                return report.Skipped ? -1 : report.Changes;
+                return doc != null ? SyncService.SyncExplicit(_app, doc) : null;
             }
             catch (Exception ex)
             {
                 Core.Log.Error("SyncActiveDocumentSilent", ex);
-                return -1;
+                return null;
             }
+        }
+
+        /// <summary>Предупреждения последней автоматической синхронизации — те, что показаны в строке состояния.</summary>
+        public string LastSyncWarnings()
+        {
+            return _hub != null ? _hub.LastWarnings : "";
         }
 
         public void ToggleDrawingless()

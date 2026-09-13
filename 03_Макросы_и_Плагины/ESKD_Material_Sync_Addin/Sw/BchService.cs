@@ -163,17 +163,16 @@ namespace ESKD.MaterialSync.Sw
             return !string.IsNullOrEmpty(parsed.Title) ? parsed.Title : "Деталь";
         }
 
+        /// <summary>Материал этой конфигурации по тем же правилам, что при сохранении (Д-41): без материала — ничего.</summary>
         private static MaterialInfo Material(ISldWorks app, PartDoc part, string cfg, out string materialName)
         {
             materialName = "";
             try
             {
                 string db;
-                materialName = part.GetMaterialPropertyName2(cfg, out db) ?? "";
-                if (string.IsNullOrEmpty(materialName)) materialName = part.GetMaterialPropertyName2("", out db) ?? "";
-                if (string.IsNullOrEmpty(materialName)) return null;
-                string[] dbs = app.GetMaterialDatabases() as string[];
-                return MaterialCatalog.Find(dbs ?? new string[0], db, materialName);
+                materialName = SyncService.MaterialName(part, (ModelDoc2)part, cfg, out db) ?? "";
+                if (materialName.Length == 0) return null;
+                return MaterialCatalog.Find(SyncService.MaterialDatabases(app), db, materialName);
             }
             catch (Exception ex)
             {

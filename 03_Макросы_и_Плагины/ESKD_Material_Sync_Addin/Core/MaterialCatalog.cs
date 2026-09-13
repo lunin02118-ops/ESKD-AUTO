@@ -91,8 +91,9 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>
-        /// Значение (с LF вместо CR LF) — одно из представлений какого-либо материала этих библиотек («Материал_ФБ» или
-        /// «Материал_Таблица», которые пишет надстройка): такое значение принадлежит системе и следует за материалом.
+        /// Значение (с LF вместо CR LF) — запись какого-либо материала этих библиотек: «Материал_ФБ» или «Материал_Таблица»,
+        /// которые пишет надстройка (с тегами FONT и без них, флаг prpFontSize), однострочная запись или имя материала,
+        /// которое без разметки писала v5. Такое значение принадлежит системе и следует за материалом.
         /// </summary>
         public static bool IsSystemRecord(IEnumerable<string> databasePaths, string value)
         {
@@ -110,10 +111,15 @@ namespace ESKD.MaterialSync.Core
                         e.Records = new HashSet<string>(StringComparer.Ordinal);
                         foreach (MaterialInfo info in e.Materials.Values)
                         {
-                            MaterialRecord r = MaterialRecord.FromLibrary(info);
-                            if (r == null) continue;
-                            e.Records.Add(MaterialRecord.Normalize(r.Stamp));
-                            e.Records.Add(MaterialRecord.Normalize(r.Table));
+                            e.Records.Add(info.Name.Trim());
+                            foreach (bool smallFont in new[] { true, false })
+                            {
+                                MaterialRecord r = MaterialRecord.FromLibrary(info, smallFont);
+                                if (r == null) continue;
+                                e.Records.Add(MaterialRecord.Normalize(r.Stamp));
+                                e.Records.Add(MaterialRecord.Normalize(r.Table));
+                                e.Records.Add(r.Line);
+                            }
                         }
                     }
                     records = e.Records;
@@ -121,6 +127,66 @@ namespace ESKD.MaterialSync.Core
                 if (records.Contains(value)) return true;
             }
             return false;
+        }
+
+        /// <summary>Корпоративная библиотека рядом с надстройкой: …/04_Библиотеки_Материалов_и_Профилей/Библиотека материалов.</summary>
+        public const string CorporateLibraryFile = "Библиотека_Материалов_ГОСТ.sldmat";
+
+        public static string LocateCorporateLibrary(string addinDirectory)
+        {
+            string relative = Path.Combine("04_Библиотеки_Материалов_и_Профилей", "Библиотека материалов", CorporateLibraryFile);
+            string cur = addinDirectory;
+            for (int i = 0; i < 6 && !string.IsNullOrEmpty(cur); i++)
+            {
+                string candidate = Path.Combine(cur, relative);
+                if (File.Exists(candidate)) return candidate;
+                DirectoryInfo parent = Directory.GetParent(cur);
+                cur = parent != null ? parent.FullName : null;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Базы SolidWorks и после них корпоративная библиотека из поставки (Д-39): дробь, записанная по библиотеке,
+        /// узнаётся и заменяется при смене материала, даже если в списке баз SolidWorks этой библиотеки нет.
+        /// </summary>
+        public static List<string> WithCorporateLibrary(IEnumerable<string> databasePaths, string corporateLibrary)
+        {
+            List<string> result = new List<string>();
+            if (databasePaths != null)
+            {
+                foreach (string p in databasePaths)
+                {
+                    if (!string.IsNullOrEmpty(p)) result.Add(p);
+                }
+            }
+            if (string.IsNullOrEmpty(corporateLibrary)) return result;
+            foreach (string p in result)
+            {
+                if (string.Equals(FullPath(p), FullPath(corporateLibrary), StringComparison.OrdinalIgnoreCase)) return result;
+            }
+            result.Add(corporateLibrary);
+            return result;
+        }
+
+        private static string FullPath(string path)
+        {
+            try
+            {
+                return Path.GetFullPath(path);
+            }
+            catch (ArgumentException)
+            {
+                return path;
+            }
+            catch (NotSupportedException)
+            {
+                return path;
+            }
+            catch (PathTooLongException)
+            {
+                return path;
+            }
         }
 
         private static Dictionary<string, MaterialInfo> Parse(string databasePath)

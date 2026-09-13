@@ -63,9 +63,10 @@ namespace ESKD.MaterialSync.Core
             return massKg.ToString(format, Ru);
         }
 
-        public static string MassForStamp(double massKg, int decimals)
+        /// <param name="smallFont">Флаг словаря prpFontSize (строка 50): при 0 — без тега FONT, как MProp.</param>
+        public static string MassForStamp(double massKg, int decimals, bool smallFont = true)
         {
-            return "<FONT size=3.5>" + MassText(massKg, decimals);
+            return (smallFont ? "<FONT size=3.5>" : "") + MassText(massKg, decimals);
         }
 
         /// <summary>Живое выражение массы, которое пишет MProp в «Масса_ФБ»: его надстройка не трогает.</summary>

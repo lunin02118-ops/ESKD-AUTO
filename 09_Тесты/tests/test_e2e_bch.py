@@ -75,7 +75,7 @@ class Bch(SwTestCase):
         self.assertTrue(record.startswith("Пластина опорная\n<STACK size=1>"), record)
         self.assertTrue(record.endswith("\n100х200 мм"), record)
 
-
+    @known_defect("Д-41")
     def test_B06_bch_takes_material_of_its_own_configuration(self):
         """B06: «Деталь БЧ» у исполнения без материала (A-03, активна «02») не берёт материал другой конфигурации."""
         path = self.copy_fixture(A03)

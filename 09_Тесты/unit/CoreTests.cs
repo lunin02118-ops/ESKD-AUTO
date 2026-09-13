@@ -209,6 +209,21 @@ namespace ESKD.Tests
             Assert.AreEqual("0,19", SwPlusMarkup.MassText(0.1884, Math.Min(4, 2)), "четыре знака в настройке, два в документе");
         }
 
+        public static void Test_status_line_shows_first_warning_and_count()
+        {
+            ESKD.MaterialSync.Sw.SyncReport none = new ESKD.MaterialSync.Sw.SyncReport();
+            Assert.AreEqual("", none.StatusLine(), "без предупреждений строка не меняется");
+            ESKD.MaterialSync.Sw.SyncReport one = new ESKD.MaterialSync.Sw.SyncReport();
+            one.Warnings.Add("Конфигурация «00»: «Материал_ФБ» = «Бронза БрАЖ9-4» введён вручную");
+            Assert.AreEqual("ЕСКД: Конфигурация «00»: «Материал_ФБ» = «Бронза БрАЖ9-4» введён вручную", one.StatusLine(), "одно предупреждение (Д-38)");
+            ESKD.MaterialSync.Sw.SyncReport many = new ESKD.MaterialSync.Sw.SyncReport();
+            many.Warnings.Add(new string('а', 300));
+            many.Warnings.Add("второе");
+            string line = many.StatusLine();
+            Assert.IsTrue(line.StartsWith("ЕСКД, предупреждений 2: ааа", StringComparison.Ordinal), "число предупреждений");
+            Assert.AreEqual(ESKD.MaterialSync.Sw.SyncReport.StatusLineLimit, line.Length, "длина строки состояния ограничена");
+        }
+
         private static void Resolved(string text, int unit, double expectedKg, int expectedDecimals, string what)
         {
             double kg;
@@ -304,7 +319,7 @@ namespace ESKD.Tests
             Assert.IsTrue(MaterialRecord.IsSystemValue(" " + MaterialRecord.LegacyFractionMarkup + "Лист 4<OVER>Ст3</STACK>", library), "формат прежних версий");
             Assert.IsTrue(MaterialRecord.IsSystemValue(MPropStamp("Лист", "Б-ПН-НО-4,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89"), library), "запись библиотеки");
             Assert.IsTrue(MaterialRecord.IsSystemValue("<FONT size=1.8> \r\n<FONT size=3.5>Сталь 3сп ГОСТ 380-2005", library), "CR LF с диска равен LF");
-            Assert.IsTrue(MaterialRecord.IsSystemValue("Сталь 20кп ГОСТ 535-88", library), "строка без разметки");
+            Assert.IsFalse(MaterialRecord.IsSystemValue("Сталь 20кп ГОСТ 535-88", library), "строка без разметки, которой нет в библиотеке, — ручная (Д-37)");
             string manual = MPropStamp("Лист", "Б-ПН-НО-5,0 ГОСТ 19903-2015", "09Г2С-12 ГОСТ 19281-2014");
             Assert.IsFalse(MaterialRecord.IsSystemValue(manual, library), "сортамент, введённый в MProp вручную (Д-32)");
             Assert.IsTrue(MaterialRecord.IsManualText(manual, library), "ручной ввод");
@@ -329,6 +344,69 @@ namespace ESKD.Tests
             Assert.IsTrue(MaterialCatalog.IsSystemRecord(dbs, MaterialRecord.Normalize(r.Stamp)), "графа 3 трубы — запись системы");
             Assert.IsTrue(MaterialCatalog.IsSystemRecord(dbs, r.Table), "таблица трубы — запись системы");
             Assert.IsFalse(MaterialCatalog.IsSystemRecord(dbs, MPropStamp("Труба", "80х80х4 ГОСТ 8639-82", "В 10 ГОСТ 13663-86")), "похожая ручная дробь — не запись системы");
+            MaterialCatalog.ClearCache();
+        }
+
+        private static string CorporateLibrary()
+        {
+            return Path.Combine(DictionaryTests.RepoRoot(), "04_Библиотеки_Материалов_и_Профилей", "Библиотека материалов", "Библиотека_Материалов_ГОСТ.sldmat");
+        }
+
+        public static void Test_plain_text_is_manual_unless_it_is_a_library_name_or_line()
+        {
+            string[] dbs = { CorporateLibrary() };
+            MaterialCatalog.ClearCache();
+            Func<string, bool> library = v => MaterialCatalog.IsSystemRecord(dbs, v);
+            Assert.IsFalse(MaterialRecord.IsSystemValue("Бронза БрАЖ9-4", library), "набран вручную без разметки (Д-37, M15)");
+            Assert.IsTrue(MaterialRecord.IsManualText("Бронза БрАЖ9-4", library), "ручной текст идёт в «Материал_Строка»");
+            Assert.IsTrue(MaterialRecord.IsSystemValue("Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", library), "имя материала библиотеки — так писала v5 (M16)");
+            Assert.IsTrue(MaterialRecord.IsSystemValue("Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89  ", library), "имя с пробелами по краям");
+            Assert.IsTrue(MaterialRecord.IsSystemValue("Лист Б-ПН-НО-4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", library), "однострочная запись библиотеки");
+            Assert.IsTrue(MaterialRecord.IsSystemValue(MPropTable("Лист", "Б-ПН-НО-4,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89"), library), "дробь без тегов FONT (prpFontSize = 0)");
+            Assert.IsFalse(MaterialRecord.IsSystemValue("Лист 4,0", library), "часть имени — ручная");
+            Assert.IsFalse(MaterialRecord.IsSystemValue("Бронза БрАЖ9-4", null), "без библиотек текст ручной");
+            MaterialCatalog.ClearCache();
+        }
+
+        public static void Test_current_material_of_configuration_is_system_even_outside_libraries()
+        {
+            Func<string, bool> none = v => false;
+            MaterialRecord steel = MaterialRecord.FromName("Ст3сп ГОСТ 380-2005");
+            Func<string, bool> b03 = MaterialRecord.SystemRecordOf(none, "Ст3сп ГОСТ 380-2005", steel);
+            Assert.IsTrue(MaterialRecord.IsSystemValue("Ст3сп ГОСТ 380-2005", b03), "имя материала конфигурации без разметки — так писала v5 (B-03)");
+            Assert.IsTrue(MaterialRecord.IsSystemValue("<FONT size=1.8> \r\n<FONT size=3.5>Ст3сп ГОСТ 380-2005", b03), "графа 3 этого материала с диска");
+            Assert.IsFalse(MaterialRecord.IsSystemValue("Бронза БрАЖ9-4", b03), "другой текст — ручной");
+            Func<string, bool> noMaterial = MaterialRecord.SystemRecordOf(none, null, null);
+            Assert.IsFalse(MaterialRecord.IsSystemValue("Ст3сп ГОСТ 380-2005", noMaterial), "у конфигурации без материала текст ручной");
+        }
+
+        public static void Test_small_font_flag_zero_writes_without_font_tags()
+        {
+            MaterialInfo sheet = Info("Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", SheetDesignation, "Лист Б-ПН-НО-4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89");
+            MaterialRecord fraction = MaterialRecord.FromLibrary(sheet, false);
+            Assert.AreEqual(MPropTable("Лист", "Б-ПН-НО-4,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89"), fraction.Stamp, "дробь без тегов FONT (Д-40)");
+            MaterialRecord steel = MaterialRecord.FromLibrary(Info("Сталь 3сп (ГОСТ 380-2005)", "Сталь 3сп ГОСТ 380-2005", ""), false);
+            Assert.AreEqual("Сталь 3сп ГОСТ 380-2005", steel.Stamp, "одна строка без тегов FONT");
+            Assert.AreEqual("Простая углеродистая сталь", MaterialRecord.FromName("Простая углеродистая сталь", false).Stamp, "материал вне библиотеки");
+            Assert.AreEqual("0,63", SwPlusMarkup.MassForStamp(0.628, 2, false), "масса без тега FONT");
+        }
+
+        public static void Test_corporate_library_next_to_addin_is_used_without_solidworks_list()
+        {
+            string located = MaterialCatalog.LocateCorporateLibrary(AppDomain.CurrentDomain.BaseDirectory);
+            Assert.NotNull(located, "библиотека найдена от каталога сборки вверх");
+            Assert.AreEqual(Path.GetFullPath(CorporateLibrary()), Path.GetFullPath(located), "та самая библиотека репозитория");
+            System.Collections.Generic.List<string> dbs = MaterialCatalog.WithCorporateLibrary(new string[0], located);
+            Assert.AreEqual(1, dbs.Count, "список баз SolidWorks пуст — остаётся библиотека поставки (Д-39)");
+            Assert.AreEqual(2, MaterialCatalog.WithCorporateLibrary(new[] { @"C:\SW\solidworks materials.sldmat", located }, located).Count, "уже подключённая библиотека не дублируется");
+            Assert.AreEqual(@"C:\SW\solidworks materials.sldmat", MaterialCatalog.WithCorporateLibrary(new[] { @"C:\SW\solidworks materials.sldmat" }, located)[0], "базы SolidWorks — первыми");
+            MaterialCatalog.ClearCache();
+            MaterialInfo tube = MaterialCatalog.Find(dbs, "Библиотека_Материалов_ГОСТ", "Труба 80х80х4,0 ГОСТ 8639-82 / В 10 ГОСТ 13663-86");
+            Assert.NotNull(tube, "материал детали находится в библиотеке поставки");
+            Assert.IsTrue(MaterialCatalog.IsSystemRecord(dbs, MaterialRecord.Normalize(MaterialRecord.FromLibrary(tube).Stamp)), "дробь трубы узнаётся без списка SolidWorks");
+            string manual = MPropStamp("Труба", "80х80х4 ГОСТ 8639-82", "В 10 ГОСТ 13663-86");
+            Assert.IsFalse(MaterialRecord.IsSystemValue(manual, v => MaterialCatalog.IsSystemRecord(dbs, v)),
+                "дробь MProp в той же разметке остаётся ручной: разметка и «Материал_Строка» не признак системы (Д-32)");
             MaterialCatalog.ClearCache();
         }
     }
@@ -503,6 +581,15 @@ namespace ESKD.Tests
             Assert.AreEqual("Количество", d[Role.Quantity], "последняя роль");
             Assert.IsTrue(d.FileNameSplit, "prpFileName = 1");
             Assert.AreEqual(" ", d.NameSeparator, "prpNameSep = пробел");
+        }
+
+        public static void Test_addin_and_template_names_are_outside_the_dictionary()
+        {
+            PropertyDictionary d = PropertyDictionary.Default();
+            foreach (string name in PropertyDictionary.AddinNames)
+                Assert.IsFalse(d.IsDictionaryName(name), name + ": вне словаря SWPlus");
+            Assert.AreEqual("Материал_Строка|Формат_до_БЧ|Примечание_до_БЧ", string.Join("|", PropertyDictionary.AddinNames), "имена надстройки (А-5)");
+            Assert.AreEqual("Масса|Материал", string.Join("|", PropertyDictionary.TemplateNames), "живые выражения шаблона");
         }
 
         public static void Test_missing_dictionary_falls_back_to_defaults()

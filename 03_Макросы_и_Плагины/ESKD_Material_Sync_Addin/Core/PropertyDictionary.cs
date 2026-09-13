@@ -44,6 +44,18 @@ namespace ESKD.MaterialSync.Core
             "Единицы", "MARKA_MATERIAL", "MATERIAL_MIS", "SHAPE", "SORTAMENT"
         };
 
+        /// <summary>
+        /// Свойства, которые ведёт только надстройка (в словаре SWPlus их нет): однострочная запись материала для сводной
+        /// ведомости и прежние «Формат» и «Примечание» на время режима «Деталь БЧ».
+        /// </summary>
+        public static readonly string[] AddinNames = new string[]
+        {
+            MaterialRecord.LineProperty, BchRecord.SavedFormatProperty, BchRecord.SavedRemarkProperty
+        };
+
+        /// <summary>Общие свойства шаблона детали с живыми выражениями «"SW-Mass"» и «"SW-Material"»: надстройка их не пишет, очистка v5 возвращает выражения.</summary>
+        public static readonly string[] TemplateNames = new string[] { "Масса", "Материал" };
+
         /// <summary>Имена, которые писала надстройка v5 и которые никто не читает (класс «лишние»).</summary>
         public static readonly string[] LegacyExtraNames = new string[]
         {

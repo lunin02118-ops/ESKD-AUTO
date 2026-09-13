@@ -3,7 +3,7 @@
 import re
 import unittest
 
-from eskd_e2e import build, com, oracles
+from eskd_e2e import build, com, oracles, paths
 from eskd_e2e.testing import SwTestCase, known_defect, tags
 
 V = oracles.value
@@ -209,7 +209,29 @@ class ModelNames(SwTestCase):
         self.assertEqual("Бронза БрАЖ9-4", V(disk, "Материал_ФБ", "00"), "ручной текст остался")
         self.assertEqual("Бронза БрАЖ9-4", V(disk, "Материал_Строка", "00"), "сводная ведомость повторяет графу 3")
         self.assertIn("Бронза БрАЖ9-4", diagnosis, "предупреждение в «Диагностике документа»")
+        self.assertIn("Бронза БрАЖ9-4", str(com.call(self.s.eskd(), "LastSyncWarnings") or ""),
+                      "предупреждение сохранения — то, что показано в строке состояния (Д-38)")
         self.assertTrue(any("введён вручную" in ln for ln in self.addin_log.new_lines()), "предупреждение в журнале")
+
+    @known_defect("Д-40")
+    def test_M17_dictionary_font_flag_zero_writes_without_font_tags(self):
+        """M17: флаг словаря prpFontSize = 0 (строка 50) — «Материал_ФБ» и «Масса_ФБ» без тегов FONT, как у MProp."""
+        lines = paths.SWPLUS_DICTIONARY.read_bytes().decode("cp1251").splitlines()
+        self.assertEqual("1", lines[49].strip(), "в корпоративном словаре prpFontSize = 1")
+        lines[49] = "0"
+        dictionary = self.path("MyProperties_1_prpFontSize_0.ini")
+        dictionary.write_bytes("".join(line + "\r\n" for line in lines).encode("cp1251"))
+        path, doc = self.open_copy(A01)
+        self.s.set_settings(DictionaryPath=str(dictionary))
+        try:
+            self.s.save(doc)
+        finally:
+            self.s.set_settings(DictionaryPath="")
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual(build.material_library()[SHEET4]["custom"]["Обозначение_ГОСТ"], V(disk, "Материал_ФБ", "00"), "графа 3 без FONT")
+        self.assertEqual("0,63", V(disk, "Масса_ФБ", "00"), "графа 5 без FONT")
+        self.assertEqual([], self.addin_errors())
 
     def test_M16_plain_library_material_name_is_system_value(self):
         """M16: строка без разметки, равная имени материала библиотеки (так писала v5), — запись системы: заменяется графой 3 текущего материала."""

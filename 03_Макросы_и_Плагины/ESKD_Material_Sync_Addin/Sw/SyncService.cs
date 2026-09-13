@@ -35,6 +35,17 @@ namespace ESKD.MaterialSync.Sw
             return string.Format("изменений: {0}, ошибок: {1}, предупреждений: {2}{3}", Changes, Failures, Warnings.Count,
                 Skipped ? ", пропущено: " + SkipReason : "");
         }
+
+        public const int StatusLineLimit = 200;
+
+        /// <summary>Строка состояния SolidWorks после автоматической синхронизации: первое предупреждение и их число (Д-38).</summary>
+        public string StatusLine()
+        {
+            if (Warnings.Count == 0) return "";
+            string head = Warnings.Count == 1 ? "ЕСКД: " : string.Format("ЕСКД, предупреждений {0}: ", Warnings.Count);
+            string text = head + Warnings[0];
+            return text.Length > StatusLineLimit ? text.Substring(0, StatusLineLimit - 1) + "…" : text;
+        }
     }
 
     /// <summary>
@@ -350,17 +361,8 @@ namespace ESKD.MaterialSync.Sw
         {
             string stampName = dict[Role.Material];
             string tableName = dict[Role.MaterialTable];
-            List<string> databases = new List<string>();
-            try
-            {
-                string[] dbs = app.GetMaterialDatabases() as string[];
-                if (dbs != null) databases.AddRange(dbs);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("GetMaterialDatabases", ex);
-            }
-            Func<string, bool> isSystemRecord = value => MaterialCatalog.IsSystemRecord(databases, value);
+            List<string> databases = MaterialDatabases(app);
+            Func<string, bool> catalog = value => MaterialCatalog.IsSystemRecord(databases, value);
             ModelDoc2 model = (ModelDoc2)part;
             foreach (string cfg in w.ConfigurationNames())
             {
@@ -370,8 +372,9 @@ namespace ESKD.MaterialSync.Sw
                 if (material != null)
                 {
                     MaterialInfo info = MaterialCatalog.Find(databases, db, material);
-                    record = info != null ? MaterialRecord.FromLibrary(info) : MaterialRecord.FromName(material);
+                    record = info != null ? MaterialRecord.FromLibrary(info, dict.SmallFontMarkup) : MaterialRecord.FromName(material, dict.SmallFontMarkup);
                 }
+                Func<string, bool> isSystemRecord = MaterialRecord.SystemRecordOf(catalog, material, record);
                 string stamp = w.Raw(cfg, stampName);
                 if (record != null && MaterialRecord.IsSystemValue(stamp, isSystemRecord))
                 {
@@ -401,7 +404,24 @@ namespace ESKD.MaterialSync.Sw
             return record != null ? record.Line : "";
         }
 
-        private static string MaterialName(PartDoc part, ModelDoc2 model, string cfg, out string db)
+        /// <summary>Базы материалов SolidWorks и после них корпоративная библиотека из поставки надстройки (Д-39).</summary>
+        internal static List<string> MaterialDatabases(ISldWorks app)
+        {
+            string[] dbs = null;
+            try
+            {
+                dbs = app.GetMaterialDatabases() as string[];
+            }
+            catch (Exception ex)
+            {
+                Log.Error("GetMaterialDatabases", ex);
+            }
+            string addinDir = Path.GetDirectoryName(typeof(SyncService).Assembly.Location) ?? "";
+            return MaterialCatalog.WithCorporateLibrary(dbs, MaterialCatalog.LocateCorporateLibrary(addinDir));
+        }
+
+        /// <summary>Материал SolidWorks этой конфигурации (производная — родительской) или null; общий для сохранения и «Детали БЧ» (Д-41).</summary>
+        internal static string MaterialName(PartDoc part, ModelDoc2 model, string cfg, out string db)
         {
             db = "";
             string name = part.GetMaterialPropertyName2(cfg, out db);
@@ -466,7 +486,7 @@ namespace ESKD.MaterialSync.Sw
                 int decimals;
                 if (!ConfigurationMass(w, cfg, cfg == active ? activeMass : 0, tableName, unit, settings.MassDecimals, out kg, out decimals))
                     continue;
-                if (IsWritableMass(w.Raw(cfg, massName))) w.Set(cfg, massName, SwPlusMarkup.MassForStamp(kg, decimals));
+                if (IsWritableMass(w.Raw(cfg, massName))) w.Set(cfg, massName, SwPlusMarkup.MassForStamp(kg, decimals, dict.SmallFontMarkup));
                 // БЧ: масса в «Примечании», которую записала кнопка «Деталь БЧ», пересчитывается при сохранении.
                 if (IsBchMassNote(w, cfg, format, remark)) w.Set(cfg, remark, BchRecord.MassNote(kg, decimals));
                 if (cfg == active)
@@ -486,7 +506,7 @@ namespace ESKD.MaterialSync.Sw
                 // Общая копия, оставленная v5, не создаётся заново, но поддерживается актуальной у одноконфигурационных документов.
                 string general = w.Raw("", massName);
                 if (general != null && SwPlusMarkup.IsGeneratedMass(general) && configs.Length <= 1)
-                    w.Set("", massName, SwPlusMarkup.MassForStamp(activeKg, activeDecimals));
+                    w.Set("", massName, SwPlusMarkup.MassForStamp(activeKg, activeDecimals, dict.SmallFontMarkup));
                 if (IsBchMassNote(w, "", format, remark)) w.Set("", remark, BchRecord.MassNote(activeKg, activeDecimals));
             }
             if (activeDecimals < settings.MassDecimals)

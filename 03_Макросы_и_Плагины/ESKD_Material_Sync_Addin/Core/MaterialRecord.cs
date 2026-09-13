@@ -29,33 +29,34 @@ namespace ESKD.MaterialSync.Core
         public string Table = "";
         public string Line = "";
 
-        public static MaterialRecord FromLibrary(MaterialInfo info)
+        /// <param name="smallFont">Флаг словаря prpFontSize (строка 50): при 0 MProp пишет графу 3 без тегов FONT.</param>
+        public static MaterialRecord FromLibrary(MaterialInfo info, bool smallFont = true)
         {
             if (info == null) return null;
             string designation = info.GostDesignation ?? "";
-            if (designation.Trim().Length == 0) return FromName(info.Name);
+            if (designation.Trim().Length == 0) return FromName(info.Name, smallFont);
             MaterialRecord r = new MaterialRecord();
             if (designation.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 // Дословно: ведущий пробел у дробей без формы («Фанера», «Кромка») MProp пишет так же.
-                r.Stamp = FractionFont + designation;
+                r.Stamp = (smallFont ? FractionFont : "") + designation;
                 r.Table = designation;
             }
             else
             {
-                r.Stamp = LineFont + designation.Trim();
+                r.Stamp = (smallFont ? LineFont : "") + designation.Trim();
                 r.Table = designation.Trim();
             }
             r.Line = string.IsNullOrWhiteSpace(info.LineDesignation) ? OneLine(designation) : info.LineDesignation.Trim();
             return r;
         }
 
-        public static MaterialRecord FromName(string materialName)
+        public static MaterialRecord FromName(string materialName, bool smallFont = true)
         {
             if (string.IsNullOrWhiteSpace(materialName)) return null;
             string name = materialName.Trim();
             MaterialRecord r = new MaterialRecord();
-            r.Stamp = LineFont + name;
+            r.Stamp = (smallFont ? LineFont : "") + name;
             r.Table = name;
             r.Line = name;
             return r;
@@ -77,10 +78,10 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>
-        /// «Материал_ФБ» или «Материал_Таблица», которые надстройка вправе заменить: пусто, выражение шаблона, запись системы
-        /// (isSystemRecord: представление любого известного материала; формат прежних версий надстройки) или строка без
-        /// разметки. Выражение SW-Material, «-», «См. таблицу», дробь или текст, введённые в MProp вручную, — значения
-        /// пользователя (Д-32).
+        /// «Материал_ФБ» или «Материал_Таблица», которые надстройка вправе заменить: пусто, выражение шаблона, формат прежних
+        /// версий надстройки или запись системы — isSystemRecord: представление, имя или однострочная запись известного
+        /// материала (v5 писала имя материала без разметки). Всё остальное — значение пользователя: выражение SW-Material,
+        /// «-», «См. таблицу», дробь MProp (Д-32) и текст, набранный вручную, даже без разметки (Д-37).
         /// </summary>
         public static bool IsSystemValue(string raw, Func<string, bool> isSystemRecord)
         {
@@ -91,8 +92,25 @@ namespace ESKD.MaterialSync.Core
             string plain = OneLine(t);
             if (plain == "-" || plain.IndexOf("См.", StringComparison.OrdinalIgnoreCase) >= 0) return false;
             if (t.StartsWith(LegacyFractionMarkup, StringComparison.Ordinal)) return true;
-            if (isSystemRecord != null && isSystemRecord(Normalize(raw))) return true;
-            return !SwPlusMarkup.HasMarkup(t);
+            return isSystemRecord != null && (isSystemRecord(Normalize(raw)) || isSystemRecord(t));
+        }
+
+        /// <summary>
+        /// Признак записи системы для конфигурации: запись любой известной библиотеки (catalog) или представление материала
+        /// этой конфигурации — имя (v5 писала имя материала без разметки, в том числе материала вне библиотек), графа 3,
+        /// таблица и однострочная запись.
+        /// </summary>
+        public static Func<string, bool> SystemRecordOf(Func<string, bool> catalog, string materialName, MaterialRecord current)
+        {
+            return value =>
+            {
+                if (value == null) return false;
+                if (catalog != null && catalog(value)) return true;
+                string t = Normalize(value).Trim();
+                if (t.Length == 0) return false;
+                if (!string.IsNullOrEmpty(materialName) && t == materialName.Trim()) return true;
+                return current != null && (t == Normalize(current.Stamp).Trim() || t == current.Table.Trim() || t == current.Line.Trim());
+            };
         }
 
         /// <summary>Материал, введённый пользователем текстом или дробью: не выражение, не «-» и не «См. таблицу».</summary>
