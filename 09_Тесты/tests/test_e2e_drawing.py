@@ -41,7 +41,7 @@ class Drawing(SwTestCase):
         self.assertEqual("Пластина опорная", text.get("MYPRP4"), "графа 1 — наименование")
         self.assertEqual("Тестов Т.Т.", text.get("MYPRP8"), "разработал")
         self.assertEqual("ООО «Испытание»", text.get("MYPRP7"), "графа 9 — организация")
-        self.assertIn("0,63", text.get("MYPRP15", ""), "графа 5 — масса")
+        self.assertIn("0.63", text.get("MYPRP15", ""), "графа 5 — масса (точка, как у MProp, Р-1)")
         self.assertIn("Лист", text.get("MYPRP16", ""), "графа 3 — материал")
         cells = oracles.form1_cells(420)
         for note, cell in (("MYPRP0", "g2_designation"), ("MYPRP4", "g1_title"), ("MYPRP16", "g3_material"),
@@ -102,7 +102,7 @@ class Drawing(SwTestCase):
 
     @known_defect("Д-36")
     def test_D11_execution_drawing_shows_mass_of_its_configuration(self):
-        """D11: чертёж исполнения «01» детали A-03 — в графе 5 PDF масса именно этой конфигурации с запятой (0,19)."""
+        """D11: чертёж исполнения «01» детали A-03 — в графе 5 PDF масса именно этой конфигурации (0.19, Р-1)."""
         model_path = self.copy_fixture(A03)
         doc = self.s.open(model_path)
         self.s.save(doc)
@@ -121,7 +121,7 @@ class Drawing(SwTestCase):
         self.assertTrue(ok and pdf.exists(), f"PDF не выгружен, код {err}")
         self.assertEqual("ПРТИ.468211.103-01", oracles.pdf_cell_text(pdf, 420, oracles.form1_cells(420)["g2_designation"]),
                          "лист показывает исполнение 01")
-        self.assertEqual("0,19", oracles.pdf_cell_text(pdf, 420, oracles.form1_cells(420)["g5_mass"]), "графа 5 — масса исполнения 01")
+        self.assertEqual("0.19", oracles.pdf_cell_text(pdf, 420, oracles.form1_cells(420)["g5_mass"]), "графа 5 — масса исполнения 01")
 
     def test_D04_zero_drift_on_drawing_save(self):
         """D04: сохранение чертежа не смещает заметки."""

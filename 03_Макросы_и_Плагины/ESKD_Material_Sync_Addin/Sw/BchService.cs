@@ -75,6 +75,13 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("БЧ: масса", ex);
             }
 
+            // «Примечание» — выражение массы MProp с единицей документа (FrmMProp:3033); единицы — по правилу MProp
+            string path = DocInfo.PathOf(doc);
+            string fileTitle = SwPlusFormat.FileTitle(path.Length > 0 ? path : DocInfo.TitleOf(doc));
+            string active = w.ActiveConfigurationName();
+            bool grams = SwPlusFormat.UserUnits(w.Raw(active, "Единицы"))
+                ? SyncService.GetPreference(doc, (int)swUserPreferenceIntegerValue_e.swUnitsMassPropMass) == (int)swUnitsMassPropMass_e.swUnitsMassPropMass_Grams
+                : SwPlusFormat.UnitsFor(mass).Grams;
             foreach (string level in Levels(w))
             {
                 string oldFormat = w.Raw(level, format);
@@ -85,7 +92,8 @@ namespace ESKD.MaterialSync.Sw
                 string oldRemark = w.Raw(level, remark);
                 if (oldRemark != null && oldRemark.Trim().Length > 0 && !BchRecord.IsMassNote(oldRemark))
                     w.Set(level, BchRecord.SavedRemarkProperty, oldRemark);
-                if (mass > 0.00001) w.Set(level, remark, BchRecord.MassNote(mass, settings.MassDecimals));
+                if (mass > 0.00001 && fileTitle.Length > 0)
+                    w.Set(level, remark, SwPlusFormat.BchRemark(level.Length == 0 ? active : level, fileTitle, false, grams));
             }
 
             // Наименование для спецификации

@@ -126,15 +126,17 @@ class ModelNames(SwTestCase):
         self.assertEqual("ПРТИ.468211.103-02", V(disk, "Обозначение", "02"))
         self.assertEqual("2", V(disk, "Исполнение", "01"))
 
-    @known_defect("Д-36")
     def test_M06_mass_in_every_configuration(self):
-        """M06: масса для графы 5 у каждого исполнения — «Масса_ФБ» в «00», «01», «02» с запятой (эталон A-03: 0,13; 0,19; 0,25 кг)."""
+        """M06: масса для графы 5 у каждого исполнения — «Масса_ФБ» в «00», «01», «02» выражением MProp (эталон A-03: 0.13; 0.19; 0.25 кг)."""
         path, doc = self.open_copy(A03)
         self.s.save(doc)
         self.s.close(doc)
         disk = self.persisted(path)
         shown = {cfg: re.sub(r"<[^>]*>", "", V(disk, "Масса_ФБ", cfg, resolved=True) or "").strip() for cfg in ("00", "01", "02")}
-        self.assertEqual({"00": "0,13", "01": "0,19", "02": "0,25"}, shown, "графа 5 по конфигурациям")
+        self.assertEqual({"00": "0.13", "01": "0.19", "02": "0.25"}, shown, "графа 5 по конфигурациям")
+        for cfg in ("00", "01", "02"):
+            self.assertEqual('<FONT size=1> \n<FONT size=3.5>"SW-Mass@@%s@ПРТИ.468211.103 Планка.SLDPRT"' % cfg,
+                             (V(disk, "Масса_ФБ", cfg) or "").replace("\r\n", "\n"), f"выражение MProp «{cfg}»")
 
     @tags("smoke")
     def test_M07_standard_and_purchased_parts_untouched(self):
@@ -295,7 +297,7 @@ class ModelNames(SwTestCase):
         self.s.close(doc)
         disk = self.persisted(path)
         self.assertEqual(build.material_library()[SHEET4]["custom"]["Обозначение_ГОСТ"], V(disk, "Материал_ФБ", "00"), "графа 3 без FONT")
-        self.assertEqual("0,63", V(disk, "Масса_ФБ", "00"), "графа 5 без FONT")
+        self.assertEqual('"SW-Mass@@00@ПРТИ.468211.101 Пластина опорная.SLDPRT"', V(disk, "Масса_ФБ", "00"), "графа 5 без FONT (2852)")
         self.assertEqual([], self.addin_errors())
 
     def test_M16_plain_library_material_name_is_system_value(self):
@@ -346,13 +348,13 @@ class ModelNames(SwTestCase):
         self.assertEqual("ПРТИ.468211.110", V(disk, "Обозначение"))
         self.assertEqual(" СБ", V(disk, "Сборка1_ФБ", "00"))
         self.assertEqual("Сборочный чертёж", V(disk, "Сборка2_ФБ", "00"))
-        self.assertIn("<FONT size=3.5>", V(disk, "Масса_ФБ", "00") or "")
+        self.assertIn('"SW-Mass@@00@ПРТИ.468211.110 СБ Узел опоры.SLDASM"', V(disk, "Масса_ФБ", "00") or "", "масса сборки выражением MProp")
 
     @known_defect("Д-10")
     def test_M01_live_mass_and_material_expressions_kept(self):
         """M01: живые выражения MProp для массы и материала не заменяются статичным текстом (§3.2)."""
         path = self.copy_fixture(A01)
-        live_mass = '<FONT size=1> \n<FONT size=3.5>"SW-Mass@@00@ПРТИ.468211.101 Пластина опорная.sldprt"'
+        live_mass = '<FONT size=1> \n<FONT size=3.5>"SW-Mass@@00@ПРТИ.468211.101 Пластина опорная.SLDPRT"'
         live_material = '"SW-Material@@00@ПРТИ.468211.101 Пластина опорная.sldprt"'
         with self.s.eskd_muted():
             doc = self.s.open(path)

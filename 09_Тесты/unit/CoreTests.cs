@@ -159,16 +159,6 @@ namespace ESKD.Tests
             Assert.AreEqual(mprop, SwPlusMarkup.TitleForStamp(mprop), "разметка MProp");
         }
 
-        public static void Test_Mass_text_uses_comma_and_fixed_decimals()
-        {
-            Assert.AreEqual("14,50", SwPlusMarkup.MassText(14.5, 2), "фиксированные нули");
-            Assert.AreEqual("0,63", SwPlusMarkup.MassText(0.628, 2), "пластина A-01");
-            Assert.AreEqual("2,86", SwPlusMarkup.MassText(2.8637, 2), "стойка A-02");
-            Assert.AreEqual("2,8637", SwPlusMarkup.MassText(2.8637, 7), "точность ограничена 4 знаками");
-            Assert.AreEqual("3", SwPlusMarkup.MassText(2.8637, 0), "без знаков");
-            Assert.AreEqual("<FONT size=3.5>14,53", SwPlusMarkup.MassForStamp(14.53, 2), "графа 5");
-        }
-
         public static void Test_mass_ownership_classification()
         {
             Assert.IsTrue(SwPlusMarkup.IsLiveMass("\"SW-Mass@@00@ПРТИ.468211.101 Пластина.SLDPRT\""), "живое выражение MProp");
@@ -179,34 +169,14 @@ namespace ESKD.Tests
             Assert.IsFalse(SwPlusMarkup.IsGeneratedMass("-"), "прочерк");
         }
 
-        public static void Test_live_mass_expression_of_configuration()
+        public static void Test_live_mass_configuration_of_expression()
         {
             const string file = "ПРТИ.468211.103 Планка.sldprt";
             const string flat = "По умолчанию<Как обработанный>SM-FLAT-PATTERN";
-            Assert.AreEqual("\"SW-Mass@@01@ПРТИ.468211.103 Планка.sldprt\"", SwPlusMarkup.LiveMassExpression("01", file), "форма MProp");
             Assert.AreEqual("01", SwPlusMarkup.LiveMassConfiguration("\"SW-Mass@@01@ПРТИ.468211.103 Планка.SLDPRT\"", file), "регистр расширения");
-            Assert.AreEqual(flat, SwPlusMarkup.LiveMassConfiguration(SwPlusMarkup.LiveMassExpression(flat, file), file), "развёртка (B-03)");
+            Assert.AreEqual(flat, SwPlusMarkup.LiveMassConfiguration(SwPlusFormat.MassExpression(flat, "ПРТИ.468211.103 Планка", false), file), "развёртка (B-03)");
             Assert.IsNull(SwPlusMarkup.LiveMassConfiguration("\"SW-Mass@@01@Другой.sldprt\"", file), "другой файл");
             Assert.IsNull(SwPlusMarkup.LiveMassConfiguration("\"SW-Mass\"", file), "выражение шаблона");
-            Assert.IsNull(SwPlusMarkup.LiveMassConfiguration("<FONT size=1> \n<FONT size=3.5>\"SW-Mass@@01@" + file + "\"", file), "разметка графы 5");
-        }
-
-        public static void Test_resolved_mass_in_document_units_and_precision()
-        {
-            Resolved("0.19", 3, 0.19, 2, "кг, два знака (A-03 «01»)");
-            Resolved("0.1884", 3, 0.1884, 4, "кг, четыре знака");
-            Resolved("188.40", 2, 0.1884, 5, "MMGS — граммы");
-            Resolved("188400.00", 1, 0.1884, 8, "миллиграммы");
-            Resolved("0.42", 4, 0.42 * 0.45359237, 2, "IPS — фунты");
-            Resolved("<FONT size=1> \n<FONT size=3.5>0.19", 3, 0.19, 2, "разметка MProp");
-            Resolved("1,234.56", 3, 1234.56, 2, "разряды через запятую");
-            Resolved("12", 3, 12, 0, "без знаков");
-            double kg;
-            int decimals;
-            Assert.IsFalse(SwPlusMarkup.TryParseResolvedMass("0,19", 3, out kg, out decimals), "запятая — не значение SolidWorks");
-            Assert.IsFalse(SwPlusMarkup.TryParseResolvedMass("См. таблицу", 3, out kg, out decimals), "текст");
-            Assert.IsFalse(SwPlusMarkup.TryParseResolvedMass("", 3, out kg, out decimals), "пусто");
-            Assert.AreEqual("0,19", SwPlusMarkup.MassText(0.1884, Math.Min(4, 2)), "четыре знака в настройке, два в документе");
         }
 
         public static void Test_status_line_shows_first_warning_and_count()
@@ -224,14 +194,6 @@ namespace ESKD.Tests
             Assert.AreEqual(ESKD.MaterialSync.Sw.SyncReport.StatusLineLimit, line.Length, "длина строки состояния ограничена");
         }
 
-        private static void Resolved(string text, int unit, double expectedKg, int expectedDecimals, string what)
-        {
-            double kg;
-            int decimals;
-            Assert.IsTrue(SwPlusMarkup.TryParseResolvedMass(text, unit, out kg, out decimals), what + ": разобрано");
-            Assert.IsTrue(Math.Abs(kg - expectedKg) < 1e-9, what + ": " + kg + " кг вместо " + expectedKg);
-            Assert.AreEqual(expectedDecimals, decimals, what + ": знаков");
-        }
     }
 
     public static class MaterialRecordTests
@@ -408,7 +370,7 @@ namespace ESKD.Tests
             MaterialRecord steel = MaterialRecord.FromLibrary(Info("Сталь 3сп (ГОСТ 380-2005)", "Сталь 3сп ГОСТ 380-2005", ""), false);
             Assert.AreEqual("Сталь 3сп ГОСТ 380-2005", steel.Stamp, "одна строка без тегов FONT");
             Assert.AreEqual("Простая углеродистая сталь", MaterialRecord.FromName("Простая углеродистая сталь", false).Stamp, "материал вне библиотеки");
-            Assert.AreEqual("0,63", SwPlusMarkup.MassForStamp(0.628, 2, false), "масса без тега FONT");
+            Assert.AreEqual("\"SW-Mass@@00@П.SLDPRT\"", SwPlusFormat.MassStamp("00", "П", false, false, false), "масса без тега FONT");
         }
 
         public static void Test_corporate_library_next_to_addin_is_used_without_solidworks_list()
@@ -453,10 +415,12 @@ namespace ESKD.Tests
             Assert.AreEqual("Стойка\n<STACK size=1>Труба 80х80х4,0 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>\nL = 300 мм", record, "черт. 40");
         }
 
-        public static void Test_mass_note_from_model_mass_not_from_font_tag()
+        public static void Test_bch_remark_is_mprop_mass_expression()
         {
-            Assert.AreEqual("2,86 кг", BchRecord.MassNote(2.8637, 2), "масса стойки (Д-14)");
-            Assert.IsTrue(BchRecord.IsMassNote("2,86 кг"), "распознаёт свою запись");
+            Assert.AreEqual("\"SW-Mass@@00@ПРТИ.468211.102 Стойка.SLDPRT\" кг", SwPlusFormat.BchRemark("00", "ПРТИ.468211.102 Стойка", false, false), "масса стойки как у MProp (3033)");
+            Assert.IsTrue(BchRecord.IsMassNote("\"SW-Mass@@00@ПРТИ.468211.102 Стойка.SLDPRT\" кг"), "распознаёт свою запись");
+            Assert.IsTrue(BchRecord.IsMassNote("\"SW-Mass@@00@ПРТИ.468211.113 Прокладка.SLDPRT\" г"), "граммы");
+            Assert.IsTrue(BchRecord.IsMassNote("2,86 кг"), "распознаёт запись до v6.2 для перевода в формат MProp");
             Assert.IsTrue(BchRecord.IsMassNote("3.5 кг"), "распознаёт ошибочную запись v5 для исправления");
             Assert.IsFalse(BchRecord.IsMassNote("Покупное"), "чужой текст");
         }

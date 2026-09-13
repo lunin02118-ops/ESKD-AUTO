@@ -3,6 +3,7 @@
 
 Оракул — состояние файла на диске, прочитанное с выключенной службой надстройки.
 """
+import re
 import unittest
 from pathlib import Path
 
@@ -20,15 +21,24 @@ A13 = "ПРТИ.468211.106 Крышка.sldprt"
 V = oracles.value
 
 
+def mprop_mass(cfg, file_stem, grams=False, small_font=True, assembly=False):
+    """«Масса_ФБ» в формате MProp (Правила записи свойств SWPlus, раздел 1; FrmMProp:2850–2888)."""
+    ext = ".SLDASM" if assembly else ".SLDPRT"
+    return ("<FONT size=1> \n<FONT size=3.5>" if small_font else "") + f'"SW-Mass@@{cfg}@{file_stem}{ext}"' + (" г" if grams else "")
+
+
 class PersistenceNewDocuments(SwTestCase):
 
-    def _assert_named_plate(self, disk, designation, title, mass="<FONT size=3.5>0,63"):
+    def _assert_named_plate(self, disk, designation, title):
         self.assertEqual(designation, V(disk, "Обозначение"), "обозначение (общие)")
         self.assertEqual(title, V(disk, "Наименование"), "наименование (общие)")
         self.assertEqual(title, V(disk, "Наименование_ФБ"), "наименование для штампа")
         self.assertEqual(designation, V(disk, "Обозначение", "00"), "обозначение (конфигурация)")
         self.assertIn("<STACK size=1>", V(disk, "Материал_ФБ", "00") or "", "дробь материала в конфигурации")
-        self.assertEqual(mass, V(disk, "Масса_ФБ", "00"), "масса в конфигурации")
+        self.assertEqual(mprop_mass("00", f"{designation} {title}"), (V(disk, "Масса_ФБ", "00") or "").replace("\r\n", "\n"),
+                         "масса в конфигурации — выражение MProp")
+        self.assertEqual("0.63", re.sub(r"<[^>]*>", "", V(disk, "Масса_ФБ", "00", resolved=True) or "").strip(),
+                         "графа 5 — 0.63 кг")
 
     @tags("smoke")
     @known_defect("Д-01")
@@ -71,7 +81,7 @@ class PersistenceSave(SwTestCase):
         self.assertTrue(ok, f"Save3 err={err}")
         self.s.close(doc)
         disk = self.persisted(path)
-        self.assertEqual("<FONT size=3.5>0,94", V(disk, "Масса_ФБ", "00"))
+        self.assertIn("0.94", V(disk, "Масса_ФБ", "00", resolved=True) or "", "графа 5 — новая масса 0.94 кг")
 
     def test_P04_command_save_writes_new_mass(self):
         """P04: то же через команду «Сохранить» (Ctrl+S)."""
@@ -79,7 +89,7 @@ class PersistenceSave(SwTestCase):
         self._grow_plate(doc)
         self.s.run_command(doc, 2)
         self.s.close(doc)
-        self.assertEqual("<FONT size=3.5>0,94", V(self.persisted(path), "Масса_ФБ", "00"))
+        self.assertIn("0.94", V(self.persisted(path), "Масса_ФБ", "00", resolved=True) or "", "графа 5 — новая масса 0.94 кг")
 
     @tags("smoke")
     @known_defect("Д-02")
@@ -332,8 +342,8 @@ class RealPartLibraryMaterial(SwTestCase):
         self.assertEqual("<FONT size=1.8> <FONT size=3.5>" + custom["Обозначение_ГОСТ"], V(disk, "Материал_ФБ", cfg), "графа 3 — дробь библиотеки")
         self.assertEqual(custom["Обозначение_ГОСТ"], V(disk, "Материал_Таблица", cfg), "таблица — дробь библиотеки")
         self.assertEqual(custom["Обозначение_Строка"], V(disk, "Материал_Строка", cfg), "сводная ведомость — строка библиотеки")
-        mass = ("%.2f" % fixture["mass_kg"][cfg]).replace(".", ",")
-        self.assertEqual("<FONT size=3.5>" + mass, V(disk, "Масса_ФБ", cfg), "графа 5 — масса трубы из материала библиотеки")
+        self.assertEqual(mprop_mass(cfg, part.stem), (V(disk, "Масса_ФБ", cfg) or "").replace("\r\n", "\n"), "графа 5 — выражение MProp")
+        self.assertIn("%.2f" % fixture["mass_kg"][cfg], V(disk, "Масса_ФБ", cfg, resolved=True) or "", "графа 5 — масса трубы из материала библиотеки")
         self.assertTrue(ok and pdf.exists(), f"PDF не выгружен, код {err}")
         numerator, denominator = custom["Обозначение_ГОСТ"].split("<STACK size=1>")[1].split("</STACK>")[0].split("<OVER>")
         rows = [text for _, _, text in oracles.pdf_rows(pdf, width, oracles.form1_cells(width)["g3_material"])]

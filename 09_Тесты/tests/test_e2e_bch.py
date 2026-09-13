@@ -22,7 +22,7 @@ class Bch(SwTestCase):
     @tags("smoke")
     @known_defect("Д-14")
     def test_B01_enable_bch_for_tube(self):
-        """B01: «Деталь БЧ» для трубы — Формат БЧ, масса 2,86 кг в «Примечании», запись черт. 40."""
+        """B01: «Деталь БЧ» для трубы — Формат БЧ, масса выражением MProp с «кг» в «Примечании» (FrmMProp:3033), запись черт. 40."""
         path, doc = self.open_copy(A02)
         self.assertEqual(1, self._toggle(doc))
         self.s.save(doc)
@@ -30,7 +30,8 @@ class Bch(SwTestCase):
         disk = self.persisted(path)
         self.assertEqual("БЧ", V(disk, "Формат", "00"), "Формат в конфигурации")
         self.assertEqual("БЧ", V(disk, "Формат"), "Формат в общих (одна конфигурация, как у MProp)")
-        self.assertEqual("2,86 кг", V(disk, "Примечание", "00"), "масса детали из модели (Д-14)")
+        self.assertEqual('"SW-Mass@@00@ПРТИ.468211.102 Стойка.SLDPRT" кг', V(disk, "Примечание", "00"), "масса детали как у MProp (Д-14)")
+        self.assertEqual("2.86 кг", V(disk, "Примечание", "00", resolved=True), "значение массы в «Примечании»")
         self.assertEqual(TUBE_RECORD, (V(disk, "Наименование") or "").replace("\r\n", "\n"), "запись для спецификации")
         self.assertEqual("Стойка", V(disk, "Наименование_ФБ"), "штамп без разметки (Д-13)")
         self.assertNotIn("БЧ", oracles.all_names(disk), "отдельного свойства «БЧ» нет")

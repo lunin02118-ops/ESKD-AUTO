@@ -134,7 +134,6 @@ namespace ESKD.MaterialSync
         private Label lblServiceStatus;
         private CheckBox chkAutoSyncMaterials;
         private CheckBox chkAutoMass;
-        private NumericUpDown numMassDecimals;
         private CheckBox chkAutoSplitName;
         private Button btnSave;
         private Button btnCancel;
@@ -652,7 +651,7 @@ namespace ESKD.MaterialSync
 
             Label lblAutoMassNote = new Label()
             {
-                Text = "Пишет массу каждой конфигурации: «Масса_Таблица» — выражение SW-Mass, как MProp, «Масса_ФБ» — с запятой, знаков не больше точности массы документа; выражение MProp и ручной текст («-», «См. таблицу») не переписываются",
+                Text = "Пишет массу каждой конфигурации так же, как MProp: выражение SW-Mass в «Масса_Таблица» и «Масса_ФБ», у деталей до 100 г — в граммах; единицы массы документа переключаются по правилу MProp. Ручной текст («-», «См. таблицу») не переписывается",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,
@@ -660,55 +659,10 @@ namespace ESKD.MaterialSync
                 Margin = new Padding(24, 0, 0, 12)
             };
 
-            FlowLayoutPanel pnlDecimals = new FlowLayoutPanel()
-            {
-                Dock = DockStyle.Top,
-                AutoSize = true,
-                AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                FlowDirection = FlowDirection.LeftToRight,
-                WrapContents = false,
-                Margin = new Padding(24, 0, 0, 14)
-            };
-
-            Label lblDecimals = new Label()
-            {
-                Text = "Точность расчета массы:",
-                Font = new Font("Segoe UI", 9F),
-                ForeColor = Color.FromArgb(30, 41, 59),
-                AutoSize = true,
-                Anchor = AnchorStyles.Left,
-                Margin = new Padding(0, 3, 8, 3)
-            };
-
-            numMassDecimals = new NumericUpDown()
-            {
-                Font = new Font("Segoe UI", 9F),
-                Minimum = 0,
-                Maximum = 4,
-                Value = 2, // 2 DECIMALS BY DEFAULT
-                Width = 55,
-                Margin = new Padding(0, 0, 8, 0)
-            };
-
-            Label lblDecimalsNote = new Label()
-            {
-                Text = "знаков после запятой (по стандарту ЕСКД: 2)",
-                Font = new Font("Segoe UI", 8.5F),
-                ForeColor = Color.FromArgb(100, 116, 139),
-                AutoSize = true,
-                Anchor = AnchorStyles.Left,
-                Margin = new Padding(0, 3, 0, 3)
-            };
-
-            pnlDecimals.Controls.Add(lblDecimals);
-            pnlDecimals.Controls.Add(numMassDecimals);
-            pnlDecimals.Controls.Add(lblDecimalsNote);
-
             tblMass.Controls.Add(lblMassTitle, 0, 0);
             tblMass.Controls.Add(lblMassSub, 0, 1);
             tblMass.Controls.Add(chkAutoMass, 0, 2);
             tblMass.Controls.Add(lblAutoMassNote, 0, 3);
-            tblMass.Controls.Add(pnlDecimals, 0, 4);
             cardMass.Controls.Add(tblMass);
 
             // -------------------------------------------------------------
@@ -882,7 +836,6 @@ namespace ESKD.MaterialSync
                 int serviceEnabled = 1;
                 int autoSyncMat = 1;
                 int autoMass = 1;
-                int decimals = 2;
                 int autoSplit = 1;
 
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegPath))
@@ -895,7 +848,6 @@ namespace ESKD.MaterialSync
                         serviceEnabled = Core.Settings.Int(key, "ServiceEnabled", 1);
                         autoSyncMat = Core.Settings.Int(key, "AutoSyncMaterials", 1);
                         autoMass = Core.Settings.Int(key, "AutoMass", 1);
-                        decimals = Core.Settings.Int(key, "MassDecimals", 2);
                         autoSplit = Core.Settings.Int(key, "AutoSplitName", 1);
 
                         string authorList = key.GetValue("AuthorList") as string;
@@ -943,7 +895,6 @@ namespace ESKD.MaterialSync
                 chkServiceEnabled.Checked = (serviceEnabled == 1);
                 chkAutoSyncMaterials.Checked = (autoSyncMat == 1);
                 chkAutoMass.Checked = (autoMass == 1);
-                numMassDecimals.Value = Math.Max(0, Math.Min(4, decimals));
                 chkAutoSplitName.Checked = (autoSplit == 1);
             }
             catch (Exception ex)
@@ -970,7 +921,6 @@ namespace ESKD.MaterialSync
                         key.SetValue("Checker", checker, RegistryValueKind.String);
                         key.SetValue("Organization", org, RegistryValueKind.String);
                         key.SetValue("AutoMass", chkAutoMass.Checked ? 1 : 0, RegistryValueKind.DWord);
-                        key.SetValue("MassDecimals", (int)numMassDecimals.Value, RegistryValueKind.DWord);
                         key.SetValue("AutoSplitName", chkAutoSplitName.Checked ? 1 : 0, RegistryValueKind.DWord);
 
                         UpdateRegistryList(key, "AuthorList", author);

@@ -14,7 +14,6 @@ namespace ESKD.MaterialSync.Core
         public bool ServiceEnabled = true;
         public bool AutoSyncMaterials = true;
         public bool AutoMass = true;
-        public int MassDecimals = 2;
         public bool AutoSplitName = true;
         public string Author = "";
         public string Checker = "";
@@ -42,7 +41,6 @@ namespace ESKD.MaterialSync.Core
                     s.ServiceEnabled = Int(key, "ServiceEnabled", 1) == 1;
                     s.AutoSyncMaterials = Int(key, "AutoSyncMaterials", 1) == 1;
                     s.AutoMass = Int(key, "AutoMass", 1) == 1;
-                    s.MassDecimals = Math.Max(0, Math.Min(4, Int(key, "MassDecimals", 2)));
                     s.AutoSplitName = Int(key, "AutoSplitName", 1) == 1;
                     s.Author = Str(key, "Author");
                     s.Checker = Str(key, "Checker");

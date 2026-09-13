@@ -93,7 +93,7 @@ namespace ESKD.MaterialSync.Sw
                 if (req.Materials && !isAssembly && settings.AutoSyncMaterials)
                     SyncMaterials(w, app, (PartDoc)doc, dict, report);
                 if (req.Mass && settings.AutoMass)
-                    SyncMass(w, doc, dict, settings);
+                    SyncMass(w, doc, dict, report);
             }
             catch (Exception ex)
             {
@@ -464,103 +464,104 @@ namespace ESKD.MaterialSync.Sw
 
         // ------------------------------------------------------------------ масса
         /// <summary>
-        /// Масса каждой конфигурации (Д-36). «Масса_Таблица» — выражение MProp «"SW-Mass@@конфигурация@файл"»: по нему
-        /// SolidWorks считает массу неактивной конфигурации без активации. «Масса_ФБ» — текст графы 5 с запятой из массы
-        /// этой конфигурации (выражение SolidWorks всегда с точкой); знаков — по настройке, но не больше точности массы
-        /// документа, чтобы у всех исполнений их было поровну. Живое выражение MProp в «Масса_ФБ» и ручной текст
-        /// («-», «См. таблицу») не трогаются.
+        /// Масса как у MProp (Правила записи свойств SWPlus, раздел 1; Р-1, Р-7): единицы массы документа по массе активной
+        /// конфигурации (больше 0,1 кг — м/кг/м³ и 2 знака, иначе см/г/см³ и 1 знак; при «Единицы» = False/0 — единицы
+        /// пользователя); у каждой конфигурации «Масса_Таблица» — "SW-Mass@@конф@файл.SLDPRT", «Масса_ФБ» — то же выражение в
+        /// разметке графы 5 с « г» при граммах; «Примечание» БЧ — выражение с «кг»/«г». Ручные «-» и «См. таблицу» остаются,
+        /// общая копия «Масса_ФБ» удаляется, как у MProp (FrmMProp:2834).
         /// </summary>
-        public static void SyncMass(PropertyWriter w, ModelDoc2 doc, PropertyDictionary dict, Settings settings)
+        public static void SyncMass(PropertyWriter w, ModelDoc2 doc, PropertyDictionary dict, SyncReport report)
         {
+            string path = DocInfo.PathOf(doc);
+            if (path.Length == 0) return; // выражение с именем файла пишется после первого сохранения
             string massName = dict[Role.Mass];
             string tableName = dict[Role.MassTable];
             string remark = dict[Role.Remark];
             string format = dict[Role.Format];
-            string path = DocInfo.PathOf(doc);
-            string fileName = path.Length > 0 ? Path.GetFileName(path) : "";
+            string fileTitle = SwPlusFormat.FileTitle(path);
+            bool isAssembly = doc.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY;
             string active = w.ActiveConfigurationName();
+            bool grams = MassUnitsAsMProp(w, doc, active, report);
             string[] configs = w.ConfigurationNames();
-            double activeMass = ActiveMass(doc);
-            int unit = MassUnit(doc);
-            System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
-            bool hasActive = false;
-            double activeKg = 0;
-            int activeDecimals = settings.MassDecimals;
             foreach (string cfg in configs)
             {
-                if (fileName.Length > 0 && IsDerivedMassTable(w.Raw(cfg, tableName), cfg, fileName))
-                    w.Set(cfg, tableName, SwPlusMarkup.LiveMassExpression(cfg, fileName));
-                double kg;
-                int decimals;
-                if (!ConfigurationMass(w, cfg, cfg == active ? activeMass : 0, tableName, unit, settings.MassDecimals, out kg, out decimals))
-                    continue;
-                if (IsWritableMass(w.Raw(cfg, massName))) w.Set(cfg, massName, SwPlusMarkup.MassForStamp(kg, decimals, dict.SmallFontMarkup));
-                // БЧ: масса в «Примечании», которую записала кнопка «Деталь БЧ», пересчитывается при сохранении.
-                if (IsBchMassNote(w, cfg, format, remark)) w.Set(cfg, remark, BchRecord.MassNote(kg, decimals));
-                if (cfg == active)
-                {
-                    hasActive = true;
-                    activeKg = kg;
-                    activeDecimals = decimals;
-                }
+                if (IsSystemMassTable(w.Raw(cfg, tableName)))
+                    w.Set(cfg, tableName, SwPlusFormat.MassExpression(cfg, fileTitle, isAssembly));
+                if (IsSystemMass(w.Raw(cfg, massName)))
+                    w.Set(cfg, massName, SwPlusFormat.MassStamp(cfg, fileTitle, isAssembly, grams, dict.SmallFontMarkup));
+                if (IsBchMassNote(w, cfg, format, remark))
+                    w.Set(cfg, remark, SwPlusFormat.BchRemark(cfg, fileTitle, isAssembly, grams));
             }
-            if (!hasActive && activeMass > 0.00001)
-            {
-                hasActive = true;
-                activeKg = activeMass;
-            }
-            if (hasActive)
-            {
-                // Общая копия, оставленная v5, не создаётся заново, но поддерживается актуальной у одноконфигурационных документов.
-                string general = w.Raw("", massName);
-                if (general != null && SwPlusMarkup.IsGeneratedMass(general) && configs.Length <= 1)
-                    w.Set("", massName, SwPlusMarkup.MassForStamp(activeKg, activeDecimals, dict.SmallFontMarkup));
-                if (IsBchMassNote(w, "", format, remark)) w.Set("", remark, BchRecord.MassNote(activeKg, activeDecimals));
-            }
-            if (activeDecimals < settings.MassDecimals)
-                Log.WarnOnce(string.Format("{0}: точность массы документа {1} зн. после запятой меньше настройки ЕСКД ({2}) — в графе 5 {1} зн.",
-                    DocInfo.TitleOf(doc), activeDecimals, settings.MassDecimals));
-            if (watch.ElapsedMilliseconds > 1000)
-                Log.Info(string.Format("Масса {0} конфигураций {1}: {2} мс", configs.Length, DocInfo.TitleOf(doc), watch.ElapsedMilliseconds));
+            string general = w.Raw("", massName);
+            if (general != null && IsSystemMass(general)) w.Delete("", massName);
+            if (configs.Length <= 1 && IsBchMassNote(w, "", format, remark))
+                w.Set("", remark, SwPlusFormat.BchRemark(active, fileTitle, isAssembly, grams));
         }
 
         /// <summary>
-        /// Масса конфигурации в кг и число знаков для графы 5 — из вычисленного «Масса_Таблица». У активной конфигурации
-        /// берётся точная масса модели с тем же числом знаков, а без выражения — с числом знаков из настройки.
+        /// Единицы массы документа, как выставляет MProp (FrmMProp:2339, 2449–2468, 3353–3368); true — масса в граммах (суффикс
+        /// « г» у выражения, FrmMProp:2848). При переключении единиц — предупреждение в строке состояния.
         /// </summary>
-        private static bool ConfigurationMass(PropertyWriter w, string cfg, double modelMass, string tableName, int unit, int maxDecimals,
-            out double kg, out int decimals)
+        private static bool MassUnitsAsMProp(PropertyWriter w, ModelDoc2 doc, string active, SyncReport report)
         {
-            kg = 0;
-            decimals = maxDecimals;
-            string raw = w.Raw(cfg, tableName);
-            double resolvedKg = 0;
-            int resolvedDecimals = 0;
-            if (raw != null && raw.IndexOf("SW-Mass", StringComparison.OrdinalIgnoreCase) >= 0 &&
-                SwPlusMarkup.TryParseResolvedMass(w.Resolved(cfg, tableName), unit, out resolvedKg, out resolvedDecimals))
+            int[] prefs =
             {
-                kg = resolvedKg;
-                decimals = Math.Min(maxDecimals, resolvedDecimals);
+                (int)swUserPreferenceIntegerValue_e.swUnitSystem, (int)swUserPreferenceIntegerValue_e.swUnitsMassPropLength,
+                (int)swUserPreferenceIntegerValue_e.swUnitsMassPropMass, (int)swUserPreferenceIntegerValue_e.swUnitsMassPropVolume,
+                (int)swUserPreferenceIntegerValue_e.swUnitsMassPropDecimalPlaces
+            };
+            int grams = (int)swUnitsMassPropMass_e.swUnitsMassPropMass_Grams;
+            if (SwPlusFormat.UserUnits(w.Raw(active, "Единицы"))) return GetPreference(doc, prefs[2]) == grams;
+            double mass = ActiveMass(doc);
+            if (mass <= 0.0000001) return GetPreference(doc, prefs[2]) == grams;
+            MassUnits units = SwPlusFormat.UnitsFor(mass);
+            int[] wanted = { (int)swUnitSystem_e.swUnitSystem_Custom, units.Length, units.Mass, units.Volume, units.Decimals };
+            bool changed = false;
+            for (int i = 0; i < prefs.Length; i++)
+            {
+                if (GetPreference(doc, prefs[i]) == wanted[i]) continue;
+                changed = true;
+                if (w.DryRun) continue;
+                try
+                {
+                    doc.Extension.SetUserPreferenceInteger(prefs[i], (int)swUserPreferenceOption_e.swDetailingNoOptionSpecified, wanted[i]);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("SetUserPreferenceInteger " + prefs[i], ex);
+                }
             }
-            if (modelMass > 0.00001) kg = modelMass;
-            return kg > 0.00001;
+            if (changed)
+            {
+                System.Globalization.CultureInfo ru = System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
+                report.Warnings.Add(string.Format("Единицы массы документа переключены, как в MProp: {0} (масса {1})",
+                    units.Grams ? "граммы — см, г, см³, 1 знак" : "килограммы — м, кг, м³, 2 знака",
+                    units.Grams ? (mass * 1000).ToString("0.#", ru) + " г" : mass.ToString("0.##", ru) + " кг"));
+            }
+            return units.Grams;
         }
 
-        /// <summary>«Масса_Таблица», которую пишет система: пусто, выражение шаблона или выражение MProp другой конфигурации (копия конфигурации).</summary>
-        private static bool IsDerivedMassTable(string raw, string cfg, string fileName)
+        /// <summary>«Масса_Таблица», которую пишет система: пусто, выражение шаблона или выражение «"SW-Mass@@…"» (конфигурация, имя файла и регистр расширения приводятся к MProp).</summary>
+        private static bool IsSystemMassTable(string raw)
         {
             if (raw == null || raw.Trim().Length == 0) return true;
-            if (raw.IndexOf("SW-Mass", StringComparison.OrdinalIgnoreCase) < 0)
-                return raw.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0;
-            string referenced = SwPlusMarkup.LiveMassConfiguration(raw, fileName);
-            return referenced != null && !string.Equals(referenced, cfg, StringComparison.Ordinal);
+            string t = raw.Trim();
+            if (t.IndexOf("SW-Mass@@", StringComparison.OrdinalIgnoreCase) >= 0)
+                return System.Text.RegularExpressions.Regex.IsMatch(t, "^\"SW-Mass@@[^\"]*\"$");
+            return t.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        /// <summary>«Масса_ФБ», которую пишет система: пусто, выражение шаблона без «SW-Mass» или текст надстройки.</summary>
-        private static bool IsWritableMass(string raw)
+        /// <summary>«Масса_ФБ», которую пишет система: пусто, выражение шаблона, текст надстройки до v6.2 или выражение MProp; «-» и «См. таблицу» — нет.</summary>
+        private static bool IsSystemMass(string raw)
         {
-            return raw == null || raw.Trim().Length == 0 || SwPlusMarkup.IsGeneratedMass(raw) ||
-                   (raw.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0 && raw.IndexOf("SW-Mass", StringComparison.OrdinalIgnoreCase) < 0);
+            if (raw == null || raw.Trim().Length == 0) return true;
+            string plain = MaterialRecord.OneLine(raw);
+            if (plain == "-" || plain.IndexOf("См.", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            if (SwPlusMarkup.IsGeneratedMass(raw)) return true;
+            string t = MaterialRecord.Normalize(raw);
+            string body = t.StartsWith(SwPlusFormat.MassPrefix, StringComparison.Ordinal) ? t.Substring(SwPlusFormat.MassPrefix.Length) : t.Trim();
+            if (System.Text.RegularExpressions.Regex.IsMatch(body, "^\"SW-Mass@@[^\"]*\"( г)?$")) return true;
+            return raw.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0 && raw.IndexOf("SW-Mass", StringComparison.OrdinalIgnoreCase) < 0;
         }
 
         private static bool IsBchMassNote(PropertyWriter w, string level, string format, string remark)
@@ -568,7 +569,7 @@ namespace ESKD.MaterialSync.Sw
             return (w.Raw(level, format) ?? "").Trim() == BchRecord.FormatValue && BchRecord.IsMassNote(w.Raw(level, remark));
         }
 
-        private static double ActiveMass(ModelDoc2 doc)
+        internal static double ActiveMass(ModelDoc2 doc)
         {
             try
             {
@@ -582,18 +583,16 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
-        /// <summary>Единица массы документа (swUnitsMassPropMass_e) — в ней SolidWorks вычисляет «SW-Mass», в том числе в MMGS и IPS.</summary>
-        private static int MassUnit(ModelDoc2 doc)
+        internal static int GetPreference(ModelDoc2 doc, int preference)
         {
             try
             {
-                return doc.Extension.GetUserPreferenceInteger((int)swUserPreferenceIntegerValue_e.swUnitsMassPropMass,
-                    (int)swUserPreferenceOption_e.swDetailingNoOptionSpecified);
+                return doc.Extension.GetUserPreferenceInteger(preference, (int)swUserPreferenceOption_e.swDetailingNoOptionSpecified);
             }
             catch (Exception ex)
             {
-                Log.Error("GetUserPreferenceInteger swUnitsMassPropMass", ex);
-                return (int)swUnitsMassPropMass_e.swUnitsMassPropMass_Kilograms;
+                Log.Error("GetUserPreferenceInteger " + preference, ex);
+                return -1;
             }
         }
 

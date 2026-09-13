@@ -32,6 +32,9 @@ namespace ESKD.MaterialSync.Sw
 
         public ModelDoc2 Document { get { return _doc; } }
 
+        /// <summary>Режим DryRun: запись только в журнал (единицы документа тоже не переключаются).</summary>
+        public bool DryRun { get { return _dryRun; } }
+
         public string[] ConfigurationNames()
         {
             try

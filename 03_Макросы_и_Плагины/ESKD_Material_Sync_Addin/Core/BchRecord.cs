@@ -65,16 +65,12 @@ namespace ESKD.MaterialSync.Core
             return result;
         }
 
-        /// <summary>Масса для «Примечания» БЧ: «2,86 кг». Масса берётся из модели, а не из разметки (Д-14).</summary>
-        public static string MassNote(double massKg, int decimals)
-        {
-            return SwPlusMarkup.MassText(massKg, decimals) + " кг";
-        }
-
+        /// <summary>«Примечание», которое ведёт надстройка: выражение массы MProp с «кг»/«г» или текст массы до v6.2 («2,86 кг»).</summary>
         public static bool IsMassNote(string value)
         {
             return !string.IsNullOrEmpty(value) &&
-                   System.Text.RegularExpressions.Regex.IsMatch(value.Trim(), @"^\d+([.,]\d+)?\s*кг$");
+                   (System.Text.RegularExpressions.Regex.IsMatch(value.Trim(), @"^\d+([.,]\d+)?\s*кг$") ||
+                    System.Text.RegularExpressions.Regex.IsMatch(value.Trim(), "^\"SW-Mass@@[^\"]*\" (кг|г)$"));
         }
 
         private static string Number(double mm)
