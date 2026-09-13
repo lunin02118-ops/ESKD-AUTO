@@ -50,6 +50,41 @@ class Templates(SwTestCase):
         self.assertEqual({}, report)
 
 
+class SheetFormats(SwTestCase):
+
+    FORMAT_KEEP = {"SWFormatSize"}
+
+    def test_I08_sheet_formats_and_master_templates_carry_no_properties(self):
+        """I08: новый лист с каждой форматкой SWPlus (18 основных надписей и 9 форм SpecEditor) не приносит в чертёж
+        пользовательских свойств — ни алиасов v5, ни «Лунин В.И.», ни «123» (спайк S-6); шаблоны Master без свойств (WP-4.2)."""
+        formats = sorted(paths.SHEET_FORMATS.glob("*.slddrt")) + sorted(paths.SPEC_FORMATS.glob("*.slddrt"))
+        self.assertEqual(27, len(formats), [f.name for f in formats])
+        report = {}
+        with self.s.eskd_muted():
+            drw = self.s.new_doc(paths.DRAWING_TEMPLATE)
+            try:
+                cpm = drw.Extension.CustomPropertyManager("")
+                for n, fmt in enumerate(formats):
+                    before = set(com.prop_names(cpm))
+                    ok = drw.NewSheet3(f"Проверка{n}", 12, 12, 1.0, 1.0, True, str(fmt), 0.42, 0.297, "")
+                    if not ok:
+                        report[fmt.name] = "лист не добавлен"
+                        continue
+                    added = {name: com.prop_get(cpm, name)[0] for name in set(com.prop_names(cpm)) - before - self.FORMAT_KEEP}
+                    for name in list(added):
+                        cpm.Delete2(name)
+                    if added:
+                        report[fmt.name] = added
+            finally:
+                self.s.close(drw)
+        for template in sorted((paths.SWPLUS / "Master").glob("Master_Template_*.SLDDRW")):
+            dump = oracles.read_persisted(self.s, self.s.workspace_copy(template, subdir=self._case_name()))
+            extra = {name: item["raw"] for name, item in dump["general"].items() if name not in self.FORMAT_KEEP}
+            if extra:
+                report[template.name] = extra
+        self.assertEqual({}, report, "свойства, которые форматки и шаблоны Master приносят в чертёж")
+
+
 class AddinLifecycle(SwTestCase):
 
     @known_defect("Д-26")
