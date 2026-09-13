@@ -747,7 +747,7 @@ namespace ESKD.MaterialSync
 
             Label lblMatRule1 = new Label()
             {
-                Text = "✔ Для графы 3 основной надписи: «Материал_ФБ» — дробь «сортамент / марка» из библиотеки материалов ГОСТ или одна строка",
+                Text = "✔ Графа 3 основной надписи — «Материал_ФБ»: обозначение из библиотеки материалов ГОСТ, как пишет MProp (форма и дробь «сортамент / марка»)",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(51, 65, 85),
                 AutoSize = true,
@@ -757,7 +757,7 @@ namespace ESKD.MaterialSync
 
             Label lblMatRule2 = new Label()
             {
-                Text = "✔ Для таблицы параметров: «Материал_Таблица» в той же разметке",
+                Text = "✔ Таблицы — «Материал_Таблица»; сводная ведомость материалов — «Материал_Строка» одной строкой",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(51, 65, 85),
                 AutoSize = true,

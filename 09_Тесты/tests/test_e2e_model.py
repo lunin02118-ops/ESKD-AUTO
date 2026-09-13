@@ -17,7 +17,7 @@ A08 = "ПРТИ.468211.110 СБ Узел опоры.sldasm"
 A13 = "ПРТИ.468211.106 Крышка.sldprt"
 
 ALLOWED_NEW = {"Обозначение", "Наименование", "Наименование_ФБ", "Сборка1_ФБ", "Сборка2_ФБ", "Конструктор",
-               "Проверил", "Контора", "Масса_ФБ", "Материал_ФБ", "Материал_Таблица", "Исполнение"}
+               "Проверил", "Контора", "Масса_ФБ", "Материал_ФБ", "Материал_Таблица", "Материал_Строка", "Исполнение"}
 LEGACY = {"Разраб.", "Разработал", "Автор", "п_Разраб", "DrawnBy", "п_Разраб_Дата", "DrawnDate", "Пров.", "п_Пров",
           "CheckedBy", "п_Пров_Дата", "Организация", "Организация_ФБ", "Компания", "Firm", "Organization", "PartNo",
           "Сортамент", "ГОСТ_Сортамент", "ГОСТ_Материал", "БЧ"}
@@ -156,7 +156,11 @@ class ModelNames(SwTestCase):
         doc.SetMaterialPropertyName2("00", "SOLIDWORKS Materials", "Простая углеродистая сталь")
         self.s.save(doc)
         self.s.close(doc)
-        self.assertEqual("Простая углеродистая сталь", V(self.persisted(path), "Материал_ФБ", "00"))
+        disk = self.persisted(path)
+        self.assertEqual("<FONT size=1.8> \n<FONT size=3.5>Простая углеродистая сталь", (V(disk, "Материал_ФБ", "00") or "").replace("\r\n", "\n"),
+                         "одна строка в разметке MProp")
+        self.assertEqual("Простая углеродистая сталь", V(disk, "Материал_Таблица", "00"), "таблица")
+        self.assertEqual("Простая углеродистая сталь", V(disk, "Материал_Строка", "00"), "сводная ведомость")
         self.assertEqual([], self.addin_errors())
 
     @known_defect("Д-32")
@@ -176,6 +180,34 @@ class ModelNames(SwTestCase):
         warnings = [ln for ln in self.addin_log.new_lines() if "введён вручную" in ln and "Материал_ФБ" in ln]
         self.assertTrue(warnings, "расхождение с материалом SolidWorks не записано в журнал")
         self.assertEqual([], self.addin_errors())
+
+    @known_defect("Д-33")
+    def test_M13_configuration_without_material_gets_no_material(self):
+        """M13: конфигурация без материала не получает материал другой конфигурации (у B-01 он попадал в 78 конфигураций)."""
+        path, doc = self.open_copy(A03)
+        # Материал фикстуры задан на все конфигурации: удаление в одной снимает его со всех, поэтому назначаем заново в 00 и 01.
+        doc.SetMaterialPropertyName2("02", "", "")
+        for cfg in ("00", "01"):
+            build.set_material(doc, "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", cfg)
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual("Лист Б-ПН-НО-4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", V(disk, "Материал_Строка", "01"),
+                         "конфигурация со своим материалом")
+        self.assertIsNone(V(disk, "Материал_Строка", "02"), "конфигурация без материала — нет записи для ведомости")
+        self.assertNotIn("Лист", V(disk, "Материал_ФБ", "02") or "", "конфигурация без материала — нет чужой дроби в графе 3")
+
+    @known_defect("Д-35")
+    def test_M14_reopened_document_keeps_multiline_values(self):
+        """M14: документ, открытый заново, при сохранении не переписывает наименование в две строки (перевод строки CR LF)."""
+        path, doc = self.open_copy(A06)
+        self.s.save(doc)
+        self.s.close(doc)
+        doc = self.s.open(path)
+        mark = self.mark("M14-reopened-save")
+        self.s.save(doc)
+        self.assertNoPropertyWrites(mark, "сохранение заново открытого документа переписало значения")
+        self.s.close(doc)
 
     @known_defect("Д-09")
     def test_M11_assembly_code_and_second_line_in_configuration(self):

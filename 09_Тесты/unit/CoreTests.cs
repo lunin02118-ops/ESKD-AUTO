@@ -178,56 +178,119 @@ namespace ESKD.Tests
             Assert.IsFalse(SwPlusMarkup.IsGeneratedMass("См.таблицу"), "ручной текст");
             Assert.IsFalse(SwPlusMarkup.IsGeneratedMass("-"), "прочерк");
         }
+    }
 
-        public static void Test_material_ownership_classification()
+    public static class MaterialRecordTests
+    {
+        private const string SheetDesignation = "Лист <STACK size=1>Б-ПН-НО-4,0 ГОСТ 19903-2015<OVER>Ст3сп ГОСТ 14637-89</STACK>";
+
+        private static MaterialInfo Info(string name, string designation, string line)
         {
-            Assert.IsTrue(SwPlusMarkup.IsDerivedMaterial(null), "нет свойства");
-            Assert.IsTrue(SwPlusMarkup.IsDerivedMaterial("  "), "пусто");
-            Assert.IsTrue(SwPlusMarkup.IsDerivedMaterial("$PRP:\"Материал\""), "выражение шаблона");
-            string generated = SwPlusMarkup.MaterialFraction("Лист Б-ПН-НО-4,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89");
-            Assert.IsTrue(SwPlusMarkup.IsDerivedMaterial(generated), "дробь надстройки");
-            Assert.IsTrue(SwPlusMarkup.IsDerivedMaterial("Простая углеродистая сталь"), "строка материала без разметки (M10)");
-            string mpropSortament = "<FONT size=1.8> <FONT size=3.5>Труба <STACK size=1>80х80х4 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>";
-            Assert.IsFalse(SwPlusMarkup.IsDerivedMaterial(mpropSortament), "сортамент MProp (Д-32)");
-            Assert.IsTrue(SwPlusMarkup.IsManualMaterialText(mpropSortament), "сортамент MProp — ручной ввод");
-            Assert.IsFalse(SwPlusMarkup.IsDerivedMaterial("<STACK size=1>Труба 80х80х4 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>"), "дробь без шрифта (корпус Б, B-01)");
-            Assert.IsFalse(SwPlusMarkup.IsDerivedMaterial("<FONT size=1.8> \n<FONT size=3.5>Сталь 20 ГОСТ 1050-2013"), "материал пользователя MProp");
+            MaterialInfo m = new MaterialInfo();
+            m.Name = name;
+            m.GostDesignation = designation;
+            m.LineDesignation = line;
+            return m;
+        }
+
+        /// <summary>Как MProp пишет «Материал_ФБ» в режиме «Сортамент» (MProp.swp, запись prpMaterial при prpFontSize = 1).</summary>
+        private static string MPropStamp(string shape, string sortament, string marka)
+        {
+            return "<FONT size=1.8> <FONT size=3.5>" + shape + " <STACK size=1>" + sortament + "<OVER>" + marka + "</STACK>";
+        }
+
+        /// <summary>Как MProp пишет «Материал_Таблица» в режиме «Сортамент».</summary>
+        private static string MPropTable(string shape, string sortament, string marka)
+        {
+            return shape + " <STACK size=1>" + sortament + "<OVER>" + marka + "</STACK>";
+        }
+
+        /// <summary>Разбор «Материал_Таблица» формой MProp (FrmMProp.Disp): InStr от единицы, Left$ и Mid$.</summary>
+        private static string[] MPropSplit(string s)
+        {
+            if (s.StartsWith("<FONT")) s = s.Substring(s.LastIndexOf("5>") + 2);
+            int lt = s.IndexOf('<') + 1;
+            string shape = lt - 2 > 0 ? s.Substring(0, lt - 2) : "";
+            int gt = s.IndexOf('>') + 1;
+            int lt2 = s.IndexOf('<', gt - 1) + 1;
+            string sortament = s.Substring(gt, lt2 - gt - 1);
+            int gt2 = s.IndexOf('>', lt2 - 1) + 1;
+            int lt3 = s.IndexOf('<', gt2 - 1) + 1;
+            string marka = s.Substring(gt2, lt3 - gt2 - 1);
+            return new[] { shape, sortament, marka };
+        }
+
+        public static void Test_library_fraction_is_written_as_mprop_sortament()
+        {
+            MaterialRecord r = MaterialRecord.FromLibrary(Info("Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", SheetDesignation,
+                "Лист Б-ПН-НО-4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"));
+            Assert.AreEqual(MPropStamp("Лист", "Б-ПН-НО-4,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89"), r.Stamp, "графа 3 — как MProp, форма перед дробью");
+            Assert.AreEqual(MPropTable("Лист", "Б-ПН-НО-4,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89"), r.Table, "таблица — как MProp");
+            Assert.AreEqual("Лист Б-ПН-НО-4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", r.Line, "одна строка для сводной ведомости");
+            string[] split = MPropSplit(r.Table);
+            Assert.AreEqual("Лист", split[0], "MProp: форма");
+            Assert.AreEqual("Б-ПН-НО-4,0 ГОСТ 19903-2015", split[1], "MProp: сортамент");
+            Assert.AreEqual("Ст3сп ГОСТ 14637-89", split[2], "MProp: марка");
+        }
+
+        public static void Test_legacy_table_value_was_misread_by_mprop()
+        {
+            string legacy = " " + MaterialRecord.LegacyFractionMarkup + "Лист Б-ПН-НО-4,0 ГОСТ 19903-2015<OVER>Ст3сп ГОСТ 14637-89</STACK>";
+            string[] split = MPropSplit(legacy);
+            Assert.AreEqual("", split[0] + split[1] + split[2], "прежний формат: форма MProp получала пустые поля и после «OK» затирала дробь (Д-34)");
+        }
+
+        public static void Test_fraction_without_shape_and_one_line_designations()
+        {
+            MaterialRecord plywood = MaterialRecord.FromLibrary(Info("Фанера ФК 6 мм", " <STACK size=1>Фанера ФК-6 ГОСТ 3916.1-96<OVER>Береза ГОСТ 3916.1-96</STACK>", ""));
+            Assert.AreEqual(MPropStamp("", "Фанера ФК-6 ГОСТ 3916.1-96", "Береза ГОСТ 3916.1-96"), plywood.Stamp, "дробь без формы — как MProp с пустой формой");
+            Assert.AreEqual("Фанера ФК-6 ГОСТ 3916.1-96 / Береза ГОСТ 3916.1-96", plywood.Line, "строка из дроби, если в библиотеке она пустая");
+            MaterialRecord steel = MaterialRecord.FromLibrary(Info("Сталь 3сп (ГОСТ 380-2005)", "Сталь 3сп ГОСТ 380-2005", "Сталь 3сп ГОСТ 380-2005"));
+            Assert.AreEqual("<FONT size=1.8> \n<FONT size=3.5>Сталь 3сп ГОСТ 380-2005", steel.Stamp, "одна строка — как «материал пользователя» MProp");
+            Assert.AreEqual("Сталь 3сп ГОСТ 380-2005", steel.Table, "таблица");
+            MaterialRecord bare = MaterialRecord.FromLibrary(Info("Сталь без обозначения", "", ""));
+            Assert.AreEqual("Сталь без обозначения", bare.Line, "без «Обозначения_ГОСТ» — имя материала");
+            MaterialRecord other = MaterialRecord.FromName("Простая углеродистая сталь");
+            Assert.AreEqual("<FONT size=1.8> \n<FONT size=3.5>Простая углеродистая сталь", other.Stamp, "материал вне библиотеки");
+            Assert.AreEqual("Простая углеродистая сталь", other.Line, "строка");
+            Assert.IsNull(MaterialRecord.FromName("  "), "нет материала");
+        }
+
+        public static void Test_system_and_user_values()
+        {
+            Func<string, bool> library = v => v == MPropStamp("Лист", "Б-ПН-НО-4,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89") ||
+                                              v == "<FONT size=1.8> \n<FONT size=3.5>Сталь 3сп ГОСТ 380-2005";
+            Assert.IsTrue(MaterialRecord.IsSystemValue(null, library), "нет свойства");
+            Assert.IsTrue(MaterialRecord.IsSystemValue("$PRP:\"Материал\"", library), "выражение шаблона");
+            Assert.IsTrue(MaterialRecord.IsSystemValue(" " + MaterialRecord.LegacyFractionMarkup + "Лист 4<OVER>Ст3</STACK>", library), "формат прежних версий");
+            Assert.IsTrue(MaterialRecord.IsSystemValue(MPropStamp("Лист", "Б-ПН-НО-4,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89"), library), "запись библиотеки");
+            Assert.IsTrue(MaterialRecord.IsSystemValue("<FONT size=1.8> \r\n<FONT size=3.5>Сталь 3сп ГОСТ 380-2005", library), "CR LF с диска равен LF");
+            Assert.IsTrue(MaterialRecord.IsSystemValue("Сталь 20кп ГОСТ 535-88", library), "строка без разметки");
+            string manual = MPropStamp("Лист", "Б-ПН-НО-5,0 ГОСТ 19903-2015", "09Г2С-12 ГОСТ 19281-2014");
+            Assert.IsFalse(MaterialRecord.IsSystemValue(manual, library), "сортамент, введённый в MProp вручную (Д-32)");
+            Assert.IsTrue(MaterialRecord.IsManualText(manual, library), "ручной ввод");
+            Assert.IsFalse(MaterialRecord.IsSystemValue("<STACK size=1>Труба 80х80х4 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>", library), "дробь корпуса Б (B-01)");
             string live = "<FONT size=1.8> \n<FONT size=3.5>\"SW-Material@@00@ПРТИ.468211.101.SLDPRT\"";
-            Assert.IsFalse(SwPlusMarkup.IsDerivedMaterial(live), "выражение MProp");
-            Assert.IsFalse(SwPlusMarkup.IsManualMaterialText(live), "выражение — не ручной текст");
-            Assert.IsFalse(SwPlusMarkup.IsDerivedMaterial("<FONT size=1.8> \n<FONT size=3.5>См. таблицу"), "см. таблицу");
-            Assert.IsFalse(SwPlusMarkup.IsManualMaterialText("<FONT size=1> \n<FONT size=3.5>-"), "прочерк MProp");
-            Assert.AreEqual("Труба 80х80х4 ГОСТ 8639-82 В 10 ГОСТ 13663-86", SwPlusMarkup.PlainText(mpropSortament), "текст без разметки");
-            Assert.AreEqual(SwPlusMarkup.PlainText("Труба 80х80х4 ГОСТ 8639-82 / В 10 ГОСТ 13663-86"),
-                SwPlusMarkup.PlainText(SwPlusMarkup.MaterialFraction("Труба 80х80х4 ГОСТ 8639-82", "В 10 ГОСТ 13663-86")), "дробь и строка с косой чертой равны");
+            Assert.IsFalse(MaterialRecord.IsSystemValue(live, library), "выражение MProp");
+            Assert.IsFalse(MaterialRecord.IsManualText(live, library), "выражение — не ручной текст");
+            Assert.IsFalse(MaterialRecord.IsSystemValue("<FONT size=1.8> \n<FONT size=3.5>См. таблицу", library), "см. таблицу");
+            Assert.IsFalse(MaterialRecord.IsManualText("<FONT size=1> \n<FONT size=3.5>-", library), "прочерк MProp");
+            Assert.AreEqual("Лист Б-ПН-НО-5,0 ГОСТ 19903-2015 / 09Г2С-12 ГОСТ 19281-2014", MaterialRecord.OneLine(manual), "ручная дробь одной строкой");
         }
 
-        public static void Test_MaterialForStamp_from_library_designation()
+        public static void Test_corporate_library_records_are_recognized()
         {
-            string expected = " <FONT size=1.8><FONT size=3.5><STACK size=1>Труба 80х80х4,0 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>";
-            Assert.AreEqual(expected, SwPlusMarkup.MaterialForStamp("Труба <STACK size=1>80х80х4,0 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>", "", ""), "форма заготовки внутри числителя");
-            Assert.AreEqual(expected, SwPlusMarkup.MaterialForStamp(expected.Trim(), "", ""), "готовая дробь с ведущим пробелом");
-            Assert.AreEqual(" <FONT size=1.8><FONT size=3.5><STACK size=1>Лист 4<OVER>Ст3</STACK>", SwPlusMarkup.MaterialForStamp("Лист 4 / Ст3", "", ""), "строка с косой чертой");
-            Assert.AreEqual("Сталь 45", SwPlusMarkup.MaterialForStamp("Сталь 45", "", ""), "простой материал");
-            Assert.AreEqual("", SwPlusMarkup.MaterialForStamp("", "", ""), "пусто");
-        }
-
-        public static void Test_MaterialForStamp_sortament_wins_over_copied_numerator()
-        {
-            bool conflict;
-            string copied = "Лист <STACK size=1>Б-ПН-НО-4,0 ГОСТ 19903-2015<OVER>Ст3сп ГОСТ 14637-89</STACK>";
-            Assert.AreEqual(" <FONT size=1.8><FONT size=3.5><STACK size=1>Лист Б-ПН-НО-6,0 ГОСТ 19903-2015<OVER>Ст3сп ГОСТ 14637-89</STACK>",
-                SwPlusMarkup.MaterialForStamp(copied, "Лист Б-ПН-НО-6,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89", out conflict),
-                "Д-27: числитель скопирован у листа 4,0 — берётся Сортамент");
-            Assert.IsTrue(conflict, "расхождение отмечено");
-            SwPlusMarkup.MaterialForStamp(copied, "Лист  Б-ПН-НО-4,0  ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89", out conflict);
-            Assert.IsFalse(conflict, "разница только в пробелах — не расхождение");
-            SwPlusMarkup.MaterialForStamp(copied, "", "", out conflict);
-            Assert.IsFalse(conflict, "без Сортамента сверять не с чем");
-            Assert.AreEqual(" <FONT size=1.8><FONT size=3.5><STACK size=1>Плита ЛДСП-16 ГОСТ 32289-2013<OVER>ГОСТ 10632-2014</STACK>",
-                SwPlusMarkup.MaterialForStamp("Плита <STACK size=1>ЛДСП-16 ГОСТ 32289-2013<OVER>ГОСТ 10632-2014</STACK>", "Плита ЛДСП-16 ГОСТ 32289-2013", "ЛДСП ГОСТ 10632-2014", out conflict),
-                "знаменатель неметаллов берётся из библиотеки как есть");
-            Assert.IsFalse(conflict, "ЛДСП согласована");
+            string db = Path.Combine(DictionaryTests.RepoRoot(), "04_Библиотеки_Материалов_и_Профилей", "Библиотека материалов", "Библиотека_Материалов_ГОСТ.sldmat");
+            MaterialCatalog.ClearCache();
+            MaterialInfo tube = MaterialCatalog.Lookup(db, "Труба 80х80х4,0 ГОСТ 8639-82 / В 10 ГОСТ 13663-86");
+            MaterialRecord r = MaterialRecord.FromLibrary(tube);
+            Assert.AreEqual(MPropStamp("Труба", "80х80х4,0 ГОСТ 8639-82", "В 10 ГОСТ 13663-86"), r.Stamp, "труба: форма перед дробью");
+            Assert.AreEqual("Труба 80х80х4,0 ГОСТ 8639-82 / В 10 ГОСТ 13663-86", r.Line, "поле «Обозначение_Строка»");
+            string[] dbs = { db };
+            Assert.IsTrue(MaterialCatalog.IsSystemRecord(dbs, MaterialRecord.Normalize(r.Stamp)), "графа 3 трубы — запись системы");
+            Assert.IsTrue(MaterialCatalog.IsSystemRecord(dbs, r.Table), "таблица трубы — запись системы");
+            Assert.IsFalse(MaterialCatalog.IsSystemRecord(dbs, MPropStamp("Труба", "80х80х4 ГОСТ 8639-82", "В 10 ГОСТ 13663-86")), "похожая ручная дробь — не запись системы");
+            MaterialCatalog.ClearCache();
         }
     }
 
@@ -374,7 +437,7 @@ namespace ESKD.Tests
 
     public static class DictionaryTests
     {
-        private static string RepoRoot()
+        internal static string RepoRoot()
         {
             string dir = AppDomain.CurrentDomain.BaseDirectory;
             for (int i = 0; i < 6 && dir != null; i++)

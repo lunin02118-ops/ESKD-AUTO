@@ -266,6 +266,9 @@ class StaticRepository(StaticTestCase):
                     problems.append(f"числитель «{numerator}» ≠ Сортамент «{sortament}»")
             if fraction and line and plain(fraction) != line:
                 problems.append(f"«{plain(fraction)}» ≠ Обозначение_Строка «{line}»")
+            if fraction.upper().startswith("<STACK"):
+                # Форма MProp берёт форму как Left$(s, InStr(s, "<") - 2): с дробью в начале строки длина отрицательна.
+                problems.append("дробь с начала строки: перед <STACK нужна форма и пробел или хотя бы пробел (разбор MProp)")
             if size and size not in name:
                 problems.append(f"Типоразмер «{size}» не входит в имя")
             if problems:

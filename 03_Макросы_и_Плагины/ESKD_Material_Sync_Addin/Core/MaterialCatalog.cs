@@ -29,6 +29,7 @@ namespace ESKD.MaterialSync.Core
         {
             public DateTime Stamp;
             public Dictionary<string, MaterialInfo> Materials;
+            public HashSet<string> Records;
         }
 
         private static readonly Dictionary<string, Entry> Cache = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
@@ -87,6 +88,39 @@ namespace ESKD.MaterialSync.Core
         public static void ClearCache()
         {
             lock (Sync) { Cache.Clear(); }
+        }
+
+        /// <summary>
+        /// Значение (с LF вместо CR LF) — одно из представлений какого-либо материала этих библиотек («Материал_ФБ» или
+        /// «Материал_Таблица», которые пишет надстройка): такое значение принадлежит системе и следует за материалом.
+        /// </summary>
+        public static bool IsSystemRecord(IEnumerable<string> databasePaths, string value)
+        {
+            if (string.IsNullOrEmpty(value) || databasePaths == null) return false;
+            foreach (string path in databasePaths)
+            {
+                if (Load(path) == null) continue;
+                HashSet<string> records;
+                lock (Sync)
+                {
+                    Entry e;
+                    if (!Cache.TryGetValue(path, out e)) continue;
+                    if (e.Records == null)
+                    {
+                        e.Records = new HashSet<string>(StringComparer.Ordinal);
+                        foreach (MaterialInfo info in e.Materials.Values)
+                        {
+                            MaterialRecord r = MaterialRecord.FromLibrary(info);
+                            if (r == null) continue;
+                            e.Records.Add(MaterialRecord.Normalize(r.Stamp));
+                            e.Records.Add(MaterialRecord.Normalize(r.Table));
+                        }
+                    }
+                    records = e.Records;
+                }
+                if (records.Contains(value)) return true;
+            }
+            return false;
         }
 
         private static Dictionary<string, MaterialInfo> Parse(string databasePath)

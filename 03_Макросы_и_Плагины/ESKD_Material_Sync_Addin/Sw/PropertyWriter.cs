@@ -139,12 +139,16 @@ namespace ESKD.MaterialSync.Sw
             return raw == null || raw.Trim().Length == 0 || raw.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        /// <summary>Записать значение, если сырое значение отличается. Возвращает true при записи.</summary>
+        /// <summary>
+        /// Записать значение, если сырое значение отличается. Перевод строки SolidWorks возвращает как CR LF, а пишется LF:
+        /// без нормализации многострочные значения переписывались бы при каждом сохранении открытого заново документа.
+        /// Возвращает true при записи.
+        /// </summary>
         public bool Set(string cfg, string name, string value)
         {
             value = value ?? "";
             string current = Raw(cfg, name);
-            if (current != null && string.Equals(current, value, StringComparison.Ordinal)) return false;
+            if (current != null && string.Equals(MaterialRecord.Normalize(current), MaterialRecord.Normalize(value), StringComparison.Ordinal)) return false;
             string level = string.IsNullOrEmpty(cfg) ? "общие" : cfg;
             Operations.Add(string.Format("{0} [{1}] {2}: {3} → {4}", _docTitle, level, name,
                 current == null ? "<нет>" : Short(current), Short(value)));

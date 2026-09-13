@@ -341,11 +341,15 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ материал
+        /// <summary>
+        /// Для каждой конфигурации — материал SolidWorks этой конфигурации в трёх представлениях (Core.MaterialRecord):
+        /// «Материал_ФБ» и «Материал_Таблица» — если в них не значение пользователя (Д-32); «Материал_Строка» — графа 3
+        /// одной строкой, для сводной ведомости. Конфигурация без материала ничего не получает (Д-33).
+        /// </summary>
         public static void SyncMaterials(PropertyWriter w, ISldWorks app, PartDoc part, PropertyDictionary dict, SyncReport report)
         {
-            string fbName = dict[Role.Material];
+            string stampName = dict[Role.Material];
             string tableName = dict[Role.MaterialTable];
-            string active = w.ActiveConfigurationName();
             List<string> databases = new List<string>();
             try
             {
@@ -356,46 +360,55 @@ namespace ESKD.MaterialSync.Sw
             {
                 Log.Error("GetMaterialDatabases", ex);
             }
+            Func<string, bool> isSystemRecord = value => MaterialCatalog.IsSystemRecord(databases, value);
             ModelDoc2 model = (ModelDoc2)part;
             foreach (string cfg in w.ConfigurationNames())
             {
                 string db;
-                string material = MaterialName(part, model, cfg, active, out db);
-                if (string.IsNullOrEmpty(material)) continue;
-                MaterialInfo info = MaterialCatalog.Find(databases, db, material);
-                string stamp;
-                if (info != null && !string.IsNullOrEmpty(info.GostDesignation))
+                string material = MaterialName(part, model, cfg, out db);
+                MaterialRecord record = null;
+                if (material != null)
                 {
-                    bool conflict;
-                    stamp = SwPlusMarkup.MaterialForStamp(info.GostDesignation, info.Sortament, (info.Grade + " " + info.GostMaterial).Trim(), out conflict);
-                    string warning = string.Format("Библиотека «{0}», материал «{1}»: числитель «Обозначение_ГОСТ» не совпадает с «Сортаментом», в графу 3 записан «Сортамент»",
-                        info.Database, info.Name);
-                    if (conflict && !report.Warnings.Contains(warning)) report.Warnings.Add(warning);
+                    MaterialInfo info = MaterialCatalog.Find(databases, db, material);
+                    record = info != null ? MaterialRecord.FromLibrary(info) : MaterialRecord.FromName(material);
                 }
-                else if (material.Contains("/"))
-                    stamp = SwPlusMarkup.MaterialFraction(material.Substring(0, material.IndexOf('/')), material.Substring(material.IndexOf('/') + 1));
-                else
-                    stamp = material;
-                string current = w.Raw(cfg, fbName);
-                if (!SwPlusMarkup.IsDerivedMaterial(current))
+                string stamp = w.Raw(cfg, stampName);
+                if (record != null && MaterialRecord.IsSystemValue(stamp, isSystemRecord))
                 {
-                    // Значение MProp или пользователя остаётся (Д-32); расхождение с материалом SolidWorks — в журнал.
-                    if (SwPlusMarkup.IsManualMaterialText(current) && SwPlusMarkup.PlainText(current) != SwPlusMarkup.PlainText(stamp))
-                        report.Warnings.Add(string.Format("Конфигурация «{0}»: «{1}» = «{2}» введён вручную и не совпадает с материалом SolidWorks «{3}» — значение не изменено",
-                            cfg, fbName, SwPlusMarkup.PlainText(current), material));
-                    continue;
+                    w.Set(cfg, stampName, record.Stamp);
+                    if (MaterialRecord.IsSystemValue(w.Raw(cfg, tableName), isSystemRecord)) w.Set(cfg, tableName, record.Table);
                 }
-                w.Set(cfg, fbName, stamp);
-                if (SwPlusMarkup.IsDerivedMaterial(w.Raw(cfg, tableName))) w.Set(cfg, tableName, stamp);
+                else if (record != null && MaterialRecord.IsManualText(stamp, isSystemRecord) &&
+                         MaterialRecord.OneLine(stamp) != MaterialRecord.OneLine(record.Stamp))
+                {
+                    report.Warnings.Add(string.Format("Конфигурация «{0}»: «{1}» = «{2}» введён вручную и не совпадает с материалом SolidWorks «{3}» — значение не изменено",
+                        cfg, stampName, MaterialRecord.OneLine(stamp), material));
+                }
+                string line = LineFor(w, cfg, stampName, record, isSystemRecord);
+                if (line.Length > 0) w.Set(cfg, MaterialRecord.LineProperty, line);
+                else w.Delete(cfg, MaterialRecord.LineProperty);
             }
         }
 
-        private static string MaterialName(PartDoc part, ModelDoc2 model, string cfg, string active, out string db)
+        /// <summary>
+        /// «Материал_Строка» — то, что стоит в графе 3, одной строкой: ручная дробь или текст MProp, иначе материал
+        /// конфигурации; «См. таблицу», «-» и выражение — материал конфигурации; нет материала — пусто.
+        /// </summary>
+        private static string LineFor(PropertyWriter w, string cfg, string stampName, MaterialRecord record, Func<string, bool> isSystemRecord)
+        {
+            string stamp = w.Raw(cfg, stampName);
+            if (MaterialRecord.IsManualText(stamp, isSystemRecord)) return MaterialRecord.OneLine(stamp);
+            return record != null ? record.Line : "";
+        }
+
+        private static string MaterialName(PartDoc part, ModelDoc2 model, string cfg, out string db)
         {
             db = "";
             string name = part.GetMaterialPropertyName2(cfg, out db);
             try
             {
+                // Производная конфигурация (развёртка листовой детали) берёт материал родительской. Материал активной
+                // конфигурации не подставляется: у B-01 он попадал в 78 конфигураций без материала (Д-33).
                 if (string.IsNullOrEmpty(name))
                 {
                     Configuration c = model.GetConfigurationByName(cfg) as Configuration;
@@ -410,10 +423,6 @@ namespace ESKD.MaterialSync.Sw
                     string baseName = cfg.Substring(0, cfg.IndexOf('<')).Trim();
                     if (baseName.Length > 0) name = part.GetMaterialPropertyName2(baseName, out db);
                 }
-                if (string.IsNullOrEmpty(name) && !string.Equals(cfg, active, StringComparison.OrdinalIgnoreCase))
-                    name = part.GetMaterialPropertyName2(active, out db);
-                if (string.IsNullOrEmpty(name))
-                    name = part.GetMaterialPropertyName2("", out db);
             }
             catch (Exception ex)
             {

@@ -4,12 +4,14 @@
 Оракул — состояние файла на диске, прочитанное с выключенной службой надстройки.
 """
 import unittest
+from pathlib import Path
 
 from eskd_e2e import build, com, oracles, paths
 from eskd_e2e.testing import SwTestCase, known_defect, tags
 
 SHEET4 = "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
 SHEET6 = "Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
+TUBE80 = "Труба 80х80х4,0 ГОСТ 8639-82 / В 10 ГОСТ 13663-86"
 A01 = "ПРТИ.468211.101 Пластина опорная.sldprt"
 A04 = "Болт М6-6gх20.58 ГОСТ 7798-70.sldprt"
 A08 = "ПРТИ.468211.110 СБ Узел опоры.sldasm"
@@ -254,6 +256,73 @@ class PersistenceOpen(SwTestCase):
         self.s.save(doc)
         self.s.close(doc)
         self.assertIn("6,0", V(self.persisted(path), "Материал_ФБ", "00") or "")
+
+
+def pdf_rows_in_cell(pdf_path, sheet_width_mm, cell_mm):
+    """Строки текста первой страницы PDF внутри графы: [(верх, низ, текст)] сверху вниз.
+
+    Шрифт ГОСТ тип А кодирует кириллицу в Windows-1251, и PyMuPDF отдаёт её как Latin-1 — слова перекодируются.
+    """
+    import fitz
+    page = fitz.open(str(pdf_path))[0]
+    k = page.rect.width / sheet_width_mm
+    x1, x2, y1, y2 = cell_mm
+    clip = fitz.Rect(x1 * k, page.rect.height - y2 * k, x2 * k, page.rect.height - y1 * k)
+    rows = {}
+    for wx1, wy1, wx2, wy2, word, *_ in page.get_text("words"):
+        if not fitz.Rect(wx1, wy1, wx2, wy2).intersects(clip):
+            continue
+        try:
+            word = word.encode("latin-1").decode("cp1251")
+        except UnicodeError:
+            pass
+        rows.setdefault((round(wy1, 1), round(wy2, 1)), []).append((wx1, word))
+    return [(top, bottom, " ".join(w for _, w in sorted(words))) for (top, bottom), words in sorted(rows.items())]
+
+
+class BasicMaterialScenario(SwTestCase):
+    """Базовый сценарий конструктора: деталь из шаблона → материал из библиотеки → «Сохранить как» → чертёж."""
+
+    def _check(self, doc, file_name, material, shape):
+        custom = build.material_library()[material]["custom"]
+        designation, line = custom["Обозначение_ГОСТ"], custom["Обозначение_Строка"]
+        self.assertTrue(designation.startswith(shape + " <STACK size=1>"), f"библиотека: {designation}")
+        numerator, denominator = designation.split("<STACK size=1>")[1].split("</STACK>")[0].split("<OVER>")
+        target = self.path(file_name)
+        self.s.save_as(doc, target)
+        self.wait_idle()
+        self.s.close(doc)
+        disk = self.persisted(target)
+        self.assertEqual("<FONT size=1.8> <FONT size=3.5>" + designation, V(disk, "Материал_ФБ", "00"),
+                         "графа 3 — «Обозначение_ГОСТ» библиотеки в разметке MProp")
+        self.assertEqual(designation, V(disk, "Материал_Таблица", "00"), "таблица — «Обозначение_ГОСТ», как пишет MProp")
+        self.assertEqual(line, V(disk, "Материал_Строка", "00"), "одна строка для сводной ведомости — «Обозначение_Строка»")
+
+        model = self.s.open(target)
+        drw = self.s.new_doc(paths.DRAWING_TEMPLATE)
+        build.set_sheet_format(drw, build.sheet_format("A3-A-1"), 420, 297)
+        build.model_view(drw, target, 150, 180)
+        build.wait(1.0)
+        pdf = self.path(target.stem + ".pdf")
+        ok, err, _ = self.s.save_as(drw, pdf)
+        self.s.close(drw)
+        self.s.close(model)
+        self.assertTrue(ok and pdf.exists(), f"PDF не выгружен, код {err}")
+        rows = pdf_rows_in_cell(pdf, 420, oracles.form1_cells(420)["g3_material"])
+        self.assertEqual([numerator, shape, denominator], [text for _, _, text in rows],
+                         f"графа 3 в PDF: над чертой сортамент, форма по центру, под чертой марка: {rows}")
+
+    @known_defect("Д-34")
+    def test_P15_sheet_material_fraction_in_stamp_and_one_line_record(self):
+        """P15: пластина из «Лист 4,0 … / Ст3сп …» — в графе 3 чертежа «Лист» и дробь в две строки, одна строка для ведомости."""
+        doc, _ = build.plate(self.s, 200, 100, 4, SHEET4)
+        self._check(doc, "ПРТИ.468211.131 Пластина.sldprt", SHEET4, "Лист")
+
+    @known_defect("Д-34")
+    def test_P15_tube_material_fraction_in_stamp_and_one_line_record(self):
+        """P15: стойка из «Труба 80х80х4,0 … / В 10 …» — в графе 3 чертежа «Труба» и дробь в две строки, одна строка для ведомости."""
+        doc, _ = build.square_tube(self.s, 80, 4, 300, TUBE80)
+        self._check(doc, "ПРТИ.468211.132 Стойка.sldprt", TUBE80, "Труба")
 
 
 if __name__ == "__main__":
