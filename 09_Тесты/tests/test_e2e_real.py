@@ -142,7 +142,7 @@ class FormatReload(SwTestCase):
         drw = self.s.open(drawing, readonly=True)
         notes = next(iter(oracles.stamp(drw).values()))
         self.s.close(drw)
-        for name, y in (("MYPRP4", 44.5), ("MYPRP3", 26.0), ("MYPRP15", 38.0)):
+        for name, y in (("MYPRP0", 55.4), ("MYPRP4", 44.5), ("MYPRP3", 26.0), ("MYPRP15", 38.0)):
             self.assertAlmostEqual(y, notes[name]["position_mm"][1], delta=0.05, msg=f"{name} на месте эталона")
         _, again = self._reload(False, self.path("formats_again.csv"))
         self.assertFalse([r for r in again if r["Файл"] == str(drawing) and r["Состояние"] == "устарела"],
