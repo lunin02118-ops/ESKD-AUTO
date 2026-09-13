@@ -207,7 +207,7 @@ def sw_weldment_transfer_properties() -> dict:
     """Reads cut-list сортамент, наименование, длина, ГОСТ of the active 1-body weldment part (read-only).
 
     Свойства детали сервер не пишет (решение D-10): запись для спецификации делает sw_eskd_toggle_drawingless —
-    кнопка «Деталь БЧ» надстройки ЕСКД по черт. 40 ГОСТ 2.109-73, словарные имена на уровнях MProp.
+    кнопка «Деталь БЧ» надстройки ЕСКД по ГОСТ Р 2.109-2023, словарные имена на уровнях MProp.
     """
     try:
         sw = get_sw_app()

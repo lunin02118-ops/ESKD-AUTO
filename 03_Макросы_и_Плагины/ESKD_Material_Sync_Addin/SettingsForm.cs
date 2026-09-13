@@ -259,7 +259,7 @@ namespace ESKD.MaterialSync
 
             Label lblHeaderSub = new Label()
             {
-                Text = "Реквизиты основной надписи ГОСТ 2.104, дробь материала и масса — запись при сохранении",
+                Text = "Реквизиты основной надписи ГОСТ Р 2.104-2023, дробь материала и масса — запись при сохранении",
                 Font = new Font("Segoe UI", 8.5F, FontStyle.Regular),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,
@@ -631,7 +631,7 @@ namespace ESKD.MaterialSync
 
             Label lblMassSub = new Label()
             {
-                Text = "Масса для графы 5 основной надписи ГОСТ 2.104 пересчитывается при каждом сохранении",
+                Text = "Масса для графы 5 основной надписи ГОСТ Р 2.104-2023 пересчитывается при каждом сохранении",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,

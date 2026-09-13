@@ -638,5 +638,21 @@ class StaticRepository(StaticTestCase):
         self.assertEqual([], problems)
 
 
+    def test_T0_current_documents_cite_russian_standards(self):
+        """T0 (WP-7.4, Н-35): действующие документы, код и тесты ссылаются на ГОСТ Р 2.104-2023, ГОСТ Р 2.106-2019,
+        ГОСТ Р 2.109-2023, а не на недействующие в РФ ГОСТ 2.104-2006 и ГОСТ 2.109-73; исторические документы помечены."""
+        files = [ROOT / "README.md", ROOT / "06_Документация" / "РУКОВОДСТВО_ПОЛЬЗОВАТЕЛЯ_И_АДМИНИСТРАТОРА.md",
+                 ROOT / "06_Документация" / "Правила_записи_свойств_SWPlus.md"]
+        files += addin_sources() + sorted((paths.TESTS / "tests").glob("*.py")) + sorted((paths.TESTS / "eskd_e2e").glob("*.py"))
+        pattern = re.compile(r"ГОСТ 2\.104(?:-2006)?(?![\d.])|ГОСТ 2\.109(?:-73)?(?![\d.])|ГОСТ 2\.106(?![\d.-])")
+        found = []
+        for f in files:
+            if f.name == "test_static.py":
+                continue
+            for n, line in enumerate(f.read_text(encoding="utf-8-sig").splitlines(), 1):
+                if pattern.search(line):
+                    found.append(f"{f.name}:{n}: {line.strip()[:100]}")
+        self.assertEqual([], found)
+
 if __name__ == "__main__":
     unittest.main()

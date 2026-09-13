@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""E2E, группа D — чертежи: штамп по ГОСТ 2.104, нулевое смещение, чертёж не меняет модель."""
+"""E2E, группа D — чертежи: штамп по ГОСТ Р 2.104-2023, нулевое смещение, чертёж не меняет модель."""
 import re
 import sys
 import unittest
@@ -58,7 +58,7 @@ class Drawing(SwTestCase):
 
     def test_D02_sheet2_form2a_designation_and_sheet_numbers(self):
         """D02: лист 2 (форма 2а) — обозначение в графе 2, номер листа «2» в графе 7; на листе 1 — заметки «Sheet1» и
-        «Sheet2» в графах 7 и 8: в них DProp пишет «Лист 1» и «Листов N» (ГОСТ 2.104 не заполняет номер у однолистового
+        «Sheet2» в графах 7 и 8: в них DProp пишет «Лист 1» и «Листов N» (ГОСТ Р 2.104-2023 не заполняет номер у однолистового
         документа, поэтому это не системное свойство)."""
         self._prepare_model()
         drw = self.s.open(self.copy_fixture(A10))
@@ -251,7 +251,7 @@ class SheetFormats(SwTestCase):
             if outside:
                 found.append(f"{len(outside)} линий за пределами листа")
             if m.group(1) == "A4" and m.group(2) == "A":
-                found.append("А4 горизонтально: основная надпись вдоль длинной стороны (ГОСТ 2.104, п. 4.2)")
+                found.append("А4 горизонтально: основная надпись вдоль длинной стороны (ГОСТ Р 2.104-2023)")
             if found:
                 problems[fmt.name] = found
         self.assertEqual({}, problems)
