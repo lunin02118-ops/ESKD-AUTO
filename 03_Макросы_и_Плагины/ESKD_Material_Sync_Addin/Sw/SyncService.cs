@@ -354,8 +354,9 @@ namespace ESKD.MaterialSync.Sw
         // ------------------------------------------------------------------ материал
         /// <summary>
         /// Для каждой конфигурации — материал SolidWorks этой конфигурации в трёх представлениях (Core.MaterialRecord):
-        /// «Материал_ФБ» и «Материал_Таблица» — если в них не значение пользователя (Д-32); «Материал_Строка» — графа 3
-        /// одной строкой, для сводной ведомости. Конфигурация без материала ничего не получает (Д-33).
+        /// «Материал_ФБ» и «Материал_Таблица» — запись библиотеки ЕСКД заменяет прежнюю дробь MProp и текст (решение владельца
+        /// 13.09.2026), материал вне библиотеки — только значения системы (Д-32); «Материал_Строка» — графа 3 одной строкой,
+        /// для сводной ведомости. Конфигурация без материала ничего не получает (Д-33).
         /// </summary>
         public static void SyncMaterials(PropertyWriter w, ISldWorks app, PartDoc part, PropertyDictionary dict, SyncReport report)
         {
@@ -376,10 +377,13 @@ namespace ESKD.MaterialSync.Sw
                 }
                 Func<string, bool> isSystemRecord = MaterialRecord.SystemRecordOf(catalog, material, record);
                 string stamp = w.Raw(cfg, stampName);
-                if (record != null && MaterialRecord.IsSystemValue(stamp, isSystemRecord))
+                if (MaterialRecord.ShouldReplace(stamp, record, isSystemRecord))
                 {
+                    if (record.IsLibrary && MaterialRecord.IsManualText(stamp, isSystemRecord) && MaterialRecord.OneLine(stamp) != record.Line)
+                        Log.Info(string.Format("Конфигурация «{0}»: «{1}» = «{2}» заменено записью библиотеки «{3}» — материал SolidWorks из библиотеки ЕСКД",
+                            cfg, stampName, MaterialRecord.OneLine(stamp), record.Line));
                     w.Set(cfg, stampName, record.Stamp);
-                    if (MaterialRecord.IsSystemValue(w.Raw(cfg, tableName), isSystemRecord)) w.Set(cfg, tableName, record.Table);
+                    if (MaterialRecord.ShouldReplace(w.Raw(cfg, tableName), record, isSystemRecord)) w.Set(cfg, tableName, record.Table);
                 }
                 else if (record != null && MaterialRecord.IsManualText(stamp, isSystemRecord) &&
                          MaterialRecord.OneLine(stamp) != MaterialRecord.OneLine(record.Stamp))
@@ -394,11 +398,13 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>
-        /// «Материал_Строка» — то, что стоит в графе 3, одной строкой: ручная дробь или текст MProp, иначе материал
-        /// конфигурации; «См. таблицу», «-» и выражение — материал конфигурации; нет материала — пусто.
+        /// «Материал_Строка» — то, что стоит в графе 3, одной строкой: запись библиотеки ЕСКД; у материала вне библиотеки — ручная
+        /// дробь или текст MProp, иначе материал конфигурации; «См. таблицу», «-» и выражение — материал конфигурации; нет
+        /// материала — пусто.
         /// </summary>
         private static string LineFor(PropertyWriter w, string cfg, string stampName, MaterialRecord record, Func<string, bool> isSystemRecord)
         {
+            if (record != null && record.IsLibrary) return record.Line;
             string stamp = w.Raw(cfg, stampName);
             if (MaterialRecord.IsManualText(stamp, isSystemRecord)) return MaterialRecord.OneLine(stamp);
             return record != null ? record.Line : "";

@@ -18,6 +18,9 @@ A08 = "ПРТИ.468211.110 СБ Узел опоры.sldasm"
 A13 = "ПРТИ.468211.106 Крышка.sldprt"
 SHEET4 = "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
 SHEET6 = "Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
+# Дробь, набранная в MProp в режиме «Сортамент», — не материал детали
+MPROP_FRACTION = "<FONT size=1.8> <FONT size=3.5>Лист <STACK size=1>Б-ПН-НО-5,0 ГОСТ 19903-2015<OVER>09Г2С-12 ГОСТ 19281-2014</STACK>"
+MPROP_TABLE = "Лист <STACK size=1>Б-ПН-НО-5,0 ГОСТ 19903-2015<OVER>09Г2С-12 ГОСТ 19281-2014</STACK>"
 
 ALLOWED_NEW = {"Обозначение", "Наименование", "Наименование_ФБ", "Сборка1_ФБ", "Сборка2_ФБ", "Конструктор",
                "Проверил", "Контора", "Масса_ФБ", "Масса_Таблица", "Материал_ФБ", "Материал_Таблица", "Материал_Строка",
@@ -177,29 +180,48 @@ class ModelNames(SwTestCase):
         self.assertEqual("Простая углеродистая сталь", V(disk, "Материал_Строка", "00"), "сводная ведомость")
         self.assertEqual([], self.addin_errors())
 
-    @known_defect("Д-32")
-    def test_M12_mprop_sortament_fraction_is_not_overwritten(self):
-        """M12: дробь сортамента, записанная MProp, переживает сохранение, хотя материал SolidWorks другой; в журнале — предупреждение."""
+    @known_defect("Д-46")
+    def test_M12_mprop_fraction_gives_way_to_library_material(self):
+        """M12: дробь сортамента, записанная раньше в MProp, при материале SolidWorks из библиотеки ЕСКД заменяется дробью
+        библиотеки (решение владельца 13.09.2026: библиотека — единственный источник графы 3)."""
         path, doc = self.open_copy(A01)
-        fraction = "<FONT size=1.8> <FONT size=3.5>Лист <STACK size=1>Б-ПН-НО-5,0 ГОСТ 19903-2015<OVER>09Г2С-12 ГОСТ 19281-2014</STACK>"
-        table = "Лист <STACK size=1>Б-ПН-НО-5,0 ГОСТ 19903-2015<OVER>09Г2С-12 ГОСТ 19281-2014</STACK>"
         cpm = doc.Extension.CustomPropertyManager("00")
-        self.assertEqual(0, com.prop_set(cpm, "Материал_ФБ", fraction))
-        self.assertEqual(0, com.prop_set(cpm, "Материал_Таблица", table))
+        self.assertEqual(0, com.prop_set(cpm, "Материал_ФБ", MPROP_FRACTION))
+        self.assertEqual(0, com.prop_set(cpm, "Материал_Таблица", MPROP_TABLE))
         self.s.save(doc)
         self.s.close(doc)
         disk = self.persisted(path)
-        self.assertEqual(fraction, V(disk, "Материал_ФБ", "00"), "дробь MProp в графе 3")
-        self.assertEqual(table, V(disk, "Материал_Таблица", "00"), "дробь MProp для таблиц")
+        custom = build.material_library()[SHEET4]["custom"]
+        self.assertEqual("<FONT size=1.8> <FONT size=3.5>" + custom["Обозначение_ГОСТ"], V(disk, "Материал_ФБ", "00"), "графа 3 — дробь библиотеки")
+        self.assertEqual(custom["Обозначение_ГОСТ"], V(disk, "Материал_Таблица", "00"), "таблица — дробь библиотеки")
+        self.assertEqual(custom["Обозначение_Строка"], V(disk, "Материал_Строка", "00"), "сводная ведомость — строка библиотеки")
+        self.assertFalse([ln for ln in self.addin_log.new_lines() if "введён вручную" in ln], "при материале из библиотеки предупреждения нет")
+        self.assertEqual([], self.addin_errors())
+
+    @known_defect("Д-32")
+    def test_M12_mprop_fraction_kept_for_material_outside_library(self):
+        """M12: у материала вне библиотеки ЕСКД («Простая углеродистая сталь») дробь MProp переживает сохранение, в журнале —
+        предупреждение о расхождении (Д-32)."""
+        path, doc = self.open_copy(A01)
+        doc.SetMaterialPropertyName2("00", "SOLIDWORKS Materials", "Простая углеродистая сталь")
+        cpm = doc.Extension.CustomPropertyManager("00")
+        self.assertEqual(0, com.prop_set(cpm, "Материал_ФБ", MPROP_FRACTION))
+        self.assertEqual(0, com.prop_set(cpm, "Материал_Таблица", MPROP_TABLE))
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual(MPROP_FRACTION, V(disk, "Материал_ФБ", "00"), "дробь MProp в графе 3")
+        self.assertEqual(MPROP_TABLE, V(disk, "Материал_Таблица", "00"), "дробь MProp для таблиц")
         warnings = [ln for ln in self.addin_log.new_lines() if "введён вручную" in ln and "Материал_ФБ" in ln]
         self.assertTrue(warnings, "расхождение с материалом SolidWorks не записано в журнал")
         self.assertEqual([], self.addin_errors())
 
     @known_defect("Д-37")
-    def test_M15_plain_text_material_typed_by_user_is_kept(self):
-        """M15: текст «Бронза БрАЖ9-4», набранный в «Материал_ФБ» без разметки, остаётся; «Материал_Строка» повторяет его;
-        расхождение с материалом SolidWorks видно в «Диагностике документа» и в журнале."""
+    def test_M15_typed_text_kept_for_material_outside_library(self):
+        """M15: текст «Бронза БрАЖ9-4», набранный в «Материал_ФБ», при материале вне библиотеки остаётся; «Материал_Строка»
+        повторяет его; расхождение видно в «Диагностике документа», в строке состояния и в журнале."""
         path, doc = self.open_copy(A01)
+        doc.SetMaterialPropertyName2("00", "SOLIDWORKS Materials", "Простая углеродистая сталь")
         self.assertEqual(0, com.prop_set(doc.Extension.CustomPropertyManager("00"), "Материал_ФБ", "Бронза БрАЖ9-4"))
         self.s.activate(doc)
         diagnosis = str(com.call(self.s.eskd(), "DiagnoseActiveDocument") or "")
@@ -212,6 +234,23 @@ class ModelNames(SwTestCase):
         self.assertIn("Бронза БрАЖ9-4", str(com.call(self.s.eskd(), "LastSyncWarnings") or ""),
                       "предупреждение сохранения — то, что показано в строке состояния (Д-38)")
         self.assertTrue(any("введён вручную" in ln for ln in self.addin_log.new_lines()), "предупреждение в журнале")
+
+    @known_defect("Д-46")
+    def test_M15_typed_text_replaced_by_library_material(self):
+        """M15: текст, набранный в «Материал_ФБ», при материале из библиотеки ЕСКД заменяется дробью библиотеки; «-» и
+        «См. таблицу» остаются за пользователем при любом материале."""
+        path, doc = self.open_copy(A03)
+        texts = {"00": "Бронза БрАЖ9-4", "01": "-", "02": "<FONT size=1.8> \n<FONT size=3.5>См. таблицу"}
+        for cfg, text in texts.items():
+            self.assertEqual(0, com.prop_set(doc.Extension.CustomPropertyManager(cfg), "Материал_ФБ", text))
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        custom = build.material_library()[SHEET4]["custom"]
+        self.assertEqual("<FONT size=1.8> <FONT size=3.5>" + custom["Обозначение_ГОСТ"], V(disk, "Материал_ФБ", "00"), "набранный текст заменён")
+        self.assertEqual("-", V(disk, "Материал_ФБ", "01"), "прочерк остался")
+        self.assertEqual(texts["02"], (V(disk, "Материал_ФБ", "02") or "").replace("\r\n", "\n"), "«См. таблицу» осталось")
+        self.assertEqual(custom["Обозначение_Строка"], V(disk, "Материал_Строка", "02"), "сводная ведомость — материал конфигурации")
 
     @known_defect("Д-40")
     def test_M17_dictionary_font_flag_zero_writes_without_font_tags(self):

@@ -29,6 +29,9 @@ namespace ESKD.MaterialSync.Core
         public string Table = "";
         public string Line = "";
 
+        /// <summary>Запись корпоративной библиотеки ЕСКД (у материала есть «Обозначение_ГОСТ»), а не имя материала.</summary>
+        public bool IsLibrary;
+
         /// <param name="smallFont">Флаг словаря prpFontSize (строка 50): при 0 MProp пишет графу 3 без тегов FONT.</param>
         public static MaterialRecord FromLibrary(MaterialInfo info, bool smallFont = true)
         {
@@ -36,6 +39,7 @@ namespace ESKD.MaterialSync.Core
             string designation = info.GostDesignation ?? "";
             if (designation.Trim().Length == 0) return FromName(info.Name, smallFont);
             MaterialRecord r = new MaterialRecord();
+            r.IsLibrary = true;
             if (designation.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0)
             {
                 // Дословно: ведущий пробел у дробей без формы («Фанера», «Кромка») MProp пишет так же.
@@ -111,6 +115,27 @@ namespace ESKD.MaterialSync.Core
                 if (!string.IsNullOrEmpty(materialName) && t == materialName.Trim()) return true;
                 return current != null && (t == Normalize(current.Stamp).Trim() || t == current.Table.Trim() || t == current.Line.Trim());
             };
+        }
+
+        /// <summary>Значение графы 3, которое остаётся за пользователем при любом материале: выражение SW-Material, «-», «См. таблицу».</summary>
+        public static bool IsReservedValue(string raw)
+        {
+            if (string.IsNullOrEmpty(raw)) return false;
+            if (raw.IndexOf("SW-Material", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            string plain = OneLine(raw);
+            return plain == "-" || plain.IndexOf("См.", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// Заменить ли значение «Материал_ФБ» или «Материал_Таблица» записью материала конфигурации (решение владельца 13.09.2026):
+        /// материал из библиотеки ЕСКД — единственный источник, его запись заменяет всё, кроме выражения SW-Material, «-» и
+        /// «См. таблицу», в том числе дробь MProp и набранный текст; запись материала вне библиотеки заменяет только значения
+        /// системы — ручная дробь и текст остаются (Д-32, Д-37).
+        /// </summary>
+        public static bool ShouldReplace(string raw, MaterialRecord record, Func<string, bool> isSystemRecord)
+        {
+            if (record == null) return false;
+            return record.IsLibrary ? !IsReservedValue(raw) : IsSystemValue(raw, isSystemRecord);
         }
 
         /// <summary>Материал, введённый пользователем текстом или дробью: не выражение, не «-» и не «См. таблицу».</summary>

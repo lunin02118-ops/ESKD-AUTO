@@ -380,6 +380,26 @@ namespace ESKD.Tests
             Assert.IsFalse(MaterialRecord.IsSystemValue("Ст3сп ГОСТ 380-2005", noMaterial), "у конфигурации без материала текст ручной");
         }
 
+        public static void Test_library_material_replaces_manual_fraction_but_not_reserved_values()
+        {
+            Func<string, bool> none = v => false;
+            MaterialRecord sheet = MaterialRecord.FromLibrary(Info("Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", SheetDesignation, ""));
+            MaterialRecord steel = MaterialRecord.FromName("Простая углеродистая сталь");
+            Assert.IsTrue(sheet.IsLibrary, "запись библиотеки ЕСКД");
+            Assert.IsFalse(steel.IsLibrary, "материал вне библиотеки");
+            string mprop = MPropStamp("Лист", "Б-ПН-НО-5,0 ГОСТ 19903-2015", "09Г2С-12 ГОСТ 19281-2014");
+            Assert.IsTrue(MaterialRecord.ShouldReplace(mprop, sheet, none), "дробь MProp уступает материалу из библиотеки (решение владельца 13.09.2026)");
+            Assert.IsTrue(MaterialRecord.ShouldReplace("Бронза БрАЖ9-4", sheet, none), "набранный текст уступает материалу из библиотеки");
+            Assert.IsFalse(MaterialRecord.ShouldReplace("-", sheet, none), "прочерк остаётся при любом материале");
+            Assert.IsFalse(MaterialRecord.ShouldReplace("<FONT size=1.8> \n<FONT size=3.5>См. таблицу", sheet, none), "«См. таблицу» остаётся");
+            Assert.IsFalse(MaterialRecord.ShouldReplace("\"SW-Material@@00@Пластина.sldprt\"", sheet, none), "выражение SW-Material остаётся");
+            Assert.IsTrue(MaterialRecord.ShouldReplace(null, sheet, none), "пустое поле");
+            Assert.IsFalse(MaterialRecord.ShouldReplace(mprop, steel, none), "у материала вне библиотеки дробь MProp остаётся (Д-32)");
+            Assert.IsFalse(MaterialRecord.ShouldReplace("Бронза БрАЖ9-4", steel, none), "у материала вне библиотеки текст остаётся (Д-37)");
+            Assert.IsTrue(MaterialRecord.ShouldReplace("", steel, none), "пустое поле у материала вне библиотеки");
+            Assert.IsFalse(MaterialRecord.ShouldReplace("", null, none), "без материала ничего не пишется (Д-33)");
+        }
+
         public static void Test_small_font_flag_zero_writes_without_font_tags()
         {
             MaterialInfo sheet = Info("Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", SheetDesignation, "Лист Б-ПН-НО-4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89");
