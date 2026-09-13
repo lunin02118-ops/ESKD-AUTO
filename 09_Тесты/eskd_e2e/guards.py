@@ -2,6 +2,7 @@
 """Защита рабочего места во время прогона: реестр, диалоги, файлы, процессы."""
 import ctypes
 import ctypes.wintypes as wt
+import json
 import os
 import threading
 import time
@@ -25,14 +26,27 @@ def solidworks_processes():
 
 
 class RegistrySnapshot:
-    """Снимок значений ключа HKCU; restore() возвращает ключ в исходное состояние."""
+    """Снимок значений ключа HKCU; restore() возвращает ключ в исходное состояние.
 
-    def __init__(self, subkey=ESKD_SETTINGS_KEY):
+    С backup_path снимок до первой записи сохраняется в файл и удаляется только после restore(). Если прогон прерван
+    (процесс убит, таймаут), следующий capture() сначала возвращает ключ из файла — иначе он снял бы как «исходные»
+    тестовые значения, и фамилии из тестов остались бы в настройках пользователя навсегда.
+    """
+
+    def __init__(self, subkey=ESKD_SETTINGS_KEY, backup_path=None):
         self.subkey = subkey
+        self.backup_path = Path(backup_path) if backup_path else None
         self.existed = False
         self.values = {}
+        self.recovered = False
 
     def capture(self):
+        if self.backup_path is not None and self.backup_path.exists():
+            self._load_backup()
+            self.restore(keep_backup=True)
+            self.recovered = True
+            return self
+        self.values = {}
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.subkey, 0, winreg.KEY_READ) as key:
                 self.existed = True
@@ -46,7 +60,27 @@ class RegistrySnapshot:
                     i += 1
         except FileNotFoundError:
             self.existed = False
+        self._save_backup()
         return self
+
+    def _save_backup(self):
+        if self.backup_path is None:
+            return
+        values = {name: {"kind": kind, "hex": value.hex()} if isinstance(value, bytes) else {"kind": kind, "value": value}
+                  for name, (value, kind) in self.values.items()}
+        self.backup_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.backup_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"subkey": self.subkey, "existed": self.existed, "values": values},
+                                  ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, self.backup_path)
+
+    def _load_backup(self):
+        data = json.loads(self.backup_path.read_text(encoding="utf-8"))
+        if data.get("subkey") != self.subkey:
+            raise RuntimeError(f"Резервная копия {self.backup_path} относится к ключу {data.get('subkey')}, а не {self.subkey}")
+        self.existed = bool(data["existed"])
+        self.values = {name: (bytes.fromhex(item["hex"]) if "hex" in item else item["value"], item["kind"])
+                       for name, item in data["values"].items()}
 
     def apply(self, values):
         """values: {имя: значение}; int → REG_DWORD, остальное → REG_SZ."""
@@ -57,28 +91,33 @@ class RegistrySnapshot:
                 else:
                     winreg.SetValueEx(key, name, 0, winreg.REG_SZ, str(value))
 
-    def restore(self):
+    def restore(self, keep_backup=False):
         if not self.existed:
             try:
                 winreg.DeleteKey(winreg.HKEY_CURRENT_USER, self.subkey)
-            except OSError:
+            except FileNotFoundError:
                 pass
-            return
-        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, self.subkey, 0,
-                                winreg.KEY_READ | winreg.KEY_WRITE) as key:
-            current = []
-            i = 0
-            while True:
-                try:
-                    current.append(winreg.EnumValue(key, i)[0])
-                except OSError:
-                    break
-                i += 1
-            for name in current:
-                if name not in self.values:
-                    winreg.DeleteValue(key, name)
-            for name, (value, kind) in self.values.items():
-                winreg.SetValueEx(key, name, 0, kind, value)
+        else:
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, self.subkey, 0,
+                                    winreg.KEY_READ | winreg.KEY_WRITE) as key:
+                current = []
+                i = 0
+                while True:
+                    try:
+                        current.append(winreg.EnumValue(key, i)[0])
+                    except OSError:
+                        break
+                    i += 1
+                for name in current:
+                    if name not in self.values:
+                        winreg.DeleteValue(key, name)
+                for name, (value, kind) in self.values.items():
+                    winreg.SetValueEx(key, name, 0, kind, value)
+        if not keep_backup and self.backup_path is not None:
+            try:
+                self.backup_path.unlink()
+            except FileNotFoundError:
+                pass
 
 
 # --------------------------------------------------------------------------- диалоги

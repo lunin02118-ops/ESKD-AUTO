@@ -7,11 +7,13 @@
   * надстройка ЕСКД грузится явно (LoadAddIn), зонд событий — отдельный процесс;
   * все сохранения должны оказаться внутри каталога прогона: запись вне его запрещена
     харнессом до вызова API, а зонд фиксирует любое фактическое сохранение за пределами;
-  * ESKD_Settings пользователя сохраняются до прогона и восстанавливаются после.
+  * ESKD_Settings пользователя сохраняются до прогона (и в файл runs/_eskd_settings_backup.json)
+    и восстанавливаются после; прерванный прогон восстанавливается при старте следующего.
 """
 import contextlib
 import os
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -52,7 +54,7 @@ class SwSession:
         self.watchdog = None
         self.probe = None
         self.journal = None
-        self.registry = RegistrySnapshot()
+        self.registry = RegistrySnapshot(backup_path=paths.RUNS / "_eskd_settings_backup.json")
         self.eskd_loaded = False
         self._opened = []
         self._com_initialized = False
@@ -64,6 +66,9 @@ class SwSession:
                                  "сохраните работу и закройте SolidWorks.")
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self.registry.capture()
+        if self.registry.recovered:
+            print(f"ESKD_Settings восстановлены из {self.registry.backup_path}: предыдущий прогон был прерван "
+                  "до восстановления настроек пользователя", file=sys.stderr)
         self.registry.apply(self.settings)
         pythoncom.CoInitialize()
         self._com_initialized = True

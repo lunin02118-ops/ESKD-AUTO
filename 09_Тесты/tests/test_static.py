@@ -398,6 +398,55 @@ class StaticRepository(StaticTestCase):
         setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
         self.assertIn('Join-Path $addinDir "build.ps1"', setup, "установщик собирает надстройку из исходников")
 
+    @known_defect("Д-31")
+    def test_T0_registry_snapshot_survives_interrupted_run(self):
+        """T0: прерванный прогон не оставляет тестовые подписи в ESKD_Settings — следующий снимок сначала восстанавливает
+        ключ из резервной копии (песочница HKCU\\Software\\ESKD_RegistrationTest_*)."""
+        import tempfile
+        import uuid
+        import winreg
+        from eskd_e2e.guards import RegistrySnapshot
+
+        subkey = r"Software\ESKD_RegistrationTest_Snapshot_" + uuid.uuid4().hex
+        backup = Path(tempfile.gettempdir()) / (subkey.rsplit("\\", 1)[1] + ".json")
+
+        def read():
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, subkey) as key:
+                    return {winreg.EnumValue(key, i)[0]: winreg.EnumValue(key, i)[1] for i in range(winreg.QueryInfoKey(key)[1])}
+            except FileNotFoundError:
+                return None
+
+        try:
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, subkey, 0, winreg.KEY_WRITE) as key:
+                winreg.SetValueEx(key, "Author", 0, winreg.REG_SZ, "Лунин В.И.")
+                winreg.SetValueEx(key, "AutoCenterMass", 0, winreg.REG_DWORD, 1)
+            original = read()
+
+            interrupted = RegistrySnapshot(subkey, backup).capture()
+            interrupted.apply({"Author": "Тестов Т.Т.", "Checker": "Проверкин П.П."})
+            self.assertTrue(backup.exists(), "снимок не сохранён до записи тестовых значений")
+
+            next_run = RegistrySnapshot(subkey, backup).capture()
+            self.assertTrue(next_run.recovered)
+            self.assertEqual(original, read(), "прерванный прогон не восстановлен при старте следующего")
+            next_run.apply({"Author": "Тестов Т.Т."})
+            next_run.restore()
+            self.assertEqual(original, read())
+            self.assertFalse(backup.exists(), "резервная копия осталась после восстановления")
+
+            winreg.DeleteKey(winreg.HKEY_CURRENT_USER, subkey)
+            missing = RegistrySnapshot(subkey, backup).capture()
+            missing.apply({"Author": "Тестов Т.Т."})
+            RegistrySnapshot(subkey, backup).capture().restore()
+            self.assertIsNone(read(), "ключ, которого не было до прогона, не удалён")
+        finally:
+            try:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, subkey)
+            except FileNotFoundError:
+                pass
+            backup.unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()
