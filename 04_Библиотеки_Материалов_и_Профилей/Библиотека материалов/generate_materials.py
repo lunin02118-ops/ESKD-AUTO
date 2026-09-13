@@ -191,11 +191,11 @@ def get_pilot_items() -> List[MaterialItem]:
             category="01. Прокат листовой горячекатаный (ГОСТ 19903-2015)",
             name="Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89",
             assortment_numerator="Лист Б-ПН-НО-4,0 ГОСТ 19903-2015",
-            material_denominator="Ст3сп ГОСТ 14637-89",
+            material_denominator="Ст3сп ГОСТ 14637-2024",
             size="4,0",
             gost_assortment="ГОСТ 19903-2015",
             steel_grade="Ст3сп",
-            gost_material="ГОСТ 14637-89",
+            gost_material="ГОСТ 14637-2024",
             props={
                 "EX": 2.0e11, "NUXY": 0.28, "GXY": 7.9e10, "ALPX": 1.2e-5, "DENS": 7850.0,
                 "KX": 47.0, "C": 460.0, "SIGXT": 370.0e6, "SIGYLD": 245.0e6
@@ -205,11 +205,11 @@ def get_pilot_items() -> List[MaterialItem]:
             category="01. Прокат листовой горячекатаный (ГОСТ 19903-2015)",
             name="Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89",
             assortment_numerator="Лист Б-ПН-НО-6,0 ГОСТ 19903-2015",
-            material_denominator="Ст3сп ГОСТ 14637-89",
+            material_denominator="Ст3сп ГОСТ 14637-2024",
             size="6,0",
             gost_assortment="ГОСТ 19903-2015",
             steel_grade="Ст3сп",
-            gost_material="ГОСТ 14637-89",
+            gost_material="ГОСТ 14637-2024",
             props={
                 "EX": 2.0e11, "NUXY": 0.28, "GXY": 7.9e10, "ALPX": 1.2e-5, "DENS": 7850.0,
                 "KX": 47.0, "C": 460.0, "SIGXT": 370.0e6, "SIGYLD": 235.0e6

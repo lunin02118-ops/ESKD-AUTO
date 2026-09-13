@@ -119,7 +119,14 @@ namespace ESKD.MaterialSync.Sw
         {
             string sortament = "", grade = "", materialText = "";
             MaterialInfo info = Material(app, (PartDoc)doc, cfg, out materialText);
-            if (info != null)
+            if (info != null && (info.GostDesignation ?? "").IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) < 0 &&
+                !string.IsNullOrWhiteSpace(info.GostDesignation))
+            {
+                // Материал одной строкой (ТУ, кромка, плиты — таблица Д-2): запись БЧ повторяет графу 3 без дроби
+                sortament = info.GostDesignation.Trim();
+                materialText = info.Name;
+            }
+            else if (info != null)
             {
                 sortament = info.Sortament;
                 grade = (info.Grade + " " + info.GostMaterial).Trim();

@@ -600,6 +600,43 @@ class StaticRepository(StaticTestCase):
                 unmarked.append(doc.name)
         self.assertEqual([], unmarked, "документы с утверждениями v5 без пометки «Исторический документ»")
 
+    def test_T0_library_matches_table_d2(self):
+        """T0 (К-13): библиотека материалов исправлена ровно по таблице Д-2 плана согласования и ответу «О-7 как советуешь»:
+        имена и matid не изменились, заменённые и ошибочные стандарты убраны, однострочные ТУ без дроби, «БТ» у листа
+        х/к, толщина листа Ст3сп определяет стандарт знаменателя, плотности стали 7850 и ABS 1050 (WP-4.5)."""
+        import xml.etree.ElementTree as ET
+        raw = Path(paths.MATERIAL_DB).read_bytes().decode("utf-16").replace('encoding="UTF-16"', 'encoding="UTF-8"')
+        materials = list(ET.fromstring(raw.encode("utf-8")).iter("material"))
+        self.assertEqual(114, len(materials), "число записей библиотеки")
+        self.assertEqual(len(materials), len({m.get("matid") for m in materials}), "matid уникальны")
+        problems = []
+        for m in materials:
+            name = m.get("name")
+            custom = {p.get("name"): p.get("value") or "" for p in m.findall("custom/prop")}
+            gost, line = custom.get("Обозначение_ГОСТ", ""), custom.get("Обозначение_Строка", "")
+            dens = float(m.find("physicalproperties/DENS").get("value"))
+            text = gost + " " + line
+            for wrong in ("ГОСТ 34359-2017", "ГОСТ 10589-87", "ГОСТ 14637-89", "ГОСТ 14918-80", "ГОСТ 22233-2001",
+                          "ГОСТ 10632-2014", "Сталь 3сп", "ПА 6-210-311", "Б-ПО-"):
+                if wrong in text:
+                    problems.append(f"{name}: «{wrong}»")
+            single = any(s in text for s in ("ГОСТ 8568-77", "ГОСТ 3262-75", "ГОСТ 21631-76", "ГОСТ 16338-85",
+                                             "ГОСТ 26996-86", "ГОСТ 32289-2013", "ОСТ 6-06-С9-93")) or gost.startswith("Кромка")
+            if single and "<STACK" in gost:
+                problems.append(f"{name}: однострочное обозначение записано дробью")
+            if "ГОСТ 19903-2015" in gost and "Ст3сп" in gost:
+                t = float(custom.get("Типоразмер", "0").replace(",", "."))
+                want = "ГОСТ 14637-2024" if t >= 4 else "ГОСТ 16523-97"
+                if want not in gost:
+                    problems.append(f"{name}: лист {t} мм — знаменатель по {want}")
+            steel = any(s in custom.get("ГОСТ_Материал", "") for s in ("ГОСТ 13663-86", "ГОСТ 14637", "ГОСТ 16523-97",
+                                                                    "ГОСТ 8731-74", "ГОСТ 10705-80", "ГОСТ 535-2005"))
+            if steel and abs(dens - 7850.0) > 0.1:
+                problems.append(f"{name}: плотность стали {dens}")
+            if "ABS" in name and abs(dens - 1050.0) > 0.1:
+                problems.append(f"{name}: плотность ABS {dens}")
+        self.assertEqual([], problems)
+
 
 if __name__ == "__main__":
     unittest.main()

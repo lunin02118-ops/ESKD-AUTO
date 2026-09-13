@@ -319,8 +319,8 @@ namespace ESKD.Tests
             Assert.IsTrue(MaterialRecord.IsManualText("Бронза БрАЖ9-4", library), "ручной текст идёт в «Материал_Строка»");
             Assert.IsTrue(MaterialRecord.IsSystemValue("Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", library), "имя материала библиотеки — так писала v5 (M16)");
             Assert.IsTrue(MaterialRecord.IsSystemValue("Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89  ", library), "имя с пробелами по краям");
-            Assert.IsTrue(MaterialRecord.IsSystemValue("Лист Б-ПН-НО-4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", library), "однострочная запись библиотеки");
-            Assert.IsTrue(MaterialRecord.IsSystemValue(MPropTable("Лист", "Б-ПН-НО-4,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89"), library), "дробь без тегов FONT (prpFontSize = 0)");
+            Assert.IsTrue(MaterialRecord.IsSystemValue("Лист Б-ПН-НО-4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-2024", library), "однострочная запись библиотеки");
+            Assert.IsTrue(MaterialRecord.IsSystemValue(MPropTable("Лист", "Б-ПН-НО-4,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-2024"), library), "дробь без тегов FONT (prpFontSize = 0)");
             Assert.IsFalse(MaterialRecord.IsSystemValue("Лист 4,0", library), "часть имени — ручная");
             Assert.IsFalse(MaterialRecord.IsSystemValue("Бронза БрАЖ9-4", null), "без библиотек текст ручной");
             MaterialCatalog.ClearCache();
