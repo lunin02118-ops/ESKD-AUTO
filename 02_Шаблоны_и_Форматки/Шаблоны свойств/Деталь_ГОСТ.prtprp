@@ -7,13 +7,11 @@
   <GroupBox Label="Материал детали (ГОСТ)" PropName="Groupbox_Material" DefaultState="Expanded">
     <Control Label="Материал SolidWorks" PropName="Материал" ApplyTo="Global" Type="TextBox" Mode="SWProperty" DefaultValue="SW-Material" ReadOnly="True" />
   </GroupBox>
-  <GroupBox Label="Сведения об исполнителе" PropName="Groupbox_Dev" DefaultState="Expanded">
-    <Control Label="Разработал" PropName="Разработал" ApplyTo="Global" Type="List" UserDefineable="True">
-      <Item Label="Лунин В.И." PropValue="Лунин В.И." />
-    </Control>
-    <Control Label="Проверил" PropName="Проверил" ApplyTo="Global" Type="TextBox" Mode="Text" DefaultValue="" />
-    <Control Label="Организация" PropName="Организация" ApplyTo="Global" Type="TextBox" Mode="Text" DefaultValue="Home Made" />
-    <Control Label="Литера" PropName="Литера" ApplyTo="Global" Type="List" UserDefineable="True">
+  <GroupBox Label="Основная надпись" PropName="Groupbox_Dev" DefaultState="Expanded">
+    <Control Label="Разработал" PropName="Конструктор" ApplyTo="Global" Type="TextBox" Mode="Text" DefaultValue="" />
+    <Control Label="Проверил" PropName="Проверил" ApplyTo="Config" Type="TextBox" Mode="Text" DefaultValue="" />
+    <Control Label="Организация" PropName="Контора" ApplyTo="Config" Type="TextBox" Mode="Text" DefaultValue="" />
+    <Control Label="Литера" PropName="Литера_ФБ" ApplyTo="Config" Type="List" UserDefineable="True">
       <Item Label="-" PropValue="" />
       <Item Label="Э" PropValue="Э" />
       <Item Label="Т" PropValue="Т" />

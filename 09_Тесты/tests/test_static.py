@@ -223,14 +223,29 @@ class StaticRepository(StaticTestCase):
 
     @known_defect("Д-19")
     def test_T0_property_tab_templates_use_dictionary_names(self):
-        """T0: шаблоны вкладки свойств запрашивают словарные имена (Д-19)."""
+        """T0: шаблоны вкладки свойств — словарные имена SWPlus на уровнях MProp, живые масса и материал только для чтения, без личных данных (Д-19)."""
+        import xml.etree.ElementTree as ET
+        dictionary = set(paths.SWPLUS_DICTIONARY.read_bytes().decode("cp1251").split("\r\n")[:43])
+        live = {"Материал": "SW-Material", "Масса": "SW-Mass"}
+        general = {"Обозначение", "Наименование", "Наименование_ФБ", "Конструктор"} | set(live)
+        configuration = {"Проверил", "Контора", "Литера_ФБ", "Техконтроль", "Нормоконтроль", "Утвердил", "Начальник",
+                         "Масса_ФБ", "Материал_ФБ", "Сборка1_ФБ", "Сборка2_ФБ"}
+        templates = sorted(paths.PROPERTY_TAB_TEMPLATES.glob("*.prtprp"))
+        self.assertTrue(templates, "нет шаблонов вкладки свойств")
         wrong = {}
-        for prp in paths.PROPERTY_TAB_TEMPLATES.glob("*.prtprp"):
-            text = prp.read_bytes().decode("utf-8-sig", errors="replace")
-            names = re.findall(r'PropName="([^"]+)"', text)
-            bad = [n for n in names if n in ("Разработал", "Организация", "Литера", "Разраб.")]
-            if bad:
-                wrong[prp.name] = bad
+        for prp in templates:
+            text = prp.read_bytes().decode("utf-8-sig")
+            problems = [f"личные данные «{m}»" for m in ("Лунин", "Home Made") if m in text]
+            for control in ET.fromstring(text).iter("Control"):
+                name, apply_to = control.get("PropName"), control.get("ApplyTo")
+                if name not in dictionary and name not in live:
+                    problems.append(f"{name}: имя вне словаря")
+                if name in general and apply_to != "Global" or name in configuration and apply_to != "Config":
+                    problems.append(f"{name}: уровень {apply_to}")
+                if name in live and (control.get("DefaultValue") != live[name] or control.get("ReadOnly") != "True"):
+                    problems.append(f"{name}: живое {live[name]} должно быть только для чтения")
+            if problems:
+                wrong[prp.name] = problems
         self.assertEqual({}, wrong)
 
     @known_defect("Д-21")
