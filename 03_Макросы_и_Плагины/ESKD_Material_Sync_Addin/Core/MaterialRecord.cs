@@ -17,10 +17,10 @@ namespace ESKD.MaterialSync.Core
         public const string LineProperty = "Материал_Строка";
 
         /// <summary>Разметка MProp (prpFontSize = 1) перед дробью.</summary>
-        public const string FractionFont = "<FONT size=1.8> <FONT size=3.5>";
+        public const string FractionFont = SwPlusFormat.MaterialFraction;
 
         /// <summary>Разметка MProp перед материалом в одну строку: пустая мелкая строка сверху центрирует текст в графе 3.</summary>
-        public const string LineFont = "<FONT size=1.8> \n<FONT size=3.5>";
+        public const string LineFont = SwPlusFormat.MaterialLine;
 
         /// <summary>Начало дроби, которую писали надстройки до этого решения (v5 и v6.0).</summary>
         public const string LegacyFractionMarkup = "<FONT size=1.8><FONT size=3.5><STACK size=1>";
