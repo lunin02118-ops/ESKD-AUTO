@@ -34,11 +34,14 @@ class Templates(SwTestCase):
                     problems.append(f"{where}: статичное значение «{raw}» вместо SW-Mass")
                 if name == "Материал" and "SW-Material" not in raw:
                     problems.append(f"{where}: статичное значение «{raw}» вместо SW-Material")
+                if name == "Обозначение" and "SW-File Name" in raw:
+                    problems.append(f"{where}: «{raw}» — в спецификацию и штамп попадёт имя файла с наименованием")
         return problems
 
     @known_defect("Д-18")
     def test_I03_templates_have_dictionary_names_without_personal_data(self):
-        """I03: новый документ из каждого шаблона — без алиасов v5, п_*/а_*, личных данных; «Формат» кириллицей; живые масса и материал."""
+        """I03: новый документ из каждого шаблона — без алиасов v5, п_*/а_*, личных данных; «Формат» кириллицей; живые масса и
+        материал; «Обозначение» не выражение имени файла."""
         report = {}
         for template in (paths.PART_TEMPLATE, paths.ASSEMBLY_TEMPLATE, paths.DRAWING_TEMPLATE):
             problems = self._template_problems(template)
