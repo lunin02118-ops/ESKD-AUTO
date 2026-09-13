@@ -296,12 +296,41 @@ def apply_embedded(argv):
     return 0
 
 
+def master_sync(argv):
+    """К-9: надпись MYPRP5 шаблона Master листа 1 — как в форматке A4-P-1 (x от правого края 47,5 мм, y 34,7, интервал 1 мм)."""
+    import shutil
+    RUN.mkdir(parents=True)
+    src = paths.SWPLUS / "Master" / "Master_Template_Sheet1.SLDDRW"
+    with SwSession(RUN / "work", load_eskd=False, use_probe=False) as s:
+        work = s.workspace_copy(src, subdir="edit")
+        doc = s.open(work)
+        try:
+            width = float(com.as_list(com.dyn(doc.GetCurrentSheet).GetProperties2)[5]) * 1000
+            doc.EditTemplate()
+            n = format_notes(doc)["MYPRP5"]
+            ann = com.dyn(n.GetAnnotation)
+            ok = ann.SetPosition2((width - 47.5) / 1000.0, 34.7 / 1000.0, 0.0)
+            fmt = com.dyn(n.GetTextFormat)
+            fmt.LineSpacing = 0.001
+            ok = n.SetTextFormat(False, fmt._oleobj_ if hasattr(fmt, "_oleobj_") else fmt) and ok
+            doc.EditSheet()
+            print("MYPRP5:", ok, s.save(doc))
+        finally:
+            s.close(doc)
+    if "--apply" in argv:
+        shutil.copy2(work, src)
+        print("заменён", src)
+    return 0
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     if sys.argv[1:] == ["spike"]:
         spike()
     elif sys.argv[1:] == ["fraction"]:
         fraction_spike()
+    elif sys.argv[1:2] == ["master"]:
+        sys.exit(master_sync(sys.argv[2:]))
     elif sys.argv[1:2] == ["embedded"]:
         sys.exit(apply_embedded(sys.argv[2:]))
     elif sys.argv[1:2] == ["apply"]:

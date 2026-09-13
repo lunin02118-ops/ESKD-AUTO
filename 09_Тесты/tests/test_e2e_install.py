@@ -2,6 +2,7 @@
 """E2E, группа I — установка, шаблоны и интерфейс (план, §4.7). Сценарии I01, I02, I04, I05 добавляются в пакетах фаз 3–4."""
 import re
 import unittest
+from pathlib import Path
 
 from eskd_e2e import com, oracles, paths
 from eskd_e2e.testing import SwTestCase, known_defect
@@ -83,6 +84,48 @@ class SheetFormats(SwTestCase):
             if extra:
                 report[template.name] = extra
         self.assertEqual({}, report, "свойства, которые форматки и шаблоны Master приносят в чертёж")
+
+    def test_I09_master_templates_match_sheet_formats(self):
+        """I09 (К-9, WP-4.1): надписи шаблонов Master совпадают с форматками A4 — имя, шрифт, высота, ширина, интервал и
+        положение от правого нижнего угла; иначе «Сменить формат» в Master пересоздаёт форматку со старым штампом (Н-34)."""
+        def geometry(doc):
+            sheet = com.dyn(doc.GetCurrentSheet)
+            width = float(com.as_list(sheet.GetProperties2)[5]) * 1000
+            doc.EditTemplate()
+            try:
+                out = {}
+                note = com.dyn(doc.GetFirstView).GetFirstNote
+                while note is not None:
+                    n = com.dyn(note)
+                    name = str(n.GetName or "")
+                    if name.startswith("MYPRP"):
+                        fmt = com.dyn(n.GetTextFormat)
+                        pos = com.as_list(com.dyn(n.GetAnnotation).GetPosition)
+                        out[name] = (str(fmt.TypeFaceName), round(float(fmt.CharHeight) * 1000, 2), round(float(fmt.WidthFactor), 3),
+                                     round(float(fmt.LineSpacing) * 1000, 2), round(width - float(pos[0]) * 1000, 2), round(float(pos[1]) * 1000, 2))
+                    note = n.GetNext
+                return out
+            finally:
+                doc.EditSheet()
+
+        pairs = (("Master_Template_Sheet1.SLDDRW", "A4-P-1.slddrt"), ("Master_Template_Sheet2.SLDDRW", "A4-P-2.slddrt"))
+        report = {}
+        with self.s.eskd_muted():
+            for template, fmt in pairs:
+                master = self.s.open(self.s.workspace_copy(paths.SWPLUS / "Master" / template, subdir=self._case_name()))
+                expected = geometry(master)
+                self.s.close(master)
+                sheet = self.s.open(self.s.workspace_copy(paths.SHEET_FORMATS / fmt, subdir=self._case_name(), name=Path(fmt).stem + ".SLDDRW"))
+                actual = geometry(sheet)
+                self.s.close(sheet)
+                # надпись только в шаблоне Master (MYPRP1 — повёрнутое обозначение графы 26) не мешает эталону: сравниваются общие
+                diff = {k: (expected[k], actual[k]) for k in set(expected) & set(actual) if expected[k] != actual[k]}
+                missing = sorted(set(actual) - set(expected))
+                if missing:
+                    diff["нет в шаблоне Master"] = missing
+                if diff:
+                    report[template] = diff
+        self.assertEqual({}, report, "надписи шаблона Master (первое) и форматки (второе)")
 
 
 class AddinLifecycle(SwTestCase):
