@@ -92,10 +92,25 @@ namespace ESKD.MaterialSync.Core
     }
 
     /// <summary>
+    /// Документ для правил формата MProp в очистке (WP-2.10): имя файла для выражений массы, вид документа, единица массы.
+    /// Без него очистка выполняет только перенос алиасов и уровней.
+    /// </summary>
+    public sealed class MigrationContext
+    {
+        public string FileTitle = "";
+        public bool IsAssembly;
+        public bool Grams;
+        public bool SmallFont = true;
+        /// <summary>Активная конфигурация: её имя стоит в выражении массы общего «Примечания» у детали с одной конфигурацией.</summary>
+        public string ActiveConfiguration = "";
+    }
+
+    /// <summary>
     /// План очистки документа, сохранённого надстройкой v5 (план, WP-3.3): значения алиасов переносятся в пустые
     /// словарные имена на уровнях MProp, 21 лишнее имя удаляется, копии свойств приводятся к уровням MProp,
-    /// статичные «Масса» и «Материал» возвращаются к живым выражениям, «Формат» — кириллицей.
-    /// Повторный план для результата пуст.
+    /// статичные «Масса» и «Материал» возвращаются к живым выражениям, «Формат» — кириллицей. С контекстом документа —
+    /// те же правила формата MProp, что при сохранении (WP-2.10): масса текстом → выражение MProp, «2,86 кг» у БЧ →
+    /// выражение, «Сборочный чертёж» → формат MProp. Повторный план для результата пуст.
     /// </summary>
     public static class LegacyMigration
     {
@@ -109,7 +124,7 @@ namespace ESKD.MaterialSync.Core
 
         /// <param name="transferSignatures">false для стандартных и покупных изделий: лишние имена удаляются, подписи не переносятся.</param>
         public static List<MigrationOperation> Plan(PropertyLevels source, PropertyDictionary dict, bool isDrawing, bool normalizeAssemblyCode,
-            bool transferSignatures = true)
+            bool transferSignatures = true, MigrationContext context = null)
         {
             PropertyLevels state = source.Clone();
             List<MigrationOperation> ops = new List<MigrationOperation>();
@@ -193,7 +208,42 @@ namespace ESKD.MaterialSync.Core
                 if (normalizeAssemblyCode && state.Get(level, dict[Role.DocCode]) == " СБ")
                     Set(state, ops, level, dict[Role.DocCode], "СБ", "код документа без пробела (D-8)");
             }
+
+            // 7. Формат MProp, как при сохранении (Правила записи свойств SWPlus, разделы 1, 5, 7)
+            if (!isDrawing && context != null && !string.IsNullOrEmpty(context.FileTitle))
+                MPropFormats(state, ops, dict, context);
             return ops;
+        }
+
+        private static void MPropFormats(PropertyLevels state, List<MigrationOperation> ops, PropertyDictionary dict, MigrationContext c)
+        {
+            string mass = dict[Role.Mass], table = dict[Role.MassTable], remark = dict[Role.Remark], format = dict[Role.Format];
+            foreach (string cfg in state.Configurations)
+            {
+                if (SwPlusMarkup.IsGeneratedMass(state.Get(cfg, mass)))
+                    Set(state, ops, cfg, mass, SwPlusFormat.MassStamp(cfg, c.FileTitle, c.IsAssembly, c.Grams, c.SmallFont), "масса текстом → выражение MProp");
+                if (SwPlusMarkup.IsGeneratedMass(state.Get(cfg, table)))
+                    Set(state, ops, cfg, table, SwPlusFormat.MassExpression(cfg, c.FileTitle, c.IsAssembly), "масса текстом → выражение MProp");
+            }
+            foreach (string level in new List<string>(state.Levels))
+            {
+                string cfg = level.Length > 0 ? level : (state.Configurations.Count == 1 ? state.Configurations[0] : null);
+                if (level.Length == 0 && state.Configurations.Count == 1 && !string.IsNullOrEmpty(c.ActiveConfiguration)) cfg = c.ActiveConfiguration;
+                if (cfg == null) continue;
+                string note = state.Get(level, remark);
+                if ((state.Get(level, format) ?? "").Trim() == BchRecord.FormatValue && note != null &&
+                    Regex.IsMatch(note.Trim(), @"^\d+([.,]\d+)?\s*кг$"))
+                    Set(state, ops, level, remark, SwPlusFormat.BchRemark(cfg, c.FileTitle, c.IsAssembly, c.Grams), "масса БЧ текстом → выражение MProp");
+            }
+            if (!c.IsAssembly) return;
+            string text = dict[Role.DocDescription];
+            foreach (string cfg in state.Configurations)
+            {
+                if (SwPlusMarkup.IsLegacyDocDescription(state.Get(cfg, text)))
+                    Set(state, ops, cfg, text, SwPlusFormat.DocDescription(SwPlusFormat.AssemblyDrawingText, c.SmallFont), "«Сборочный чертёж» → формат MProp");
+            }
+            if (SwPlusMarkup.IsLegacyDocDescription(state.Get("", text)))
+                Delete(state, ops, "", text, "уровень MProp — конфигурация");
         }
 
         /// <summary>Состояние после применения плана — для проверки идемпотентности.</summary>

@@ -56,7 +56,19 @@ namespace ESKD.MaterialSync.Sw
             PropertyWriter w = new PropertyWriter(doc, !apply);
             bool transfer = !isDrawing && !SyncService.IsProtected(w, doc);
             PropertyLevels levels = Read(w, isDrawing);
-            result.Operations.AddRange(LegacyMigration.Plan(levels, dict, isDrawing, true, transfer));
+            MigrationContext context = null;
+            if (!isDrawing && result.Path.Length > 0)
+            {
+                context = new MigrationContext
+                {
+                    FileTitle = SwPlusFormat.FileTitle(result.Path),
+                    IsAssembly = type == (int)swDocumentTypes_e.swDocASSEMBLY,
+                    Grams = SyncService.MassInGrams(w, doc),
+                    SmallFont = dict.SmallFontMarkup,
+                    ActiveConfiguration = w.ActiveConfigurationName()
+                };
+            }
+            result.Operations.AddRange(LegacyMigration.Plan(levels, dict, isDrawing, true, transfer, context));
             if (!apply) return result;
             foreach (MigrationOperation op in result.Operations)
             {

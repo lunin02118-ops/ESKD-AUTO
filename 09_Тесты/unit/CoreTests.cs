@@ -542,6 +542,49 @@ namespace ESKD.Tests
             PropertyLevels normalized = LegacyMigration.Apply(assembly, LegacyMigration.Plan(assembly, Dict, false, true));
             Assert.AreEqual("СБ", normalized.Get("00", "Сборка1_ФБ"), "код без пробела по D-8");
         }
+
+        public static void Test_cleanup_applies_mprop_formats_like_save()
+        {
+            MigrationContext part = new MigrationContext { FileTitle = "ПРТИ.468211.101 Пластина опорная", ActiveConfiguration = "00" };
+            PropertyLevels p = new PropertyLevels();
+            p.AddConfiguration("00");
+            p.Set("00", "Масса_ФБ", "<FONT size=3.5>0,63");
+            p.Set("00", "Масса_Таблица", "0,63");
+            p.Set("", "Формат", "БЧ");
+            p.Set("", "Примечание", "0,63 кг");
+            p.Set("00", "Формат", "БЧ");
+            p.Set("00", "Примечание", "0,63 кг");
+            PropertyLevels after = LegacyMigration.Apply(p, LegacyMigration.Plan(p, Dict, false, true, true, part));
+            Assert.AreEqual("<FONT size=1> \n<FONT size=3.5>\"SW-Mass@@00@ПРТИ.468211.101 Пластина опорная.SLDPRT\"", after.Get("00", "Масса_ФБ"), "масса текстом → выражение");
+            Assert.AreEqual("\"SW-Mass@@00@ПРТИ.468211.101 Пластина опорная.SLDPRT\"", after.Get("00", "Масса_Таблица"), "таблица → выражение");
+            Assert.AreEqual("\"SW-Mass@@00@ПРТИ.468211.101 Пластина опорная.SLDPRT\" кг", after.Get("00", "Примечание"), "«0,63 кг» у БЧ → выражение");
+            Assert.AreEqual("\"SW-Mass@@00@ПРТИ.468211.101 Пластина опорная.SLDPRT\" кг", after.Get("", "Примечание"), "общее «Примечание» при одной конфигурации");
+            Assert.AreEqual(0, LegacyMigration.Plan(after, Dict, false, true, true, part).Count, "повторный план пуст");
+
+            PropertyLevels grams = new PropertyLevels();
+            grams.AddConfiguration("00");
+            grams.Set("00", "Масса_ФБ", "0,02");
+            MigrationContext light = new MigrationContext { FileTitle = "П", Grams = true };
+            Assert.AreEqual("<FONT size=1> \n<FONT size=3.5>\"SW-Mass@@00@П.SLDPRT\" г",
+                LegacyMigration.Apply(grams, LegacyMigration.Plan(grams, Dict, false, true, true, light)).Get("00", "Масса_ФБ"), "граммы");
+
+            PropertyLevels manual = new PropertyLevels();
+            manual.AddConfiguration("00");
+            manual.Set("00", "Масса_ФБ", "<FONT size=1> \n<FONT size=3.5>-");
+            manual.Set("00", "Примечание", "0,63 кг");
+            Assert.AreEqual(0, LegacyMigration.Plan(manual, Dict, false, true, true, part).Count, "прочерк и «Примечание» не БЧ не трогаются");
+
+            MigrationContext asm = new MigrationContext { FileTitle = "ПРТИ.468211.110 СБ Узел опоры", IsAssembly = true };
+            PropertyLevels a = new PropertyLevels();
+            a.AddConfiguration("00");
+            a.Set("00", "Сборка1_ФБ", " СБ");
+            a.Set("00", "Сборка2_ФБ", "Сборочный чертёж");
+            a.Set("", "Сборка2_ФБ", "Сборочный чертёж");
+            PropertyLevels asmAfter = LegacyMigration.Apply(a, LegacyMigration.Plan(a, Dict, false, true, true, asm));
+            Assert.AreEqual("СБ", asmAfter.Get("00", "Сборка1_ФБ"), "« СБ» → «СБ»");
+            Assert.AreEqual("<FONT size=1> \n<FONT size=2.5>Сборочный чертеж", asmAfter.Get("00", "Сборка2_ФБ"), "формат MProp (FrmMProp:3066)");
+            Assert.IsNull(asmAfter.Get("", "Сборка2_ФБ"), "общая копия удалена");
+        }
     }
 
     public static class DictionaryTests

@@ -291,12 +291,9 @@ namespace ESKD.MaterialSync.Sw
             return value.StartsWith(root, StringComparison.Ordinal);
         }
 
-        /// <summary>«Сборка2_ФБ», которую писала надстройка до v6.2: «Сборочный чертёж» без разметки.</summary>
         private static bool IsLegacyDocDescription(string value)
         {
-            if (value == null) return false;
-            string t = value.Trim();
-            return t == "Сборочный чертёж" || t == SwPlusFormat.AssemblyDrawingText;
+            return SwPlusMarkup.IsLegacyDocDescription(value);
         }
 
         private static bool IsMPropDocDescription(string value)
@@ -608,27 +605,27 @@ namespace ESKD.MaterialSync.Sw
             return units.Grams;
         }
 
-        /// <summary>«Масса_Таблица», которую пишет система: пусто, выражение шаблона или выражение «"SW-Mass@@…"» (конфигурация, имя файла и регистр расширения приводятся к MProp).</summary>
         private static bool IsSystemMassTable(string raw)
         {
-            if (raw == null || raw.Trim().Length == 0) return true;
-            string t = raw.Trim();
-            if (t.IndexOf("SW-Mass@@", StringComparison.OrdinalIgnoreCase) >= 0)
-                return System.Text.RegularExpressions.Regex.IsMatch(t, "^\"SW-Mass@@[^\"]*\"$");
-            return t.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0;
+            return SwPlusMarkup.IsSystemMassTable(raw);
         }
 
-        /// <summary>«Масса_ФБ», которую пишет система: пусто, выражение шаблона, текст надстройки до v6.2 или выражение MProp; «-» и «См. таблицу» — нет.</summary>
         private static bool IsSystemMass(string raw)
         {
-            if (raw == null || raw.Trim().Length == 0) return true;
-            string plain = MaterialRecord.OneLine(raw);
-            if (plain == "-" || plain.IndexOf("См.", StringComparison.OrdinalIgnoreCase) >= 0) return false;
-            if (SwPlusMarkup.IsGeneratedMass(raw)) return true;
-            string t = MaterialRecord.Normalize(raw);
-            string body = t.StartsWith(SwPlusFormat.MassPrefix, StringComparison.Ordinal) ? t.Substring(SwPlusFormat.MassPrefix.Length) : t.Trim();
-            if (System.Text.RegularExpressions.Regex.IsMatch(body, "^\"SW-Mass@@[^\"]*\"( г)?$")) return true;
-            return raw.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0 && raw.IndexOf("SW-Mass", StringComparison.OrdinalIgnoreCase) < 0;
+            return SwPlusMarkup.IsSystemMass(raw);
+        }
+
+        /// <summary>
+        /// Масса документа в граммах по правилу MProp, без переключения единиц: при «Единицы» = False/0 или нулевой массе —
+        /// единица документа, иначе — порог 0,1 кг по массе активной конфигурации (для «Очистки v5», WP-2.10).
+        /// </summary>
+        internal static bool MassInGrams(PropertyWriter w, ModelDoc2 doc)
+        {
+            int grams = (int)swUnitsMassPropMass_e.swUnitsMassPropMass_Grams;
+            int current = GetPreference(doc, (int)swUserPreferenceIntegerValue_e.swUnitsMassPropMass);
+            if (SwPlusFormat.UserUnits(w.Raw(w.ActiveConfigurationName(), "Единицы"))) return current == grams;
+            double mass = ActiveMass(doc);
+            return mass <= 0.0000001 ? current == grams : SwPlusFormat.UnitsFor(mass).Grams;
         }
 
         private static bool IsBchMassNote(PropertyWriter w, string level, string format, string remark)
