@@ -68,7 +68,7 @@ namespace ESKD.MaterialSync.Core
             return "<FONT size=3.5>" + MassText(massKg, decimals);
         }
 
-        /// <summary>Живое выражение массы, которое пишет MProp: его надстройка не трогает.</summary>
+        /// <summary>Живое выражение массы, которое пишет MProp в «Масса_ФБ»: его надстройка не трогает.</summary>
         public static bool IsLiveMass(string raw)
         {
             return !string.IsNullOrEmpty(raw) &&
@@ -81,6 +81,59 @@ namespace ESKD.MaterialSync.Core
         {
             if (string.IsNullOrEmpty(raw)) return false;
             return Regex.IsMatch(raw.Trim(), @"^(<FONT size=[0-9.,]+>\s*)*\d+(,\d+)?$", RegexOptions.IgnoreCase);
+        }
+
+        private const string LiveMassHead = "\"SW-Mass@@";
+
+        /// <summary>
+        /// Выражение массы конфигурации, которое MProp пишет в «Масса_Таблица»: SolidWorks считает по нему массу
+        /// неактивной конфигурации без её активации, имя файла ставит своё и меняет при «Сохранить как» (контракт C05, C06).
+        /// </summary>
+        public static string LiveMassExpression(string configuration, string fileName)
+        {
+            return LiveMassHead + configuration + "@" + fileName + "\"";
+        }
+
+        /// <summary>Конфигурация из выражения «"SW-Mass@@конфигурация@файл"» этого файла; для другого значения — null.</summary>
+        public static string LiveMassConfiguration(string raw, string fileName)
+        {
+            if (string.IsNullOrEmpty(raw) || string.IsNullOrEmpty(fileName)) return null;
+            string t = raw.Trim();
+            string tail = "@" + fileName + "\"";
+            if (t.Length <= LiveMassHead.Length + tail.Length || !t.StartsWith(LiveMassHead, StringComparison.OrdinalIgnoreCase) ||
+                !t.EndsWith(tail, StringComparison.OrdinalIgnoreCase))
+                return null;
+            return t.Substring(LiveMassHead.Length, t.Length - LiveMassHead.Length - tail.Length);
+        }
+
+        /// <summary>
+        /// Масса из вычисленного выражения «SW-Mass»: число с точкой в единицах массы документа (swUnitsMassPropMass_e:
+        /// 1 — мг, 2 — г, 3 — кг, 4 — фунт) с точностью документа. Возвращает массу в килограммах и число знаков после
+        /// запятой, которое значение даёт в килограммах.
+        /// </summary>
+        public static bool TryParseResolvedMass(string resolved, int massUnit, out double kg, out int decimals)
+        {
+            kg = 0;
+            decimals = 0;
+            if (string.IsNullOrEmpty(resolved)) return false;
+            string text = Regex.Replace(resolved, "<[^>]*>", "").Trim();
+            Match m = Regex.Match(text, @"^(\d{1,3}(?:[ ,\u00A0]\d{3})+|\d+)(?:\.(\d+))?$");
+            if (!m.Success) return false;
+            string number = Regex.Replace(m.Groups[1].Value, @"[ ,\u00A0]", "");
+            string fraction = m.Groups[2].Success ? m.Groups[2].Value : "";
+            double value;
+            if (!double.TryParse(fraction.Length > 0 ? number + "." + fraction : number, NumberStyles.AllowDecimalPoint,
+                    CultureInfo.InvariantCulture, out value))
+                return false;
+            decimals = fraction.Length;
+            switch (massUnit)
+            {
+                case 1: kg = value / 1000000.0; decimals += 6; break;
+                case 2: kg = value / 1000.0; decimals += 3; break;
+                case 4: kg = value * 0.45359237; break;
+                default: kg = value; break;
+            }
+            return true;
         }
 
         /// <summary>Форма заготовки из начала строки сортамента: «Труба», «Лист» …</summary>

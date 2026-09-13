@@ -178,6 +178,45 @@ namespace ESKD.Tests
             Assert.IsFalse(SwPlusMarkup.IsGeneratedMass("См.таблицу"), "ручной текст");
             Assert.IsFalse(SwPlusMarkup.IsGeneratedMass("-"), "прочерк");
         }
+
+        public static void Test_live_mass_expression_of_configuration()
+        {
+            const string file = "ПРТИ.468211.103 Планка.sldprt";
+            const string flat = "По умолчанию<Как обработанный>SM-FLAT-PATTERN";
+            Assert.AreEqual("\"SW-Mass@@01@ПРТИ.468211.103 Планка.sldprt\"", SwPlusMarkup.LiveMassExpression("01", file), "форма MProp");
+            Assert.AreEqual("01", SwPlusMarkup.LiveMassConfiguration("\"SW-Mass@@01@ПРТИ.468211.103 Планка.SLDPRT\"", file), "регистр расширения");
+            Assert.AreEqual(flat, SwPlusMarkup.LiveMassConfiguration(SwPlusMarkup.LiveMassExpression(flat, file), file), "развёртка (B-03)");
+            Assert.IsNull(SwPlusMarkup.LiveMassConfiguration("\"SW-Mass@@01@Другой.sldprt\"", file), "другой файл");
+            Assert.IsNull(SwPlusMarkup.LiveMassConfiguration("\"SW-Mass\"", file), "выражение шаблона");
+            Assert.IsNull(SwPlusMarkup.LiveMassConfiguration("<FONT size=1> \n<FONT size=3.5>\"SW-Mass@@01@" + file + "\"", file), "разметка графы 5");
+        }
+
+        public static void Test_resolved_mass_in_document_units_and_precision()
+        {
+            Resolved("0.19", 3, 0.19, 2, "кг, два знака (A-03 «01»)");
+            Resolved("0.1884", 3, 0.1884, 4, "кг, четыре знака");
+            Resolved("188.40", 2, 0.1884, 5, "MMGS — граммы");
+            Resolved("188400.00", 1, 0.1884, 8, "миллиграммы");
+            Resolved("0.42", 4, 0.42 * 0.45359237, 2, "IPS — фунты");
+            Resolved("<FONT size=1> \n<FONT size=3.5>0.19", 3, 0.19, 2, "разметка MProp");
+            Resolved("1,234.56", 3, 1234.56, 2, "разряды через запятую");
+            Resolved("12", 3, 12, 0, "без знаков");
+            double kg;
+            int decimals;
+            Assert.IsFalse(SwPlusMarkup.TryParseResolvedMass("0,19", 3, out kg, out decimals), "запятая — не значение SolidWorks");
+            Assert.IsFalse(SwPlusMarkup.TryParseResolvedMass("См. таблицу", 3, out kg, out decimals), "текст");
+            Assert.IsFalse(SwPlusMarkup.TryParseResolvedMass("", 3, out kg, out decimals), "пусто");
+            Assert.AreEqual("0,19", SwPlusMarkup.MassText(0.1884, Math.Min(4, 2)), "четыре знака в настройке, два в документе");
+        }
+
+        private static void Resolved(string text, int unit, double expectedKg, int expectedDecimals, string what)
+        {
+            double kg;
+            int decimals;
+            Assert.IsTrue(SwPlusMarkup.TryParseResolvedMass(text, unit, out kg, out decimals), what + ": разобрано");
+            Assert.IsTrue(Math.Abs(kg - expectedKg) < 1e-9, what + ": " + kg + " кг вместо " + expectedKg);
+            Assert.AreEqual(expectedDecimals, decimals, what + ": знаков");
+        }
     }
 
     public static class MaterialRecordTests

@@ -11,6 +11,8 @@ from eskd_e2e import build, com, paths
 from eskd_e2e.testing import SwTestCase, tags
 
 SHEET4 = "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
+# swUserPreferenceIntegerValue_e
+UNITS_MASS, UNITS_MASS_DECIMALS, UNIT_SYSTEM = 259, 261, 263
 
 
 def events_of(journal, mark, names):
@@ -126,7 +128,7 @@ class ContractPropertyEvents(SwTestCase):
 
 
 class ContractMassExpression(SwTestCase):
-    """Спайк S-3 (13.09.2026): на этом контракте стоит масса по конфигурациям (Д-36)."""
+    """Спайки S-3 и S-4 (13.09.2026): на этом контракте стоит масса по конфигурациям (Д-36)."""
     load_eskd = False
 
     def _resolved(self, doc, cfg, name):
@@ -150,6 +152,39 @@ class ContractMassExpression(SwTestCase):
                          {c: self._resolved(doc, c, "Проба_масса") for c in ("00", "01", "02")},
                          "новая бобышка во всех конфигурациях — масса неактивных пересчитана без активации")
         self.s.close(doc)
+
+    def test_C06_sw_mass_expression_units_precision_and_file_name(self):
+        """C06: «SW-Mass» считается в единицах и с точностью массы документа (шаблон ЕСКД — кг, 2 знака; MMGS — граммы;
+        IPS — фунты), единицу показывает swUnitsMassPropMass при любой системе единиц; имя файла в выражении SolidWorks
+        ставит своё и меняет при «Сохранить как» (спайк S-4)."""
+        path = self.copy_fixture("ПРТИ.468211.103 Планка.sldprt")
+        doc = self.s.open(path)
+        ext = doc.Extension
+        com.prop_set(ext.CustomPropertyManager("01"), "Проба_масса", '"SW-Mass@@01@Другой файл.sldprt"')
+        self.assertEqual(f'"SW-Mass@@01@{path.name}"', self._raw(doc, "01", "Проба_масса"), "имя файла — своё")
+
+        def state():
+            return (ext.GetUserPreferenceInteger(UNITS_MASS, 0), ext.GetUserPreferenceInteger(UNITS_MASS_DECIMALS, 0),
+                    self._resolved(doc, "01", "Проба_масса"))
+        self.assertEqual((3, 2, "0.19"), state(), "шаблон ЕСКД: кг, два знака")
+        ext.SetUserPreferenceInteger(UNIT_SYSTEM, 0, 5)
+        self.assertEqual((2, 2, "188.40"), state(), "MMGS: граммы")
+        ext.SetUserPreferenceInteger(UNIT_SYSTEM, 0, 3)
+        self.assertEqual((4, 2, "0.42"), state(), "IPS: фунты")
+        ext.SetUserPreferenceInteger(UNIT_SYSTEM, 0, 4)
+        ext.SetUserPreferenceInteger(UNITS_MASS, 0, 3)
+        ext.SetUserPreferenceInteger(UNITS_MASS_DECIMALS, 0, 4)
+        self.assertEqual((3, 4, "0.1884"), state(), "свои единицы: кг, четыре знака")
+        target = self.path("КОНТР.000006.001 Планка.sldprt")
+        ok, err, _ = self.s.save_as(doc, target)
+        self.assertTrue(ok, f"SaveAs не выполнен, err={err}")
+        self.assertEqual(f'"SW-Mass@@01@{target.name}"', self._raw(doc, "01", "Проба_масса"), "«Сохранить как» — новое имя")
+        self.s.close(doc)
+
+    def _raw(self, doc, cfg, name):
+        raw, res = com.ref_str(""), com.ref_str("")
+        doc.Extension.CustomPropertyManager(cfg).Get4(name, False, raw, res)
+        return raw.value
 
 
 if __name__ == "__main__":
