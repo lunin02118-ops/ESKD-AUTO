@@ -225,6 +225,8 @@ class ModelNames(SwTestCase):
         self.assertEqual(custom["Обозначение_ГОСТ"], V(disk, "Материал_Таблица", "00"), "таблица — дробь библиотеки")
         self.assertEqual(custom["Обозначение_Строка"], V(disk, "Материал_Строка", "00"), "сводная ведомость — строка библиотеки")
         self.assertFalse([ln for ln in self.addin_log.new_lines() if "введён вручную" in ln], "при материале из библиотеки предупреждения нет")
+        self.assertIn("заменено записью библиотеки", str(com.call(self.s.eskd(), "LastSyncWarnings") or ""),
+                      "замена чужой дроби видна в строке состояния (Н-23, К-7)")
         self.assertEqual([], self.addin_errors())
 
     @known_defect("Д-32")
@@ -365,9 +367,8 @@ class ModelNames(SwTestCase):
         self.assertIsNone(V(bare_disk, "Сборка1_ФБ", "00"), "код из имени файла не пишется (Р-3, Р-9)")
         self.assertIsNone(V(bare_disk, "Сборка2_ФБ", "00"), "без «СБ» вторая строка не добавляется")
 
-    @known_defect("Д-10")
-    def test_M01_live_mass_and_material_expressions_kept(self):
-        """M01: живые выражения MProp для массы и материала не заменяются статичным текстом (§3.2)."""
+    def test_M01_live_mass_kept_and_sw_material_replaced_by_library(self):
+        """M01: выражение массы MProp остаётся; выражение SW-Material режима «материал SW» уступает записи библиотеки (Р-6, Н-07)."""
         path = self.copy_fixture(A01)
         live_mass = '<FONT size=1> \n<FONT size=3.5>"SW-Mass@@00@ПРТИ.468211.101 Пластина опорная.SLDPRT"'
         live_material = '"SW-Material@@00@ПРТИ.468211.101 Пластина опорная.sldprt"'
@@ -381,7 +382,10 @@ class ModelNames(SwTestCase):
         self.s.close(doc)
         disk = self.persisted(path)
         self.assertEqual(live_mass, (V(disk, "Масса_ФБ", "00") or "").replace("\r\n", "\n"), "масса")
-        self.assertEqual(live_material, V(disk, "Материал_ФБ", "00"), "материал")
+        material = V(disk, "Материал_ФБ", "00") or ""
+        self.assertNotIn("SW-Material", material, "выражение заменено записью библиотеки")
+        self.assertIn("<STACK size=1>", material, "дробь сортамента из библиотеки")
+        self.assertNotIn("SW-Material", V(disk, "Материал_Таблица", "00") or "", "таблица — тоже запись библиотеки")
 
 
 if __name__ == "__main__":

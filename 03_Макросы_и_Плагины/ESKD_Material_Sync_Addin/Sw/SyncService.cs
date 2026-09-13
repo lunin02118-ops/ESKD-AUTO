@@ -382,9 +382,10 @@ namespace ESKD.MaterialSync.Sw
         // ------------------------------------------------------------------ материал
         /// <summary>
         /// Для каждой конфигурации — материал SolidWorks этой конфигурации в трёх представлениях (Core.MaterialRecord):
-        /// «Материал_ФБ» и «Материал_Таблица» — запись библиотеки ЕСКД заменяет прежнюю дробь MProp и текст (решение владельца
-        /// 13.09.2026), материал вне библиотеки — только значения системы (Д-32); «Материал_Строка» — графа 3 одной строкой,
-        /// для сводной ведомости. Конфигурация без материала ничего не получает (Д-33).
+        /// «Материал_ФБ» и «Материал_Таблица» — запись библиотеки ЕСКД заменяет прежнюю дробь MProp, текст и выражение SW-Material
+        /// (Р-5, Р-6), замена набранного текста — предупреждение отчёта в строке состояния (Н-23); материал вне библиотеки —
+        /// только значения системы (Д-32); «Материал_Строка» — графа 3 одной строкой, для сводной ведомости. Конфигурация без
+        /// материала ничего не получает (Д-33).
         /// </summary>
         public static void SyncMaterials(PropertyWriter w, ISldWorks app, PartDoc part, PropertyDictionary dict, SyncReport report)
         {
@@ -408,7 +409,7 @@ namespace ESKD.MaterialSync.Sw
                 if (MaterialRecord.ShouldReplace(stamp, record, isSystemRecord))
                 {
                     if (record.IsLibrary && MaterialRecord.IsManualText(stamp, isSystemRecord) && MaterialRecord.OneLine(stamp) != record.Line)
-                        Log.Info(string.Format("Конфигурация «{0}»: «{1}» = «{2}» заменено записью библиотеки «{3}» — материал SolidWorks из библиотеки ЕСКД",
+                        report.Warnings.Add(string.Format("Конфигурация «{0}»: «{1}» = «{2}» заменено записью библиотеки «{3}» — материал SolidWorks из библиотеки ЕСКД",
                             cfg, stampName, MaterialRecord.OneLine(stamp), record.Line));
                     w.Set(cfg, stampName, record.Stamp);
                     if (MaterialRecord.ShouldReplace(w.Raw(cfg, tableName), record, isSystemRecord)) w.Set(cfg, tableName, record.Table);

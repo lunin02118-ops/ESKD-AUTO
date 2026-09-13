@@ -117,20 +117,22 @@ namespace ESKD.MaterialSync.Core
             };
         }
 
-        /// <summary>Значение графы 3, которое остаётся за пользователем при любом материале: выражение SW-Material, «-», «См. таблицу».</summary>
+        /// <summary>
+        /// Значение графы 3, которое остаётся за пользователем при любом материале: «-», «См. таблицу». Выражение SW-Material
+        /// MProp пишет сам при пустой графе 3 (режим «материал SW», FrmMProp:2919–2925) — материал из библиотеки его заменяет (Р-6, Н-07).
+        /// </summary>
         public static bool IsReservedValue(string raw)
         {
             if (string.IsNullOrEmpty(raw)) return false;
-            if (raw.IndexOf("SW-Material", StringComparison.OrdinalIgnoreCase) >= 0) return true;
             string plain = OneLine(raw);
             return plain == "-" || plain.IndexOf("См.", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>
         /// Заменить ли значение «Материал_ФБ» или «Материал_Таблица» записью материала конфигурации (решение владельца 13.09.2026):
-        /// материал из библиотеки ЕСКД — единственный источник, его запись заменяет всё, кроме выражения SW-Material, «-» и
-        /// «См. таблицу», в том числе дробь MProp и набранный текст; запись материала вне библиотеки заменяет только значения
-        /// системы — ручная дробь и текст остаются (Д-32, Д-37).
+        /// материал из библиотеки ЕСКД — единственный источник, его запись заменяет всё, кроме «-» и «См. таблицу», в том числе
+        /// выражение SW-Material, дробь MProp и набранный текст (Р-6); запись материала вне библиотеки заменяет только значения
+        /// системы — выражение SW-Material, ручная дробь и текст остаются (Д-32, Д-37).
         /// </summary>
         public static bool ShouldReplace(string raw, MaterialRecord record, Func<string, bool> isSystemRecord)
         {

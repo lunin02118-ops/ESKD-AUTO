@@ -350,7 +350,9 @@ namespace ESKD.Tests
             Assert.IsTrue(MaterialRecord.ShouldReplace("Бронза БрАЖ9-4", sheet, none), "набранный текст уступает материалу из библиотеки");
             Assert.IsFalse(MaterialRecord.ShouldReplace("-", sheet, none), "прочерк остаётся при любом материале");
             Assert.IsFalse(MaterialRecord.ShouldReplace("<FONT size=1.8> \n<FONT size=3.5>См. таблицу", sheet, none), "«См. таблицу» остаётся");
-            Assert.IsFalse(MaterialRecord.ShouldReplace("\"SW-Material@@00@Пластина.sldprt\"", sheet, none), "выражение SW-Material остаётся");
+            string live = "<FONT size=1.8> \n<FONT size=3.5>\"SW-Material@@00@Пластина.SLDPRT\"";
+            Assert.IsTrue(MaterialRecord.ShouldReplace(live, sheet, none), "выражение SW-Material режима «материал SW» уступает библиотеке (Р-6, Н-07)");
+            Assert.IsFalse(MaterialRecord.ShouldReplace(live, steel, none), "у материала вне библиотеки выражение остаётся");
             Assert.IsTrue(MaterialRecord.ShouldReplace(null, sheet, none), "пустое поле");
             Assert.IsFalse(MaterialRecord.ShouldReplace(mprop, steel, none), "у материала вне библиотеки дробь MProp остаётся (Д-32)");
             Assert.IsFalse(MaterialRecord.ShouldReplace("Бронза БрАЖ9-4", steel, none), "у материала вне библиотеки текст остаётся (Д-37)");
