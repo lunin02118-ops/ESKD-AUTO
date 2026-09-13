@@ -7,6 +7,7 @@
 записываются в manifest.json рядом с хешами файлов.
 
 Запуск (SolidWorks должен быть закрыт):  python 09_Тесты/fixtures/build_fixtures.py
+Исправление материалов болта и двигателя без пересборки корпуса:  python 09_Тесты/fixtures/build_fixtures.py --fix-materials
 """
 import hashlib
 import json
@@ -25,6 +26,8 @@ SHEET6 = "Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
 SHEET3 = "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
 TUBE80 = "Труба 80х80х4,0 ГОСТ 8639-82 / В 10 ГОСТ 13663-86"
 TUBE40 = "Труба 40х40х2,0 ГОСТ 8639-82 / Ст3сп ГОСТ 13663-86"
+# Стандартный болт М6 класса 5.8 — сталь 35; в корпоративной библиотеке сортамента для крепежа нет
+BOLT_MATERIAL = ("SolidWorks DIN Materials", "1.1181 (C35E)")
 
 A01 = "ПРТИ.468211.101 Пластина опорная.sldprt"
 A02 = "ПРТИ.468211.102 Стойка.sldprt"
@@ -108,19 +111,21 @@ def build_all(session, manifest):
     save_new(session, doc, A03)
     session.close(doc)
 
-    # A-04 — стандартное изделие, оформленное SProp
-    doc, _ = build.plate(session, 20, 10, 6, SHEET6)
+    # A-04 — стандартное изделие, оформленное SProp. Болт не делается из листового проката: материал — сталь 35
+    # (класс прочности 5.8) из базы SolidWorks DIN, плотность 7850, как у стали библиотеки.
+    doc, _ = build.plate(session, 20, 10, 6, None)
+    build.set_other_material(doc, *BOLT_MATERIAL)
     build.props(doc, {"Раздел": "Стандартные изделия", "IsFastener": "1",
                       "Наименование": "Болт М6-6gх20.58 ГОСТ 7798-70", "Обозначение": ""})
-    items["A-04"] = {"file": A04, "kind": "standard", "protected": True}
+    items["A-04"] = {"file": A04, "kind": "standard", "protected": True, "material_sw": BOLT_MATERIAL[1]}
     save_new(session, doc, A04)
     session.close(doc)
 
-    # A-05 — покупное изделие с полями ведомости покупных
-    doc, _ = build.plate(session, 200, 120, 10, SHEET6)
+    # A-05 — покупное изделие с полями ведомости покупных; материал не назначается: масса покупного изделия — по каталогу
+    doc, _ = build.plate(session, 200, 120, 10, None)
     build.props(doc, {"Раздел": "Прочие изделия", "Наименование_ВП": "Электродвигатель АИР71А4",
                       "Поставщик": "ООО «Электромаш»", "Код_Продукции": "33 1111"})
-    items["A-05"] = {"file": A05, "kind": "purchased", "protected": True}
+    items["A-05"] = {"file": A05, "kind": "purchased", "protected": True, "material_sw": None}
     save_new(session, doc, A05)
     session.close(doc)
 
@@ -251,6 +256,59 @@ def main():
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
 
 
+def fix_materials():
+    """Исправление корпуса А без пересборки (13.09.2026): у болта A-04 и двигателя A-05 был сортамент «Лист 6,0».
+
+    Болт и двигатель открываются и сохраняются на месте — сборки A-08, A-09, A-14 и чертёж A-11 сохраняют ссылки на них;
+    затем сборки и чертёж пересохраняются, чтобы в них не осталось устаревших данных компонентов. Надстройка не
+    загружается, свойства файлов не меняются. Хеши изменённых файлов записываются в manifest.json.
+    """
+    run_dir = paths.RUNS / ("fixtures_materials_" + time.strftime("%Y%m%d_%H%M%S"))
+    manifest = json.loads(paths.FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+    names = sorted({p.name for p in paths.FIXTURES_A.iterdir() if p.suffix.lower() in (".sldprt", ".sldasm", ".slddrw")})
+    with SwSession(run_dir, load_eskd=False) as session:
+        for name in names:
+            session.workspace_copy(paths.FIXTURES_A / name)
+        doc = session.open(session.run_dir / A04)
+        build.set_other_material(doc, *BOLT_MATERIAL)
+        cfg = str(doc.GetActiveConfiguration.Name)
+        if build.material_of(doc, cfg)[0] != BOLT_MATERIAL[1]:
+            raise RuntimeError(f"A-04: материал не назначен: {build.material_of(doc, cfg)}")
+        session.save(doc)
+        session.close(doc)
+        doc = session.open(session.run_dir / A05)
+        doc.SetMaterialPropertyName2("", "", "")
+        cfg = str(doc.GetActiveConfiguration.Name)
+        if build.material_of(doc, cfg)[0]:
+            raise RuntimeError(f"A-05: материал не снят: {build.material_of(doc, cfg)}")
+        session.save(doc)
+        session.close(doc)
+        for name in (A08, A09, "ПРТИ.468211.108 СБ Узел.sldasm", A11):
+            doc = session.open(session.run_dir / name)
+            ok, err, warn = session.save(doc)
+            if not ok:
+                raise RuntimeError(f"{name}: пересохранение не удалось: err={err} warn={warn}")
+            session.close_all()
+        unexpected = session.watchdog.pop_unexpected()
+        if unexpected:
+            raise RuntimeError(f"Неожиданные диалоги: {unexpected}")
+    changed = [A04, A05, A08, A09, "ПРТИ.468211.108 СБ Узел.sldasm", A11]
+    for name in changed:
+        shutil.copy2(session.run_dir / name, paths.FIXTURES_A / name)
+    for item in manifest["fixtures"].values():
+        if isinstance(item.get("sha256"), dict):
+            item["sha256"] = {n: sha256(paths.FIXTURES_A / n) for n in item["sha256"]}
+        elif item.get("file") in changed:
+            item["sha256"] = sha256(paths.FIXTURES_A / item["file"])
+    manifest["fixtures"]["A-04"]["material_sw"] = BOLT_MATERIAL[1]
+    manifest["fixtures"]["A-05"]["material_sw"] = None
+    paths.FIXTURE_MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    print("исправлены и пересохранены:", changed)
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
-    main()
+    if "--fix-materials" in sys.argv:
+        fix_materials()
+    else:
+        main()

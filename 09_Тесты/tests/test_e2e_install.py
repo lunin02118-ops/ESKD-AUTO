@@ -65,5 +65,35 @@ class AddinLifecycle(SwTestCase):
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки после перезагрузок")
 
 
+class FixtureMaterials(SwTestCase):
+
+    def test_I07_fixture_materials_match_manifest(self):
+        """I07: материалы в файлах фикстур как в manifest.json — у деталей из проката корпуса А и у копии трубы B-01 сортамент
+        из библиотеки ЕСКД, у стандартного болта — сталь вне библиотеки, у покупного двигателя материала нет."""
+        from eskd_e2e import build, testing
+        manifest = testing.manifest()
+        expected = {}
+        for fid, item in manifest["fixtures"].items():
+            if item.get("kind") in ("part", "weldment"):
+                expected[(fid, paths.FIXTURES_A / item["file"])] = {None: item["material"]}
+            elif item.get("kind") in ("standard", "purchased"):
+                expected[(fid, paths.FIXTURES_A / item["file"])] = {None: item.get("material_sw") or ""}
+        for fid, item in manifest["corpus_b"].items():
+            expected[(fid, paths.FIXTURES_B / item["file"])] = dict(item["materials"])
+        wrong = {}
+        for (fid, source), materials in sorted(expected.items(), key=lambda kv: kv[0][0]):
+            doc = self.s.open(self.s.workspace_copy(source, subdir=f"{self._case_name()}/{fid}"), readonly=True)
+            try:
+                configurations = [str(c) for c in com.as_list(doc.GetConfigurationNames)]
+                for cfg, material in materials.items():
+                    for name in (configurations if cfg is None else [cfg]):
+                        got = build.material_of(doc, name)[0]
+                        if got != material:
+                            wrong[f"{fid} «{name}»"] = {"ожидался": material, "назначен": got}
+            finally:
+                self.s.close(doc)
+        self.assertEqual({}, wrong, "материалы фикстур расходятся с манифестом")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -6,7 +6,7 @@
 import unittest
 from pathlib import Path
 
-from eskd_e2e import build, com, oracles, paths
+from eskd_e2e import build, com, oracles, paths, testing
 from eskd_e2e.testing import SwTestCase, known_defect, tags
 
 SHEET4 = "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
@@ -203,8 +203,8 @@ class PersistenceOpen(SwTestCase):
 
     @known_defect("Д-03")
     def test_P09_open_real_part_does_not_modify(self):
-        """P09: открытие реальной детали корпуса Б ничего не меняет."""
-        src = paths.CORPUS_B["B-01"][0]
+        """P09: открытие реальной детали корпуса Б (B-01 с сортаментом из библиотеки) ничего не меняет."""
+        src = paths.CORPUS_B_LIBRARY["B-01"][0]
         path = self.s.workspace_copy(src, subdir=self._case_name())
         doc = self.s.open(path)
         self._assert_open_is_read_only(path, doc)
@@ -301,6 +301,43 @@ class BasicMaterialScenario(SwTestCase):
         """P15: стойка из «Труба 80х80х4,0 … / В 10 …» — в графе 3 чертежа «Труба» и дробь в две строки, одна строка для ведомости."""
         doc, _ = build.square_tube(self.s, 80, 4, 300, TUBE80)
         self._check(doc, "ПРТИ.468211.132 Стойка.sldprt", TUBE80, "Труба")
+
+
+class RealPartLibraryMaterial(SwTestCase):
+    """Корпус Б: реальная труба B-01, в которой конструктор назначил сортамент из библиотеки (fixtures/build_corpus_b.py)."""
+
+    @known_defect("Д-46")
+    def test_P16_real_tube_with_library_sortament_gets_library_fraction(self):
+        """P16: реальная деталь B-01, конфигурация «Труба 80х80х4»: материал — «Труба 80х80х4,0 ГОСТ 8639-82 / В 10 …» из
+        библиотеки, в графе 3 осталась старая дробь MProp → сохранение: графа 3 и таблица — дробь библиотеки, «Материал_Строка»
+        — строка библиотеки, масса графы 5 — по материалу; PDF чертежа B-01: «Труба» и дробь в две строки в графе 3."""
+        part_src, drawing_src = paths.CORPUS_B_LIBRARY["B-01"]
+        fixture = testing.manifest()["corpus_b"]["B-01"]
+        cfg = "Труба 80х80х4"
+        part = self.s.workspace_copy(part_src, subdir=self._case_name())
+        drawing = self.s.workspace_copy(drawing_src, subdir=self._case_name())
+        self.assertIn("<STACK size=1>Труба 80х80х4 ГОСТ 8639-82<OVER>", V(self.persisted(part), "Материал_ФБ", cfg) or "",
+                      "в копии реальной детали — старая дробь MProp")
+        doc = self.s.open(part)
+        self.assertEqual((TUBE80, "Библиотека_Материалов_ГОСТ"), build.material_of(doc, cfg), "в детали назначен сортамент из библиотеки")
+        self.s.save(doc)
+        custom = build.material_library()[TUBE80]["custom"]
+        drw = self.s.open(drawing)
+        width = round(float(com.as_list(com.dyn(drw.GetCurrentSheet).GetProperties2)[5]) * 1000.0)
+        pdf = self.path("ПРТИ.468211.010.pdf")
+        ok, err, _ = self.s.save_as(drw, pdf)
+        self.s.close(drw)
+        self.s.close(doc)
+        disk = self.persisted(part)
+        self.assertEqual("<FONT size=1.8> <FONT size=3.5>" + custom["Обозначение_ГОСТ"], V(disk, "Материал_ФБ", cfg), "графа 3 — дробь библиотеки")
+        self.assertEqual(custom["Обозначение_ГОСТ"], V(disk, "Материал_Таблица", cfg), "таблица — дробь библиотеки")
+        self.assertEqual(custom["Обозначение_Строка"], V(disk, "Материал_Строка", cfg), "сводная ведомость — строка библиотеки")
+        mass = ("%.2f" % fixture["mass_kg"][cfg]).replace(".", ",")
+        self.assertEqual("<FONT size=3.5>" + mass, V(disk, "Масса_ФБ", cfg), "графа 5 — масса трубы из материала библиотеки")
+        self.assertTrue(ok and pdf.exists(), f"PDF не выгружен, код {err}")
+        numerator, denominator = custom["Обозначение_ГОСТ"].split("<STACK size=1>")[1].split("</STACK>")[0].split("<OVER>")
+        rows = [text for _, _, text in oracles.pdf_rows(pdf, width, oracles.form1_cells(width)["g3_material"])]
+        self.assertEqual([numerator, "Труба", denominator], rows, f"графа 3 в PDF чертежа B-01: {rows}")
 
 
 if __name__ == "__main__":

@@ -314,6 +314,39 @@ class StaticRepository(StaticTestCase):
                 wrong[name] = problems
         self.assertEqual({}, wrong)
 
+    def test_T0_fixture_materials_follow_library(self):
+        """T0: по манифесту фикстур у деталей из проката корпуса А и у копий корпуса Б — сортамент из корпоративной библиотеки,
+        у стандартных и покупных изделий сортамента нет; копии корпуса Б сделаны из текущих исходных файлов и не изменены
+        (решение владельца 13.09.2026; материалы в самих файлах проверяет I07)."""
+        from eskd_e2e import build
+
+        def digest(path):
+            return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+        library = build.material_library()
+        manifest = json.loads(paths.FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+        wrong = []
+        for fid, item in manifest["fixtures"].items():
+            kind = item.get("kind")
+            if kind in ("part", "weldment") and item.get("material") not in library:
+                wrong.append(f"{fid}: у детали из проката «{item.get('material')}» — не сортамент библиотеки")
+            if kind in ("standard", "purchased"):
+                if "material_sw" not in item:
+                    wrong.append(f"{fid}: материал изделия не записан в манифест")
+                elif item["material_sw"] in library:
+                    wrong.append(f"{fid}: у изделия «{kind}» сортамент библиотеки «{item['material_sw']}»")
+        corpus = manifest.get("corpus_b") or {}
+        self.assertIn("B-01", corpus, "нет копии реальной трубы B-01 с сортаментом из библиотеки")
+        for fid, item in corpus.items():
+            wrong += [f"{fid} «{cfg}»: «{m}» — не сортамент библиотеки" for cfg, m in item["materials"].items() if m not in library]
+            if digest(paths.ROOT / item["source"]) != item["source_sha256"]:
+                wrong.append(f"{fid}: исходный файл корпуса Б изменился после сборки копии — запустите fixtures/build_corpus_b.py")
+            if digest(paths.FIXTURES_B / item["file"]) != item["sha256"]:
+                wrong.append(f"{fid}: копия детали изменена после сборки")
+            if item.get("drawing") and digest(paths.FIXTURES_B / item["drawing"]) != item["drawing_sha256"]:
+                wrong.append(f"{fid}: копия чертежа изменена после сборки")
+        self.assertEqual([], wrong)
+
     def test_T0_dll_built_from_current_sources(self):
         """T0: build_manifest.json — хеши исходников совпадают с текущими файлами (Д-24)."""
         if not paths.ADDIN_DLL.exists():

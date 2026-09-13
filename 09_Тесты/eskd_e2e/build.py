@@ -81,6 +81,18 @@ def set_material(doc, material, config=""):
     doc.SetMaterialPropertyName2(config, str(paths.MATERIAL_DB), material)
 
 
+def set_other_material(doc, database, material, config=""):
+    """Материал из базы SolidWorks вне корпоративной библиотеки — для изделий, которые не делаются из сортамента."""
+    doc.SetMaterialPropertyName2(config, database, material)
+
+
+def material_of(doc, config):
+    """(материал, база) конфигурации; пустые строки — материала нет."""
+    db = com.ref_str("")
+    name = doc.GetMaterialPropertyName2(config, db)
+    return str(name or ""), str(db.value or "")
+
+
 def mass_kg(doc):
     mp = com.dyn(doc.Extension.CreateMassProperty)
     return float(mp.Mass)
@@ -115,11 +127,12 @@ def props(doc, values, config=""):
 
 # --------------------------------------------------------------------------- типовые детали
 def plate(session, length_mm, width_mm, thickness_mm, material):
-    """Прямоугольная пластина: эскиз на фронтальной плоскости, вытягивание на толщину."""
+    """Прямоугольная пластина: эскиз на фронтальной плоскости, вытягивание на толщину; material=None — без материала."""
     doc = session.new_doc(paths.PART_TEMPLATE)
     sketch_rectangles(doc, [(-length_mm / 2000, -width_mm / 2000, length_mm / 2000, width_mm / 2000)])
     feat = extrude(doc, thickness_mm / 1000.0)
-    set_material(doc, material)
+    if material is not None:
+        set_material(doc, material)
     doc.ForceRebuild3(False)
     return doc, feat
 
