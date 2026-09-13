@@ -102,13 +102,6 @@ namespace ESKD.Tests
             Assert.AreEqual("Рама сварная", p.Title, "Tier 2: наименование после кода");
             Assert.IsTrue(DesignationParser.Parse("Сборка2", " ").IsTemplateName, "Tier 2: имя шаблона сборки");
         }
-
-        public static void Test_TitleForStamp_very_long_name_stays_two_lines()
-        {
-            string wrapped = SwPlusMarkup.TitleForStamp("Кондуктор для сварки продольных рёбер жёсткости корпуса");
-            Assert.AreEqual(2, wrapped.Split('\n').Length, "Tier 2: не больше двух строк");
-            Assert.IsTrue(wrapped.Split('\n')[0].Length <= SwPlusMarkup.TitleLineLimit, "Tier 2: первая строка в пределах графы");
-        }
     }
 
     public static class ProvenanceTests
@@ -141,22 +134,25 @@ namespace ESKD.Tests
 
     public static class MarkupTests
     {
-        public static void Test_TitleForStamp_wraps_long_names_by_words()
+        public static void Test_WrapTitle_wraps_long_names_by_words_for_mprop_markup()
         {
-            Assert.AreEqual("Стойка опорная", SwPlusMarkup.TitleForStamp("Стойка опорная"), "короткое");
-            Assert.AreEqual("Рама сварная кондуктора", SwPlusMarkup.TitleForStamp("  Рама сварная кондуктора  "), "пробелы по краям");
-            Assert.AreEqual("Втулка направляющая\nопорная длинная", SwPlusMarkup.TitleForStamp("Втулка направляющая опорная длинная"), "перенос");
-            Assert.AreEqual("Кронштейн направляющий\nудлинённый", SwPlusMarkup.TitleForStamp("Кронштейн направляющий удлинённый"), "A-06");
-            string word = "Сверхдлинноеоднословноенаименованиедетали";
-            Assert.AreEqual(word, SwPlusMarkup.TitleForStamp(word), "одно длинное слово не режется");
+            Assert.AreEqual("Стойка опорная", SwPlusFormat.WrapTitle("Стойка опорная"), "короткое");
+            Assert.AreEqual("Рама сварная\nкондуктора", SwPlusFormat.WrapTitle("  Рама сварная кондуктора  "), "23 знака — две строки по 22");
+            Assert.AreEqual("Втулка направляющая\nопорная длинная", SwPlusFormat.WrapTitle("Втулка направляющая опорная длинная"), "перенос");
         }
 
-        public static void Test_TitleForStamp_keeps_markup_untouched()
+        public static void Test_TitleStamp_and_plain_round_trip()
         {
-            string record = "Стойка\n<STACK size=1>Труба 80х80х4,0 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>\nL = 300 мм";
-            Assert.AreEqual(record, SwPlusMarkup.TitleForStamp(record), "запись БЧ (Д-13)");
-            string mprop = "<FONT size=4> \n<FONT size=3.5>Кронштейн";
-            Assert.AreEqual(mprop, SwPlusMarkup.TitleForStamp(mprop), "разметка MProp");
+            Assert.AreEqual("<FONT size=4> \n<FONT size=5>Стойка", SwPlusFormat.TitleStamp("Стойка", true), "одна строка");
+            Assert.AreEqual("<FONT size=2> \r\n<FONT size=5>Кронштейн направляющий\nудлинённый",
+                SwPlusFormat.TitleStamp(SwPlusFormat.WrapTitle("Кронштейн направляющий удлинённый"), true), "A-06 в две строки");
+            Assert.AreEqual("Кронштейн направляющий удлинённый", SwPlusFormat.TitlePlain("<FONT size=2> \r\n<FONT size=5>Кронштейн направляющий\nудлинённый"), "разметка снята");
+            Assert.AreEqual("Кронштейн направляющий удлинённый", SwPlusFormat.TitlePlain("Кронштейн направляющий\nудлинённый"), "перенос v6.1");
+            Assert.AreEqual("Кронштейн", SwPlusFormat.TitlePlain("<FONT size=4> \n<FONT size=3.5>Кронштейн"), "форма ChkFont");
+            string word = "Сверхдлинноеоднословноенаименованиедетали";
+            Assert.AreEqual(word, SwPlusFormat.WrapTitle(word), "одно длинное слово не режется");
+            Assert.IsTrue(BchRecord.IsRecord("Стойка\n<STACK size=1>Труба<OVER>В10</STACK>"), "запись БЧ");
+            Assert.IsFalse(BchRecord.IsRecord("Стойка"), "обычное наименование");
         }
 
         public static void Test_mass_ownership_classification()

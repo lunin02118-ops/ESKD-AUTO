@@ -32,6 +32,41 @@ namespace ESKD.MaterialSync.Sw
 
         public ModelDoc2 Document { get { return _doc; } }
 
+        /// <summary>«Сводка → Автор» документа (SummaryInfo 2) — поле, из которого MProp берёт «Конструктора».</summary>
+        public string Author()
+        {
+            try
+            {
+                return _doc.get_SummaryInfo((int)swSummInfoField_e.swSumInfoAuthor) ?? "";
+            }
+            catch (Exception ex)
+            {
+                Log.Error("SummaryInfo Author " + _docTitle, ex);
+                return "";
+            }
+        }
+
+        /// <summary>Записать «Сводка → Автор», если отличается; в журнал операций, как свойство.</summary>
+        public bool SetAuthor(string value)
+        {
+            value = value ?? "";
+            if (Author() == value) return false;
+            Operations.Add(string.Format("[Сводка] Автор = «{0}»", value));
+            if (_dryRun) return false;
+            try
+            {
+                _doc.set_SummaryInfo((int)swSummInfoField_e.swSumInfoAuthor, value);
+                Changes++;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Failures++;
+                Log.Error("SummaryInfo Author = " + value, ex);
+                return false;
+            }
+        }
+
         /// <summary>Режим DryRun: запись только в журнал (единицы документа тоже не переключаются).</summary>
         public bool DryRun { get { return _dryRun; } }
 

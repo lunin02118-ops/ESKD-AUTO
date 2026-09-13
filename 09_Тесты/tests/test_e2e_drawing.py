@@ -17,6 +17,11 @@ A11 = "ПРТИ.468211.100 СБ Кондуктор сварочный.slddrw"
 A03 = "ПРТИ.468211.103 Планка.sldprt"
 
 
+def plain(note_text):
+    """Текст заметки штампа без разметки SolidWorks (<FONT …>) и переводов строк — как его читает человек."""
+    return " ".join(re.sub(r"<[^>]*>", " ", note_text or "").split())
+
+
 class Drawing(SwTestCase):
 
     def _prepare_model(self):
@@ -38,7 +43,7 @@ class Drawing(SwTestCase):
         stamp = notes[sheet]
         text = {k: v["text"].replace("\r\n", "\n") for k, v in stamp.items()}
         self.assertEqual("ПРТИ.468211.101", text.get("MYPRP0"), "графа 2 — обозначение")
-        self.assertEqual("Пластина опорная", text.get("MYPRP4"), "графа 1 — наименование")
+        self.assertEqual("Пластина опорная", plain(text.get("MYPRP4")), "графа 1 — наименование")
         self.assertEqual("Тестов Т.Т.", text.get("MYPRP8"), "разработал")
         self.assertEqual("ООО «Испытание»", text.get("MYPRP7"), "графа 9 — организация")
         self.assertIn("0.63", text.get("MYPRP15", ""), "графа 5 — масса (точка, как у MProp, Р-1)")
@@ -91,8 +96,8 @@ class Drawing(SwTestCase):
         stamp = next(iter(oracles.stamp(drw).values()))
         text = {k: v["text"].replace("\r\n", "\n") for k, v in stamp.items()}
         self.assertEqual("ПРТИ.468211.100 СБ", text.get("MYPRP0"), "графа 2 — обозначение с кодом документа")
-        self.assertEqual("Кондуктор сварочный", text.get("MYPRP4"), "графа 1 — наименование")
-        self.assertEqual("Сборочный чертёж", text.get("MYPRP3"), "графа 1 — вторая строка")
+        self.assertEqual("Кондуктор сварочный", plain(text.get("MYPRP4")), "графа 1 — наименование")
+        self.assertIn(plain(text.get("MYPRP3")), ("Сборочный чертёж", "Сборочный чертеж"), "графа 1 — вторая строка")
         cells = oracles.form1_cells(594)
         for note, cell in (("MYPRP0", "g2_designation"), ("MYPRP4", "g1_title"), ("MYPRP3", "g1_title")):
             with self.subTest(note=note):
@@ -143,7 +148,7 @@ class Drawing(SwTestCase):
             text = {k: v["text"] for k, v in next(iter(oracles.stamp(drw).values())).items()}
             self.s.close(drw)
         self.assertEqual("ПРТИ.468211.101", text.get("MYPRP0"))
-        self.assertEqual("Пластина опорная", text.get("MYPRP4"))
+        self.assertEqual("Пластина опорная", plain(text.get("MYPRP4")))
 
     @known_defect("Д-06")
     def test_D06_drawing_save_does_not_modify_model(self):

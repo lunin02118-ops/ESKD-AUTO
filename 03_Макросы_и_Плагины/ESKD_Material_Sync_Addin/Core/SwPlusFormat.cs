@@ -160,6 +160,22 @@ namespace ESKD.MaterialSync.Core
             return lines;
         }
 
+        /// <summary>Текст наименования без разметки MProp графы 1 (любое число строк) и переводов строк — для сравнения.</summary>
+        public static string TitlePlain(string stamp)
+        {
+            string t = (stamp ?? "").Replace("\r\n", "\n");
+            foreach (string prefix in new[] { TitleTwoLines.Replace("\r\n", "\n"), TitleOneLine, TitleThreeLines,
+                                              "<FONT size=2> \n<FONT size=3.5>", "<FONT size=4> \n<FONT size=3.5>" })
+            {
+                if (t.StartsWith(prefix, StringComparison.Ordinal))
+                {
+                    t = t.Substring(prefix.Length);
+                    break;
+                }
+            }
+            return string.Join(" ", t.Split(new[] { '\n', ' ' }, StringSplitOptions.RemoveEmptyEntries));
+        }
+
         /// <summary>«Сборка2_ФБ» (FrmMProp:3063–3069): многострочный текст — как есть, иначе разметка перед текстом.</summary>
         public static string DocDescription(string text, bool smallFont)
         {

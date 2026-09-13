@@ -21,6 +21,14 @@ A13 = "ПРТИ.468211.106 Крышка.sldprt"
 V = oracles.value
 
 
+
+def mprop_title(text):
+    """«Наименование_ФБ» в разметке MProp (FrmMProp:2640–2652): строки разделены LF."""
+    lines = text.count("\n") + 1
+    head = {1: "<FONT size=4> \n<FONT size=5>", 2: "<FONT size=2> \n<FONT size=5>"}.get(lines, "<FONT size=3.5>")
+    return head + text
+
+
 def mprop_mass(cfg, file_stem, grams=False, small_font=True, assembly=False):
     """«Масса_ФБ» в формате MProp (Правила записи свойств SWPlus, раздел 1; FrmMProp:2850–2888)."""
     ext = ".SLDASM" if assembly else ".SLDPRT"
@@ -32,7 +40,7 @@ class PersistenceNewDocuments(SwTestCase):
     def _assert_named_plate(self, disk, designation, title):
         self.assertEqual(designation, V(disk, "Обозначение"), "обозначение (общие)")
         self.assertEqual(title, V(disk, "Наименование"), "наименование (общие)")
-        self.assertEqual(title, V(disk, "Наименование_ФБ"), "наименование для штампа")
+        self.assertEqual(mprop_title(title), (V(disk, "Наименование_ФБ") or "").replace("\r\n", "\n"), "наименование для штампа в разметке MProp")
         self.assertEqual(designation, V(disk, "Обозначение", "00"), "обозначение (конфигурация)")
         self.assertIn("<STACK size=1>", V(disk, "Материал_ФБ", "00") or "", "дробь материала в конфигурации")
         self.assertEqual(mprop_mass("00", f"{designation} {title}"), (V(disk, "Масса_ФБ", "00") or "").replace("\r\n", "\n"),
@@ -105,7 +113,7 @@ class PersistenceSave(SwTestCase):
         self.assertEqual("ПРТИ.468211.131", V(new, "Обозначение"))
         self.assertEqual("ПРТИ.468211.131", V(new, "Обозначение", "00"))
         self.assertEqual("Пластина переименованная", V(new, "Наименование"))
-        self.assertEqual("Пластина переименованная", V(new, "Наименование_ФБ"))
+        self.assertEqual(mprop_title("Пластина\nпереименованная"), (V(new, "Наименование_ФБ") or "").replace("\r\n", "\n"))
         self.assertEqual("ПРТИ.468211.101", V(self.persisted(path), "Обозначение"), "исходный файл")
 
     @known_defect("Д-02")

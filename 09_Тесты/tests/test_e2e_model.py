@@ -184,7 +184,8 @@ class ModelNames(SwTestCase):
         self.s.close(doc)
         disk = self.persisted(path)
         self.assertEqual("Кронштейн направляющий удлинённый", V(disk, "Наименование"))
-        self.assertEqual("Кронштейн направляющий\nудлинённый", V(disk, "Наименование_ФБ").replace("\r\n", "\n"))
+        self.assertEqual("<FONT size=2> \n<FONT size=5>Кронштейн направляющий\nудлинённый", V(disk, "Наименование_ФБ").replace("\r\n", "\n"),
+                         "две строки в разметке MProp (FrmMProp:2645)")
 
     def test_M09_weldment_material_in_configurations(self):
         """M09: сварная деталь — дробь материала в конфигурациях."""

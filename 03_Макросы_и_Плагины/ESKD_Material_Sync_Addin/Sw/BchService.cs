@@ -119,7 +119,8 @@ namespace ESKD.MaterialSync.Sw
             string titleLevel = w.ConfigurationNames().Length <= 1 ? "" : w.ActiveConfigurationName();
             w.Set(titleLevel, title, record);
             string fb = w.Raw("", titleFb);
-            if (PropertyWriter.IsEmptyOrTemplate(fb)) w.Set("", titleFb, SwPlusMarkup.TitleForStamp(BchRecord.ShortTitle(baseTitle)));
+            if (PropertyWriter.IsEmptyOrTemplate(fb))
+                w.Set("", titleFb, SwPlusFormat.TitleStamp(SwPlusFormat.WrapTitle(BchRecord.ShortTitle(baseTitle)), dict.SmallFontMarkup));
 
             RemoveLegacyFlag(w);
             return Enabled;

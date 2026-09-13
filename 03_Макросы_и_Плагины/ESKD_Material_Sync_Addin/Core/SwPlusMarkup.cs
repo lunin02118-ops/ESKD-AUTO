@@ -9,7 +9,6 @@ namespace ESKD.MaterialSync.Core
     /// </summary>
     public static class SwPlusMarkup
     {
-        public const int TitleLineLimit = 24;
         private static readonly CultureInfo Ru = CultureInfo.GetCultureInfo("ru-RU");
 
         private static readonly string[] BlankShapes =
@@ -22,36 +21,6 @@ namespace ESKD.MaterialSync.Core
         public static bool HasMarkup(string value)
         {
             return !string.IsNullOrEmpty(value) && (value.IndexOf('<') >= 0 || value.IndexOf('\n') >= 0 || value.IndexOf('\r') >= 0);
-        }
-
-        /// <summary>
-        /// «Наименование_ФБ» для графы 1 (70 мм, ~24 знака): перенос по словам на две строки.
-        /// Значение с разметкой или переводами строк возвращается без изменений (Д-13).
-        /// </summary>
-        public static string TitleForStamp(string title)
-        {
-            if (string.IsNullOrWhiteSpace(title)) return "";
-            string t = title.Trim();
-            if (HasMarkup(t)) return t;
-            if (t.Length <= TitleLineLimit) return t;
-            string[] words = t.Split(new[] { ' ', '\t', '\u00A0' }, StringSplitOptions.RemoveEmptyEntries);
-            string line1 = "", line2 = "";
-            bool second = false;
-            foreach (string word in words)
-            {
-                if (!second)
-                {
-                    string candidate = line1.Length == 0 ? word : line1 + " " + word;
-                    if (candidate.Length <= TitleLineLimit || line1.Length == 0)
-                    {
-                        line1 = candidate;
-                        continue;
-                    }
-                    second = true;
-                }
-                line2 = line2.Length == 0 ? word : line2 + " " + word;
-            }
-            return line2.Length > 0 ? line1 + "\n" + line2 : line1;
         }
 
         /// <summary>Живое выражение массы, которое пишет MProp в «Масса_ФБ»: его надстройка не трогает.</summary>

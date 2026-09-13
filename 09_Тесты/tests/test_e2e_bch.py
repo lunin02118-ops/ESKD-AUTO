@@ -33,7 +33,8 @@ class Bch(SwTestCase):
         self.assertEqual('"SW-Mass@@00@ПРТИ.468211.102 Стойка.SLDPRT" кг', V(disk, "Примечание", "00"), "масса детали как у MProp (Д-14)")
         self.assertEqual("2.86 кг", V(disk, "Примечание", "00", resolved=True), "значение массы в «Примечании»")
         self.assertEqual(TUBE_RECORD, (V(disk, "Наименование") or "").replace("\r\n", "\n"), "запись для спецификации")
-        self.assertEqual("Стойка", V(disk, "Наименование_ФБ"), "штамп без разметки (Д-13)")
+        self.assertEqual("<FONT size=4> \n<FONT size=5>Стойка", (V(disk, "Наименование_ФБ") or "").replace("\r\n", "\n"),
+                         "штамп — первая строка записи в разметке MProp (Д-13)")
         self.assertNotIn("БЧ", oracles.all_names(disk), "отдельного свойства «БЧ» нет")
 
     @known_defect("Д-15")
@@ -64,7 +65,7 @@ class Bch(SwTestCase):
         self.s.save(doc)
         self.assertNoPropertyWrites(mark)
         self.s.close(doc)
-        self.assertEqual("Стойка", V(self.persisted(path), "Наименование_ФБ"))
+        self.assertEqual("<FONT size=4> \n<FONT size=5>Стойка", (V(self.persisted(path), "Наименование_ФБ") or "").replace("\r\n", "\n"))
 
     def test_B05_sheet_bch_record_with_width_and_length(self):
         """B05: БЧ из листа — размеры «B×L» по габариту."""

@@ -13,6 +13,12 @@ namespace ESKD.MaterialSync.Core
         public const string SavedFormatProperty = "Формат_до_БЧ";
         public const string SavedRemarkProperty = "Примечание_до_БЧ";
 
+        /// <summary>Значение «Наименования» — запись БЧ: несколько строк или дробь материала.</summary>
+        public static bool IsRecord(string value)
+        {
+            return !string.IsNullOrEmpty(value) && (value.IndexOf('\n') >= 0 || value.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
         public static string ShortTitle(string title)
         {
             if (string.IsNullOrWhiteSpace(title)) return "Деталь";

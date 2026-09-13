@@ -250,32 +250,36 @@ namespace ESKD.MaterialSync.Sw
                 effective = now.Title;
             }
             if (PropertyWriter.IsEmptyOrTemplate(effective)) return;
-            string wantedFb = SwPlusMarkup.HasMarkup(effective) ? BchRecord.ShortTitle(effective) : SwPlusMarkup.TitleForStamp(effective);
+            // Графа 1 — разметка MProp по числу строк (FrmMProp:2636–2657), перенос по 22 знака (Р-2); у БЧ — первая строка записи.
+            string stampTitle = BchRecord.IsRecord(effective) ? BchRecord.ShortTitle(effective) : effective;
+            string wantedFb = SwPlusFormat.TitleStamp(SwPlusFormat.WrapTitle(stampTitle), dict.SmallFontMarkup);
             string currentFb = w.Raw("", titleFb);
-            bool fbDerived = PropertyWriter.IsEmptyOrTemplate(currentFb) ||
-                             (before != null && !string.IsNullOrEmpty(before.Title) &&
-                              (currentFb == SwPlusMarkup.TitleForStamp(before.Title) || currentFb == before.Title)) ||
-                             (!SwPlusMarkup.HasMarkup(currentFb) && currentFb.Replace("\n", " ") == effective);
-            if (fbDerived) w.Set("", titleFb, wantedFb);
+            if (IsDerivedTitleStamp(currentFb, stampTitle, before)) w.Set("", titleFb, wantedFb);
 
-            // Копии наименования в конфигурациях (оставлены v5) обновляются, только если они производные:
+            // Копии наименования в конфигурациях MProp удаляет (FrmMProp:2671–2673, 2701–2703): производные копии удаляются,
             // иначе устаревшая копия затеняет общее свойство в штампе и спецификации.
             foreach (string cfg in w.ConfigurationNames())
             {
                 string cfgTitle = w.Raw(cfg, title);
                 if (cfgTitle != null && (PropertyWriter.IsEmptyOrTemplate(cfgTitle) ||
-                    (before != null && cfgTitle == before.Title) || cfgTitle == currentTitle))
+                    (before != null && cfgTitle == before.Title) || cfgTitle == currentTitle || cfgTitle == effective))
                 {
-                    w.Set(cfg, title, effective);
+                    w.Delete(cfg, title);
                 }
                 string cfgFb = w.Raw(cfg, titleFb);
-                if (cfgFb != null && !SwPlusMarkup.HasMarkup(cfgFb) && (PropertyWriter.IsEmptyOrTemplate(cfgFb) ||
-                    (before != null && !string.IsNullOrEmpty(before.Title) && cfgFb.Replace("\n", " ") == before.Title) ||
-                    cfgFb == currentFb))
-                {
-                    w.Set(cfg, titleFb, wantedFb);
-                }
+                if (cfgFb != null && (IsDerivedTitleStamp(cfgFb, stampTitle, before) || MaterialRecord.Normalize(cfgFb) == MaterialRecord.Normalize(currentFb)))
+                    w.Delete(cfg, titleFb);
             }
+        }
+
+        /// <summary>«Наименование_ФБ», которое пишет система: пусто, выражение шаблона или текст наименования (нынешнего или прежнего имени файла) в любой форме — без разметки, с переносом, в разметке MProp.</summary>
+        private static bool IsDerivedTitleStamp(string raw, string title, ParsedName before)
+        {
+            if (PropertyWriter.IsEmptyOrTemplate(raw)) return true;
+            if (raw.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            string plain = SwPlusFormat.TitlePlain(raw);
+            if (plain == SwPlusFormat.TitlePlain(title)) return true;
+            return before != null && !string.IsNullOrEmpty(before.Title) && plain == SwPlusFormat.TitlePlain(before.Title);
         }
 
         private static bool DerivedFromBefore(string value, ParsedName before, bool isAssembly)
@@ -319,10 +323,18 @@ namespace ESKD.MaterialSync.Sw
             string tester = dict[Role.Tester];
             string firm = dict[Role.Firm];
             string active = w.ActiveConfigurationName();
-            if (!string.IsNullOrEmpty(settings.Author))
+            // «Конструктор» и «Сводка → Автор» — одно значение: MProp заполняет форму из «Автора» (FrmMProp:1906) и пишет его в
+            // оба места (2717–2724), поэтому пустой «Автор» стирал «Конструктора» (Н-04, WP-2.5).
+            string current = w.Raw("", designer);
+            string author = w.Author();
+            string wanted = settings.OverwriteSignatures && !string.IsNullOrEmpty(settings.Author) ? settings.Author
+                : !Empty(current) ? current
+                : !Empty(author) ? author
+                : Empty(w.Raw(active, designer)) ? settings.Author : null;
+            if (!string.IsNullOrEmpty(wanted))
             {
-                if (settings.OverwriteSignatures) w.Set("", designer, settings.Author);
-                else if (Empty(w.Raw("", designer)) && Empty(w.Raw(active, designer))) w.Set("", designer, settings.Author);
+                if (!Empty(current) || Empty(w.Raw(active, designer)) || settings.OverwriteSignatures) w.Set("", designer, wanted.Trim());
+                w.SetAuthor(wanted.Trim());
             }
             foreach (string cfg in w.ConfigurationNames())
             {
