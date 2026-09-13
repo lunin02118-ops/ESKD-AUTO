@@ -136,6 +136,7 @@ class GoldenMaster(SwTestCase):
         self.assertEqual([], missing, "сценарии снимка v5 без пары")
         unexplained, used = compare.explain(all_diffs, rules)
         self.assertEqual([], [compare.describe(d) for d in unexplained], "отличия от v5 без правила в allowed_diffs.json")
+        self.assertEqual([], compare.unused(used, rules), "правила allowed_diffs.json, которым нечего объяснять (Д-43)")
 
 
 if __name__ == "__main__":

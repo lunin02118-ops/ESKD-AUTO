@@ -241,6 +241,35 @@ class StaticRepository(StaticTestCase):
                           if re.search(r"\.(Add3|Delete2|Set2)\(", src.read_text(encoding="utf-8"))})
         self.assertEqual(["PropertyWriter.cs"], writers, "свойства пишутся в обход PropertyWriter")
 
+    def test_T0_golden_master_rules_are_strict(self):
+        """T0: правило golden master без срабатываний проваливает R01, если в нём нет «optional» с причиной; правила замены
+        записи материала ограничивают прежнее значение, а не только новое (Д-43)."""
+        from baseline import compare
+        rules = [{"id": "R-used", "names": ["Масса_ФБ"]},
+                 {"id": "R-unused", "names": ["Проверил"]},
+                 {"id": "R-optional", "names": ["Контора"], "optional": "в снимке v5 этого различия нет"}]
+        diffs = [{"scenario": "A01_open_save", "section": "persisted", "level": "00", "name": "Масса_ФБ",
+                  "old": None, "new": "<FONT size=3.5>0,63"}]
+        unexplained, used = compare.explain(diffs, rules)
+        self.assertEqual([], unexplained)
+        self.assertEqual(["R-unused"], compare.unused(used, rules), "правило без срабатываний и без причины")
+
+        real = json.loads((paths.TESTS / "baseline" / "allowed_diffs.json").read_text(encoding="utf-8"))["rules"]
+        by_id = {r["id"]: r for r in real}
+        self.assertEqual(len(real), len(by_id), "повторяющиеся id правил")
+        for rule in real:
+            self.assertTrue(rule.get("defect") and rule.get("title"), f"{rule['id']}: нет дефекта или названия")
+            if "optional" in rule:
+                self.assertTrue(str(rule["optional"]).strip(), f"{rule['id']}: «optional» без причины")
+        for rid in ("AD-17", "AD-21", "AD-22"):
+            self.assertIn("old", by_id[rid], f"{rid} не ограничивает прежнее значение")
+        mprop_fraction = "<FONT size=1.8> <FONT size=3.5>Лист <STACK size=1>Б-ПН-НО-5,0 ГОСТ 19903-2015<OVER>09Г2С-12 ГОСТ 19281-2014</STACK>"
+        legacy_fraction = " <FONT size=1.8><FONT size=3.5><STACK size=1>Лист 4<OVER>Ст3</STACK>"
+        for rid in ("AD-21", "AD-22"):
+            self.assertIsNone(re.fullmatch(by_id[rid]["old"], mprop_fraction, flags=re.S), f"{rid} объяснил бы замену дроби MProp")
+            self.assertIsNotNone(re.fullmatch(by_id[rid]["old"], legacy_fraction, flags=re.S), f"{rid}: запись прежней надстройки")
+        self.assertIsNone(re.fullmatch(by_id["AD-17"]["old"], mprop_fraction, flags=re.S), "AD-17: прежнее значение — строка v5")
+
     def test_T0_property_name_literals_are_declared(self):
         """T0: имя свойства литералом в коде надстройки — из словаря SWPlus, служебных имён SWPlus, лишних имён v5, имён
         надстройки или шаблона (PropertyDictionary); белый список M01 — словарь, служебные имена и имена надстройки (А-5)."""

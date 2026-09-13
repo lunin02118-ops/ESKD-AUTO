@@ -7,7 +7,8 @@
 Снимок сводится к фактам «сценарий · раздел · уровень · имя → значение»: свойства в памяти после открытия и на
 диске после сохранения, признак изменения и записи свойств по журналу зонда, тексты заметок основной надписи,
 смещение заметок, ошибки журнала надстройки и неожиданные диалоги. Различие объяснено, если подходит под правило
-из allowed_diffs.json; правило ссылается на дефект, который это различие устраняет.
+из allowed_diffs.json; правило ссылается на дефект, который это различие устраняет. Правило без
+срабатываний тоже провал, если у него нет поля «optional» с причиной (Д-43).
 """
 import argparse
 import fnmatch
@@ -128,6 +129,13 @@ def explain(all_diffs, rules):
     return unexplained, used
 
 
+def unused(used, rules):
+    """Правила без единого срабатывания и без поля «optional» с причиной (Д-43): правило, которому нечего объяснять,
+    устарело или шире своего дефекта — R01 проваливается."""
+    optional = {r["id"] for r in rules if str(r.get("optional") or "").strip()}
+    return sorted(rid for rid, n in used.items() if n == 0 and rid not in optional)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("old")
@@ -136,16 +144,19 @@ def main():
     args = ap.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
     all_diffs, missing = diffs(args.old, args.new)
-    shown = all_diffs
+    shown, stale = all_diffs, []
     if args.rules:
         rules = json.loads(Path(args.rules).read_text(encoding="utf-8"))["rules"]
         shown, used = explain(all_diffs, rules)
         for rid, n in used.items():
             print(f"{rid}: {n}")
+        stale = unused(used, rules)
     for d in shown:
         print(describe(d))
+    for rid in stale:
+        print(f"правило без срабатываний: {rid}")
     print(f"различий: {len(all_diffs)}, показано: {len(shown)}, сценариев нет в новом снимке: {missing}")
-    return 1 if shown or missing else 0
+    return 1 if shown or missing or stale else 0
 
 
 if __name__ == "__main__":
