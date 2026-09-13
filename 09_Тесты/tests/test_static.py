@@ -372,7 +372,7 @@ class StaticRepository(StaticTestCase):
         sheet_formats = set(re.findall(r'^"Sheet Format Folders"="([^"]*)"', reg, flags=re.M))
         self.assertTrue(sheet_formats, "в профиле нет Sheet Format Folders")
         self.assertTrue(all(v.endswith("SWPlusMacro_v_2018_SP0.0\\\\Основные надписи") for v in sheet_formats), sheet_formats)
-        self.assertEqual(19, len(list(paths.SHEET_FORMATS.glob("*.slddrt"))), "комплект основных надписей SWPlus")
+        self.assertEqual(18, len(list(paths.SHEET_FORMATS.glob("*.slddrt"))), "комплект основных надписей SWPlus (A4-A-1 в архиве, Д-30)")
 
     @known_defect("Д-20")
     def test_T0_mcp_server_writes_no_legacy_aliases(self):
