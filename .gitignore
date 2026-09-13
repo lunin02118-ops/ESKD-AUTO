@@ -27,3 +27,16 @@ build_temp/
 
 # Прогоны автотестов 09_Тесты (журналы, копии фикстур, отчёты)
 08_Результаты_Тестирования/runs/
+
+# Надстройка ЕСКД собирается из исходников build.ps1 при установке (WP-4.3, D-11)
+03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/ESKD_Material_Sync_v5.dll
+03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/ESKD_Material_Sync_v5.tlb
+03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/ESKD.exe
+03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/ESKD_Sync.exe
+03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/build_manifest.json
+03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/Legacy_Builds/
+*.clean_old
+*.f40_old
+
+# Отчёты прежнего Test_Suite с отметкой времени
+08_Результаты_Тестирования/Test_Suite/TEST_REPORT_2*.md

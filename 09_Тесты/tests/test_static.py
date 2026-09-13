@@ -248,6 +248,8 @@ class StaticRepository(StaticTestCase):
 
     def test_T0_dll_built_from_current_sources(self):
         """T0: build_manifest.json — хеши исходников совпадают с текущими файлами (Д-24)."""
+        if not paths.ADDIN_DLL.exists():
+            self.skipTest("надстройка не собрана: запустите build.ps1")
         manifest_path = ADDIN / "build_manifest.json"
         self.assertTrue(manifest_path.exists(), "нет build_manifest.json — DLL собрана не build.ps1")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
@@ -358,11 +360,17 @@ class StaticRepository(StaticTestCase):
 
     @known_defect("Д-24")
     def test_T0_no_build_leftovers_and_reports_in_git(self):
-        """T0: в git нет копий DLL (*_old, Legacy_Builds) и старых отчётов TEST_REPORT_* (Д-24)."""
+        """T0: в git нет собранной надстройки, копий DLL (*_old, Legacy_Builds), отчётов TEST_REPORT_* и архива (Д-24)."""
         out = subprocess.run(["git", "-C", str(ROOT), "-c", "core.quotepath=off", "ls-files"], capture_output=True)
         files = out.stdout.decode("utf-8", errors="replace").splitlines()
-        leftovers = [f for f in files if f.endswith(("_old", ".f40_old")) or "Legacy_Builds/" in f or "/TEST_REPORT_2" in f]
+        addin = "03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/"
+        built = {addin + name for name in ("ESKD_Material_Sync_v5.dll", "ESKD_Material_Sync_v5.tlb", "ESKD.exe", "ESKD_Sync.exe",
+                                          "build_manifest.json")}
+        leftovers = [f for f in files if f.endswith("_old") or "Legacy_Builds/" in f or "/TEST_REPORT_2" in f
+                     or f.startswith("99_Архив/") or f in built]
         self.assertEqual([], leftovers)
+        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn('Join-Path $addinDir "build.ps1"', setup, "установщик собирает надстройку из исходников")
 
 
 if __name__ == "__main__":

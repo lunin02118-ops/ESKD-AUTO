@@ -674,15 +674,16 @@ Write-Host "`n[5/6] Регистрация нативной надстройки
 $addinDir = Join-Path $ToolsRoot "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin"
 $addinDll = Join-Path $addinDir "ESKD_Material_Sync_v5.dll"
 
-# Чистый клон репозитория: DLL собирается из исходников (build.ps1 пишет и build_manifest.json).
-if (-not (Test-Path $addinDll)) {
-    Write-Host "  [ИНФО] DLL надстройки не найдена — сборка из исходников (build.ps1)..." -ForegroundColor Yellow
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $addinDir "build.ps1")
-    if (Test-Path $addinDll) {
-        Write-Host "  [OK] Надстройка собрана: $addinDll" -ForegroundColor Green
-    } else {
-        Write-Host "  [ОШИБКА] Сборка не удалась — блок [5/6] будет пропущен." -ForegroundColor Red
-    }
+# WP-4.3 (D-11): сборки надстройки нет в git — DLL и утилиты собираются из текущих исходников при каждой установке
+# (build.ps1 пишет и build_manifest.json с хешами). SolidWorks закрыт на шаге 1, DLL не заблокирована.
+Write-Host "  Сборка надстройки из исходников (build.ps1)..." -ForegroundColor Gray
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $addinDir "build.ps1")
+if ($LASTEXITCODE -eq 0 -and (Test-Path $addinDll)) {
+    Write-Host "  [OK] Надстройка собрана: $addinDll" -ForegroundColor Green
+} elseif (Test-Path $addinDll) {
+    Write-Host "  [ВНИМАНИЕ] Сборка не удалась (код $LASTEXITCODE) — регистрируется прежняя DLL, она может не соответствовать исходникам." -ForegroundColor Yellow
+} else {
+    Write-Host "  [ОШИБКА] Сборка не удалась — блок [5/6] будет пропущен." -ForegroundColor Red
 }
 
 if (Test-Path $addinDll) {
