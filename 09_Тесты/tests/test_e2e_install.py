@@ -3,7 +3,7 @@
 import re
 import unittest
 
-from eskd_e2e import oracles, paths
+from eskd_e2e import com, oracles, paths
 from eskd_e2e.testing import SwTestCase, known_defect
 
 LEGACY = {"Разраб.", "Разработал", "Автор", "п_Разраб", "DrawnBy", "п_Разраб_Дата", "DrawnDate", "Пров.", "п_Пров",
@@ -45,6 +45,24 @@ class Templates(SwTestCase):
             if problems:
                 report[template.name] = problems
         self.assertEqual({}, report)
+
+
+class AddinLifecycle(SwTestCase):
+
+    @known_defect("Д-26")
+    def test_I06_repeated_unload_and_load_keep_solidworks_alive(self):
+        """I06: пять циклов UnloadAddIn/LoadAddIn — SolidWorks жив, надстройка отвечает, реквизиты по-прежнему пишутся при сохранении."""
+        for cycle in range(5):
+            with self.subTest(cycle=cycle):
+                self.s.unload_eskd()
+                self.s.load_eskd()
+                self.assertTrue(self.s.alive(), "SolidWorks не отвечает после перезагрузки надстройки")
+        self.assertTrue(str(com.call(self.s.eskd(), "GetVersion")).startswith("6."), "надстройка не отвечает")
+        path, doc = self.open_copy("ПРТИ.468211.101 Пластина опорная.sldprt")
+        self.s.save(doc)
+        self.s.close(doc)
+        self.assertEqual("ПРТИ.468211.101", oracles.value(self.persisted(path), "Обозначение", "00"), "запись при сохранении")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки после перезагрузок")
 
 
 if __name__ == "__main__":

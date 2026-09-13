@@ -24,7 +24,7 @@
   "Д-23": {"status": "fixed", "title": "Батник с путём в неверной кодировке; .reg — неэкранированные обратные косые, EULA, личные каталоги, устаревшие избранные материалы"},
   "Д-24": {"status": "fixed", "title": "Собранные бинарники и отчёты в git"},
   "Д-25": {"status": "fixed", "title": "Иконка БЧ, фиктивный флажок, MProp_Firm"},
-  "Д-26": {"status": "open", "title": "Повторные UnloadAddIn/LoadAddIn роняют SolidWorks в AddCommandManager"},
+  "Д-26": {"status": "fixed", "title": "Повторные UnloadAddIn/LoadAddIn роняют SolidWorks в AddCommandManager"},
   "Д-27": {"status": "fixed", "title": "Библиотека материалов: у «Лист 5,0» и «Лист 6,0 / Ст3сп» дробь от листа 4,0 — в графе 3 неверная толщина"},
   "Д-28": {"status": "fixed", "title": "Регистрация надстройки в трёх копиях (Setup, register_eskd, build_and_register) с откатом на жёсткий путь D:/Work"},
   "Д-29": {"status": "fixed", "title": "Окно настроек писало индекс фамилии в первую строку MProp.ini — это флаг MProp «Очистка свойств»: при выборе второй фамилии списка MProp по «OK» удалял свойства модели"}

@@ -229,6 +229,24 @@ class PersistenceOpen(SwTestCase):
         self.s.close(doc)
         self.assertEqual([], self.addin_errors())
 
+    def test_P11_material_command_updates_stamp_before_save(self):
+        """P11: закрытие команды материала (swCommands_Favorite_Material_2 = 2008) — дробь в памяти до сохранения, на диске после (Д-05).
+
+        RunCommand избранного без выделения в интерфейсе материал не меняет, поэтому материал назначается через API,
+        а команда проверяет перехват CommandCloseNotify надстройкой.
+        """
+        path, doc = self.open_copy(A01)
+        build.set_material(doc, SHEET6, "00")
+        self.wait_idle()
+        before = V(oracles.dump_properties(doc), "Материал_ФБ", "00") or ""
+        self.assertNotIn("6,0", before, "без команды и сохранения надстройка не должна была обновить дробь")
+        self.assertTrue(self.s.run_command(doc, 2008), "команда не выполнена")
+        self.wait_idle()
+        self.assertIn("6,0", V(oracles.dump_properties(doc), "Материал_ФБ", "00") or "", "Материал_ФБ в памяти после команды")
+        self.s.save(doc)
+        self.s.close(doc)
+        self.assertIn("6,0", V(self.persisted(path), "Материал_ФБ", "00") or "", "Материал_ФБ на диске")
+
     def test_P12_api_material_change_reaches_disk_on_save(self):
         """P12: смена материала через API → после сохранения новая дробь на диске."""
         path, doc = self.open_copy(A01)
