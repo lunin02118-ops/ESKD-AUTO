@@ -217,3 +217,31 @@ def inside(extent_mm, cell, tol=0.5):
     cx1, cx2, cy1, cy2 = cell
     return (min(x1, x2) >= cx1 - tol and max(x1, x2) <= cx2 + tol and
             min(y1, y2) >= cy1 - tol and max(y1, y2) <= cy2 + tol)
+
+
+# --------------------------------------------------------------------------- PDF
+def pdf_rows(pdf_path, sheet_width_mm, cell_mm, page_index=0):
+    """Строки текста страницы PDF внутри графы: [(верх, низ, текст)] сверху вниз.
+
+    Шрифт ГОСТ тип А кодирует кириллицу в Windows-1251, и PyMuPDF отдаёт её как Latin-1 — слова перекодируются.
+    """
+    import fitz
+    page = fitz.open(str(pdf_path))[page_index]
+    k = page.rect.width / sheet_width_mm
+    x1, x2, y1, y2 = cell_mm
+    clip = fitz.Rect(x1 * k, page.rect.height - y2 * k, x2 * k, page.rect.height - y1 * k)
+    rows = {}
+    for wx1, wy1, wx2, wy2, word, *_ in page.get_text("words"):
+        if not fitz.Rect(wx1, wy1, wx2, wy2).intersects(clip):
+            continue
+        try:
+            word = word.encode("latin-1").decode("cp1251")
+        except UnicodeError:
+            pass
+        rows.setdefault((round(wy1, 1), round(wy2, 1)), []).append((wx1, word))
+    return [(top, bottom, " ".join(w for _, w in sorted(words))) for (top, bottom), words in sorted(rows.items())]
+
+
+def pdf_cell_text(pdf_path, sheet_width_mm, cell_mm, page_index=0):
+    """Текст графы одной строкой."""
+    return " ".join(text for _, _, text in pdf_rows(pdf_path, sheet_width_mm, cell_mm, page_index))

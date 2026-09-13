@@ -2,12 +2,14 @@
 """E2E, группа B — безчертёжные детали (ГОСТ 2.106, ГОСТ 2.109-73, черт. 40)."""
 import unittest
 
-from eskd_e2e import com, oracles
+from eskd_e2e import build, com, oracles
 from eskd_e2e.testing import SwTestCase, known_defect, tags
 
 V = oracles.value
 A01 = "ПРТИ.468211.101 Пластина опорная.sldprt"
 A02 = "ПРТИ.468211.102 Стойка.sldprt"
+A03 = "ПРТИ.468211.103 Планка.sldprt"
+SHEET4 = "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
 TUBE_RECORD = "Стойка\n<STACK size=1>Труба 80х80х4,0 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>\nL = 300 мм"
 
 
@@ -72,6 +74,24 @@ class Bch(SwTestCase):
         record = (V(self.persisted(path), "Наименование") or "").replace("\r\n", "\n")
         self.assertTrue(record.startswith("Пластина опорная\n<STACK size=1>"), record)
         self.assertTrue(record.endswith("\n100х200 мм"), record)
+
+
+    def test_B06_bch_takes_material_of_its_own_configuration(self):
+        """B06: «Деталь БЧ» у исполнения без материала (A-03, активна «02») не берёт материал другой конфигурации."""
+        path = self.copy_fixture(A03)
+        doc = self.s.open(path)
+        doc.SetMaterialPropertyName2("02", "", "")  # материал фикстуры задан на все конфигурации — снимается со всех
+        for cfg in ("00", "01"):
+            build.set_material(doc, SHEET4, cfg)
+        build.show_configuration(doc, "02")
+        self.assertEqual(1, self._toggle(doc))
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        record = (V(disk, "Наименование", "02") or "").replace("\r\n", "\n")
+        self.assertTrue(record.startswith("Планка"), f"запись БЧ исполнения 02: {record!r}")
+        self.assertNotIn("<STACK", record, "у исполнения без материала нет дроби сортамента")
+        self.assertIn("Лист", V(disk, "Материал_Строка", "00") or "", "у 00 материал свой")
 
 
 if __name__ == "__main__":

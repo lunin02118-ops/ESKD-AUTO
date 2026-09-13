@@ -258,28 +258,6 @@ class PersistenceOpen(SwTestCase):
         self.assertIn("6,0", V(self.persisted(path), "Материал_ФБ", "00") or "")
 
 
-def pdf_rows_in_cell(pdf_path, sheet_width_mm, cell_mm):
-    """Строки текста первой страницы PDF внутри графы: [(верх, низ, текст)] сверху вниз.
-
-    Шрифт ГОСТ тип А кодирует кириллицу в Windows-1251, и PyMuPDF отдаёт её как Latin-1 — слова перекодируются.
-    """
-    import fitz
-    page = fitz.open(str(pdf_path))[0]
-    k = page.rect.width / sheet_width_mm
-    x1, x2, y1, y2 = cell_mm
-    clip = fitz.Rect(x1 * k, page.rect.height - y2 * k, x2 * k, page.rect.height - y1 * k)
-    rows = {}
-    for wx1, wy1, wx2, wy2, word, *_ in page.get_text("words"):
-        if not fitz.Rect(wx1, wy1, wx2, wy2).intersects(clip):
-            continue
-        try:
-            word = word.encode("latin-1").decode("cp1251")
-        except UnicodeError:
-            pass
-        rows.setdefault((round(wy1, 1), round(wy2, 1)), []).append((wx1, word))
-    return [(top, bottom, " ".join(w for _, w in sorted(words))) for (top, bottom), words in sorted(rows.items())]
-
-
 class BasicMaterialScenario(SwTestCase):
     """Базовый сценарий конструктора: деталь из шаблона → материал из библиотеки → «Сохранить как» → чертёж."""
 
@@ -308,7 +286,7 @@ class BasicMaterialScenario(SwTestCase):
         self.s.close(drw)
         self.s.close(model)
         self.assertTrue(ok and pdf.exists(), f"PDF не выгружен, код {err}")
-        rows = pdf_rows_in_cell(pdf, 420, oracles.form1_cells(420)["g3_material"])
+        rows = oracles.pdf_rows(pdf, 420, oracles.form1_cells(420)["g3_material"])
         self.assertEqual([numerator, shape, denominator], [text for _, _, text in rows],
                          f"графа 3 в PDF: над чертой сортамент, форма по центру, под чертой марка: {rows}")
 

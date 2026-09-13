@@ -4,7 +4,7 @@ import re
 import sys
 import unittest
 
-from eskd_e2e import com, oracles, paths
+from eskd_e2e import build, com, oracles, paths
 from eskd_e2e.testing import SwTestCase, known_defect, tags
 
 A01 = "ПРТИ.468211.101 Пластина опорная.sldprt"
@@ -14,6 +14,7 @@ A09_COMPONENTS = ("ПРТИ.468211.110 СБ Узел опоры.sldasm", A01, "�
                   "ПРТИ.468211.102 Стойка.sldprt", "ПРТИ.468211.103 Планка.sldprt", "Электродвигатель АИР71А4.sldprt",
                   "ПРТИ.468211.104 Кронштейн направляющий удлинённый.sldprt", "ПРТИ.468211.105 Рама сварная.sldprt")
 A11 = "ПРТИ.468211.100 СБ Кондуктор сварочный.slddrw"
+A03 = "ПРТИ.468211.103 Планка.sldprt"
 
 
 class Drawing(SwTestCase):
@@ -98,6 +99,29 @@ class Drawing(SwTestCase):
                 self.assertTrue(oracles.inside(stamp[note]["extent_mm"], cells[cell], tol=1.0),
                                 f"{note} {stamp[note]['extent_mm']} вне графы {cell} {cells[cell]}")
         self.s.close(drw)
+
+    @known_defect("Д-36")
+    def test_D11_execution_drawing_shows_mass_of_its_configuration(self):
+        """D11: чертёж исполнения «01» детали A-03 — в графе 5 PDF масса именно этой конфигурации с запятой (0,19)."""
+        model_path = self.copy_fixture(A03)
+        doc = self.s.open(model_path)
+        self.s.save(doc)
+        self.s.close(doc)
+        model = self.s.open(model_path)
+        drw = self.s.new_doc(paths.DRAWING_TEMPLATE)
+        build.set_sheet_format(drw, build.sheet_format("A3-A-1"), 420, 297)
+        view = build.model_view(drw, model_path, 150, 180)
+        view.ReferencedConfiguration = "01"
+        drw.ForceRebuild3(False)
+        build.wait(1.0)
+        pdf = self.path("ПРТИ.468211.103-01 Планка.pdf")
+        ok, err, _ = self.s.save_as(drw, pdf)
+        self.s.close(drw)
+        self.s.close(model)
+        self.assertTrue(ok and pdf.exists(), f"PDF не выгружен, код {err}")
+        self.assertEqual("ПРТИ.468211.103-01", oracles.pdf_cell_text(pdf, 420, oracles.form1_cells(420)["g2_designation"]),
+                         "лист показывает исполнение 01")
+        self.assertEqual("0,19", oracles.pdf_cell_text(pdf, 420, oracles.form1_cells(420)["g5_mass"]), "графа 5 — масса исполнения 01")
 
     def test_D04_zero_drift_on_drawing_save(self):
         """D04: сохранение чертежа не смещает заметки."""

@@ -125,5 +125,32 @@ class ContractPropertyEvents(SwTestCase):
         self.assertIn(("CommandCloseNotify", 2007), cmds)
 
 
+class ContractMassExpression(SwTestCase):
+    """Спайк S-3 (13.09.2026): на этом контракте стоит масса по конфигурациям (Д-36)."""
+    load_eskd = False
+
+    def _resolved(self, doc, cfg, name):
+        raw, res = com.ref_str(""), com.ref_str("")
+        doc.Extension.CustomPropertyManager(cfg).Get4(name, False, raw, res)
+        return res.value
+
+    @tags("smoke")
+    def test_C05_sw_mass_expression_per_configuration(self):
+        """C05: «SW-Mass@@конф@файл» даёт массу неактивной конфигурации без активации, после правки геометрии сразу новую, с точкой."""
+        path = self.copy_fixture("ПРТИ.468211.103 Планка.sldprt")
+        doc = self.s.open(path)
+        for cfg in ("00", "01", "02"):
+            com.prop_set(doc.Extension.CustomPropertyManager(cfg), "Проба_масса", f'"SW-Mass@@{cfg}@{path.name}"')
+        self.assertEqual({"00": "0.13", "01": "0.19", "02": "0.25"},
+                         {c: self._resolved(doc, c, "Проба_масса") for c in ("00", "01", "02")}, "эталон A-03, точка")
+        build.sketch_rectangles(doc, [(-0.20, -0.02, -0.16, 0.02)])
+        build.extrude(doc, 0.004)
+        doc.ForceRebuild3(False)
+        self.assertEqual({"00": "0.18", "01": "0.24", "02": "0.30"},
+                         {c: self._resolved(doc, c, "Проба_масса") for c in ("00", "01", "02")},
+                         "новая бобышка во всех конфигурациях — масса неактивных пересчитана без активации")
+        self.s.close(doc)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """E2E, группа M — модель свойств: имена, уровни хранения, владение значениями (план, §3.2)."""
+import re
 import unittest
 
 from eskd_e2e import build, com, oracles
@@ -15,6 +16,8 @@ A06 = "ПРТИ.468211.104 Кронштейн направляющий удли�
 A07 = "ПРТИ.468211.105 Рама сварная.sldprt"
 A08 = "ПРТИ.468211.110 СБ Узел опоры.sldasm"
 A13 = "ПРТИ.468211.106 Крышка.sldprt"
+SHEET4 = "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
+SHEET6 = "Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
 
 ALLOWED_NEW = {"Обозначение", "Наименование", "Наименование_ФБ", "Сборка1_ФБ", "Сборка2_ФБ", "Конструктор",
                "Проверил", "Контора", "Масса_ФБ", "Материал_ФБ", "Материал_Таблица", "Материал_Строка", "Исполнение"}
@@ -118,6 +121,16 @@ class ModelNames(SwTestCase):
         self.assertEqual("ПРТИ.468211.103-02", V(disk, "Обозначение", "02"))
         self.assertEqual("2", V(disk, "Исполнение", "01"))
 
+    @known_defect("Д-36")
+    def test_M06_mass_in_every_configuration(self):
+        """M06: масса для графы 5 у каждого исполнения — «Масса_ФБ» в «00», «01», «02» с запятой (эталон A-03: 0,13; 0,19; 0,25 кг)."""
+        path, doc = self.open_copy(A03)
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        shown = {cfg: re.sub(r"<[^>]*>", "", V(disk, "Масса_ФБ", cfg, resolved=True) or "").strip() for cfg in ("00", "01", "02")}
+        self.assertEqual({"00": "0,13", "01": "0,19", "02": "0,25"}, shown, "графа 5 по конфигурациям")
+
     @tags("smoke")
     def test_M07_standard_and_purchased_parts_untouched(self):
         """M07: стандартное и покупное изделия — надстройка не пишет ни одного свойства."""
@@ -180,6 +193,31 @@ class ModelNames(SwTestCase):
         warnings = [ln for ln in self.addin_log.new_lines() if "введён вручную" in ln and "Материал_ФБ" in ln]
         self.assertTrue(warnings, "расхождение с материалом SolidWorks не записано в журнал")
         self.assertEqual([], self.addin_errors())
+
+    @known_defect("Д-37")
+    def test_M15_plain_text_material_typed_by_user_is_kept(self):
+        """M15: текст «Бронза БрАЖ9-4», набранный в «Материал_ФБ» без разметки, остаётся; «Материал_Строка» повторяет его;
+        расхождение с материалом SolidWorks видно в «Диагностике документа» и в журнале."""
+        path, doc = self.open_copy(A01)
+        self.assertEqual(0, com.prop_set(doc.Extension.CustomPropertyManager("00"), "Материал_ФБ", "Бронза БрАЖ9-4"))
+        self.s.activate(doc)
+        diagnosis = str(com.call(self.s.eskd(), "DiagnoseActiveDocument") or "")
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual("Бронза БрАЖ9-4", V(disk, "Материал_ФБ", "00"), "ручной текст остался")
+        self.assertEqual("Бронза БрАЖ9-4", V(disk, "Материал_Строка", "00"), "сводная ведомость повторяет графу 3")
+        self.assertIn("Бронза БрАЖ9-4", diagnosis, "предупреждение в «Диагностике документа»")
+        self.assertTrue(any("введён вручную" in ln for ln in self.addin_log.new_lines()), "предупреждение в журнале")
+
+    def test_M16_plain_library_material_name_is_system_value(self):
+        """M16: строка без разметки, равная имени материала библиотеки (так писала v5), — запись системы: заменяется графой 3 текущего материала."""
+        path, doc = self.open_copy(A01)
+        self.assertEqual(0, com.prop_set(doc.Extension.CustomPropertyManager("00"), "Материал_ФБ", SHEET6))
+        self.s.save(doc)
+        self.s.close(doc)
+        designation = build.material_library()[SHEET4]["custom"]["Обозначение_ГОСТ"]
+        self.assertEqual("<FONT size=1.8> <FONT size=3.5>" + designation, V(self.persisted(path), "Материал_ФБ", "00"))
 
     @known_defect("Д-33")
     def test_M13_configuration_without_material_gets_no_material(self):
