@@ -1,0 +1,91 @@
+Attribute VB_Name = "FrmSProp_Pref"
+Attribute VB_Base = "0{B8776101-2FBC-4D8F-A22B-E6DECE90A30D}{8A056179-CC37-47B5-BEB3-73BC43F79B9C}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = False
+Dim strTemp As String
+Dim dTaskID As Double
+Dim ok As Boolean
+
+Private Sub CmdPRPName_Click() ' Запускаем MyProperties
+ok = swApp.RunMacro(Source1, "MyProperties_run", "main")
+End Sub
+
+Private Sub CmdGroups_Click()
+strTemp = "Notepad " & Source2
+dTaskID = Shell(strTemp, vbNormalFocus)
+End Sub
+
+Private Sub CmdMaterialGroups_Click()
+strTemp = "Notepad " & Source3
+dTaskID = Shell(strTemp, vbNormalFocus)
+End Sub
+
+Private Sub CmdSections_Click() ' Вызов редактора списка разделов
+strTemp = "Notepad " & Source5
+dTaskID = Shell(strTemp, vbNormalFocus)
+End Sub
+
+Private Sub UserForm_Activate()
+HWNDActiveWindow
+' Чтение ini файла
+Open Source6 For Input As #1
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkLight.Value = True
+    Else
+        ChkLight.Value = False
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkClean.Value = True
+    Else
+        ChkClean.Value = False
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkTest.Value = True
+    Else
+        ChkTest.Value = False
+    End If
+Close #1
+If prpLeftTopCorner = 1 Then ' Окно макроса в левом верхнем углу
+    FrmSProp_Pref.Left = 10
+    FrmSProp_Pref.Top = 10
+End If
+If prpTopAll = 1 Then ' Окно макроса поверх всех
+    KeepFormOnTop
+End If
+End Sub
+
+Private Sub CmdSave_Click()
+' Запись в ini
+Open Source6 For Output As #1
+    If ChkLight.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkClean.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkTest.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+Close #1
+Hide
+FrmSProp.UserForm_Activate
+End Sub
+
+Private Sub CmdExit_Click()
+Hide
+'Unload Me
+End Sub
+

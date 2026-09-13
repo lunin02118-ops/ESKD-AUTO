@@ -1,0 +1,6325 @@
+' Processing file: D:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\Master\Master.swp
+' ===============================================================================
+' Module streams:
+' apc/The VBA Project/_VBA_Project/VBA/ThisLibrary - 1199 bytes
+' apc/The VBA Project/_VBA_Project/VBA/Master_run - 12750 bytes
+' Line #0:
+' 	Option  (Explicit)
+' Line #1:
+' 	QuoteRem 0x0000 0x0016 "Public swApp As Object"
+' Line #2:
+' 	Dim (Public) 
+' 	VarDefn swApp
+' Line #3:
+' 	Dim (Public) 
+' 	VarDefn mRun (As Integer)
+' Line #4:
+' 	Dim (Public) 
+' 	VarDefn Source1 (As String)
+' Line #5:
+' 	Dim (Public) 
+' 	VarDefn Source2 (As String)
+' Line #6:
+' 	Dim (Public) 
+' 	VarDefn Source3 (As String)
+' 	QuoteRem 0x0019 0x0004 " ini"
+' Line #7:
+' 	Dim (Public) 
+' 	VarDefn Source5 (As String)
+' 	QuoteRem 0x0019 0x000D " MyProperties"
+' Line #8:
+' 	Dim (Public) 
+' 	VarDefn Source8 (As String)
+' 	QuoteRem 0x0019 0x0005 " SP-1"
+' Line #9:
+' 	Dim (Public) 
+' 	VarDefn Source9 (As String)
+' 	QuoteRem 0x0019 0x0005 " SP-2"
+' Line #10:
+' 	Dim (Public) 
+' 	VarDefn Source10 (As String)
+' 	QuoteRem 0x001A 0x0006 " GSP-1"
+' Line #11:
+' 	Dim (Public) 
+' 	VarDefn Source11 (As String)
+' 	QuoteRem 0x001A 0x0006 " GSP-2"
+' Line #12:
+' 	Dim (Public) 
+' 	VarDefn Source12 (As String)
+' 	QuoteRem 0x001A 0x0005 " VP-1"
+' Line #13:
+' 	Dim (Public) 
+' 	VarDefn Source13 (As String)
+' 	QuoteRem 0x001A 0x0005 " VP-2"
+' Line #14:
+' 	Dim (Public) 
+' 	VarDefn Source16 (As String)
+' 	QuoteRem 0x001A 0x0007 " SP-LRI"
+' Line #15:
+' 	Dim (Public) 
+' 	VarDefn Source17 (As String)
+' 	QuoteRem 0x001A 0x0004 " LRI"
+' Line #16:
+' 	Dim (Public) 
+' 	VarDefn Source18 (As String)
+' 	QuoteRem 0x001A 0x0007 " VP-LRI"
+' Line #17:
+' Line #18:
+' 	LbMark 
+' 	Ld VBA7 
+' 	LbIf 
+' Line #19:
+' 	Dim (Public) 
+' 	VarDefn hwndAW (As Ptr)
+' Line #20:
+' 	LineCont 0x0004 05 00 02 00
+' 	FuncDefn (Public Function GetActiveWindow() As Ptr)
+' Line #21:
+' 	LbMark 
+' 	LbElse 
+' Line #22:
+' 	Dim (Public) 
+' 	VarDefn hwndAW (As Long)
+' Line #23:
+' 	LineCont 0x0004 00 00 D9 FF
+' 	Reparse 0x0044 "Public Declare Function GetActiveWindow  Lib "user32.dll" () As Long"
+' Line #24:
+' 	LbMark 
+' 	LbEndIf 
+' Line #25:
+' 	QuoteRem 0x0000 0x0011 " *** MyProperties"
+' Line #26:
+' 	Dim (Public) 
+' 	VarDefn prpNumber (As String)
+' Line #27:
+' 	Dim (Public) 
+' 	VarDefn prpDocCode (As String)
+' Line #28:
+' 	Dim (Public) 
+' 	VarDefn prpDocDescription (As String)
+' Line #29:
+' 	Dim (Public) 
+' 	VarDefn prpDescription (As String)
+' Line #30:
+' 	Dim (Public) 
+' 	VarDefn prpDescriptionMulti (As String)
+' Line #31:
+' 	Dim (Public) 
+' 	VarDefn prpCode (As String)
+' Line #32:
+' 	Dim (Public) 
+' 	VarDefn prpFormat (As String)
+' Line #33:
+' 	Dim (Public) 
+' 	VarDefn prpRemark (As String)
+' Line #34:
+' 	Dim (Public) 
+' 	VarDefn prpLit (As String)
+' Line #35:
+' 	Dim (Public) 
+' 	VarDefn prpLitTable (As String)
+' Line #36:
+' 	Dim (Public) 
+' 	VarDefn prpFirm (As String)
+' Line #37:
+' 	Dim (Public) 
+' 	VarDefn prpSection (As String)
+' Line #38:
+' 	Dim (Public) 
+' 	VarDefn prpGroup (As String)
+' Line #39:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #40:
+' 	Dim (Public) 
+' 	VarDefn prpDesigner (As String)
+' Line #41:
+' 	Dim (Public) 
+' 	VarDefn prpTester (As String)
+' Line #42:
+' 	Dim (Public) 
+' 	VarDefn prpTechcontrol (As String)
+' Line #43:
+' 	Dim (Public) 
+' 	VarDefn prpWorkType (As String)
+' Line #44:
+' 	Dim (Public) 
+' 	VarDefn prpPerson (As String)
+' Line #45:
+' 	Dim (Public) 
+' 	VarDefn prpNormcontrol (As String)
+' Line #46:
+' 	Dim (Public) 
+' 	VarDefn prpApprove (As String)
+' Line #47:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #48:
+' 	Dim (Public) 
+' 	VarDefn prpMass (As String)
+' Line #49:
+' 	Dim (Public) 
+' 	VarDefn prpMassTable (As String)
+' Line #50:
+' 	Dim (Public) 
+' 	VarDefn prpMaterial (As String)
+' Line #51:
+' 	Dim (Public) 
+' 	VarDefn prpMaterialTable (As String)
+' Line #52:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #53:
+' 	Dim (Public) 
+' 	VarDefn prpFirstApply (As String)
+' Line #54:
+' 	Dim (Public) 
+' 	VarDefn prpInformNumber (As String)
+' Line #55:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #56:
+' 	Dim (Public) 
+' 	VarDefn prpFirstApplySP (As String)
+' Line #57:
+' 	Dim (Public) 
+' 	VarDefn prpInformNumberSP (As String)
+' Line #58:
+' 	Dim (Public) 
+' 	VarDefn prpLitSP (As String)
+' Line #59:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #60:
+' 	Dim (Public) 
+' 	VarDefn prpInformNumberVP (As String)
+' Line #61:
+' 	Dim (Public) 
+' 	VarDefn prpDescriptionVP (As String)
+' Line #62:
+' 	Dim (Public) 
+' 	VarDefn prpProductCodeVP (As String)
+' Line #63:
+' 	Dim (Public) 
+' 	VarDefn prpNumberDocVP (As String)
+' Line #64:
+' 	Dim (Public) 
+' 	VarDefn prpVendorVP (As String)
+' Line #65:
+' 	Dim (Public) 
+' 	VarDefn prpRemarkVP (As String)
+' Line #66:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #67:
+' 	Dim (Public) 
+' 	VarDefn prpProject (As String)
+' Line #68:
+' 	Dim (Public) 
+' 	VarDefn prpDraftNumber (As String)
+' Line #69:
+' 	Dim (Public) 
+' 	VarDefn prpDraftDescription (As String)
+' Line #70:
+' 	Dim (Public) 
+' 	VarDefn prpDraftFirstApply (As String)
+' Line #71:
+' 	Dim (Public) 
+' 	VarDefn prpDraftFirstApplySP (As String)
+' Line #72:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #73:
+' 	Dim (Public) 
+' 	VarDefn prpBlank (As String)
+' Line #74:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #75:
+' 	Dim (Public) 
+' 	VarDefn prpBor (As String)
+' Line #76:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #77:
+' 	Dim (Public) 
+' 	VarDefn prpQuantity (As String)
+' Line #78:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #79:
+' 	Dim (Public) 
+' 	VarDefn prpTestVersion (As Integer)
+' Line #80:
+' 	Dim (Public) 
+' 	VarDefn prpTestFormat (As Integer)
+' Line #81:
+' 	Dim (Public) 
+' 	VarDefn prpTestName (As Integer)
+' Line #82:
+' 	Dim (Public) 
+' 	VarDefn prpTestStandard (As Integer)
+' Line #83:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #84:
+' 	Dim (Public) 
+' 	VarDefn prpFileName (As Integer)
+' Line #85:
+' 	Dim (Public) 
+' 	VarDefn prpNameSep (As String)
+' Line #86:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #87:
+' 	Dim (Public) 
+' 	VarDefn prpFontSize (As String)
+' Line #88:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #89:
+' 	Dim (Public) 
+' 	VarDefn prpAddPRP1 (As String)
+' Line #90:
+' 	Dim (Public) 
+' 	VarDefn prpAddPRP2 (As String)
+' Line #91:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #92:
+' 	Dim (Public) 
+' 	VarDefn prpLeftTopCorner (As Integer)
+' Line #93:
+' 	Dim (Public) 
+' 	VarDefn prpTopAll (As Integer)
+' Line #94:
+' 	QuoteRem 0x0000 0x000F " *** MyStandard"
+' Line #95:
+' 	Dim (Public) 
+' 	VarDefn stdFontName (As String)
+' Line #96:
+' 	Dim (Public) 
+' 	VarDefn stdFontSize (As Double)
+' Line #97:
+' 	Dim (Public) 
+' 	VarDefn stdFontItalic (As Integer)
+' Line #98:
+' 	Dim (Public) 
+' 	VarDefn stdFontBold (As Integer)
+' Line #99:
+' 	Dim (Public) 
+' 	VarDefn stdDay (As String)
+' Line #100:
+' 	Dim (Public) 
+' 	VarDefn stdMonth (As String)
+' Line #101:
+' 	Dim (Public) 
+' 	VarDefn stdYear (As String)
+' Line #102:
+' 	Dim (Public) 
+' 	VarDefn stdHour (As String)
+' Line #103:
+' 	Dim (Public) 
+' 	VarDefn stdMinute (As String)
+' Line #104:
+' 	Dim (Public) 
+' 	VarDefn stdSecond (As String)
+' Line #105:
+' Line #106:
+' 	QuoteRem 0x0000 0x001A "Public Const swDocNONE = 0"
+' Line #107:
+' 	QuoteRem 0x0000 0x001A "Public Const swDocPART = 1"
+' Line #108:
+' 	QuoteRem 0x0000 0x001E "Public Const swDocASSEMBLY = 2"
+' Line #109:
+' 	QuoteRem 0x0000 0x001D "Public Const swDocDRAWING = 3"
+' Line #110:
+' Line #111:
+' 	QuoteRem 0x0000 0x001F "Public Const swSumInfoTitle = 0"
+' Line #112:
+' 	QuoteRem 0x0000 0x0021 "Public Const swSumInfoSubject = 1"
+' Line #113:
+' 	QuoteRem 0x0000 0x0020 "Public Const swSumInfoAuthor = 2"
+' Line #114:
+' 	QuoteRem 0x0000 0x0022 "Public Const swSumInfoKeywords = 3"
+' Line #115:
+' 	QuoteRem 0x0000 0x0021 "Public Const swSumInfoComment = 4"
+' Line #116:
+' 	QuoteRem 0x0000 0x0021 "Public Const swSumInfoSavedBy = 5"
+' Line #117:
+' 	QuoteRem 0x0000 0x0024 "Public Const swSumInfoCreateDate = 6"
+' Line #118:
+' 	QuoteRem 0x0000 0x0022 "Public Const swSumInfoSaveDate = 7"
+' Line #119:
+' 	QuoteRem 0x0000 0x0025 "Public Const swSumInfoCreateDate2 = 8"
+' Line #120:
+' 	QuoteRem 0x0000 0x0023 "Public Const swSumInfoSaveDate2 = 9"
+' Line #121:
+' Line #122:
+' 	QuoteRem 0x0000 0x001C "Public Const swMbWarning = 1"
+' Line #123:
+' 	QuoteRem 0x0000 0x0020 "Public Const swMbInformation = 2"
+' Line #124:
+' 	QuoteRem 0x0000 0x001D "Public Const swMbQuestion = 3"
+' Line #125:
+' 	QuoteRem 0x0000 0x0019 "Public Const swMbStop = 4"
+' Line #126:
+' Line #127:
+' 	QuoteRem 0x0000 0x0025 "Public Const swMbAbortRetryIgnore = 1"
+' Line #128:
+' 	QuoteRem 0x0000 0x0017 "Public Const swMbOk = 2"
+' Line #129:
+' 	QuoteRem 0x0000 0x001D "Public Const swMbOkCancel = 3"
+' Line #130:
+' 	QuoteRem 0x0000 0x0020 "Public Const swMbRetryCancel = 4"
+' Line #131:
+' 	QuoteRem 0x0000 0x001A "Public Const swMbYesNo = 5"
+' Line #132:
+' 	QuoteRem 0x0000 0x0020 "Public Const swMbYesNoCancel = 6"
+' Line #133:
+' Line #134:
+' 	QuoteRem 0x0000 0x001D "Public Const swMbHitAbort = 1"
+' Line #135:
+' 	QuoteRem 0x0000 0x001E "Public Const swMbHitIgnore = 2"
+' Line #136:
+' 	QuoteRem 0x0000 0x001A "Public Const swMbHitNo = 3"
+' Line #137:
+' 	QuoteRem 0x0000 0x001A "Public Const swMbHitOk = 4"
+' Line #138:
+' 	QuoteRem 0x0000 0x001D "Public Const swMbHitRetry = 5"
+' Line #139:
+' 	QuoteRem 0x0000 0x001B "Public Const swMbHitYes = 6"
+' Line #140:
+' 	QuoteRem 0x0000 0x001E "Public Const swMbHitCancel = 7"
+' Line #141:
+' Line #142:
+' 	QuoteRem 0x0000 0x001D "Public Const swRebuildAll = 1"
+' Line #143:
+' 	QuoteRem 0x0000 0x0022 "Public Const swForceRebuildAll = 2"
+' Line #144:
+' 	QuoteRem 0x0000 0x001E "Public Const swUpdateMates = 4"
+' Line #145:
+' 	QuoteRem 0x0000 0x0023 "Public Const swCurrentSheetDisp = 8"
+' Line #146:
+' 	QuoteRem 0x0000 0x0023 "Public Const swUpdateDirtyOnly = 16"
+' Line #147:
+' Line #148:
+' 	QuoteRem 0x0000 0x0028 "Public Const swOpenDocOptions_Silent = 1"
+' Line #149:
+' Line #150:
+' 	QuoteRem 0x0000 0x002F "Public Const swSetValue_InAllConfigurations = 2"
+' Line #151:
+' Line #152:
+' 	QuoteRem 0x0000 0x0028 "Public Const swDwgPapersUserDefined = 12"
+' Line #153:
+' Line #154:
+' 	QuoteRem 0x0000 0x0025 "Public Const swDwgTemplateCustom = 12"
+' Line #155:
+' Line #156:
+' 	QuoteRem 0x0000 0x002C "Public Const swDwgTemplateA4sizeVertical = 7"
+' Line #157:
+' Line #158:
+' 	QuoteRem 0x0000 0x002A "Public Const swDefaultTemplateDrawing = 10"
+' Line #159:
+' Line #160:
+' 	QuoteRem 0x0000 0x0027 "Public Const swDetailingDimension = 200"
+' Line #161:
+' Line #162:
+' 	QuoteRem 0x0000 0x002F "Public Const swDetailingDimensionTextFormat = 1"
+' Line #163:
+' Line #164:
+' 	FuncDefn (Sub main())
+' 	QuoteRem 0x000B 0x000F " Обычный запуск"
+' Line #165:
+' 	LitDI2 0x0000 
+' 	St mRun 
+' Line #166:
+' 	Ld FrmMaster 
+' 	ArgsMemCall Show 0x0000 
+' Line #167:
+' 	EndSub 
+' Line #168:
+' Line #169:
+' 	FuncDefn (Sub main_add())
+' 	QuoteRem 0x000F 0x0017 " Добавление листа DProp"
+' Line #170:
+' 	LitDI2 0x0001 
+' 	St mRun 
+' Line #171:
+' 	Ld FrmMaster 
+' 	ArgsMemCall Show 0x0000 
+' Line #172:
+' 	EndSub 
+' Line #173:
+' Line #174:
+' 	FuncDefn (Sub main_change())
+' 	QuoteRem 0x0012 0x0016 " Замена форматки DProp"
+' Line #175:
+' 	LitDI2 0x0002 
+' 	St mRun 
+' Line #176:
+' 	Ld FrmMaster 
+' 	ArgsMemCall Show 0x0000 
+' Line #177:
+' 	EndSub 
+' apc/The VBA Project/_VBA_Project/VBA/FrmMaster - 51740 bytes
+' Line #0:
+' 	Option  (Explicit)
+' Line #1:
+' 	QuoteRem 0x0000 0x0014 "Dim swDraw As Object"
+' Line #2:
+' 	QuoteRem 0x0000 0x0015 "Dim swDraw1 As Object"
+' Line #3:
+' 	QuoteRem 0x0000 0x0016 "Dim swModExt As Object"
+' Line #4:
+' 	QuoteRem 0x0000 0x001A "Dim swTextFormat As Object"
+' Line #5:
+' 	QuoteRem 0x0000 0x0015 "Dim swSheet As Object"
+' Line #6:
+' 	QuoteRem 0x0000 0x0014 "Dim swView As Object"
+' Line #7:
+' 	QuoteRem 0x0000 0x0014 "Dim swNote As Object"
+' Line #8:
+' 	QuoteRem 0x0000 0x0016 "Dim swSelMgr As Object"
+' Line #9:
+' 	QuoteRem 0x0000 0x0019 "Dim swBlockInst As Object"
+' Line #10:
+' 	Dim 
+' 	VarDefn swDraw
+' Line #11:
+' 	Dim 
+' 	VarDefn swDraw1
+' Line #12:
+' 	Dim 
+' 	VarDefn swModExt
+' Line #13:
+' 	Dim 
+' 	VarDefn swTextFormat
+' Line #14:
+' 	Dim 
+' 	VarDefn swSheet
+' Line #15:
+' 	Dim 
+' 	VarDefn swView
+' Line #16:
+' 	Dim 
+' 	VarDefn swNote
+' Line #17:
+' 	Dim 
+' 	VarDefn swSelMgr
+' Line #18:
+' 	Dim 
+' 	VarDefn swBlockInst
+' Line #19:
+' 	Dim 
+' 	VarDefn fs (As Object)
+' Line #20:
+' 	Dim 
+' 	VarDefn vSheetNames (As Variant)
+' 	QuoteRem 0x001B 0x0020 " Массив с именами листов чертежа"
+' Line #21:
+' 	Dim 
+' 	VarDefn vSheetProps (As Variant)
+' Line #22:
+' 	Dim 
+' 	VarDefn strActiveSheetName (As String)
+' Line #23:
+' 	Dim 
+' 	VarDefn FN (As String)
+' 	QuoteRem 0x0011 0x000A " Имя файла"
+' Line #24:
+' 	Dim 
+' 	VarDefn FullFN (As String)
+' 	QuoteRem 0x0015 0x0011 " Полное имя файла"
+' Line #25:
+' 	Dim 
+' 	VarDefn NewName (As String)
+' 	QuoteRem 0x0016 0x0010 " Новое имя файла"
+' Line #26:
+' 	Dim 
+' 	VarDefn FNOrient (As String)
+' 	QuoteRem 0x0017 0x0011 " Метка ориентации"
+' Line #27:
+' 	Dim 
+' 	VarDefn FNSheet (As String)
+' 	QuoteRem 0x0016 0x000C " Метка листа"
+' Line #28:
+' 	Dim 
+' 	VarDefn Width (As Double)
+' Line #29:
+' 	Dim 
+' 	VarDefn Height (As Double)
+' Line #30:
+' 	Dim 
+' 	VarDefn Source (As String)
+' Line #31:
+' 	Dim 
+' 	VarDefn Source4 (As String)
+' Line #32:
+' 	Dim 
+' 	VarDefn Source6 (As String)
+' Line #33:
+' 	Dim 
+' 	VarDefn Source7 (As String)
+' Line #34:
+' 	Dim 
+' 	VarDefn Source14 (As String)
+' Line #35:
+' 	Dim 
+' 	VarDefn Source15 (As String)
+' Line #36:
+' 	Dim 
+' 	VarDefn exePath (As String)
+' Line #37:
+' 	Dim 
+' 	VarDefn FormatText (As String)
+' Line #38:
+' 	Dim 
+' 	VarDefn sSheetName (As String) 0x001C
+' Line #39:
+' 	Dim 
+' 	VarDefn nErrors (As Long)
+' Line #40:
+' 	Dim 
+' 	VarDefn nWarnings (As Long)
+' Line #41:
+' 	Dim 
+' 	VarDefn mAuto (As Integer)
+' 	QuoteRem 0x0015 0x000B " Метка Авто"
+' Line #42:
+' 	Dim 
+' 	VarDefn mExist (As Integer)
+' 	QuoteRem 0x0016 0x001D " Метка существования форматки"
+' Line #43:
+' 	Dim 
+' 	VarDefn MIni1 (As Integer)
+' 	QuoteRem 0x0015 0x000A " Метка ini"
+' Line #44:
+' 	Dim 
+' 	VarDefn MIni2 (As Integer)
+' 	QuoteRem 0x0015 0x000A " Метка ini"
+' Line #45:
+' 	Dim 
+' 	VarDefn n (As Integer)
+' 	QuoteRem 0x0011 0x0009 " Носитель"
+' Line #46:
+' 	Dim 
+' 	VarDefn n1 (As Integer)
+' 	QuoteRem 0x0012 0x0009 " Носитель"
+' Line #47:
+' 	Dim 
+' 	VarDefn i (As Integer)
+' 	QuoteRem 0x0011 0x0008 " Счетчик"
+' Line #48:
+' 	Dim 
+' 	VarDefn i1 (As Integer)
+' 	QuoteRem 0x0012 0x0008 " Счетчик"
+' Line #49:
+' 	Dim 
+' 	VarDefn j (As Integer)
+' 	QuoteRem 0x0011 0x0008 " Счетчик"
+' Line #50:
+' 	Dim 
+' 	VarDefn dTaskID (As Double)
+' Line #51:
+' 	Dim 
+' 	VarDefn strTemp (As String)
+' Line #52:
+' 	Dim 
+' 	VarDefn ok (As Boolean)
+' Line #53:
+' 	Dim 
+' 	VarDefn longstatus (As Long)
+' Line #54:
+' 	Dim 
+' 	VarDefn longwarnings (As Long)
+' Line #55:
+' 	Dim 
+' 	VarDefn MIni (As Integer)
+' 	QuoteRem 0x0014 0x0010 " Метка ini файла"
+' Line #56:
+' 	Dim 
+' 	VarDefn MyDateTime (As Date)
+' Line #57:
+' 	Dim 
+' 	OptionBase 
+' 	LitDI2 0x001B 
+' 	OptionBase 
+' 	LitDI2 0x0002 
+' 	VarDefn FormatArr
+' Line #58:
+' 	Dim 
+' 	VarDefn SaveAs4 (As Long)
+' Line #59:
+' 	Dim 
+' 	VarDefn lRetval (As String)
+' Line #60:
+' Line #61:
+' 	FuncDefn (Sub CmdPref_Click())
+' 	QuoteRem 0x001C 0x000A " Настройки"
+' Line #62:
+' 	Ld FrmMaster_Pref 
+' 	ArgsMemCall Show 0x0000 
+' 	QuoteRem 0x0018 0x000B " vbModeless"
+' Line #63:
+' 	EndSub 
+' Line #64:
+' Line #65:
+' 	FuncDefn (Sub UserForm_Activate())
+' Line #66:
+' 	ArgsCall HWNDActiveWindow 0x0000 
+' Line #67:
+' 	SetStmt 
+' 	Ld Application 
+' 	MemLd SldWorks 
+' 	Set swApp 
+' Line #68:
+' 	QuoteRem 0x0000 0x0030 "Set swApp = CreateObject("SldWorks.Application")"
+' Line #69:
+' Line #70:
+' 	Ld swApp 
+' 	MemLd GetCurrentMacroPathName 
+' 	St Source 
+' 	QuoteRem 0x0027 0x0018 " Get macro path+filename"
+' Line #71:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0004 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0017 "_Template_Sheet1.SLDDRW"
+' 	Add 
+' 	St Source1 
+' Line #72:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0004 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0017 "_Template_Sheet2.SLDDRW"
+' 	Add 
+' 	St Source2 
+' Line #73:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0003 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0003 "ini"
+' 	Concat 
+' 	St Source3 
+' 	QuoteRem 0x0034 0x0014 " Set source filename"
+' Line #74:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x001B "SpecEditor\MyProperties.swp"
+' 	Concat 
+' 	St Source5 
+' 	QuoteRem 0x004A 0x001C " Путь к макросу MyProperties"
+' Line #75:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x001D "SpecEditor\MyProperties_1.ini"
+' 	Concat 
+' 	St Source6 
+' 	QuoteRem 0x004C 0x0016 " Путь к списку свойств"
+' Line #76:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x001D "SpecEditor\MyProperties_2.ini"
+' 	Concat 
+' 	St Source7 
+' 	QuoteRem 0x004C 0x001D " Путь к настройкам оформления"
+' Line #77:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0016 "SpecEditor\SP-1.slddrt"
+' 	Concat 
+' 	St Source8 
+' Line #78:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0016 "SpecEditor\SP-2.slddrt"
+' 	Concat 
+' 	St Source9 
+' Line #79:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0017 "SpecEditor\GSP-1.slddrt"
+' 	Concat 
+' 	St Source10 
+' Line #80:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0017 "SpecEditor\GSP-2.slddrt"
+' 	Concat 
+' 	St Source11 
+' Line #81:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0016 "SpecEditor\VP-1.slddrt"
+' 	Concat 
+' 	St Source12 
+' Line #82:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0016 "SpecEditor\VP-2.slddrt"
+' 	Concat 
+' 	St Source13 
+' Line #83:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x000F "DProp\DProp.ini"
+' 	Concat 
+' 	St Source14 
+' Line #84:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x001C "SpecEditor\MyStandard.sldstd"
+' 	Concat 
+' 	St Source15 
+' 	QuoteRem 0x004C 0x0017 " Путь к файлу стандарта"
+' Line #85:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0018 "SpecEditor\SP-LRI.slddrt"
+' 	Concat 
+' 	St Source16 
+' Line #86:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0015 "SpecEditor\LRI.slddrt"
+' 	Concat 
+' 	St Source17 
+' Line #87:
+' 	Ld Source 
+' 	Ld Source 
+' 	FnLen 
+' 	LitDI2 0x0011 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0018 "SpecEditor\VP-LRI.slddrt"
+' 	Concat 
+' 	St Source18 
+' Line #88:
+' Line #89:
+' 	ArgsCall MyProperties 0x0000 
+' Line #90:
+' Line #91:
+' 	LitVarSpecial (True)
+' 	Ld OptPortrait 
+' 	MemSt Value 
+' Line #92:
+' 	LitVarSpecial (True)
+' 	Ld OptFirst 
+' 	MemSt Value 
+' Line #93:
+' 	LitDI2 0x0000 
+' 	St mAuto 
+' Line #94:
+' 	Ld CboFormat 
+' 	ArgsMemCall Clear 0x0000 
+' Line #95:
+' 	LitStr 0x0002 "A4"
+' 	Ld CboFormat 
+' 	ArgsMemCall AddItem 0x0001 
+' Line #96:
+' 	LitStr 0x0002 "A3"
+' 	Ld CboFormat 
+' 	ArgsMemCall AddItem 0x0001 
+' Line #97:
+' 	LitStr 0x0002 "A2"
+' 	Ld CboFormat 
+' 	ArgsMemCall AddItem 0x0001 
+' Line #98:
+' 	LitStr 0x0002 "A1"
+' 	Ld CboFormat 
+' 	ArgsMemCall AddItem 0x0001 
+' Line #99:
+' 	LitStr 0x0002 "A0"
+' 	Ld CboFormat 
+' 	ArgsMemCall AddItem 0x0001 
+' Line #100:
+' 	LitDI2 0x0000 
+' 	Ld CboFormat 
+' 	MemSt ListIndex 
+' Line #101:
+' 	ArgsCall CboFormat_DropButtonClick 0x0000 
+' Line #102:
+' 	Debug 
+' 	PrintObj 
+' 	Ld mRun 
+' 	PrintItemNL 
+' Line #103:
+' 	Ld mRun 
+' 	LitDI2 0x0000 
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x0011 0x000F " Обычный запуск"
+' Line #104:
+' 	LitStr 0x0007 "Создать"
+' 	Ld CmdOk 
+' 	MemSt Caption 
+' Line #105:
+' 	LitStr 0x0007 "Закрыть"
+' 	Ld CmdCancel 
+' 	MemSt Caption 
+' Line #106:
+' 	LitVarSpecial (True)
+' 	Ld CmdAuto 
+' 	MemSt Visible 
+' Line #107:
+' 	LitVarSpecial (True)
+' 	Ld CmdPref 
+' 	MemSt Visible 
+' Line #108:
+' 	ElseBlock 
+' 	QuoteRem 0x0005 0x0024 " Добавить лист или заменить форматку"
+' Line #109:
+' 	LitStr 0x0002 "Ok"
+' 	Ld CmdOk 
+' 	MemSt Caption 
+' Line #110:
+' 	LitStr 0x0006 "Отмена"
+' 	Ld CmdCancel 
+' 	MemSt Caption 
+' Line #111:
+' 	LitVarSpecial (False)
+' 	Ld CmdAuto 
+' 	MemSt Visible 
+' Line #112:
+' 	LitVarSpecial (False)
+' 	Ld CmdPref 
+' 	MemSt Visible 
+' Line #113:
+' 	Ld mRun 
+' 	LitDI2 0x0002 
+' 	Eq 
+' 	IfBlock 
+' Line #114:
+' 	ArgsCall Detect 0x0000 
+' Line #115:
+' 	EndIfBlock 
+' Line #116:
+' 	EndIfBlock 
+' Line #117:
+' 	Ld prpLeftTopCorner 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001D 0x0022 " Окно макроса в левом верхнем углу"
+' Line #118:
+' 	LitDI2 0x000A 
+' 	Ld FrmMaster 
+' 	MemSt Left 
+' Line #119:
+' 	LitDI2 0x000A 
+' 	Ld FrmMaster 
+' 	MemSt Top 
+' Line #120:
+' 	EndIfBlock 
+' Line #121:
+' 	Ld prpTopAll 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x0016 0x0019 " Окно макроса поверх всех"
+' Line #122:
+' 	ArgsCall KeepFormOnTop 0x0000 
+' Line #123:
+' 	EndIfBlock 
+' Line #124:
+' 	EndSub 
+' Line #125:
+' Line #126:
+' 	FuncDefn (Sub CmdOk_Click())
+' Line #127:
+' 	Ld ChkEng 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #128:
+' 	Ld Source1 
+' 	Ld Source1 
+' 	FnLen 
+' 	LitDI2 0x0007 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x000F "_English.SLDDRW"
+' 	Add 
+' 	St Source1 
+' 	QuoteRem 0x0046 0x0014 " Set source filename"
+' Line #129:
+' 	Ld Source1 
+' 	Ld Source1 
+' 	FnLen 
+' 	LitDI2 0x0007 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x000F "_English.SLDDRW"
+' 	Add 
+' 	St Source2 
+' 	QuoteRem 0x0046 0x0014 " Set source filename"
+' Line #130:
+' 	EndIfBlock 
+' Line #131:
+' 	Ld swApp 
+' 	MemLd GetExecutablePath 
+' 	St exePath 
+' Line #132:
+' Line #133:
+' 	QuoteRem 0x0000 0x0011 " Чтение ini файла"
+' Line #134:
+' 	Ld Source3 
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	LitDefault 
+' 	Open (For Input)
+' Line #135:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #136:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #137:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #138:
+' 	LitDI2 0x0001 
+' 	Ld Source4 
+' 	LineInput 
+' Line #139:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #140:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' Line #141:
+' 	LitDI2 0x0001 
+' 	St MIni1 
+' Line #142:
+' 	ElseBlock 
+' Line #143:
+' 	LitDI2 0x0000 
+' 	St MIni1 
+' Line #144:
+' 	EndIfBlock 
+' Line #145:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #146:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' Line #147:
+' 	LitDI2 0x0001 
+' 	St MIni2 
+' Line #148:
+' 	ElseBlock 
+' Line #149:
+' 	LitDI2 0x0000 
+' 	St MIni2 
+' Line #150:
+' 	EndIfBlock 
+' Line #151:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	Close 0x0001 
+' Line #152:
+' Line #153:
+' 	QuoteRem 0x0000 0x001B " Определение имени форматки"
+' Line #154:
+' 	Ld OptPortrait 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #155:
+' 	LitStr 0x0002 "-P"
+' 	St FNOrient 
+' Line #156:
+' 	ElseBlock 
+' Line #157:
+' 	LitStr 0x0002 "-A"
+' 	St FNOrient 
+' Line #158:
+' 	Ld CboMulti 
+' 	MemLd Text 
+' 	LitStr 0x0003 "нет"
+' 	Eq 
+' 	IfBlock 
+' Line #159:
+' 	Ld Width 
+' 	St i 
+' Line #160:
+' 	Ld Height 
+' 	St Width 
+' Line #161:
+' 	Ld i 
+' 	St Height 
+' Line #162:
+' 	EndIfBlock 
+' Line #163:
+' 	EndIfBlock 
+' Line #164:
+' 	Ld OptFirst 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #165:
+' 	LitStr 0x0002 "-1"
+' 	St FNSheet 
+' Line #166:
+' 	ElseBlock 
+' Line #167:
+' 	LitStr 0x0002 "-2"
+' 	St FNSheet 
+' Line #168:
+' 	EndIfBlock 
+' Line #169:
+' 	Ld CboMulti 
+' 	MemLd Text 
+' 	LitStr 0x0003 "нет"
+' 	Eq 
+' 	IfBlock 
+' Line #170:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	Ld FNOrient 
+' 	Concat 
+' 	Ld FNSheet 
+' 	Concat 
+' 	St FN 
+' Line #171:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	St FormatText 
+' Line #172:
+' 	ElseBlock 
+' Line #173:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0001 "x"
+' 	Concat 
+' 	Ld CboMulti 
+' 	MemLd Text 
+' 	Concat 
+' 	Ld FNOrient 
+' 	Concat 
+' 	Ld FNSheet 
+' 	Concat 
+' 	St FN 
+' Line #174:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0001 "x"
+' 	Concat 
+' 	Ld CboMulti 
+' 	MemLd Text 
+' 	Concat 
+' 	St FormatText 
+' Line #175:
+' 	ArgsCall Multi 0x0000 
+' Line #176:
+' 	EndIfBlock 
+' Line #177:
+' 	Ld ChkEng 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #178:
+' 	Ld Source4 
+' 	LitStr 0x0004 "Eng-"
+' 	Concat 
+' 	Ld FN 
+' 	Concat 
+' 	LitStr 0x0007 ".slddrw"
+' 	Concat 
+' 	St FullFN 
+' Line #179:
+' 	ElseBlock 
+' Line #180:
+' 	Ld Source4 
+' 	Ld FN 
+' 	Concat 
+' 	LitStr 0x0007 ".slddrw"
+' 	Concat 
+' 	St FullFN 
+' Line #181:
+' 	EndIfBlock 
+' Line #182:
+' Line #183:
+' 	Ld Width 
+' 	LitDI2 0x03E8 
+' 	Div 
+' 	St Width 
+' Line #184:
+' 	Ld Height 
+' 	LitDI2 0x03E8 
+' 	Div 
+' 	St Height 
+' Line #185:
+' Line #186:
+' 	QuoteRem 0x0000 0x0017 " Чтение ini файла DProp"
+' Line #187:
+' 	Ld Source14 
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	LitDefault 
+' 	Open (For Input)
+' Line #188:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #189:
+' 	Ld strTemp 
+' 	LitDI2 0x0001 
+' 	ArgsLd Left$ 0x0002 
+' 	Coerce (Int) 
+' 	St MIni 
+' Line #190:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	Close 0x0001 
+' Line #191:
+' Line #192:
+' 	QuoteRem 0x0000 0x0026 " Проверка существования такой форматки"
+' Line #193:
+' 	Ld FullFN 
+' 	Ld FullFN 
+' 	FnLen 
+' 	LitDI2 0x0001 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0001 "t"
+' 	Add 
+' 	St NewName 
+' Line #194:
+' 	SetStmt 
+' 	LitStr 0x001A "Scripting.FileSystemObject"
+' 	ArgsLd CreateObject 0x0001 
+' 	Set fs 
+' Line #195:
+' 	Ld NewName 
+' 	Ld fs 
+' 	ArgsMemLd FileExists 0x0001 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #196:
+' 	LitDI2 0x0001 
+' 	St mExist 
+' Line #197:
+' 	ElseBlock 
+' Line #198:
+' 	LitDI2 0x0000 
+' 	St mExist 
+' Line #199:
+' 	EndIfBlock 
+' Line #200:
+' 	Debug 
+' 	PrintObj 
+' 	Ld mExist 
+' 	PrintItemNL 
+' Line #201:
+' 	Ld mRun 
+' 	LitDI2 0x0000 
+' 	Eq 
+' 	Ld mExist 
+' 	LitDI2 0x0000 
+' 	Eq 
+' 	Or 
+' 	Ld MIni 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	Or 
+' 	IfBlock 
+' 	QuoteRem 0x002B 0x0019 " Будем создавать форматку"
+' Line #202:
+' 	QuoteRem 0x0004 0x0029 " Проверка параметров для удаления рамочки"
+' Line #203:
+' 	LitDI2 0x0000 
+' 	St n 
+' Line #204:
+' 	Ld MIni1 
+' 	LitDI2 0x0000 
+' 	Eq 
+' 	Ld MIni2 
+' 	LitDI2 0x0000 
+' 	Eq 
+' 	And 
+' 	IfBlock 
+' Line #205:
+' 	LitDI2 0x0001 
+' 	St n 
+' Line #206:
+' 	Ld MIni1 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	Ld MIni2 
+' 	LitDI2 0x0000 
+' 	Eq 
+' 	And 
+' 	ElseIfBlock 
+' Line #207:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0002 "A4"
+' 	Eq 
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0002 "A3"
+' 	Eq 
+' 	Or 
+' 	IfBlock 
+' Line #208:
+' 	Ld CboMulti 
+' 	MemLd Text 
+' 	LitStr 0x0003 "нет"
+' 	Eq 
+' 	IfBlock 
+' Line #209:
+' 	LitDI2 0x0001 
+' 	St n 
+' Line #210:
+' 	EndIfBlock 
+' Line #211:
+' 	EndIfBlock 
+' Line #212:
+' 	EndIfBlock 
+' Line #213:
+' 	Ld OptFirst 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #214:
+' 	QuoteRem 0x0008 0x0006 " Лист1"
+' Line #215:
+' 	QuoteRem 0x0008 0x0017 " Открываем файл шаблона"
+' Line #216:
+' 	SetStmt 
+' 	Ld Source1 
+' 	Ld swDocDRAWING 
+' 	Ld swDocDRAWING 
+' 	LitStr 0x0000 ""
+' 	Ld longstatus 
+' 	Ld longwarnings 
+' 	Ld swApp 
+' 	ArgsMemLd OpenDoc6 0x0006 
+' 	Set swDraw 
+' Line #217:
+' Line #218:
+' 	QuoteRem 0x0008 0x000E " Сохраняем как"
+' Line #219:
+' 	Ld FullFN 
+' 	LitDI2 0x0000 
+' 	LitHI2 0x0001 
+' 	Ld nErrors 
+' 	Ld nWarnings 
+' 	Ld swDraw 
+' 	ArgsMemLd swOpenDocOptions_Silent 0x0005 
+' 	St ok 
+' Line #220:
+' 	Ld ok 
+' 	LitVarSpecial (False)
+' 	Eq 
+' 	IfBlock 
+' Line #221:
+' 	LitStr 0x004D "Ошибка сохранения основной надписи. Проверьте доступность каталога для записи"
+' 	St lRetval 
+' Line #222:
+' 	Ld lRetval 
+' 	Ld SendMsgToUser2 
+' 	Ld swMbWarning 
+' 	Ld swApp 
+' 	ArgsMemLd strMsg 0x0003 
+' 	St SaveAs4 
+' Line #223:
+' 	Ld Source1 
+' 	Ld swApp 
+' 	ArgsMemCall swMbOk 0x0001 
+' Line #224:
+' 	ArgsCall QuitDoc 0x0000 
+' Line #225:
+' 	ExitSub 
+' Line #226:
+' 	EndIfBlock 
+' Line #227:
+' Line #228:
+' 	QuoteRem 0x0008 0x001E " Активизируем основную надпись"
+' Line #229:
+' 	LitStr 0x0005 "Лист1"
+' 	Ld swDraw 
+' 	ArgsMemLd CmdCancel_Click 0x0001 
+' 	St ok 
+' Line #230:
+' 	LitStr 0x0005 "Лист1"
+' 	LitDI2 0x000C 
+' 	LitDI2 0x000D 
+' 	LitDI2 0x0001 
+' 	LitDI2 0x0001 
+' 	LitVarSpecial (True)
+' 	LitStr 0x0000 ""
+' 	Ld Width 
+' 	Ld Height 
+' 	LitStr 0x000C "По умолчанию"
+' 	Ld swDraw 
+' 	ArgsMemLd ActivateSheet 0x000A 
+' 	St ok 
+' Line #231:
+' 	Ld swDraw 
+' 	ArgsMemCall SetupSheet4 0x0000 
+' Line #232:
+' Line #233:
+' 	QuoteRem 0x0008 0x001C " Устанавливаем размеры листа"
+' Line #234:
+' 	Ld Height 
+' 	LitR8 0x147B 0x47AE 0x7AE1 0x3F84 
+' 	Sub 
+' 	Ld SetSystemValue3 
+' 	LitVarSpecial (Empty)
+' 	LitStr 0x0009 "D1@Эскиз1"
+' 	Ld swDraw 
+' 	ArgsMemLd EditTemplate 0x0001 
+' 	ArgsMemCall Parameter 0x0003 
+' Line #235:
+' 	Ld Width 
+' 	LitR8 0x999A 0x9999 0x9999 0x3F99 
+' 	Sub 
+' 	Ld SetSystemValue3 
+' 	LitVarSpecial (Empty)
+' 	LitStr 0x0009 "D2@Эскиз1"
+' 	Ld swDraw 
+' 	ArgsMemLd EditTemplate 0x0001 
+' 	ArgsMemCall Parameter 0x0003 
+' Line #236:
+' Line #237:
+' 	QuoteRem 0x0008 0x0013 " Проставляем формат"
+' Line #238:
+' 	LitStr 0x0014 "Format@Формат листа1"
+' 	LitStr 0x0004 "NOTE"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #239:
+' 	SetStmt 
+' 	Ld swDraw 
+' 	MemLd SelectByID2 
+' 	Set swSelMgr 
+' Line #240:
+' 	SetStmt 
+' 	LitDI2 0x0001 
+' 	Ld swSelMgr 
+' 	ArgsMemLd SelectionManager 0x0001 
+' 	Set swNote 
+' Line #241:
+' 	LitStr 0x0007 "Формат "
+' 	Ld FormatText 
+' 	Concat 
+' 	Ld swNote 
+' 	ArgsMemCall GetSelectedObject2 0x0001 
+' Line #242:
+' Line #243:
+' 	QuoteRem 0x0008 0x0011 " Удаление лишнего"
+' Line #244:
+' Line #245:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0002 "A4"
+' 	Ne 
+' 	Ld OptPortrait 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	And 
+' 	IfBlock 
+' Line #246:
+' 	LitStr 0x0007 "Line159"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #247:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #248:
+' 	LitStr 0x0007 "Line160"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #249:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #250:
+' 	LitStr 0x0007 "Line161"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #251:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #252:
+' 	LitStr 0x0007 "Line162"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #253:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #254:
+' 	LitStr 0x0007 "Line225"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #255:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #256:
+' 	LitStr 0x0007 "Line226"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #257:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #258:
+' 	LitStr 0x0007 "Line227"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #259:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #260:
+' 	LitStr 0x0007 "Line228"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #261:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #262:
+' 	LitStr 0x0007 "Line229"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #263:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #264:
+' 	LitStr 0x0014 "MYPRP2@Формат листа1"
+' 	LitStr 0x0004 "NOTE"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #265:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #266:
+' 	ElseBlock 
+' Line #267:
+' 	LitStr 0x0007 "Line214"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #268:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #269:
+' 	LitStr 0x0007 "Line215"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #270:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #271:
+' 	LitStr 0x0007 "Line216"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #272:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #273:
+' 	LitStr 0x0007 "Line217"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #274:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #275:
+' 	LitStr 0x0007 "Line232"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #276:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #277:
+' 	LitStr 0x0007 "Line233"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #278:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #279:
+' 	LitStr 0x0007 "Line234"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #280:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #281:
+' 	LitStr 0x0007 "Line235"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #282:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #283:
+' 	LitStr 0x0007 "Line236"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #284:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #285:
+' 	LitStr 0x0014 "MYPRP1@Формат листа1"
+' 	LitStr 0x0004 "NOTE"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #286:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #287:
+' 	EndIfBlock 
+' Line #288:
+' 	Ld n 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' Line #289:
+' 	LitStr 0x0007 "Line243"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #290:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #291:
+' 	LitStr 0x0007 "Line244"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #292:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #293:
+' 	LitStr 0x0007 "Line245"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #294:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #295:
+' 	LitStr 0x0007 "Line246"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #296:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #297:
+' 	EndIfBlock 
+' Line #298:
+' Line #299:
+' 	ElseBlock 
+' Line #300:
+' 	QuoteRem 0x0008 0x0006 " Лист2"
+' Line #301:
+' 	QuoteRem 0x0008 0x0017 " Открываем файл шаблона"
+' Line #302:
+' 	SetStmt 
+' 	Ld Source2 
+' 	Ld swDocDRAWING 
+' 	Ld swDocDRAWING 
+' 	LitStr 0x0000 ""
+' 	Ld longstatus 
+' 	Ld longwarnings 
+' 	Ld swApp 
+' 	ArgsMemLd OpenDoc6 0x0006 
+' 	Set swDraw 
+' Line #303:
+' Line #304:
+' 	QuoteRem 0x0008 0x000E " Сохраняем как"
+' Line #305:
+' 	Ld FullFN 
+' 	LitDI2 0x0000 
+' 	LitHI2 0x0001 
+' 	Ld nErrors 
+' 	Ld nWarnings 
+' 	Ld swDraw 
+' 	ArgsMemLd swOpenDocOptions_Silent 0x0005 
+' 	St ok 
+' Line #306:
+' 	Ld ok 
+' 	LitVarSpecial (False)
+' 	Eq 
+' 	IfBlock 
+' Line #307:
+' 	LitStr 0x004D "Ошибка сохранения основной надписи. Проверьте доступность каталога для записи"
+' 	St lRetval 
+' Line #308:
+' 	Ld lRetval 
+' 	Ld SendMsgToUser2 
+' 	Ld swMbWarning 
+' 	Ld swApp 
+' 	ArgsMemLd strMsg 0x0003 
+' 	St SaveAs4 
+' Line #309:
+' 	Ld Source2 
+' 	Ld swApp 
+' 	ArgsMemCall swMbOk 0x0001 
+' Line #310:
+' 	ArgsCall QuitDoc 0x0000 
+' Line #311:
+' 	ExitSub 
+' Line #312:
+' 	EndIfBlock 
+' Line #313:
+' Line #314:
+' 	QuoteRem 0x0008 0x001E " Активизируем основную надпись"
+' Line #315:
+' 	LitStr 0x0005 "Лист2"
+' 	Ld swDraw 
+' 	ArgsMemLd CmdCancel_Click 0x0001 
+' 	St ok 
+' Line #316:
+' 	LitStr 0x0005 "Лист2"
+' 	LitDI2 0x000C 
+' 	LitDI2 0x000D 
+' 	LitDI2 0x0001 
+' 	LitDI2 0x0001 
+' 	LitVarSpecial (True)
+' 	Ld Source2 
+' 	Ld Width 
+' 	Ld Height 
+' 	LitStr 0x000C "По умолчанию"
+' 	Ld swDraw 
+' 	ArgsMemLd ActivateSheet 0x000A 
+' 	St ok 
+' Line #317:
+' 	Ld swDraw 
+' 	ArgsMemCall SetupSheet4 0x0000 
+' Line #318:
+' Line #319:
+' 	QuoteRem 0x0008 0x001C " Устанавливаем размеры листа"
+' Line #320:
+' 	Ld Height 
+' 	LitR8 0x147B 0x47AE 0x7AE1 0x3F84 
+' 	Sub 
+' 	Ld SetSystemValue3 
+' 	LitVarSpecial (Empty)
+' 	LitStr 0x0009 "D1@Эскиз3"
+' 	Ld swDraw 
+' 	ArgsMemLd EditTemplate 0x0001 
+' 	ArgsMemCall Parameter 0x0003 
+' Line #321:
+' 	Ld Width 
+' 	LitR8 0x999A 0x9999 0x9999 0x3F99 
+' 	Sub 
+' 	Ld SetSystemValue3 
+' 	LitVarSpecial (Empty)
+' 	LitStr 0x0009 "D2@Эскиз3"
+' 	Ld swDraw 
+' 	ArgsMemLd EditTemplate 0x0001 
+' 	ArgsMemCall Parameter 0x0003 
+' Line #322:
+' Line #323:
+' 	QuoteRem 0x0008 0x0013 " Проставляем формат"
+' Line #324:
+' 	LitStr 0x0014 "Format@Формат листа2"
+' 	LitStr 0x0004 "NOTE"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #325:
+' 	SetStmt 
+' 	Ld swDraw 
+' 	MemLd SelectByID2 
+' 	Set swSelMgr 
+' Line #326:
+' 	SetStmt 
+' 	LitDI2 0x0001 
+' 	Ld swSelMgr 
+' 	ArgsMemLd SelectionManager 0x0001 
+' 	Set swNote 
+' Line #327:
+' 	LitStr 0x0007 "Формат "
+' 	Ld FormatText 
+' 	Concat 
+' 	Ld swNote 
+' 	ArgsMemCall GetSelectedObject2 0x0001 
+' Line #328:
+' Line #329:
+' 	QuoteRem 0x0008 0x0011 " Удаление лишнего"
+' Line #330:
+' Line #331:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0002 "A4"
+' 	Ne 
+' 	Ld OptPortrait 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	And 
+' 	IfBlock 
+' Line #332:
+' 	LitStr 0x0007 "Line159"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #333:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #334:
+' 	LitStr 0x0007 "Line160"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #335:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #336:
+' 	LitStr 0x0007 "Line161"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #337:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #338:
+' 	LitStr 0x0007 "Line162"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #339:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #340:
+' 	LitStr 0x0014 "MYPRP2@Формат листа2"
+' 	LitStr 0x0004 "NOTE"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #341:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #342:
+' 	ElseBlock 
+' Line #343:
+' 	LitStr 0x0007 "Line185"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #344:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #345:
+' 	LitStr 0x0007 "Line186"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #346:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #347:
+' 	LitStr 0x0007 "Line187"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #348:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #349:
+' 	LitStr 0x0007 "Line188"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #350:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #351:
+' 	LitStr 0x0014 "MYPRP1@Формат листа2"
+' 	LitStr 0x0004 "NOTE"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #352:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #353:
+' 	EndIfBlock 
+' Line #354:
+' 	Ld n 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' Line #355:
+' 	LitStr 0x0007 "Line193"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #356:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #357:
+' 	LitStr 0x0007 "Line194"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #358:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #359:
+' 	LitStr 0x0007 "Line195"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #360:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #361:
+' 	LitStr 0x0007 "Line196"
+' 	LitStr 0x000D "SKETCHSEGMENT"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #362:
+' 	Ld swDraw 
+' 	ArgsMemCall SetText 0x0000 
+' Line #363:
+' 	EndIfBlock 
+' Line #364:
+' Line #365:
+' 	EndIfBlock 
+' Line #366:
+' 	Debug 
+' 	PrintObj 
+' 	LitStr 0x0003 "***"
+' 	PrintItemNL 
+' Line #367:
+' 	QuoteRem 0x0004 0x0029 " Перестраиваем и сохраняем новую форматку"
+' Line #368:
+' 	Ld swDraw 
+' 	ArgsMemCall EditDelete 0x0000 
+' Line #369:
+' 	Ld Rebuild 
+' 	Paren 
+' 	Ld swDraw 
+' 	ArgsMemCall EditSheet 0x0001 
+' Line #370:
+' 	Ld swDraw 
+' 	ArgsMemLd swRebuildAll 0x0000 
+' 	St ok 
+' Line #371:
+' 	LitVarSpecial (False)
+' 	Ld swDraw 
+' 	ArgsMemCall GraphicsRedraw2 0x0001 
+' Line #372:
+' 	SetStmt 
+' 	LitNothing 
+' 	Set swSelMgr 
+' Line #373:
+' 	SetStmt 
+' 	LitNothing 
+' 	Set swDraw 
+' Line #374:
+' 	Ld FullFN 
+' 	Ld swApp 
+' 	ArgsMemCall swMbOk 0x0001 
+' Line #375:
+' 	QuoteRem 0x0004 0x002B "Debug.Print FN, Width, "x", Height, NewName"
+' Line #376:
+' 	Ld NewName 
+' 	Ld fs 
+' 	ArgsMemLd FileExists 0x0001 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #377:
+' 	Ld NewName 
+' 	ArgsCall Save2 0x0001 
+' Line #378:
+' 	EndIfBlock 
+' Line #379:
+' 	Ld FullFN 
+' 	Ld NewName 
+' 	Name 
+' 	QuoteRem 0x001D 0x000D " Rename file."
+' Line #380:
+' 	EndIfBlock 
+' Line #381:
+' Line #382:
+' 	QuoteRem 0x0000 0x001C " Добавление или замена листа"
+' Line #383:
+' 	Ld mRun 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x0011 0x000E " Добавить лист"
+' Line #384:
+' 	SetStmt 
+' 	Ld swApp 
+' 	MemLd Kill 
+' 	Set swDraw 
+' Line #385:
+' 	QuoteRem 0x0004 0x001B " Узнаем имя активного листа"
+' Line #386:
+' 	SetStmt 
+' 	Ld swDraw 
+' 	MemLd ActiveDoc 
+' 	Set swSheet 
+' Line #387:
+' 	Ld swSheet 
+' 	MemLd GetCurrentSheet 
+' 	St strActiveSheetName 
+' Line #388:
+' 	QuoteRem 0x0004 0x0017 " Определяем номер листа"
+' Line #389:
+' 	QuoteRem 0x0004 0x002A " Считываем и проверяем форматы всех листов"
+' Line #390:
+' 	Ld swDraw 
+' 	MemLd GetName 
+' 	St vSheetNames 
+' Line #391:
+' 	LitDI2 0x0000 
+' 	St n 
+' Line #392:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	LitDI2 0x0000 
+' 	Ld vSheetNames 
+' 	FnUBound 0x0000 
+' 	For 
+' Line #393:
+' 	QuoteRem 0x0008 0x0015 " Проверка имени листа"
+' Line #394:
+' 	Ld i 
+' 	ArgsLd vSheetNames 0x0001 
+' 	LitDI2 0x0003 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0003 "DRW"
+' 	Eq 
+' 	Ld i 
+' 	ArgsLd vSheetNames 0x0001 
+' 	LitDI2 0x0004 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0004 "Лист"
+' 	Eq 
+' 	Or 
+' 	Ld i 
+' 	ArgsLd vSheetNames 0x0001 
+' 	LitDI2 0x0005 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0005 "Sheet"
+' 	Eq 
+' 	Or 
+' 	IfBlock 
+' Line #395:
+' 	Ld n 
+' 	LitDI2 0x0001 
+' 	Add 
+' 	St n 
+' Line #396:
+' 	EndIfBlock 
+' Line #397:
+' 	QuoteRem 0x0008 0x001F " Проверка номера текущего листа"
+' Line #398:
+' 	Ld i 
+' 	ArgsLd vSheetNames 0x0001 
+' 	Ld strActiveSheetName 
+' 	Eq 
+' 	IfBlock 
+' Line #399:
+' 	Ld i 
+' 	St n1 
+' Line #400:
+' 	EndIfBlock 
+' Line #401:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	NextVar 
+' Line #402:
+' 	LitStr 0x0003 "DRW"
+' 	Ld n 
+' 	LitDI2 0x0001 
+' 	Add 
+' 	Coerce (Str) 
+' 	Concat 
+' 	St sSheetName 
+' Line #403:
+' 	QuoteRem 0x0004 0x0013 " Создаем новый лист"
+' Line #404:
+' 	Ld sSheetName 
+' 	Ld NewSheet3 
+' 	Ld swDwgPapersUserDefined 
+' 	LitR8 0x0000 0x0000 0x0000 0x3FF0 
+' 	LitR8 0x0000 0x0000 0x0000 0x3FF0 
+' 	LitVarSpecial (True)
+' 	Ld NewName 
+' 	Ld Width 
+' 	Ld Height 
+' 	LitStr 0x000C "По умолчанию"
+' 	Ld swDraw 
+' 	ArgsMemLd GetSheetNames 0x000A 
+' 	St ok 
+' Line #405:
+' 	Ld vSheetNames 
+' 	FnUBound 0x0000 
+' 	LitDI2 0x0000 
+' 	Ne 
+' 	IfBlock 
+' 	QuoteRem 0x0025 0x001F " Если листов было больше одного"
+' Line #406:
+' 	QuoteRem 0x0008 0x000D " Тасуем листы"
+' Line #407:
+' 	Ld swDraw 
+' 	MemLd GetName 
+' 	St vSheetNames 
+' Line #408:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	Ld vSheetNames 
+' 	FnUBound 0x0000 
+' 	Ld n1 
+' 	LitDI2 0x0002 
+' 	Add 
+' 	LitDI2 0x0001 
+' 	UMi 
+' 	ForStep 
+' Line #409:
+' 	Ld i 
+' 	LitDI2 0x0001 
+' 	Sub 
+' 	ArgsLd vSheetNames 0x0001 
+' 	Ld i 
+' 	ArgsSt vSheetNames 0x0001 
+' Line #410:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	NextVar 
+' Line #411:
+' 	Debug 
+' 	PrintObj 
+' 	LitStr 0x0003 "n1="
+' 	PrintItemComma 
+' 	Ld n1 
+' 	PrintItemNL 
+' Line #412:
+' 	Ld sSheetName 
+' 	Ld n1 
+' 	LitDI2 0x0001 
+' 	Add 
+' 	ArgsSt vSheetNames 0x0001 
+' Line #413:
+' 	Ld vSheetNames 
+' 	Ld swDraw 
+' 	ArgsMemLd swDwgTemplateCustom 0x0001 
+' 	St ok 
+' Line #414:
+' 	EndIfBlock 
+' Line #415:
+' 	LitStr 0x0003 "DRW"
+' 	Ld n1 
+' 	LitDI2 0x0002 
+' 	Add 
+' 	Coerce (Str) 
+' 	Concat 
+' 	St sSheetName 
+' Line #416:
+' 	Ld sSheetName 
+' 	Ld swDraw 
+' 	ArgsMemLd CmdCancel_Click 0x0001 
+' 	St ok 
+' Line #417:
+' 	Ld mRun 
+' 	LitDI2 0x0002 
+' 	Eq 
+' 	ElseIfBlock 
+' 	QuoteRem 0x0015 0x0013 "  Заменить форматку"
+' Line #418:
+' 	SetStmt 
+' 	Ld swApp 
+' 	MemLd Kill 
+' 	Set swDraw 
+' Line #419:
+' 	SetStmt 
+' 	Ld swDraw 
+' 	MemLd ActiveDoc 
+' 	Set swSheet 
+' Line #420:
+' 	Ld swSheet 
+' 	MemLd ReorderSheets 
+' 	St vSheetProps 
+' Line #421:
+' 	Ld swSheet 
+' 	MemLd GetCurrentSheet 
+' 	LitDI2 0x0000 
+' 	ArgsLd vSheetProps 0x0001 
+' 	Ld GetProperties 
+' 	LitDI2 0x0002 
+' 	ArgsLd vSheetProps 0x0001 
+' 	LitDI2 0x0003 
+' 	ArgsLd vSheetProps 0x0001 
+' 	LitDI2 0x0004 
+' 	ArgsLd vSheetProps 0x0001 
+' 	Ld swDwgTemplateA4sizeVertical 
+' 	LitDI2 0x0005 
+' 	ArgsLd vSheetProps 0x0001 
+' 	LitDI2 0x0006 
+' 	ArgsLd vSheetProps 0x0001 
+' 	Ld swSheet 
+' 	MemLd vbNullString 
+' 	Ld swDraw 
+' 	ArgsMemLd ActivateSheet 0x000A 
+' 	St ok 
+' Line #422:
+' 	Ld swSheet 
+' 	MemLd GetCurrentSheet 
+' 	Ld NewSheet3 
+' 	Ld swDwgPapersUserDefined 
+' 	LitDI2 0x0002 
+' 	ArgsLd vSheetProps 0x0001 
+' 	LitDI2 0x0003 
+' 	ArgsLd vSheetProps 0x0001 
+' 	LitDI2 0x0004 
+' 	ArgsLd vSheetProps 0x0001 
+' 	Ld NewName 
+' 	Ld Width 
+' 	Ld Height 
+' 	Ld swSheet 
+' 	MemLd vbNullString 
+' 	Ld swDraw 
+' 	ArgsMemLd ActivateSheet 0x000A 
+' 	St ok 
+' Line #423:
+' 	QuoteRem 0x0004 0x001F " Открытие окна "Свойства листа""
+' Line #424:
+' 	QuoteRem 0x0004 0x0019 "strTemp = swSheet.GetName"
+' Line #425:
+' 	QuoteRem 0x0004 0x0052 "ok = swDraw.Extension.SelectByID2(strTemp, "SHEET", 0, 0, 0, False, 0, Nothing, 0)"
+' Line #426:
+' 	QuoteRem 0x0004 0x0014 "swDraw.PropertySheet"
+' Line #427:
+' 	EndIfBlock 
+' Line #428:
+' Line #429:
+' 	Ld mAuto 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' Line #430:
+' 	ElseBlock 
+' Line #431:
+' 	ArgsCall CustomPropertyView 0x0000 
+' Line #432:
+' 	Ld id_FFFF 
+' 	ArgsCall Unload 0x0001 
+' Line #433:
+' 	Ld mRun 
+' 	LitDI2 0x0000 
+' 	Eq 
+' 	IfBlock 
+' Line #434:
+' 	End 
+' Line #435:
+' 	EndIfBlock 
+' Line #436:
+' 	EndIfBlock 
+' Line #437:
+' 	EndSub 
+' Line #438:
+' Line #439:
+' 	FuncDefn (Sub Hide())
+' Line #440:
+' 	LitDI2 0x0001 
+' 	St mAuto 
+' Line #441:
+' Line #442:
+' 	LitVarSpecial (True)
+' 	Ld OptPortrait 
+' 	MemSt Value 
+' Line #443:
+' 	LitVarSpecial (True)
+' 	Ld OptFirst 
+' 	MemSt Value 
+' Line #444:
+' 	StartForVariable 
+' 	Ld j 
+' 	EndForVariable 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0004 
+' 	For 
+' Line #445:
+' 	Ld j 
+' 	Ld CboFormat 
+' 	MemSt ListIndex 
+' Line #446:
+' 	ArgsCall CboFormat_DropButtonClick 0x0000 
+' Line #447:
+' 	ArgsCall CmdOk_Click 0x0000 
+' Line #448:
+' 	StartForVariable 
+' 	Ld j 
+' 	EndForVariable 
+' 	NextVar 
+' Line #449:
+' Line #450:
+' 	LitVarSpecial (True)
+' 	Ld OptPortrait 
+' 	MemSt Value 
+' Line #451:
+' 	LitVarSpecial (True)
+' 	Ld CmdAuto_Click 
+' 	MemSt Value 
+' Line #452:
+' 	StartForVariable 
+' 	Ld j 
+' 	EndForVariable 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0004 
+' 	For 
+' Line #453:
+' 	Ld j 
+' 	Ld CboFormat 
+' 	MemSt ListIndex 
+' Line #454:
+' 	ArgsCall CboFormat_DropButtonClick 0x0000 
+' Line #455:
+' 	ArgsCall CmdOk_Click 0x0000 
+' Line #456:
+' 	StartForVariable 
+' 	Ld j 
+' 	EndForVariable 
+' 	NextVar 
+' Line #457:
+' Line #458:
+' 	LitVarSpecial (True)
+' 	Ld OptSecond 
+' 	MemSt Value 
+' Line #459:
+' 	LitVarSpecial (True)
+' 	Ld OptFirst 
+' 	MemSt Value 
+' Line #460:
+' 	StartForVariable 
+' 	Ld j 
+' 	EndForVariable 
+' 	LitDI2 0x0001 
+' 	LitDI2 0x0004 
+' 	For 
+' Line #461:
+' 	Ld j 
+' 	Ld CboFormat 
+' 	MemSt ListIndex 
+' Line #462:
+' 	ArgsCall CboFormat_DropButtonClick 0x0000 
+' Line #463:
+' 	ArgsCall CmdOk_Click 0x0000 
+' Line #464:
+' 	StartForVariable 
+' 	Ld j 
+' 	EndForVariable 
+' 	NextVar 
+' Line #465:
+' Line #466:
+' 	LitVarSpecial (True)
+' 	Ld OptSecond 
+' 	MemSt Value 
+' Line #467:
+' 	LitVarSpecial (True)
+' 	Ld CmdAuto_Click 
+' 	MemSt Value 
+' Line #468:
+' 	StartForVariable 
+' 	Ld j 
+' 	EndForVariable 
+' 	LitDI2 0x0001 
+' 	LitDI2 0x0004 
+' 	For 
+' Line #469:
+' 	Ld j 
+' 	Ld CboFormat 
+' 	MemSt ListIndex 
+' Line #470:
+' 	ArgsCall CboFormat_DropButtonClick 0x0000 
+' Line #471:
+' 	ArgsCall CmdOk_Click 0x0000 
+' Line #472:
+' 	StartForVariable 
+' 	Ld j 
+' 	EndForVariable 
+' 	NextVar 
+' Line #473:
+' 	LitDI2 0x0000 
+' 	St mAuto 
+' Line #474:
+' 	EndSub 
+' Line #475:
+' Line #476:
+' 	FuncDefn (Sub CboFormat_DropButtonClick())
+' Line #477:
+' 	Ld CboMulti 
+' 	ArgsMemCall Clear 0x0000 
+' Line #478:
+' 	LitStr 0x0003 "нет"
+' 	Ld CboMulti 
+' 	ArgsMemCall AddItem 0x0001 
+' Line #479:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	SelectCase 
+' Line #480:
+' 	LitStr 0x0002 "A4"
+' 	Case 
+' 	CaseDone 
+' Line #481:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	LitDI2 0x0003 
+' 	LitDI2 0x0009 
+' 	For 
+' Line #482:
+' 	Ld i 
+' 	Ld CboMulti 
+' 	ArgsMemCall AddItem 0x0001 
+' Line #483:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	NextVar 
+' Line #484:
+' 	LitDI2 0x00D2 
+' 	St Width 
+' Line #485:
+' 	LitDI2 0x0129 
+' 	St Height 
+' Line #486:
+' 	LitStr 0x0002 "A3"
+' 	Case 
+' 	CaseDone 
+' Line #487:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	LitDI2 0x0003 
+' 	LitDI2 0x0007 
+' 	For 
+' Line #488:
+' 	Ld i 
+' 	Ld CboMulti 
+' 	ArgsMemCall AddItem 0x0001 
+' Line #489:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	NextVar 
+' Line #490:
+' 	LitDI2 0x0129 
+' 	St Width 
+' Line #491:
+' 	LitDI2 0x01A4 
+' 	St Height 
+' Line #492:
+' 	LitStr 0x0002 "A2"
+' 	Case 
+' 	CaseDone 
+' Line #493:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	LitDI2 0x0003 
+' 	LitDI2 0x0005 
+' 	For 
+' Line #494:
+' 	Ld i 
+' 	Ld CboMulti 
+' 	ArgsMemCall AddItem 0x0001 
+' Line #495:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	NextVar 
+' Line #496:
+' 	LitDI2 0x01A4 
+' 	St Width 
+' Line #497:
+' 	LitDI2 0x0252 
+' 	St Height 
+' Line #498:
+' 	LitStr 0x0002 "A1"
+' 	Case 
+' 	CaseDone 
+' Line #499:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	LitDI2 0x0003 
+' 	LitDI2 0x0004 
+' 	For 
+' Line #500:
+' 	Ld i 
+' 	Ld CboMulti 
+' 	ArgsMemCall AddItem 0x0001 
+' Line #501:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	NextVar 
+' Line #502:
+' 	LitDI2 0x0252 
+' 	St Width 
+' Line #503:
+' 	LitDI2 0x0349 
+' 	St Height 
+' Line #504:
+' 	LitStr 0x0002 "A0"
+' 	Case 
+' 	CaseDone 
+' Line #505:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	LitDI2 0x0002 
+' 	LitDI2 0x0003 
+' 	For 
+' Line #506:
+' 	Ld i 
+' 	Ld CboMulti 
+' 	ArgsMemCall AddItem 0x0001 
+' Line #507:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	NextVar 
+' Line #508:
+' 	LitDI2 0x0349 
+' 	St Width 
+' Line #509:
+' 	LitDI2 0x04A5 
+' 	St Height 
+' Line #510:
+' 	EndSelect 
+' Line #511:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0002 "A4"
+' 	Eq 
+' 	IfBlock 
+' Line #512:
+' 	LitVarSpecial (False)
+' 	Ld OptSecond 
+' 	MemSt OptAlbum 
+' Line #513:
+' 	LitVarSpecial (True)
+' 	Ld OptPortrait 
+' 	MemSt OptAlbum 
+' Line #514:
+' 	LitVarSpecial (True)
+' 	Ld OptPortrait 
+' 	MemSt Value 
+' Line #515:
+' 	ElseBlock 
+' Line #516:
+' 	LitVarSpecial (True)
+' 	Ld OptSecond 
+' 	MemSt OptAlbum 
+' Line #517:
+' 	LitVarSpecial (True)
+' 	Ld OptPortrait 
+' 	MemSt OptAlbum 
+' Line #518:
+' 	EndIfBlock 
+' Line #519:
+' 	LitDI2 0x0000 
+' 	Ld CboMulti 
+' 	MemSt ListIndex 
+' Line #520:
+' 	EndSub 
+' Line #521:
+' Line #522:
+' 	FuncDefn (Sub Enabled())
+' Line #523:
+' 	Ld CboMulti 
+' 	MemLd Text 
+' 	LitStr 0x0003 "нет"
+' 	Ne 
+' 	IfBlock 
+' Line #524:
+' 	LitVarSpecial (False)
+' 	Ld OptPortrait 
+' 	MemSt OptAlbum 
+' Line #525:
+' 	LitVarSpecial (True)
+' 	Ld OptSecond 
+' 	MemSt OptAlbum 
+' Line #526:
+' 	LitVarSpecial (True)
+' 	Ld OptSecond 
+' 	MemSt Value 
+' Line #527:
+' 	ElseBlock 
+' Line #528:
+' 	LitVarSpecial (True)
+' 	Ld OptPortrait 
+' 	MemSt OptAlbum 
+' Line #529:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0002 "A4"
+' 	Eq 
+' 	IfBlock 
+' Line #530:
+' 	LitVarSpecial (False)
+' 	Ld OptSecond 
+' 	MemSt OptAlbum 
+' Line #531:
+' 	LitVarSpecial (True)
+' 	Ld OptPortrait 
+' 	MemSt Value 
+' Line #532:
+' 	EndIfBlock 
+' Line #533:
+' 	EndIfBlock 
+' Line #534:
+' 	EndSub 
+' Line #535:
+' Line #536:
+' 	FuncDefn (Sub QuitDoc())
+' Line #537:
+' 	ArgsCall CustomPropertyView 0x0000 
+' Line #538:
+' 	Ld id_FFFF 
+' 	ArgsCall Unload 0x0001 
+' Line #539:
+' 	End 
+' Line #540:
+' 	EndSub 
+' Line #541:
+' Line #542:
+' 	FuncDefn (Sub CboMulti_DropButtonClick())
+' Line #543:
+' 	LitStr 0x0012 "Made by Leon, 2017"
+' 	Paren 
+' 	Ld swApp 
+' 	ArgsMemCall CmdAbout_Click 0x0001 
+' Line #544:
+' 	EndSub 
+' Line #545:
+' Line #546:
+' 	FuncDefn (Sub Multi())
+' Line #547:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0002 "A4"
+' 	Eq 
+' 	IfBlock 
+' Line #548:
+' 	Ld CboMulti 
+' 	MemLd Text 
+' 	SelectCase 
+' Line #549:
+' 	LitStr 0x0001 "3"
+' 	Case 
+' 	CaseDone 
+' Line #550:
+' 	LitDI2 0x0276 
+' 	St Width 
+' Line #551:
+' 	LitStr 0x0001 "4"
+' 	Case 
+' 	CaseDone 
+' Line #552:
+' 	LitDI2 0x0349 
+' 	St Width 
+' Line #553:
+' 	LitStr 0x0001 "5"
+' 	Case 
+' 	CaseDone 
+' Line #554:
+' 	LitDI2 0x041B 
+' 	St Width 
+' Line #555:
+' 	LitStr 0x0001 "6"
+' 	Case 
+' 	CaseDone 
+' Line #556:
+' 	LitDI2 0x04ED 
+' 	St Width 
+' Line #557:
+' 	LitStr 0x0001 "7"
+' 	Case 
+' 	CaseDone 
+' Line #558:
+' 	LitDI2 0x05BF 
+' 	St Width 
+' Line #559:
+' 	LitStr 0x0001 "8"
+' 	Case 
+' 	CaseDone 
+' Line #560:
+' 	LitDI2 0x0692 
+' 	St Width 
+' Line #561:
+' 	LitStr 0x0001 "9"
+' 	Case 
+' 	CaseDone 
+' Line #562:
+' 	LitDI2 0x0764 
+' 	St Width 
+' Line #563:
+' 	EndSelect 
+' Line #564:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0002 "A3"
+' 	Eq 
+' 	ElseIfBlock 
+' Line #565:
+' 	Ld CboMulti 
+' 	MemLd Text 
+' 	SelectCase 
+' Line #566:
+' 	LitStr 0x0001 "3"
+' 	Case 
+' 	CaseDone 
+' Line #567:
+' 	LitDI2 0x037B 
+' 	St Width 
+' Line #568:
+' 	LitStr 0x0001 "4"
+' 	Case 
+' 	CaseDone 
+' Line #569:
+' 	LitDI2 0x04A5 
+' 	St Width 
+' Line #570:
+' 	LitStr 0x0001 "5"
+' 	Case 
+' 	CaseDone 
+' Line #571:
+' 	LitDI2 0x05CE 
+' 	St Width 
+' Line #572:
+' 	LitStr 0x0001 "6"
+' 	Case 
+' 	CaseDone 
+' Line #573:
+' 	LitDI2 0x06F7 
+' 	St Width 
+' Line #574:
+' 	LitStr 0x0001 "7"
+' 	Case 
+' 	CaseDone 
+' Line #575:
+' 	LitDI2 0x0820 
+' 	St Width 
+' Line #576:
+' 	EndSelect 
+' Line #577:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0002 "A2"
+' 	Eq 
+' 	ElseIfBlock 
+' Line #578:
+' 	Ld CboMulti 
+' 	MemLd Text 
+' 	SelectCase 
+' Line #579:
+' 	LitStr 0x0001 "3"
+' 	Case 
+' 	CaseDone 
+' Line #580:
+' 	LitDI2 0x04ED 
+' 	St Width 
+' Line #581:
+' 	LitStr 0x0001 "4"
+' 	Case 
+' 	CaseDone 
+' Line #582:
+' 	LitDI2 0x0692 
+' 	St Width 
+' Line #583:
+' 	LitStr 0x0001 "5"
+' 	Case 
+' 	CaseDone 
+' Line #584:
+' 	LitDI2 0x0836 
+' 	St Width 
+' Line #585:
+' 	EndSelect 
+' Line #586:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0002 "A1"
+' 	Eq 
+' 	ElseIfBlock 
+' Line #587:
+' 	Ld CboMulti 
+' 	MemLd Text 
+' 	SelectCase 
+' Line #588:
+' 	LitStr 0x0001 "3"
+' 	Case 
+' 	CaseDone 
+' Line #589:
+' 	LitDI2 0x06F7 
+' 	St Width 
+' Line #590:
+' 	LitStr 0x0001 "4"
+' 	Case 
+' 	CaseDone 
+' Line #591:
+' 	LitDI2 0x094A 
+' 	St Width 
+' Line #592:
+' 	EndSelect 
+' Line #593:
+' 	Ld CboFormat 
+' 	MemLd Text 
+' 	LitStr 0x0002 "A0"
+' 	Eq 
+' 	ElseIfBlock 
+' Line #594:
+' 	Ld CboMulti 
+' 	MemLd Text 
+' 	SelectCase 
+' Line #595:
+' 	LitStr 0x0001 "2"
+' 	Case 
+' 	CaseDone 
+' Line #596:
+' 	LitDI2 0x0692 
+' 	St Width 
+' Line #597:
+' 	LitStr 0x0001 "3"
+' 	Case 
+' 	CaseDone 
+' Line #598:
+' 	LitDI2 0x09DB 
+' 	St Width 
+' Line #599:
+' 	EndSelect 
+' Line #600:
+' 	EndIfBlock 
+' Line #601:
+' 	EndSub 
+' Line #602:
+' Line #603:
+' 	FuncDefn (Sub Detect())
+' Line #604:
+' Line #605:
+' 	SetStmt 
+' 	Ld swApp 
+' 	MemLd Kill 
+' 	Set swDraw 
+' Line #606:
+' 	SetStmt 
+' 	Ld swDraw 
+' 	MemLd ActiveDoc 
+' 	Set swSheet 
+' Line #607:
+' 	Ld swSheet 
+' 	MemLd ReorderSheets 
+' 	St vSheetProps 
+' Line #608:
+' 	Ld swSheet 
+' 	MemLd GetCurrentSheet 
+' 	St strActiveSheetName 
+' Line #609:
+' 	QuoteRem 0x0000 0x0017 " Определяем номер листа"
+' Line #610:
+' 	Ld swDraw 
+' 	MemLd GetName 
+' 	St vSheetNames 
+' Line #611:
+' 	LitDI2 0x0000 
+' 	St n 
+' Line #612:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	LitDI2 0x0000 
+' 	Ld vSheetNames 
+' 	FnUBound 0x0000 
+' 	For 
+' Line #613:
+' 	Ld i 
+' 	ArgsLd vSheetNames 0x0001 
+' 	Ld strActiveSheetName 
+' 	Eq 
+' 	IfBlock 
+' Line #614:
+' 	Ld i 
+' 	St n 
+' Line #615:
+' 	EndIfBlock 
+' Line #616:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	NextVar 
+' Line #617:
+' Line #618:
+' 	LitStr 0x0004 "A4-P"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #619:
+' 	LitStr 0x0003 "210"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #620:
+' 	LitStr 0x0003 "297"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #621:
+' Line #622:
+' 	LitStr 0x0004 "A3-P"
+' 	LitDI2 0x0001 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #623:
+' 	LitStr 0x0003 "297"
+' 	LitDI2 0x0001 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #624:
+' 	LitStr 0x0003 "420"
+' 	LitDI2 0x0001 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #625:
+' Line #626:
+' 	LitStr 0x0004 "A3-A"
+' 	LitDI2 0x0002 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #627:
+' 	LitStr 0x0003 "420"
+' 	LitDI2 0x0002 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #628:
+' 	LitStr 0x0003 "297"
+' 	LitDI2 0x0002 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #629:
+' Line #630:
+' 	LitStr 0x0004 "A2-P"
+' 	LitDI2 0x0003 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #631:
+' 	LitStr 0x0003 "420"
+' 	LitDI2 0x0003 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #632:
+' 	LitStr 0x0003 "594"
+' 	LitDI2 0x0003 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #633:
+' Line #634:
+' 	LitStr 0x0004 "A2-A"
+' 	LitDI2 0x0004 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #635:
+' 	LitStr 0x0003 "594"
+' 	LitDI2 0x0004 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #636:
+' 	LitStr 0x0003 "420"
+' 	LitDI2 0x0004 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #637:
+' Line #638:
+' 	LitStr 0x0004 "A1-P"
+' 	LitDI2 0x0005 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #639:
+' 	LitStr 0x0003 "594"
+' 	LitDI2 0x0005 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #640:
+' 	LitStr 0x0003 "841"
+' 	LitDI2 0x0005 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #641:
+' Line #642:
+' 	LitStr 0x0004 "A1-A"
+' 	LitDI2 0x0006 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #643:
+' 	LitStr 0x0003 "841"
+' 	LitDI2 0x0006 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #644:
+' 	LitStr 0x0003 "594"
+' 	LitDI2 0x0006 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #645:
+' Line #646:
+' 	LitStr 0x0004 "A0-P"
+' 	LitDI2 0x0007 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #647:
+' 	LitStr 0x0003 "841"
+' 	LitDI2 0x0007 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #648:
+' 	LitStr 0x0004 "1189"
+' 	LitDI2 0x0007 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #649:
+' Line #650:
+' 	LitStr 0x0004 "A0-A"
+' 	LitDI2 0x0008 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #651:
+' 	LitStr 0x0004 "1189"
+' 	LitDI2 0x0008 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #652:
+' 	LitStr 0x0003 "841"
+' 	LitDI2 0x0008 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #653:
+' 	QuoteRem 0x0000 0x000E " -------------"
+' Line #654:
+' 	LitStr 0x0006 "A4x3-A"
+' 	LitDI2 0x0009 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #655:
+' 	LitStr 0x0003 "630"
+' 	LitDI2 0x0009 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #656:
+' 	LitStr 0x0003 "297"
+' 	LitDI2 0x0009 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #657:
+' Line #658:
+' 	LitStr 0x0006 "A4x4-A"
+' 	LitDI2 0x000A 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #659:
+' 	LitStr 0x0003 "841"
+' 	LitDI2 0x000A 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #660:
+' 	LitStr 0x0003 "297"
+' 	LitDI2 0x000A 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #661:
+' Line #662:
+' 	LitStr 0x0006 "A4x5-A"
+' 	LitDI2 0x000B 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #663:
+' 	LitStr 0x0004 "1051"
+' 	LitDI2 0x000B 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #664:
+' 	LitStr 0x0003 "297"
+' 	LitDI2 0x000B 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #665:
+' Line #666:
+' 	LitStr 0x0006 "A4x6-A"
+' 	LitDI2 0x000C 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #667:
+' 	LitStr 0x0004 "1261"
+' 	LitDI2 0x000C 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #668:
+' 	LitStr 0x0003 "297"
+' 	LitDI2 0x000C 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #669:
+' Line #670:
+' 	LitStr 0x0006 "A4x7-A"
+' 	LitDI2 0x000D 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #671:
+' 	LitStr 0x0004 "1471"
+' 	LitDI2 0x000D 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #672:
+' 	LitStr 0x0003 "297"
+' 	LitDI2 0x000D 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #673:
+' Line #674:
+' 	LitStr 0x0006 "A4x8-A"
+' 	LitDI2 0x000E 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #675:
+' 	LitStr 0x0004 "1682"
+' 	LitDI2 0x000E 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #676:
+' 	LitStr 0x0003 "297"
+' 	LitDI2 0x000E 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #677:
+' Line #678:
+' 	LitStr 0x0006 "A4x9-A"
+' 	LitDI2 0x000F 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #679:
+' 	LitStr 0x0004 "1892"
+' 	LitDI2 0x000F 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #680:
+' 	LitStr 0x0003 "297"
+' 	LitDI2 0x000F 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #681:
+' 	QuoteRem 0x0000 0x000E " -------------"
+' Line #682:
+' 	LitStr 0x0006 "A3x3-A"
+' 	LitDI2 0x0010 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #683:
+' 	LitStr 0x0003 "891"
+' 	LitDI2 0x0010 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #684:
+' 	LitStr 0x0003 "420"
+' 	LitDI2 0x0010 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #685:
+' Line #686:
+' 	LitStr 0x0006 "A3x4-A"
+' 	LitDI2 0x0011 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #687:
+' 	LitStr 0x0004 "1189"
+' 	LitDI2 0x0011 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #688:
+' 	LitStr 0x0003 "420"
+' 	LitDI2 0x0011 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #689:
+' Line #690:
+' 	LitStr 0x0006 "A3x5-A"
+' 	LitDI2 0x0012 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #691:
+' 	LitStr 0x0004 "1486"
+' 	LitDI2 0x0012 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #692:
+' 	LitStr 0x0003 "420"
+' 	LitDI2 0x0012 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #693:
+' Line #694:
+' 	LitStr 0x0006 "A3x6-A"
+' 	LitDI2 0x0013 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #695:
+' 	LitStr 0x0004 "1783"
+' 	LitDI2 0x0013 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #696:
+' 	LitStr 0x0003 "420"
+' 	LitDI2 0x0013 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #697:
+' Line #698:
+' 	LitStr 0x0006 "A3x7-A"
+' 	LitDI2 0x0014 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #699:
+' 	LitStr 0x0004 "2080"
+' 	LitDI2 0x0014 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #700:
+' 	LitStr 0x0003 "420"
+' 	LitDI2 0x0014 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #701:
+' 	QuoteRem 0x0000 0x000E " -------------"
+' Line #702:
+' 	LitStr 0x0006 "A2x3-A"
+' 	LitDI2 0x0015 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #703:
+' 	LitStr 0x0004 "1261"
+' 	LitDI2 0x0015 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #704:
+' 	LitStr 0x0003 "594"
+' 	LitDI2 0x0015 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #705:
+' Line #706:
+' 	LitStr 0x0006 "A2x4-A"
+' 	LitDI2 0x0016 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #707:
+' 	LitStr 0x0004 "1682"
+' 	LitDI2 0x0016 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #708:
+' 	LitStr 0x0003 "594"
+' 	LitDI2 0x0016 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #709:
+' Line #710:
+' 	LitStr 0x0006 "A2x5-A"
+' 	LitDI2 0x0017 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #711:
+' 	LitStr 0x0004 "2102"
+' 	LitDI2 0x0017 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #712:
+' 	LitStr 0x0003 "594"
+' 	LitDI2 0x0017 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #713:
+' 	QuoteRem 0x0000 0x000E " -------------"
+' Line #714:
+' 	LitStr 0x0006 "A1x3-A"
+' 	LitDI2 0x0018 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #715:
+' 	LitStr 0x0004 "1783"
+' 	LitDI2 0x0018 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #716:
+' 	LitStr 0x0003 "841"
+' 	LitDI2 0x0018 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #717:
+' Line #718:
+' 	LitStr 0x0006 "A1x4-A"
+' 	LitDI2 0x0019 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #719:
+' 	LitStr 0x0004 "2378"
+' 	LitDI2 0x0019 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #720:
+' 	LitStr 0x0003 "841"
+' 	LitDI2 0x0019 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #721:
+' 	QuoteRem 0x0000 0x000E " -------------"
+' Line #722:
+' 	LitStr 0x0006 "A0x2-A"
+' 	LitDI2 0x001A 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #723:
+' 	LitStr 0x0004 "1682"
+' 	LitDI2 0x001A 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #724:
+' 	LitStr 0x0004 "1189"
+' 	LitDI2 0x001A 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #725:
+' Line #726:
+' 	LitStr 0x0006 "A0x3-A"
+' 	LitDI2 0x001B 
+' 	LitDI2 0x0000 
+' 	ArgsSt FormatArr 0x0002 
+' Line #727:
+' 	LitStr 0x0004 "2523"
+' 	LitDI2 0x001B 
+' 	LitDI2 0x0001 
+' 	ArgsSt FormatArr 0x0002 
+' Line #728:
+' 	LitStr 0x0004 "1189"
+' 	LitDI2 0x001B 
+' 	LitDI2 0x0002 
+' 	ArgsSt FormatArr 0x0002 
+' Line #729:
+' Line #730:
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	ArgsLd FormatArr 0x0002 
+' 	St strTemp 
+' Line #731:
+' 	StartForVariable 
+' 	Ld i1 
+' 	EndForVariable 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x001B 
+' 	For 
+' Line #732:
+' 	LitDI2 0x0005 
+' 	ArgsLd vSheetProps 0x0001 
+' 	LitDI2 0x03E8 
+' 	Mul 
+' 	Ld i1 
+' 	LitDI2 0x0001 
+' 	ArgsLd FormatArr 0x0002 
+' 	Eq 
+' 	LitDI2 0x0006 
+' 	ArgsLd vSheetProps 0x0001 
+' 	LitDI2 0x03E8 
+' 	Mul 
+' 	Ld i1 
+' 	LitDI2 0x0002 
+' 	ArgsLd FormatArr 0x0002 
+' 	Eq 
+' 	And 
+' 	IfBlock 
+' Line #733:
+' 	Ld i1 
+' 	LitDI2 0x0000 
+' 	ArgsLd FormatArr 0x0002 
+' 	St strTemp 
+' Line #734:
+' 	ExitFor 
+' Line #735:
+' 	EndIfBlock 
+' Line #736:
+' 	StartForVariable 
+' 	Ld i1 
+' 	EndForVariable 
+' 	NextVar 
+' Line #737:
+' 	Ld strTemp 
+' 	LitDI2 0x0002 
+' 	ArgsLd Left$ 0x0002 
+' 	Ld CboFormat 
+' 	MemSt Value 
+' Line #738:
+' 	ArgsCall CboFormat_DropButtonClick 0x0000 
+' Line #739:
+' 	Ld strTemp 
+' 	LitDI2 0x0003 
+' 	LitDI2 0x0001 
+' 	ArgsLd Mid$ 0x0003 
+' 	LitStr 0x0001 "x"
+' 	Eq 
+' 	IfBlock 
+' Line #740:
+' 	Ld strTemp 
+' 	LitDI2 0x0004 
+' 	LitDI2 0x0001 
+' 	ArgsLd Mid$ 0x0003 
+' 	Ld CboMulti 
+' 	MemSt Value 
+' Line #741:
+' 	EndIfBlock 
+' Line #742:
+' 	ArgsCall Enabled 0x0000 
+' Line #743:
+' 	Ld strTemp 
+' 	LitDI2 0x0001 
+' 	ArgsLd SendMsgToUser$ 0x0002 
+' 	LitStr 0x0001 "A"
+' 	Eq 
+' 	IfBlock 
+' Line #744:
+' 	LitVarSpecial (True)
+' 	Ld OptSecond 
+' 	MemSt Value 
+' Line #745:
+' 	ElseBlock 
+' Line #746:
+' 	LitVarSpecial (True)
+' 	Ld OptPortrait 
+' 	MemSt Value 
+' Line #747:
+' 	EndIfBlock 
+' Line #748:
+' 	Ld n 
+' 	LitDI2 0x0000 
+' 	Eq 
+' 	IfBlock 
+' Line #749:
+' 	LitVarSpecial (True)
+' 	Ld OptFirst 
+' 	MemSt Value 
+' Line #750:
+' 	ElseBlock 
+' Line #751:
+' 	LitVarSpecial (True)
+' 	Ld CmdAuto_Click 
+' 	MemSt Value 
+' Line #752:
+' 	EndIfBlock 
+' Line #753:
+' 	EndSub 
+' Line #754:
+' Line #755:
+' 	FuncDefn (Sub MyProperties())
+' Line #756:
+' 	QuoteRem 0x0000 0x0011 " Чтение ini файла"
+' Line #757:
+' 	Ld Source6 
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	LitDefault 
+' 	Open (For Input)
+' Line #758:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #759:
+' 	Ld strTemp 
+' 	St prpNumber 
+' 	QuoteRem 0x0018 0x000C " Обозначение"
+' Line #760:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #761:
+' 	Ld strTemp 
+' 	St prpDocCode 
+' 	QuoteRem 0x0019 0x000E " Код документа"
+' Line #762:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #763:
+' 	Ld strTemp 
+' 	St prpDocDescription 
+' 	QuoteRem 0x0020 0x0017 " Наименование документа"
+' Line #764:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #765:
+' 	Ld strTemp 
+' 	St prpDescription 
+' 	QuoteRem 0x001D 0x0023 " Наименование изделия в одну строку"
+' Line #766:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #767:
+' 	Ld strTemp 
+' 	St prpDescriptionMulti 
+' 	QuoteRem 0x0022 0x0027 " Наименование изделия в несколько строк"
+' Line #768:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #769:
+' 	Ld strTemp 
+' 	St prpCode 
+' 	QuoteRem 0x0016 0x001C " Условное наименование (код)"
+' Line #770:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #771:
+' 	Ld strTemp 
+' 	St prpFormat 
+' 	QuoteRem 0x0018 0x0007 " Формат"
+' Line #772:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #773:
+' 	Ld strTemp 
+' 	St prpRemark 
+' 	QuoteRem 0x0018 0x000B " Примечание"
+' Line #774:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #775:
+' 	Ld strTemp 
+' 	St prpLit 
+' 	QuoteRem 0x0015 0x0007 " Литера"
+' Line #776:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #777:
+' 	Ld strTemp 
+' 	St prpLitTable 
+' 	QuoteRem 0x001A 0x001E " Литера для таблицы параметров"
+' Line #778:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #779:
+' 	Ld strTemp 
+' 	St prpFirm 
+' 	QuoteRem 0x0016 0x0019 " Наименование организации"
+' Line #780:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #781:
+' 	Ld strTemp 
+' 	St prpSection 
+' 	QuoteRem 0x0019 0x0007 " Раздел"
+' Line #782:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #783:
+' 	Ld strTemp 
+' 	St prpGroup 
+' 	QuoteRem 0x0017 0x0007 " Группа"
+' Line #784:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #785:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #786:
+' 	Ld strTemp 
+' 	St prpDesigner 
+' 	QuoteRem 0x001A 0x0008 " Разраб."
+' Line #787:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #788:
+' 	Ld strTemp 
+' 	St prpTester 
+' 	QuoteRem 0x0018 0x0006 " Пров."
+' Line #789:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #790:
+' 	Ld strTemp 
+' 	St prpTechcontrol 
+' 	QuoteRem 0x001D 0x0009 " Т.контр."
+' Line #791:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #792:
+' 	Ld strTemp 
+' 	St prpWorkType 
+' 	QuoteRem 0x001A 0x0010 " Характер работы"
+' Line #793:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #794:
+' 	Ld strTemp 
+' 	St prpPerson 
+' 	QuoteRem 0x0018 0x001E " Фамилия для "Характер работы""
+' Line #795:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #796:
+' 	Ld strTemp 
+' 	St prpNormcontrol 
+' 	QuoteRem 0x001D 0x0008 " Н.контр"
+' Line #797:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #798:
+' 	Ld strTemp 
+' 	St prpApprove 
+' 	QuoteRem 0x0019 0x0005 " Утв."
+' Line #799:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #800:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #801:
+' 	Ld strTemp 
+' 	St prpMass 
+' 	QuoteRem 0x0016 0x0006 " Масса"
+' Line #802:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #803:
+' 	Ld strTemp 
+' 	St prpMassTable 
+' 	QuoteRem 0x001B 0x001D " Масса для таблицы параметров"
+' Line #804:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #805:
+' 	Ld strTemp 
+' 	St prpMaterial 
+' 	QuoteRem 0x001A 0x0009 " Материал"
+' Line #806:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #807:
+' 	Ld strTemp 
+' 	St prpMaterialTable 
+' 	QuoteRem 0x001F 0x0020 " Материал для таблицы параметров"
+' Line #808:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #809:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #810:
+' 	Ld strTemp 
+' 	St prpFirstApply 
+' 	QuoteRem 0x001C 0x001F " Перв.примен. для чертежей и ВП"
+' Line #811:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #812:
+' 	Ld strTemp 
+' 	St prpInformNumber 
+' 	QuoteRem 0x001E 0x0015 " Справ.№ для чертежей"
+' Line #813:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #814:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #815:
+' 	Ld strTemp 
+' 	St prpFirstApplySP 
+' 	QuoteRem 0x001E 0x001E " Перв.примен. для спецификации"
+' Line #816:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #817:
+' 	Ld strTemp 
+' 	St prpInformNumberSP 
+' 	QuoteRem 0x0020 0x0019 " Справ.№ для спецификаций"
+' Line #818:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #819:
+' 	Ld strTemp 
+' 	St prpLitSP 
+' 	QuoteRem 0x0017 0x0018 " Литера для спецификаций"
+' Line #820:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #821:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #822:
+' 	Ld strTemp 
+' 	St prpInformNumberVP 
+' 	QuoteRem 0x0020 0x000F " Справ.№ для ВП"
+' Line #823:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #824:
+' 	Ld strTemp 
+' 	St prpDescriptionVP 
+' 	QuoteRem 0x001F 0x0014 " Наименование для ВП"
+' Line #825:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #826:
+' 	Ld strTemp 
+' 	St prpProductCodeVP 
+' 	QuoteRem 0x001F 0x000E " Код продукции"
+' Line #827:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #828:
+' 	Ld strTemp 
+' 	St prpNumberDocVP 
+' 	QuoteRem 0x001D 0x0022 " Обозначение документа на поставку"
+' Line #829:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #830:
+' 	Ld strTemp 
+' 	St prpVendorVP 
+' 	QuoteRem 0x001A 0x000A " Поставщик"
+' Line #831:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #832:
+' 	Ld strTemp 
+' 	St prpRemarkVP 
+' 	QuoteRem 0x001A 0x0012 " Примечание для ВП"
+' Line #833:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #834:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #835:
+' 	Ld strTemp 
+' 	St prpProject 
+' 	QuoteRem 0x0019 0x0021 " Проект (дополнительное свойство)"
+' Line #836:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #837:
+' 	Ld strTemp 
+' 	St prpDraftNumber 
+' 	QuoteRem 0x001D 0x002F " Эскизное Обозначение (дополнительное свойство)"
+' Line #838:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #839:
+' 	Ld strTemp 
+' 	St prpDraftDescription 
+' 	QuoteRem 0x0022 0x0030 " Эскизное Наименование (дополнительное свойство)"
+' Line #840:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #841:
+' 	Ld strTemp 
+' 	St prpDraftFirstApply 
+' 	QuoteRem 0x0021 0x0041 " Эскизное Перв.примен. для чертежей и ВП(дополнительное свойство)"
+' Line #842:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #843:
+' 	Ld strTemp 
+' 	St prpDraftFirstApplySP 
+' 	QuoteRem 0x0023 0x0041 " Эскизное Перв.примен. для спецификации (дополнительное свойство)"
+' Line #844:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #845:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #846:
+' 	Ld strTemp 
+' 	St prpBlank 
+' 	QuoteRem 0x0017 0x000A " Заготовка"
+' Line #847:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #848:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #849:
+' 	Ld strTemp 
+' 	St prpBor 
+' 	QuoteRem 0x0015 0x000E " Заимствование"
+' Line #850:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #851:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #852:
+' 	Ld strTemp 
+' 	St prpQuantity 
+' 	QuoteRem 0x001A 0x0010 " Количество в СП"
+' Line #853:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #854:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #855:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001A 0x0010 " Проверка версии"
+' Line #856:
+' 	LitDI2 0x0001 
+' 	St prpTestVersion 
+' Line #857:
+' 	ElseBlock 
+' Line #858:
+' 	LitDI2 0x0000 
+' 	St prpTestVersion 
+' Line #859:
+' 	EndIfBlock 
+' Line #860:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #861:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001A 0x0011 " Проверка формата"
+' Line #862:
+' 	LitDI2 0x0001 
+' 	St prpTestFormat 
+' Line #863:
+' 	ElseBlock 
+' Line #864:
+' 	LitDI2 0x0000 
+' 	St prpTestFormat 
+' Line #865:
+' 	EndIfBlock 
+' Line #866:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #867:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001A 0x000E " Проверка имен"
+' Line #868:
+' 	LitDI2 0x0001 
+' 	St prpTestName 
+' Line #869:
+' 	ElseBlock 
+' Line #870:
+' 	LitDI2 0x0000 
+' 	St prpTestName 
+' Line #871:
+' 	EndIfBlock 
+' Line #872:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #873:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001A 0x0014 " Проверка оформления"
+' Line #874:
+' 	LitDI2 0x0001 
+' 	St prpTestStandard 
+' Line #875:
+' 	ElseBlock 
+' Line #876:
+' 	LitDI2 0x0000 
+' 	St prpTestStandard 
+' Line #877:
+' 	EndIfBlock 
+' Line #878:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #879:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #880:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001A 0x000A " Имя файла"
+' Line #881:
+' 	LitDI2 0x0001 
+' 	St prpFileName 
+' Line #882:
+' 	ElseBlock 
+' Line #883:
+' 	LitDI2 0x0000 
+' 	St prpFileName 
+' Line #884:
+' 	EndIfBlock 
+' Line #885:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #886:
+' 	Ld strTemp 
+' 	St prpNameSep 
+' 	QuoteRem 0x0019 0x000C " Разделитель"
+' Line #887:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #888:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #889:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001A 0x0013 " Управление шрифтом"
+' Line #890:
+' 	LitDI2 0x0001 
+' 	St prpFontSize 
+' Line #891:
+' 	ElseBlock 
+' Line #892:
+' 	LitDI2 0x0000 
+' 	St prpFontSize 
+' Line #893:
+' 	EndIfBlock 
+' Line #894:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #895:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #896:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #897:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001A 0x0011 " Доп. свойство №1"
+' Line #898:
+' 	LitDI2 0x0001 
+' 	St prpAddPRP1 
+' Line #899:
+' 	ElseBlock 
+' Line #900:
+' 	LitDI2 0x0000 
+' 	St prpAddPRP1 
+' Line #901:
+' 	EndIfBlock 
+' Line #902:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #903:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #904:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001A 0x0011 " Доп. свойство №2"
+' Line #905:
+' 	LitDI2 0x0001 
+' 	St prpAddPRP2 
+' Line #906:
+' 	ElseBlock 
+' Line #907:
+' 	LitDI2 0x0000 
+' 	St prpAddPRP2 
+' Line #908:
+' 	EndIfBlock 
+' Line #909:
+' 	QuoteRem 0x0004 0x0000 ""
+' Line #910:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #911:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001A 0x0022 " Окно макроса в левом верхнем углу"
+' Line #912:
+' 	LitDI2 0x0001 
+' 	St prpLeftTopCorner 
+' Line #913:
+' 	ElseBlock 
+' Line #914:
+' 	LitDI2 0x0000 
+' 	St prpLeftTopCorner 
+' Line #915:
+' 	EndIfBlock 
+' Line #916:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #917:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001A 0x0019 " Окно макроса поверх всех"
+' Line #918:
+' 	LitDI2 0x0001 
+' 	St prpTopAll 
+' Line #919:
+' 	ElseBlock 
+' Line #920:
+' 	LitDI2 0x0000 
+' 	St prpTopAll 
+' Line #921:
+' 	EndIfBlock 
+' Line #922:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	Close 0x0001 
+' Line #923:
+' 	EndSub 
+' Line #924:
+' Line #925:
+' 	FuncDefn (Sub Right())
+' Line #926:
+' 	QuoteRem 0x0000 0x0011 " Чтение ini файла"
+' Line #927:
+' 	Ld Source7 
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	LitDefault 
+' 	Open (For Input)
+' Line #928:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' 	QuoteRem 0x001B 0x0006 " Шрифт"
+' Line #929:
+' 	Ld strTemp 
+' 	St stdFontName 
+' Line #930:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' 	QuoteRem 0x001B 0x000E " Размер шрифта"
+' Line #931:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "."
+' 	LitStr 0x0001 ","
+' 	ArgsLd MyStandard 0x0003 
+' 	St strTemp 
+' Line #932:
+' 	Ld strTemp 
+' 	Coerce (Dbl) 
+' 	St stdFontSize 
+' Line #933:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' 	QuoteRem 0x001B 0x000A " Наклонный"
+' Line #934:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' Line #935:
+' 	LitDI2 0x0001 
+' 	St stdFontItalic 
+' Line #936:
+' 	ElseBlock 
+' Line #937:
+' 	LitDI2 0x0000 
+' 	St stdFontItalic 
+' Line #938:
+' 	EndIfBlock 
+' Line #939:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' 	QuoteRem 0x001B 0x0007 " Жирный"
+' Line #940:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' Line #941:
+' 	LitDI2 0x0001 
+' 	St stdFontBold 
+' Line #942:
+' 	ElseBlock 
+' Line #943:
+' 	LitDI2 0x0000 
+' 	St stdFontBold 
+' Line #944:
+' 	EndIfBlock 
+' Line #945:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #946:
+' 	Ld strTemp 
+' 	St stdDay 
+' Line #947:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #948:
+' 	Ld strTemp 
+' 	St stdMonth 
+' Line #949:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #950:
+' 	Ld strTemp 
+' 	St stdYear 
+' Line #951:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #952:
+' 	Ld strTemp 
+' 	St stdHour 
+' Line #953:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #954:
+' 	Ld strTemp 
+' 	St stdMinute 
+' Line #955:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #956:
+' 	Ld strTemp 
+' 	St stdSecond 
+' Line #957:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	Close 0x0001 
+' Line #958:
+' 	QuoteRem 0x0000 0x0021 " Проверяем дату у файла стандарта"
+' Line #959:
+' 	Ld Source15 
+' 	ArgsLd Replace 0x0001 
+' 	St MyDateTime 
+' Line #960:
+' 	Ld stdDay 
+' 	Ld MyDateTime 
+' 	ArgsLd FileDateTime 0x0001 
+' 	Eq 
+' 	Ld stdMonth 
+' 	Ld MyDateTime 
+' 	ArgsLd Day 0x0001 
+' 	Eq 
+' 	And 
+' 	Ld stdYear 
+' 	Ld MyDateTime 
+' 	ArgsLd Month 0x0001 
+' 	Eq 
+' 	And 
+' 	Ld stdHour 
+' 	Ld MyDateTime 
+' 	ArgsLd Year 0x0001 
+' 	Eq 
+' 	And 
+' 	Ld stdMinute 
+' 	Ld MyDateTime 
+' 	ArgsLd Hour 0x0001 
+' 	Eq 
+' 	And 
+' 	Ld stdSecond 
+' 	Ld MyDateTime 
+' 	ArgsLd Minute 0x0001 
+' 	Eq 
+' 	And 
+' 	IfBlock 
+' Line #961:
+' 	ElseBlock 
+' Line #962:
+' 	Ld GetUserPreferenceStringValue 
+' 	Ld swApp 
+' 	ArgsMemLd Second 0x0001 
+' 	St strTemp 
+' Line #963:
+' 	SetStmt 
+' 	Ld strTemp 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	Ld swApp 
+' 	ArgsMemLd swDefaultTemplateDrawing 0x0004 
+' 	Set swDraw1 
+' Line #964:
+' 	SetStmt 
+' 	Ld swDraw1 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	Set swModExt 
+' Line #965:
+' 	Ld Source15 
+' 	Ld swModExt 
+' 	ArgsMemLd NewDocument 0x0001 
+' 	St ok 
+' Line #966:
+' 	SetStmt 
+' 	Ld GetUserPreferenceTextFormat 
+' 	Ld swDetailingDimensionTextFormat 
+' 	Ld swModExt 
+' 	ArgsMemLd LoadDraftingStandard 0x0002 
+' 	Set swTextFormat 
+' Line #967:
+' 	Ld swDraw1 
+' 	MemLd swDetailingDimension 
+' 	St strTemp 
+' Line #968:
+' 	Ld strTemp 
+' 	Ld swApp 
+' 	ArgsMemCall swMbOk 0x0001 
+' Line #969:
+' Line #970:
+' 	Ld swTextFormat 
+' 	MemLd GetTitle 
+' 	St stdFontName 
+' Line #971:
+' 	Ld swTextFormat 
+' 	MemLd TypeFaceName 
+' 	LitDI2 0x03E8 
+' 	Mul 
+' 	St stdFontSize 
+' Line #972:
+' 	Ld swTextFormat 
+' 	MemLd CharHeight 
+' 	IfBlock 
+' Line #973:
+' 	LitDI2 0x0001 
+' 	St stdFontItalic 
+' Line #974:
+' 	ElseBlock 
+' Line #975:
+' 	LitDI2 0x0000 
+' 	St stdFontItalic 
+' Line #976:
+' 	EndIfBlock 
+' Line #977:
+' 	Ld swTextFormat 
+' 	MemLd Italic 
+' 	IfBlock 
+' Line #978:
+' 	LitDI2 0x0001 
+' 	St stdFontBold 
+' Line #979:
+' 	ElseBlock 
+' Line #980:
+' 	LitDI2 0x0000 
+' 	St stdFontBold 
+' Line #981:
+' 	EndIfBlock 
+' Line #982:
+' Line #983:
+' 	QuoteRem 0x0004 0x000B " Запись ini"
+' Line #984:
+' 	Ld Source7 
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	LitDefault 
+' 	Open (For Output)
+' Line #985:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	Ld stdFontName 
+' 	PrintItemNL 
+' Line #986:
+' 	Ld stdFontSize 
+' 	Coerce (Str) 
+' 	ArgsLd Bold 0x0001 
+' 	St strTemp 
+' Line #987:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "."
+' 	LitStr 0x0001 ","
+' 	ArgsLd MyStandard 0x0003 
+' 	St strTemp 
+' Line #988:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	Ld strTemp 
+' 	PrintItemNL 
+' Line #989:
+' 	Ld stdFontItalic 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' Line #990:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "1"
+' 	PrintItemNL 
+' Line #991:
+' 	ElseBlock 
+' Line #992:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "0"
+' 	PrintItemNL 
+' Line #993:
+' 	EndIfBlock 
+' Line #994:
+' 	Ld stdFontBold 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' Line #995:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "1"
+' 	PrintItemNL 
+' Line #996:
+' 	ElseBlock 
+' Line #997:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "0"
+' 	PrintItemNL 
+' Line #998:
+' 	EndIfBlock 
+' Line #999:
+' 	Ld MyDateTime 
+' 	ArgsLd FileDateTime 0x0001 
+' 	St strTemp 
+' Line #1000:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	Ld strTemp 
+' 	PrintItemNL 
+' Line #1001:
+' 	Ld MyDateTime 
+' 	ArgsLd Day 0x0001 
+' 	St strTemp 
+' Line #1002:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	Ld strTemp 
+' 	PrintItemNL 
+' Line #1003:
+' 	Ld MyDateTime 
+' 	ArgsLd Month 0x0001 
+' 	St strTemp 
+' Line #1004:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	Ld strTemp 
+' 	PrintItemNL 
+' Line #1005:
+' 	Ld MyDateTime 
+' 	ArgsLd Year 0x0001 
+' 	St strTemp 
+' Line #1006:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	Ld strTemp 
+' 	PrintItemNL 
+' Line #1007:
+' 	Ld MyDateTime 
+' 	ArgsLd Hour 0x0001 
+' 	St strTemp 
+' Line #1008:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	Ld strTemp 
+' 	PrintItemNL 
+' Line #1009:
+' 	Ld MyDateTime 
+' 	ArgsLd Minute 0x0001 
+' 	St strTemp 
+' Line #1010:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	Ld strTemp 
+' 	PrintItemNL 
+' Line #1011:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	Close 0x0001 
+' Line #1012:
+' 	EndIfBlock 
+' Line #1013:
+' 	EndSub 
+' Line #1014:
+' Line #1015:
+' Line #1016:
+' apc/The VBA Project/_VBA_Project/VBA/FrmMaster_Pref - 16375 bytes
+' Line #0:
+' 	Option  (Explicit)
+' Line #1:
+' 	QuoteRem 0x0000 0x0014 "Dim swDraw As Object"
+' Line #2:
+' 	QuoteRem 0x0000 0x0015 "Dim swSheet As Object"
+' Line #3:
+' 	QuoteRem 0x0000 0x0014 "Dim swView As Object"
+' Line #4:
+' 	QuoteRem 0x0000 0x0016 "Dim swSelMgr As Object"
+' Line #5:
+' 	QuoteRem 0x0000 0x0014 "Dim swNote As Object"
+' Line #6:
+' 	QuoteRem 0x0000 0x0013 "Dim swAnn As Object"
+' Line #7:
+' 	QuoteRem 0x0000 0x001A "Dim swTextFormat As Object"
+' Line #8:
+' 	Dim 
+' 	VarDefn swDraw
+' Line #9:
+' 	Dim 
+' 	VarDefn swSheet
+' Line #10:
+' 	Dim 
+' 	VarDefn swView
+' Line #11:
+' 	Dim 
+' 	VarDefn swSelMgr
+' Line #12:
+' 	Dim 
+' 	VarDefn swNote
+' Line #13:
+' 	Dim 
+' 	VarDefn LTrim
+' Line #14:
+' 	Dim 
+' 	VarDefn swTextFormat
+' Line #15:
+' 	Dim 
+' 	VarDefn strTemp (As String)
+' Line #16:
+' 	Dim 
+' 	VarDefn Annotation (As String)
+' Line #17:
+' 	Dim 
+' 	VarDefn strTemp1 (As String)
+' Line #18:
+' 	Dim 
+' 	VarDefn ok (As Boolean)
+' Line #19:
+' 	Dim 
+' 	VarDefn longstatus (As Long)
+' Line #20:
+' 	Dim 
+' 	VarDefn longwarnings (As Long)
+' Line #21:
+' 	Dim 
+' 	VarDefn SourceTemp (As String)
+' Line #22:
+' 	Dim 
+' 	OptionBase 
+' 	LitDI2 0x001A 
+' 	VarDefn strSheetFormatName
+' Line #23:
+' 	Dim 
+' 	VarDefn i (As Integer)
+' Line #24:
+' Line #25:
+' 	FuncDefn (Sub MyPRP())
+' Line #26:
+' 	Ld ChkFrame_Click 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #27:
+' 	LitVarSpecial (False)
+' 	Ld ChkFrame 
+' 	MemSt Value 
+' Line #28:
+' 	EndIfBlock 
+' Line #29:
+' 	EndSub 
+' Line #30:
+' Line #31:
+' 	FuncDefn (Sub ChkFrameAll())
+' Line #32:
+' 	Ld ChkFrame 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #33:
+' 	LitVarSpecial (False)
+' 	Ld ChkFrame_Click 
+' 	MemSt Value 
+' Line #34:
+' 	EndIfBlock 
+' Line #35:
+' 	EndSub 
+' Line #36:
+' Line #37:
+' 	FuncDefn (Sub ChkFrameAll_Click())
+' 	QuoteRem 0x001F 0x0017 " Запускаем MyProperties"
+' Line #38:
+' 	Ld Source5 
+' 	LitStr 0x0010 "MyProperties_run"
+' 	LitStr 0x0004 "main"
+' 	Ld swApp 
+' 	ArgsMemLd CmdPRPName_Click 0x0003 
+' 	St ok 
+' Line #39:
+' 	ArgsCall UserForm_Activate 0x0000 
+' Line #40:
+' 	EndSub 
+' Line #41:
+' Line #42:
+' 	FuncDefn (Sub UserForm_Activate())
+' Line #43:
+' 	ArgsCall HWNDActiveWindow 0x0000 
+' Line #44:
+' 	QuoteRem 0x0000 0x0016 "FrmMaster.MyProperties"
+' Line #45:
+' 	Ld prpTestStandard 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' Line #46:
+' 	Ld FrmMaster 
+' 	ArgsMemCall Right 0x0000 
+' Line #47:
+' 	Ld stdFontName 
+' 	Ld RunMacro 
+' 	MemSt Value 
+' Line #48:
+' 	Ld stdFontItalic 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' Line #49:
+' 	LitVarSpecial (True)
+' 	Ld TxtFontName 
+' 	MemSt Value 
+' Line #50:
+' 	ElseBlock 
+' Line #51:
+' 	LitVarSpecial (False)
+' 	Ld TxtFontName 
+' 	MemSt Value 
+' Line #52:
+' 	EndIfBlock 
+' Line #53:
+' 	Ld stdFontBold 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' Line #54:
+' 	LitVarSpecial (True)
+' 	Ld ChkFontItalic 
+' 	MemSt Value 
+' Line #55:
+' 	ElseBlock 
+' Line #56:
+' 	LitVarSpecial (False)
+' 	Ld ChkFontItalic 
+' 	MemSt Value 
+' Line #57:
+' 	EndIfBlock 
+' Line #58:
+' 	LitVarSpecial (False)
+' 	Ld RunMacro 
+' 	MemSt OptAlbum 
+' Line #59:
+' 	LitVarSpecial (False)
+' 	Ld TxtFontName 
+' 	MemSt OptAlbum 
+' Line #60:
+' 	LitVarSpecial (False)
+' 	Ld ChkFontItalic 
+' 	MemSt OptAlbum 
+' Line #61:
+' 	ElseBlock 
+' Line #62:
+' 	LitVarSpecial (True)
+' 	Ld RunMacro 
+' 	MemSt OptAlbum 
+' Line #63:
+' 	LitVarSpecial (True)
+' 	Ld TxtFontName 
+' 	MemSt OptAlbum 
+' Line #64:
+' 	LitVarSpecial (True)
+' 	Ld ChkFontItalic 
+' 	MemSt OptAlbum 
+' Line #65:
+' 	EndIfBlock 
+' Line #66:
+' 	QuoteRem 0x0000 0x0011 " Чтение ini файла"
+' Line #67:
+' 	Ld Source3 
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	LitDefault 
+' 	Open (For Input)
+' Line #68:
+' 	Ld prpTestStandard 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' Line #69:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #70:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #71:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #72:
+' 	ElseBlock 
+' Line #73:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' 	QuoteRem 0x001F 0x0006 " Шрифт"
+' Line #74:
+' 	Ld strTemp 
+' 	Ld RunMacro 
+' 	MemSt Value 
+' Line #75:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' 	QuoteRem 0x001F 0x000A " Наклонный"
+' Line #76:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' Line #77:
+' 	LitVarSpecial (True)
+' 	Ld TxtFontName 
+' 	MemSt Value 
+' Line #78:
+' 	ElseBlock 
+' Line #79:
+' 	LitVarSpecial (False)
+' 	Ld TxtFontName 
+' 	MemSt Value 
+' Line #80:
+' 	EndIfBlock 
+' Line #81:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' 	QuoteRem 0x001F 0x0007 " Жирный"
+' Line #82:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' Line #83:
+' 	LitVarSpecial (True)
+' 	Ld ChkFontItalic 
+' 	MemSt Value 
+' Line #84:
+' 	ElseBlock 
+' Line #85:
+' 	LitVarSpecial (False)
+' 	Ld ChkFontItalic 
+' 	MemSt Value 
+' Line #86:
+' 	EndIfBlock 
+' Line #87:
+' 	EndIfBlock 
+' Line #88:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' Line #89:
+' 	Ld strTemp 
+' 	Ld ChkFontBold 
+' 	MemSt Value 
+' 	QuoteRem 0x001C 0x0005 " Путь"
+' Line #90:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' 	QuoteRem 0x001B 0x0006 " Рамка"
+' Line #91:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' Line #92:
+' 	LitVarSpecial (True)
+' 	Ld ChkFrame_Click 
+' 	MemSt Value 
+' Line #93:
+' 	ElseBlock 
+' Line #94:
+' 	LitVarSpecial (False)
+' 	Ld ChkFrame_Click 
+' 	MemSt Value 
+' Line #95:
+' 	EndIfBlock 
+' Line #96:
+' 	LitDI2 0x0001 
+' 	Ld strTemp 
+' 	LineInput 
+' 	QuoteRem 0x001B 0x000F " Рамка для всех"
+' Line #97:
+' 	Ld strTemp 
+' 	LitStr 0x0001 "1"
+' 	Eq 
+' 	IfBlock 
+' Line #98:
+' 	LitVarSpecial (True)
+' 	Ld ChkFrame 
+' 	MemSt Value 
+' Line #99:
+' 	ElseBlock 
+' Line #100:
+' 	LitVarSpecial (False)
+' 	Ld ChkFrame 
+' 	MemSt Value 
+' Line #101:
+' 	EndIfBlock 
+' Line #102:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	Close 0x0001 
+' Line #103:
+' 	Ld prpLeftTopCorner 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x001D 0x0022 " Окно макроса в левом верхнем углу"
+' Line #104:
+' 	LitDI2 0x000A 
+' 	Ld FrmMaster_Pref 
+' 	MemSt Left 
+' Line #105:
+' 	LitDI2 0x000A 
+' 	Ld FrmMaster_Pref 
+' 	MemSt Top 
+' Line #106:
+' 	EndIfBlock 
+' Line #107:
+' 	Ld prpTopAll 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x0016 0x0019 " Окно макроса поверх всех"
+' Line #108:
+' 	ArgsCall KeepFormOnTop 0x0000 
+' Line #109:
+' 	EndIfBlock 
+' Line #110:
+' 	EndSub 
+' Line #111:
+' Line #112:
+' 	FuncDefn (Sub TxtPath())
+' Line #113:
+' 	QuoteRem 0x0000 0x000D " Запись в ini"
+' Line #114:
+' 	Ld Source3 
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	LitDefault 
+' 	Open (For Output)
+' Line #115:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	Ld RunMacro 
+' 	MemLd Value 
+' 	PrintItemNL 
+' 	QuoteRem 0x0020 0x0006 " Шрифт"
+' Line #116:
+' 	Ld TxtFontName 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x0027 0x000A " Наклонный"
+' Line #117:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "1"
+' 	PrintItemNL 
+' Line #118:
+' 	ElseBlock 
+' Line #119:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "0"
+' 	PrintItemNL 
+' Line #120:
+' 	EndIfBlock 
+' Line #121:
+' 	Ld ChkFontItalic 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x0025 0x0007 " Жирный"
+' Line #122:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "1"
+' 	PrintItemNL 
+' Line #123:
+' 	ElseBlock 
+' Line #124:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "0"
+' 	PrintItemNL 
+' Line #125:
+' 	EndIfBlock 
+' Line #126:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	Ld ChkFontBold 
+' 	MemLd Value 
+' 	PrintItemNL 
+' 	QuoteRem 0x001C 0x0005 " Путь"
+' Line #127:
+' 	Ld ChkFrame_Click 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x0022 0x0006 " Рамка"
+' Line #128:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "1"
+' 	PrintItemNL 
+' Line #129:
+' 	ElseBlock 
+' Line #130:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "0"
+' 	PrintItemNL 
+' Line #131:
+' 	EndIfBlock 
+' Line #132:
+' 	Ld ChkFrame 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x0025 0x000F " Рамка для всех"
+' Line #133:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "1"
+' 	PrintItemNL 
+' Line #134:
+' 	ElseBlock 
+' Line #135:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	PrintChan 
+' 	LitStr 0x0001 "0"
+' 	PrintItemNL 
+' Line #136:
+' 	EndIfBlock 
+' Line #137:
+' 	LitDI2 0x0001 
+' 	Sharp 
+' 	Close 0x0001 
+' Line #138:
+' 	ArgsCall CustomPropertyView 0x0000 
+' Line #139:
+' 	QuoteRem 0x0000 0x0009 "Unload Me"
+' Line #140:
+' 	EndSub 
+' Line #141:
+' Line #142:
+' 	FuncDefn (Sub CmdSave_Click())
+' Line #143:
+' 	ArgsCall CustomPropertyView 0x0000 
+' Line #144:
+' 	QuoteRem 0x0000 0x0009 "Unload Me"
+' Line #145:
+' 	EndSub 
+' Line #146:
+' Line #147:
+' 	FuncDefn (Sub CmdExit_Click())
+' Line #148:
+' 	Ld Source1 
+' 	Paren 
+' 	ArgsCall CmdTune_Click 0x0001 
+' Line #149:
+' 	Ld Source2 
+' 	Paren 
+' 	ArgsCall CmdTune_Click 0x0001 
+' Line #150:
+' 	Ld Source8 
+' 	Ld Source8 
+' 	FnLen 
+' 	LitDI2 0x0006 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0006 "SLDDRW"
+' 	Concat 
+' 	St Annotation 
+' Line #151:
+' 	Ld Source8 
+' 	Ld Annotation 
+' 	Name 
+' 	QuoteRem 0x001B 0x000C " Rename file"
+' Line #152:
+' 	Ld Annotation 
+' 	Paren 
+' 	ArgsCall CmdTune_Click 0x0001 
+' Line #153:
+' 	Ld Annotation 
+' 	Ld Source8 
+' 	Name 
+' 	QuoteRem 0x001B 0x000C " Rename file"
+' Line #154:
+' Line #155:
+' 	Ld Source9 
+' 	Ld Source9 
+' 	FnLen 
+' 	LitDI2 0x0006 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0006 "SLDDRW"
+' 	Concat 
+' 	St Annotation 
+' Line #156:
+' 	Ld Source9 
+' 	Ld Annotation 
+' 	Name 
+' 	QuoteRem 0x001B 0x000C " Rename file"
+' Line #157:
+' 	Ld Annotation 
+' 	Paren 
+' 	ArgsCall CmdTune_Click 0x0001 
+' Line #158:
+' 	Ld Annotation 
+' 	Ld Source9 
+' 	Name 
+' 	QuoteRem 0x001B 0x000C " Rename file"
+' Line #159:
+' Line #160:
+' 	Ld Source10 
+' 	Ld Source10 
+' 	FnLen 
+' 	LitDI2 0x0006 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0006 "SLDDRW"
+' 	Concat 
+' 	St Annotation 
+' Line #161:
+' 	Ld Source10 
+' 	Ld Annotation 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #162:
+' 	Ld Annotation 
+' 	Paren 
+' 	ArgsCall CmdTune_Click 0x0001 
+' Line #163:
+' 	Ld Annotation 
+' 	Ld Source10 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #164:
+' Line #165:
+' 	Ld Source11 
+' 	Ld Source11 
+' 	FnLen 
+' 	LitDI2 0x0006 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0006 "SLDDRW"
+' 	Concat 
+' 	St Annotation 
+' Line #166:
+' 	Ld Source11 
+' 	Ld Annotation 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #167:
+' 	Ld Annotation 
+' 	Paren 
+' 	ArgsCall CmdTune_Click 0x0001 
+' Line #168:
+' 	Ld Annotation 
+' 	Ld Source11 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #169:
+' Line #170:
+' 	Ld Source12 
+' 	Ld Source12 
+' 	FnLen 
+' 	LitDI2 0x0006 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0006 "SLDDRW"
+' 	Concat 
+' 	St Annotation 
+' Line #171:
+' 	Ld Source12 
+' 	Ld Annotation 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #172:
+' 	Ld Annotation 
+' 	Paren 
+' 	ArgsCall CmdTune_Click 0x0001 
+' Line #173:
+' 	Ld Annotation 
+' 	Ld Source12 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #174:
+' Line #175:
+' 	Ld Source13 
+' 	Ld Source13 
+' 	FnLen 
+' 	LitDI2 0x0006 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0006 "SLDDRW"
+' 	Concat 
+' 	St Annotation 
+' Line #176:
+' 	Ld Source13 
+' 	Ld Annotation 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #177:
+' 	Ld Annotation 
+' 	Paren 
+' 	ArgsCall CmdTune_Click 0x0001 
+' Line #178:
+' 	Ld Annotation 
+' 	Ld Source13 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #179:
+' Line #180:
+' 	Ld Source16 
+' 	Ld Source16 
+' 	FnLen 
+' 	LitDI2 0x0006 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0006 "SLDDRW"
+' 	Concat 
+' 	St Annotation 
+' Line #181:
+' 	Ld Source16 
+' 	Ld Annotation 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #182:
+' 	Ld Annotation 
+' 	Paren 
+' 	ArgsCall CmdTune_Click 0x0001 
+' Line #183:
+' 	Ld Annotation 
+' 	Ld Source16 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #184:
+' Line #185:
+' 	Ld Source17 
+' 	Ld Source17 
+' 	FnLen 
+' 	LitDI2 0x0006 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0006 "SLDDRW"
+' 	Concat 
+' 	St Annotation 
+' Line #186:
+' 	Ld Source17 
+' 	Ld Annotation 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #187:
+' 	Ld Annotation 
+' 	Paren 
+' 	ArgsCall CmdTune_Click 0x0001 
+' Line #188:
+' 	Ld Annotation 
+' 	Ld Source17 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #189:
+' Line #190:
+' 	Ld Source18 
+' 	Ld Source18 
+' 	FnLen 
+' 	LitDI2 0x0006 
+' 	Sub 
+' 	ArgsLd Left$ 0x0002 
+' 	LitStr 0x0006 "SLDDRW"
+' 	Concat 
+' 	St Annotation 
+' Line #191:
+' 	Ld Source18 
+' 	Ld Annotation 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #192:
+' 	Ld Annotation 
+' 	Paren 
+' 	ArgsCall CmdTune_Click 0x0001 
+' Line #193:
+' 	Ld Annotation 
+' 	Ld Source18 
+' 	Name 
+' 	QuoteRem 0x001C 0x000C " Rename file"
+' Line #194:
+' Line #195:
+' 	EndSub 
+' Line #196:
+' Line #197:
+' 	FuncDefn (Sub CmdTune_Click(strTemp1))
+' Line #198:
+' 	QuoteRem 0x0000 0x0017 " Открываем файл шаблона"
+' Line #199:
+' 	SetStmt 
+' 	Ld strTemp1 
+' 	Ld swDocDRAWING 
+' 	Ld swDocDRAWING 
+' 	LitStr 0x0000 ""
+' 	Ld longstatus 
+' 	Ld longwarnings 
+' 	Ld swApp 
+' 	ArgsMemLd OpenDoc6 0x0006 
+' 	Set swDraw 
+' Line #200:
+' Line #201:
+' 	QuoteRem 0x0000 0x001D " Исправление шрифтов форматки"
+' Line #202:
+' 	SetStmt 
+' 	Ld swDraw 
+' 	MemLd sTune 
+' 	Set swView 
+' Line #203:
+' 	SetStmt 
+' 	Ld swView 
+' 	ArgsMemLd GetFirstView 0x0000 
+' 	Set swNote 
+' Line #204:
+' Line #205:
+' 	Ld swNote 
+' 	LitNothing 
+' 	Is 
+' 	Not 
+' 	DoWhile 
+' Line #206:
+' 	SetStmt 
+' 	Ld swNote 
+' 	ArgsMemLd GetFirstNote 0x0000 
+' 	Set LTrim 
+' Line #207:
+' 	SetStmt 
+' 	LitDI2 0x0000 
+' 	Ld LTrim 
+' 	ArgsMemLd GetAnnotation 0x0001 
+' 	Set swTextFormat 
+' Line #208:
+' 	Ld RunMacro 
+' 	MemLd Value 
+' 	Ld swTextFormat 
+' 	MemSt GetTitle 
+' Line #209:
+' 	Ld TxtFontName 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #210:
+' 	LitVarSpecial (True)
+' 	Ld swTextFormat 
+' 	MemSt CharHeight 
+' Line #211:
+' 	ElseBlock 
+' Line #212:
+' 	LitVarSpecial (False)
+' 	Ld swTextFormat 
+' 	MemSt CharHeight 
+' Line #213:
+' 	EndIfBlock 
+' Line #214:
+' 	Ld ChkFontItalic 
+' 	MemLd Value 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #215:
+' 	LitVarSpecial (True)
+' 	Ld swTextFormat 
+' 	MemSt Italic 
+' Line #216:
+' 	ElseBlock 
+' Line #217:
+' 	LitVarSpecial (False)
+' 	Ld swTextFormat 
+' 	MemSt Italic 
+' Line #218:
+' 	EndIfBlock 
+' Line #219:
+' 	Ld swNote 
+' 	MemLd GetCurrentSheet 
+' 	LitStr 0x0007 "MYPRP16"
+' 	Eq 
+' 	IfBlock 
+' 	QuoteRem 0x0027 0x0009 " Материал"
+' Line #220:
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (True)
+' 	Ld swTextFormat 
+' 	Ld LTrim 
+' 	ArgsMemLd GetTextFormat 0x0003 
+' 	St ok 
+' Line #221:
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	Ld swTextFormat 
+' 	Ld LTrim 
+' 	ArgsMemLd GetTextFormat 0x0003 
+' 	St ok 
+' Line #222:
+' 	ElseBlock 
+' 	QuoteRem 0x0009 0x0007 " Прочие"
+' Line #223:
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	Ld swTextFormat 
+' 	Ld LTrim 
+' 	ArgsMemLd GetTextFormat 0x0003 
+' 	St ok 
+' Line #224:
+' 	EndIfBlock 
+' Line #225:
+' 	SetStmt 
+' 	Ld swNote 
+' 	MemLd SetTextFormat 
+' 	Set swNote 
+' Line #226:
+' 	Loop 
+' Line #227:
+' Line #228:
+' 	QuoteRem 0x0000 0x0012 " Заменяем свойства"
+' Line #229:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpNumber 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpDocCode 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0000 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #230:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpNumber 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpDocCode 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0001 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #231:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpNumber 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpDocCode 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0002 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #232:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpDocDescription 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0003 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #233:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpDescriptionMulti 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0004 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #234:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpLit 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0005 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #235:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpLitTable 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0006 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #236:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpFirm 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0007 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #237:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpDesigner 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0008 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #238:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpTester 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0009 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #239:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpTechcontrol 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x000A 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #240:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpWorkType 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x000B 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #241:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpPerson 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x000C 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #242:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpNormcontrol 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x000D 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #243:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpApprove 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x000E 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #244:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpMass 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x000F 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #245:
+' 	Ld prpFontSize 
+' 	LitDI2 0x0001 
+' 	Eq 
+' 	IfBlock 
+' Line #246:
+' 	LitStr 0x0029 "<FONT size=1.8> <FONT size=3.5>$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpMaterial 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0010 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #247:
+' 	ElseBlock 
+' Line #248:
+' 	LitStr 0x000B " $PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpMaterial 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0010 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #249:
+' 	EndIfBlock 
+' Line #250:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpFirstApply 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0011 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #251:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpInformNumber 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0012 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #252:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpNumber 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0013 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #253:
+' 	LitStr 0x001D "Кол. на исполнение $PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpNumber 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitStr 0x0002 " -"
+' 	Concat 
+' 	LitDI2 0x0014 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #254:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpNumber 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitStr 0x0002 "ВП"
+' 	Concat 
+' 	LitDI2 0x0015 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #255:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpFirstApplySP 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0016 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #256:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpInformNumberSP 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0017 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #257:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpLitSP 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0018 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #258:
+' 	LitStr 0x000A "$PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpInformNumberVP 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x0019 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #259:
+' 	LitStr 0x0010 "Шифр: $PRPSHEET:"
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	Ld prpProject 
+' 	Concat 
+' 	LitDI2 0x0022 
+' 	ArgsLd GetNext$ 0x0001 
+' 	Concat 
+' 	LitDI2 0x001A 
+' 	ArgsSt strSheetFormatName 0x0001 
+' Line #260:
+' Line #261:
+' 	SetStmt 
+' 	Ld swDraw 
+' 	MemLd ActiveDoc 
+' 	Set swSheet 
+' Line #262:
+' 	Ld swSheet 
+' 	ArgsMemLd Chr 0x0000 
+' 	St SourceTemp 
+' Line #263:
+' 	SetStmt 
+' 	Ld swDraw 
+' 	MemLd SelectByID2 
+' 	Set swSelMgr 
+' Line #264:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x001A 
+' 	For 
+' Line #265:
+' 	LitStr 0x0005 "MYPRP"
+' 	Ld i 
+' 	Concat 
+' 	LitStr 0x0001 "@"
+' 	Concat 
+' 	Ld SourceTemp 
+' 	Concat 
+' 	St strTemp 
+' Line #266:
+' 	Ld strTemp 
+' 	LitStr 0x0004 "NOTE"
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitVarSpecial (False)
+' 	LitDI2 0x0000 
+' 	LitNothing 
+' 	LitDI2 0x0000 
+' 	Ld swDraw 
+' 	MemLd swSetValue_InAllConfigurations 
+' 	ArgsMemLd Extension 0x0009 
+' 	St ok 
+' Line #267:
+' 	Ld ok 
+' 	LitVarSpecial (True)
+' 	Eq 
+' 	IfBlock 
+' Line #268:
+' 	SetStmt 
+' 	LitDI2 0x0001 
+' 	Ld swSelMgr 
+' 	ArgsMemLd SelectionManager 0x0001 
+' 	Set swNote 
+' Line #269:
+' 	Ld i 
+' 	ArgsLd strSheetFormatName 0x0001 
+' 	Ld swNote 
+' 	ArgsMemCall GetSelectedObject2 0x0001 
+' Line #270:
+' 	EndIfBlock 
+' Line #271:
+' 	StartForVariable 
+' 	Ld i 
+' 	EndForVariable 
+' 	NextVar 
+' Line #272:
+' Line #273:
+' 	QuoteRem 0x0000 0x001A " Перестраиваем и сохраняем"
+' Line #274:
+' 	Ld swDraw 
+' 	ArgsMemCall EditDelete 0x0000 
+' Line #275:
+' 	Ld Rebuild 
+' 	Paren 
+' 	Ld swDraw 
+' 	ArgsMemCall EditSheet 0x0001 
+' Line #276:
+' 	Ld swDraw 
+' 	ArgsMemLd swRebuildAll 0x0000 
+' 	St ok 
+' Line #277:
+' 	LitVarSpecial (False)
+' 	Ld swDraw 
+' 	ArgsMemCall GraphicsRedraw2 0x0001 
+' Line #278:
+' 	Ld strTemp1 
+' 	Ld swApp 
+' 	ArgsMemCall swMbOk 0x0001 
+' Line #279:
+' Line #280:
+' 	EndSub 
+' apc/The VBA Project/_VBA_Project/VBA/Master_top - 3535 bytes
+' Line #0:
+' 	LbMark 
+' 	Ld VBA7 
+' 	LbIf 
+' Line #1:
+' 	LineCont 0x001C 07 00 04 00 0D 00 04 00 12 00 04 00 17 00 04 00 1C 00 04 00 21 00 04 00 26 00 04 00
+' 	FuncDefn (Function Master_top(ByVal SetWindowPos As Ptr) As Long)
+' Line #2:
+' 	LbMark 
+' 	LbElse 
+' Line #3:
+' 	LineCont 0x001C 00 00 CA FF 00 00 B2 FF 00 00 90 FF 00 00 7C FF 00 00 68 FF 00 00 53 FF 00 00 3E FF
+' 	Reparse 0x00E3 "Private Declare Function SetWindowPos Lib "user32.dll"    (ByVal hwnd As Long,    ByVal hWndInsertAfter As Long,    ByVal X As Long,    ByVal Y As Long,    ByVal cx As Long,    ByVal cy As Long,    ByVal wFlags As Long) As Long"
+' Line #4:
+' 	LbMark 
+' 	LbEndIf 
+' Line #5:
+' Line #6:
+' 	FuncDefn (Public Sub HWNDActiveWindow())
+' Line #7:
+' 	Ld GetActiveWindow 
+' 	St hwndAW 
+' Line #8:
+' 	EndSub 
+' Line #9:
+' Line #10:
+' 	FuncDefn (Public Sub KeepFormOnTop())
+' Line #11:
+' Line #12:
+' 	Dim 
+' 	VarDefn wFlags (As Long)
+' Line #13:
+' Line #14:
+' Line #15:
+' 	Dim (Const) 
+' 	LitDI2 0x0002 
+' 	VarDefn RetVal
+' Line #16:
+' 	Dim (Const) 
+' 	LitDI2 0x0001 
+' 	VarDefn SWP_NOMOVE
+' Line #17:
+' 	Dim (Const) 
+' 	Ld RetVal 
+' 	Ld SWP_NOMOVE 
+' 	Or 
+' 	VarDefn SWP_NOSIZE
+' Line #18:
+' 	Dim (Const) 
+' 	LitDI2 0x0000 
+' 	VarDefn SWP_WNDFLAGS
+' Line #19:
+' 	Dim (Const) 
+' 	LitDI2 0x0001 
+' 	UMi 
+' 	VarDefn HWND_TOP
+' Line #20:
+' 	Dim (Const) 
+' 	LitDI2 0x0002 
+' 	UMi 
+' 	VarDefn HWND_TOPMOST
+' Line #21:
+' Line #22:
+' 	Ld hwndAW 
+' 	St SetWindowPos 
+' Line #23:
+' Line #24:
+' 	Ld SetWindowPos 
+' 	Ld HWND_TOP 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	Ld SWP_NOSIZE 
+' 	ArgsLd Master_top 0x0007 
+' 	St wFlags 
+' Line #25:
+' Line #26:
+' 	EndSub 
+' Line #27:
+' Line #28:
+' 	FuncDefn (Public Sub HWND_NOTOPMOST())
+' Line #29:
+' Line #30:
+' 	Dim 
+' 	VarDefn wFlags (As Long)
+' Line #31:
+' Line #32:
+' 	Dim (Const) 
+' 	LitDI2 0x0002 
+' 	VarDefn RetVal
+' Line #33:
+' 	Dim (Const) 
+' 	LitDI2 0x0001 
+' 	VarDefn SWP_NOMOVE
+' Line #34:
+' 	Dim (Const) 
+' 	Ld RetVal 
+' 	Ld SWP_NOMOVE 
+' 	Or 
+' 	VarDefn SWP_NOSIZE
+' Line #35:
+' 	Dim (Const) 
+' 	LitDI2 0x0000 
+' 	VarDefn SWP_WNDFLAGS
+' Line #36:
+' 	Dim (Const) 
+' 	LitDI2 0x0001 
+' 	UMi 
+' 	VarDefn HWND_TOP
+' Line #37:
+' 	Dim (Const) 
+' 	LitDI2 0x0002 
+' 	UMi 
+' 	VarDefn HWND_TOPMOST
+' Line #38:
+' Line #39:
+' 	Ld hwndAW 
+' 	St SetWindowPos 
+' Line #40:
+' Line #41:
+' 	Ld SetWindowPos 
+' 	Ld HWND_TOPMOST 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	LitDI2 0x0000 
+' 	Ld SWP_NOSIZE 
+' 	ArgsLd Master_top 0x0007 
+' 	St wFlags 
+' Line #42:
+' Line #43:
+' 	EndSub 
+' Line #44:
+' Line #45:
+' Line #46:
+' Line #47:

@@ -1,0 +1,3906 @@
+Attribute VB_Name = "FrmMProp"
+Attribute VB_Base = "0{602CD537-5386-4064-AFC4-44E3A1B76450}{9FA48A77-4DC8-4A2A-ACCF-0CF9A02B21CE}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = False
+Option Explicit
+'Dim swDraw1 As Object
+'Dim swConfig As Object
+'Dim swConfig1 As Object
+'Dim swSelMgr As Object
+'Dim swNote As Object
+'Dim swAnn As Object
+'Dim swTextFormat As Object
+'Dim swModExt As Object
+Dim swDraw1 As SldWorks.DrawingDoc
+Dim swConfig As SldWorks.Configuration
+Dim swConfig1 As SldWorks.Configuration
+Dim swSelMgr As SldWorks.SelectionMgr
+Dim swNote As SldWorks.Note
+Dim swAnn As SldWorks.Annotation
+Dim swTextFormat As SldWorks.TextFormat
+Dim swModExt As SldWorks.ModelDocExtension
+Dim MassProp As SldWorks.MassProperty
+Dim sNumber As String ' При записи свойств - часть Обозначения
+Dim sNumberTitle As String ' Имя файла модели;
+Dim sNumberReal As String ' Имя файла через свойство SW
+Dim ConfNumb As Single ' Общее число конфигураций
+Dim vConfNameArr As Variant ' Массив имен всех конфигураций
+Dim vCustInfoNameArr As Variant ' Массив свойств файла
+Dim Fam() As String ' Массив с фамилиями
+Dim jfam As Integer ' Число зачитанных из файла фамилий
+Dim Project() As String ' Массив с проектами
+Dim jproject As Integer ' Число зачитанных из файла проектов
+Dim ProfData(50, 7) ' Массив с фамилиями профилей
+Dim ProfDataCaption() As String ' Массив заголовков профилей
+Dim Source As String ' Путь к файлу макроса
+Dim Source1 As String ' Путь к файлу с фамилиями
+Dim Source2 As String ' Путь к файлу с профилями
+Dim Source3 As String ' Путь к файлу со списком фирм
+Dim Source4 As String ' Путь к файлу модели
+Dim Source5 As String ' Путь к файлу со списком значений графы "Характер работы"
+Dim Source6 As String ' Путь к файлу со списком проектов
+Dim Source8 As String ' Путь к ini файлу макроса MyProperties
+Dim Source9 As String ' Путь к файлу макроса SProp
+Dim Source11 As String ' Путь к ini файлу макроса MyProperties
+Dim Source12 As String ' Путь к файлу стандарта
+Dim Source14 As String ' Путь к каталогу баз материалов
+Dim Source15 As String ' Путь к файлу типов документов
+Dim Source18 As String ' Путь к файлу сортаментов
+Dim sDrawName As String ' Имя чертежа
+Dim sModelName As String ' Имя модели
+Dim sFormatArray() As String ' Массив значений форматов из чертежа
+Dim vMassProp As Variant ' Массив с массовыми свойствами
+'Dim nStatus As Long ' Статус vMassProp
+Dim mv As Double ' Масса
+Dim vv As Double ' Объем
+Dim dv As Double ' Плотность
+Dim mvTemp As Double
+Dim sMatDB As String ' База SW
+Dim sMaterial As String ' Материал из базы SW
+Dim SMatBase() As String ' Информация из файла база материалов
+Dim singlTemp As Single
+Dim longTemp As Long
+Dim doubleTemp As Double
+Dim doubleTemp1 As Double
+Dim intTemp As Integer
+Dim m As Integer ' Метка
+Dim m1 As Integer ' Метка
+Dim n As Integer ' Носитель
+Dim k As Integer ' Носитель
+Dim k1 As Integer ' Носитель
+Dim k2 As Integer ' Носитель
+Dim i As Integer ' Счетчик
+Dim ii As Integer ' Счетчик
+Dim i1 As Integer ' Счетчик
+Dim j As Integer ' Счетчик
+Dim jj As Integer ' Счетчик
+Dim j1 As Integer ' Счетчик
+Dim intDRWSheet As Integer ' Счетчик листов чертежа
+Dim MConf As Integer  ' Метка списка конфигураций: 0 - пользователь изменил список; 1 - список изменен из программы
+Dim MDrw As Integer ' Метка соответствия чертежа и модели: 0 - чертеж не соответсвует; 1 - чертеж нормальный
+Dim MClose As Integer ' Метка закрытия макроса: 1 - макрос закрывается
+Dim MDel As Integer ' Метка кнопки "Очистить все свойства": 0 - кнопка нажата пользователем; 1 - программно
+Dim MAssem As Integer  ' Метка флажка Сборка: 0 - можно менять флажок; 1 - нельзя менять флажок
+Dim MMass As Integer  ' Метка флажка "Задать единицы и точность": 0 - можно менять флажок; 1 - нельзя менять флажок
+Dim MForm As Integer  ' Метка флажка Задать формат: 0 - пользователь изменил флажок; 1 - флажок изменен из программы
+Dim MChkMaterialSW As Integer  ' Метка флажка "Материал SW": 0 - можно менять флажок; 1 - нельзя менять флажок
+Dim MChk3 As Integer  ' Метка флажка "Сортамент": 0 - можно менять флажок; 1 - нельзя менять флажок
+Dim MChkBlank As Integer ' Метка флажка "Заготовка": 0 - можно менять флажок; 1 - нельзя менять флажок
+Dim MChkBlankFile As Integer ' Метка флажка "Заготовка из файла": 0 - можно менять флажок; 1 - нельзя менять флажок
+Dim MTests As Integer ' Метка процедуры Tests: 0 - первичный вызов; 1 - вызов из ChkFormat_Click
+Dim MSection As Integer  ' Метка списка разделов: 0 - пользователь изменил список; 1 - список изменен из программы
+Dim MIni1 As Integer ' Метка ini
+Dim MIni2 As Integer ' Метка ini
+Dim MIni3 As String ' Метка ini
+Dim MIni4 As Integer ' Метка ini
+Dim MIni5 As Integer ' Метка ini
+Dim MIni6 As Integer ' Метка ini
+Dim MIni7 As Double ' Метка ini
+Dim MBase As Integer  ' Метка списка баз материалов: 0 - пользователь изменил список; 1 - список изменен из программы
+Dim MGroup As Integer  ' Метка списка групп материалов: 0 - пользователь изменил список; 1 - список изменен из программы
+Dim sSheetsNames1 As String ' Имена листов со старыми версиями
+Dim sSheetsNames2 As String ' Имена листов с нечитаемыми форматами
+Dim sSheetsNames3 As String ' Имена листов с проблемами оформления
+Dim longstatus As Long
+Dim longwarnings As Long
+Dim strSheetFormatName As String ' Имя формата листа (солидовское)
+Dim strTemp As String
+Dim sTemp() As String
+Dim strTemp1 As String
+Dim varTemp As Variant
+Dim varTemp1 As Variant
+Dim iResult As Integer ' Метка
+Dim dTaskID As Double ' Открытие блокнота
+Dim NumChildren() As Long ' Массив для количества извлеченных конфигураций
+Dim LevelNumber As Integer ' Номер уровня для конфигурации
+Dim NumLevel() As Integer ' Массив для количества уровней вложенности конфигураций
+Dim ok As Boolean
+Dim strDescription As String ' Наименование, преобразованное в одну строку
+Dim lRetval As Long
+Dim strMsg As String ' Строка сообщения пользователю
+Dim MyDateTime As Date
+Dim fs As Object
+Dim fs1 As Object
+Dim fs2 As Object
+Dim sDocData() As String
+' *** MyProperties
+    Dim prpNumber As String
+    Dim prpDocCode As String
+    Dim prpDocDescription As String
+    Dim prpDescription As String
+    Dim prpDescriptionMulti As String
+    Dim prpCode As String
+    Dim prpFormat As String
+    Dim prpRemark As String
+    Dim prpLit As String
+    Dim prpLitTable As String
+    Dim prpFirm As String
+    Dim prpSection As String
+    Dim prpGroup As String
+    '
+    Dim prpDesigner As String
+    Dim prpTester As String
+    Dim prpTechcontrol As String
+    Dim prpWorkType As String
+    Dim prpPerson As String
+    Dim prpNormcontrol As String
+    Dim prpApprove As String
+    '
+    Dim prpMass As String
+    Dim prpMassTable As String
+    Dim prpMaterial As String
+    Dim prpMaterialTable As String
+    '
+    Dim prpFirstApply As String
+    Dim prpInformNumber As String
+    '
+    Dim prpFirstApplySP As String
+    Dim prpInformNumberSP As String
+    Dim prpLitSP As String
+    '
+    Dim prpInformNumberVP As String
+    Dim prpDescriptionVP As String
+    Dim prpProductCodeVP As String
+    Dim prpNumberDocVP As String
+    Dim prpVendorVP As String
+    Dim prpRemarkVP As String
+    '
+    Dim prpProject As String
+    Dim prpDraftNumber As String
+    Dim prpDraftDescription As String
+    Dim prpDraftFirstApply As String
+    Dim prpDraftFirstApplySP As String
+    '
+    Dim prpBlank As String
+    '
+    Dim prpBor As String
+    '
+    Dim prpQuantity As String
+    '
+    Dim prpTestVersion As Integer
+    Dim prpTestFormat As Integer
+    Dim prpTestName As Integer
+    Dim prpTestStandard As Integer
+    '
+    Dim prpFileName As Integer
+    Dim prpNameSep As String
+    '
+    Dim prpFontSize As String
+    '
+    Dim prpAddPRP1 As String
+    Dim prpAddPRP2 As String
+    '
+    'Dim prpLeftTopCorner As Integer
+    'Dim prpTopAll As Integer
+' *** MyStandard
+    Dim stdFontName As String
+    Dim stdFontSize As Double
+    Dim stdFontItalic As Integer
+    Dim stdFontBold As Integer
+    Dim stdDay As String
+    Dim stdMonth As String
+    Dim stdYear As String
+    Dim stdHour As String
+    Dim stdMinute As String
+    Dim stdSecond As String
+
+Private Sub CboBaseSW_Change()
+If MBase = 0 Then
+    MGroup = 1
+    ReDim SMatBase(500, 1000)
+    CboGroupSW.Clear
+    CboMaterialSW.Clear
+    If CboBaseSW.ListIndex <> -1 Then
+        If CboBaseSW.Text = "Временная база" Then
+            CboMaterialSW.AddItem sMaterial
+            CboMaterialSW.Value = sMaterial
+        ElseIf CboBaseSW.Text = "Удалить материал" Then
+        
+        Else
+            strTemp = Source14 & "\" & CboBaseSW.Text & ".sldmat"
+            Open strTemp For Binary Access Read As #1
+                sTemp = Split(Mid(StrConv(Input(LOF(1), #1), vbFromUnicode), 2), vbCrLf)
+            Close #1
+            i = -1
+            For i1 = LBound(sTemp) To UBound(sTemp)
+                'Debug.Print sTemp(i1)
+                varTemp = InStr(sTemp(i1), "classification name")
+                If varTemp > 0 Then
+                    i = i + 1
+                    j = -1
+                    CboGroupSW.AddItem Mid$(sTemp(i1), varTemp + 21, Len(sTemp(i1)) - varTemp - 22)
+                End If
+                varTemp1 = InStr(sTemp(i1), "material name")
+                If varTemp1 > 0 Then
+                    j = j + 1
+                    varTemp = InStr(sTemp(i1), Chr$(34))
+                    varTemp = InStr(varTemp + 1, sTemp(i1), Chr$(34))
+                    'SMatBase(i, j) = Mid$(sTemp(i1), varTemp1 + 15, Len(sTemp(i1)) - varTemp1 - 16)
+                    SMatBase(i, j) = Replace(Mid$(sTemp(i1), varTemp1 + 15, varTemp - varTemp1 - 15), "&quot;", Chr$(34))
+                    ' SMatBase(i, j) = Mid$(sTemp(i1), varTemp1 + 15, varTemp - varTemp1 - 15)
+                End If
+            Next i1
+        End If
+    End If
+    MGroup = 0
+End If
+End Sub
+
+Private Sub CboGroupSW_Change()
+If MGroup = 0 Then
+    CboMaterialSW.Clear
+    If CboGroupSW.ListIndex <> -1 Then
+        For j = 0 To 1000
+            strTemp = SMatBase(CboGroupSW.ListIndex, j)
+            If strTemp = "" Then
+                Exit For
+            Else
+                CboMaterialSW.AddItem strTemp
+            End If
+        Next j
+    End If
+End If
+End Sub
+
+Private Sub CboMaterialSW_Change()
+'<classification name="Стали">
+'<material name="Ст3 ГОСТ 380-94">
+End Sub
+
+Private Sub ChkBor_Click() ' Флажок Заимствование
+LstBor.Clear
+If ChkBor.Value = True Then
+    LstBor.Enabled = True
+    Open Source6 For Input As #1
+    i = 0
+    Do While Not EOF(1)
+        Line Input #1, strTemp
+        LstBor.AddItem strTemp
+        i = i + 1
+    Loop
+    Close #1
+    strTemp = swModel.CustomInfo2("", prpBor)
+    If strTemp <> "" Then
+        i = 1
+        While i = 1
+            varTemp = InStr(strTemp, "$")
+            If varTemp > 1 Then
+                m = 0
+                strTemp1 = Left$(strTemp, varTemp - 1)
+                For j = 0 To LstBor.ListCount - 1
+                    If LstBor.List(j) = strTemp1 Then
+                        LstBor.Selected(j) = True
+                        m = 1
+                        Exit For
+                    End If
+                Next j
+                If m = 0 Then ' Пополняем список
+                    LstBor.AddItem strTemp1
+                    For j = 0 To LstBor.ListCount - 1
+                        If LstBor.List(j) = strTemp1 Then
+                            LstBor.Selected(j) = True
+                            Exit For
+                        End If
+                    Next j
+                End If
+                strTemp = Right$(strTemp, Len(strTemp) - varTemp)
+            Else
+                i = 0
+            End If
+        Wend
+    End If
+Else
+    LstBor.Enabled = False
+End If
+End Sub
+
+Private Sub ChkChildConfigName_Click()
+If ChkChildConfigName.Value = True Then
+    ChkConfigName.Value = False
+End If
+End Sub
+
+Private Sub ChkConfigName_Click()
+If ChkConfigName.Value = True Then
+    ChkChildConfigName.Value = False
+End If
+End Sub
+
+Private Sub ChkFont_Click()
+If ChkFont.Value = True Then
+    Наименование.Font.Size = 11
+Else
+    Наименование.Font.Size = 14
+End If
+End Sub
+
+Private Sub ChkFormat_Click()
+If MForm = 0 Then ' Изменения разрешены
+    Tests (1)
+End If
+End Sub
+
+Private Sub Tests(MTests)
+If mRun = 0 Then
+    If prpTestVersion = 1 Or prpTestFormat = 1 Or prpTestStandard = 1 Then
+        ' Проверка соответствия чертежа модели
+        If MDrw = 1 Then ' Чертеж нормальный для этой конфигурации
+            ReDim sFormatArray(UBound(vSheetNames))
+            ' Считываем и проверяем форматы всех листов
+            intDRWSheet = 0
+            k = 0
+            k1 = 0
+            k2 = 0
+            sSheetsNames1 = ""
+            sSheetsNames2 = ""
+            sSheetsNames3 = ""
+            Set swSelMgr = swDraw.SelectionManager
+            For i = 0 To UBound(vSheetNames)
+                ok = swDraw.ActivateSheet(vSheetNames(i))
+                Set swSheet = swDraw.GetCurrentSheet
+                strSheetFormatName = swSheet.GetSheetFormatName()
+                ' Проверка версии и оформления
+                If Left$(vSheetNames(i), 3) = "DRW" Or Left$(vSheetNames(i), 4) = "Лист" Or Left$(vSheetNames(i), 5) = "Sheet" Or Left$(vSheetNames(i), 2) = "SP" Or Left$(vSheetNames(i), 2) = "VP" Or Left$(vSheetNames(i), 3) = "LRI" Then
+                    If prpTestVersion = 1 And MTests = 0 Then
+                        ' Проверка версии форматки
+                        strTemp = "Version@" & strSheetFormatName
+                        ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+                        If ok = True Then
+                            Set swNote = swSelMgr.GetSelectedObject2(1)
+                            strTemp = swNote.GetText()
+                            ' Проверка версии
+                            If Right$(strTemp, 1) <> "3" Then
+                                k1 = k1 + 1
+                                sSheetsNames1 = sSheetsNames1 & vSheetNames(i) & ", "
+                            End If
+                        Else
+                            k1 = k1 + 1
+                            sSheetsNames1 = sSheetsNames1 & vSheetNames(i) & ", "
+                        End If
+                    End If
+                    If prpTestStandard = 1 And MTests = 0 Then
+                        ' Проверка оформления
+                        m = 0
+                        Set swView = swDraw.GetFirstView
+                        If Not swView Is Nothing Then
+                            Set swNote = swView.GetFirstNote()
+                            j = 0
+                            While j = 0
+                                If Not swNote Is Nothing Then
+                                    Set swAnn = swNote.GetAnnotation()
+                                    If Not swAnn.OwnerType = swAnnotationOwner_DrawingTemplate Then ' Исключаем объекты форматки
+                                        Set swNote = swNote.GetNext
+                                    Else
+                                        j = 1
+                                    End If
+                                Else
+                                    j = 1
+                                End If
+                            Wend
+                            If Not swNote Is Nothing Then
+                                Set swAnn = swNote.GetAnnotation()
+                                Set swTextFormat = swAnn.GetTextFormat(0)
+                                If swTextFormat.TypeFaceName <> stdFontName Then
+                                    m = 1
+                                End If
+                                If swTextFormat.Italic = True And stdFontItalic = 0 Then
+                                    m = 1
+                                ElseIf swTextFormat.Italic = False And stdFontItalic = 1 Then
+                                    m = 1
+                                End If
+                                If swTextFormat.Bold = True And stdFontBold = 0 Then
+                                    m = 1
+                                ElseIf swTextFormat.Bold = False And stdFontBold = 1 Then
+                                    m = 1
+                                End If
+                            Else
+                                m = 1
+                            End If
+                        Else
+                            m = 1
+                        End If
+                        Set swView = swView.GetNextView
+                        If Not swView Is Nothing Then
+                            Set swNote = swView.GetFirstNote()
+                            If Not swNote Is Nothing Then
+                                Set swAnn = swNote.GetAnnotation()
+                                Set swTextFormat = swAnn.GetTextFormat(0)
+                                If swTextFormat.TypeFaceName <> stdFontName Then
+                                    m = 1
+                                End If
+                                If swTextFormat.Italic = True And stdFontItalic = 0 Then
+                                    m = 1
+                                ElseIf swTextFormat.Italic = False And stdFontItalic = 1 Then
+                                    m = 1
+                                End If
+                                If swTextFormat.Bold = True And stdFontBold = 0 Then
+                                    m = 1
+                                ElseIf swTextFormat.Bold = False And stdFontBold = 1 Then
+                                    m = 1
+                                End If
+                            End If
+                        End If
+                        Set swModExt = swDraw.Extension
+                        Set swTextFormat = swModExt.GetUserPreferenceTextFormat(swDetailingDimensionTextFormat, swDetailingDimension)
+                        If swTextFormat.TypeFaceName <> stdFontName Or swTextFormat.CharHeight <> stdFontSize / 1000 Then
+                            m = 1
+                        End If
+                        If swTextFormat.Italic = True And stdFontItalic = 0 Then
+                            m = 1
+                        ElseIf swTextFormat.Italic = False And stdFontItalic = 1 Then
+                            m = 1
+                        End If
+                        If swTextFormat.Bold = True And stdFontBold = 0 Then
+                            m = 1
+                        ElseIf swTextFormat.Bold = False And stdFontBold = 1 Then
+                            m = 1
+                        End If
+                        If m = 1 Then
+                            k2 = k2 + 1
+                            sSheetsNames2 = sSheetsNames2 & vSheetNames(i) & ", "
+                        End If
+                    End If
+                End If
+                If prpTestFormat = 1 And ChkFormat.Value = False Then ' Формат читается из чертежа
+                    If Left$(vSheetNames(i), 3) = "DRW" Or Left$(vSheetNames(i), 4) = "Лист" Or Left$(vSheetNames(i), 5) = "Sheet" Or Left$(vSheetNames(i), 3) = "LRI" Then
+                        ' Проверка имени формата
+                        strTemp = "Format@" & strSheetFormatName
+                        ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+                        If ok = True Then
+                            Set swNote = swSelMgr.GetSelectedObject2(1)
+                            strTemp = swNote.GetText()
+                            ' Проверка корректности и длины записи
+                            If Len(Trim(strTemp)) > 8 And Left$(strTemp, 6) = "Формат" Then
+                                sFormatArray(intDRWSheet) = Right$(strTemp, Len(strTemp) - 7)
+                                intDRWSheet = intDRWSheet + 1
+                            Else
+                                k = k + 1
+                                sSheetsNames3 = sSheetsNames3 & vSheetNames(i) & ", "
+                            End If
+                        Else
+                            k = k + 1
+                            sSheetsNames3 = sSheetsNames3 & vSheetNames(i) & ", "
+                        End If
+                    End If
+                End If
+            Next i
+            If k1 > 0 Then
+                sSheetsNames1 = Left$(sSheetsNames1, Len(sSheetsNames1) - 2)
+                strMsg = "Лист(ы) " & sSheetsNames1 & " имеют нестандартную или устаревшую основную надпись." & Chr$(10) & "Текст основной надписи может отображаться неверно." & Chr$(10) & "Для исправления используйте макрос DProp"
+               ' NotKeepFormOnTop
+                lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbOk)
+               ' KeepFormOnTop
+            End If
+            If k2 > 0 Then
+                sSheetsNames2 = Left$(sSheetsNames2, Len(sSheetsNames2) - 2)
+                strMsg = "Лист(ы) " & sSheetsNames2 & " имеют ошибки оформления." & Chr$(10) & "Для исправления используйте макрос DProp"
+               ' NotKeepFormOnTop
+                lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbOk)
+               ' KeepFormOnTop
+            End If
+            If prpTestFormat = 1 Then ' Есть проверка формата
+                If Чертеж.Value = "СБ" Then
+                    MForm = 1
+                    ChkFormat.Value = False
+                    MForm = 0
+                    ChkFormat.Enabled = False
+                    Формат.Enabled = False
+                    Формат.Value = "А4"
+                ElseIf Чертеж.Value = "ВП" Then
+                    MForm = 1
+                    ChkFormat.Value = False
+                    MForm = 0
+                    ChkFormat.Enabled = False
+                    Формат.Enabled = False
+                    Формат.Value = "А3"
+                Else
+                    ChkFormat.Enabled = True
+                    If ChkFormat.Value = False Then ' Формат читается из чертежа
+                        Формат.Enabled = False
+                        If k = 0 And intDRWSheet > 0 Then ' Все прочитанные форматы определены
+                            ' Определяем число листов
+                            If intDRWSheet > 1 Then ' Листов больше одного
+                                m = 0
+                                ' Сортируем форматы
+                                For i = 0 To intDRWSheet - 1
+                                    strTemp = sFormatArray(i)
+                                    n = i
+                                    For j = i To intDRWSheet - 2
+                                        ' Длина равна, левые части нет
+                                        If Len(strTemp) = Len(sFormatArray(j + 1)) And Left$(strTemp, 2) <> Left$(sFormatArray(j + 1), 2) Then
+                                            iResult = StrComp(Left$(sFormatArray(j + 1), 2), Left$(strTemp, 2), 1)
+                                            Select Case iResult
+                                            Case -1 ' меньше
+                                                m = 1
+                                            Case 0 ' равняется
+                                            Case 1 ' больше
+                                                strTemp = sFormatArray(j + 1)
+                                                n = j + 1
+                                                m = 1
+                                            End Select
+                                        ' Длина не равна, левые части равны
+                                        ElseIf Len(strTemp) <> Len(sFormatArray(j + 1)) And Left$(strTemp, 2) = Left$(sFormatArray(j + 1), 2) Then
+                                            iResult = StrComp(sFormatArray(j + 1), strTemp, 1)
+                                            Select Case iResult
+                                            Case -1
+                                                strTemp = sFormatArray(j + 1)
+                                                n = j + 1
+                                                m = 1
+                                            Case 0
+                                            Case 1
+                                                m = 1
+                                            End Select
+                                        ' Длина равна, левые части тоже
+                                        ElseIf Len(strTemp) = Len(sFormatArray(j + 1)) And Left$(strTemp, 2) = Left$(sFormatArray(j + 1), 2) Then
+                                            iResult = StrComp(Right$(sFormatArray(j + 1), 1), Right$(strTemp, 1), 1)
+                                            Select Case iResult
+                                            Case -1
+                                                strTemp = sFormatArray(j + 1)
+                                                n = j + 1
+                                                m = 1
+                                            Case 0
+                                            Case 1
+                                                m = 1
+                                            End Select
+                                        ' Длина не равна, левые части не равны
+                                        Else
+                                            iResult = StrComp(Left$(sFormatArray(j + 1), 2), Left$(strTemp, 2), 1)
+                                            Select Case iResult
+                                            Case -1
+                                                m = 1
+                                            Case 0
+                                            Case 1
+                                                strTemp = sFormatArray(j + 1)
+                                                n = j + 1
+                                                m = 1
+                                            End Select
+                                        End If
+                                    Next j
+                                    sFormatArray(n) = sFormatArray(i)
+                                    sFormatArray(i) = strTemp
+                                Next i
+                            End If
+                            ' Заносим формат
+                            If m = 0 Or intDRWSheet = 1 Then   ' Все форматы одинаковые или формат всего один
+                                If Len(sFormatArray(0)) > 2 Then ' Формат кратный
+                                    Формат.ListIndex = 7
+                                    Примечание.Value = "*) " & sFormatArray(0)
+                                Else ' Формат обычный
+                                    Формат.Value = sFormatArray(0)
+                                End If
+                            Else 'Форматов много и они разные
+                                ' Формируем запись форматов в примечание
+                                strTemp = ""
+                                For i = 0 To intDRWSheet - 1
+                                    If i <> intDRWSheet - 1 Then
+                                        If sFormatArray(i) <> sFormatArray(i + 1) Then
+                                            strTemp = strTemp & " " & sFormatArray(i) & ","
+                                        End If
+                                    Else
+                                        strTemp = strTemp & " " & sFormatArray(i) & ","
+                                    End If
+                                Next i
+                                Формат.ListIndex = 7
+                                Примечание.Value = "*)" & Left$(strTemp, Len(strTemp) - 1)
+                            End If
+                            If Формат.ListIndex = 7 Then
+                                Примечание.Enabled = False
+                            Else
+                                Примечание.Enabled = True
+                            End If
+                        ElseIf k = 0 And intDRWSheet = 0 Then ' Нет подходящих листов чертежа
+                            swApp.SendMsgToUser ("Формат не определен.")
+                            Формат.Value = ""
+                            Примечание.Enabled = True
+                        Else ' Один или более форматов не определены
+                            sSheetsNames3 = Left$(sSheetsNames3, Len(sSheetsNames3) - 2)
+                            strMsg = "Лист(ы) " & sSheetsNames3 & " не позволяют определить формат." & Chr$(10) & "Для исправления используйте макрос DProp"
+                           ' NotKeepFormOnTop
+                            lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbOk)
+                          '  KeepFormOnTop
+                            Формат.Value = ""
+                            Примечание.Enabled = True
+                        End If
+                    Else ' Формат устанавливается пользователем
+                        Формат.Enabled = True
+                        Примечание.Enabled = True
+                    End If
+                    If MDoc = 1 Then ' Открыт чертеж
+                    Else ' Открыта модель
+                        Set swModel = swApp.ActivateDoc(Source4)
+                    End If
+                End If
+            End If
+        Else ' C чертежем проблемы
+            If prpTestFormat = 1 Then ' Есть проверка формата
+                If ChkFormat.Value = False Then ' Формат читается из чертежа
+                    Формат.Value = ""
+                    Формат.Enabled = False
+                    Примечание.Enabled = True
+                Else ' Формат устанавливается пользователем
+                    Формат.Enabled = True
+                    Примечание.Enabled = True
+                End If
+            End If
+        End If
+        If prpTestFormat = 1 Then ' Есть проверка формата
+            ' Очистка Примечания от *)
+            strTemp = Примечание.Value
+            If Формат.Value <> "*)" And Left$(strTemp, 2) = "*)" Then
+                Примечание.Value = ""
+            End If
+        End If
+        Формат_Change
+    End If
+End If
+End Sub
+    
+Private Sub ChkAssem_Click()
+' Зависят ChkMaterialSW, Chk3
+If MAssem = 0 Then ' Изменения разрешены
+    MChkMaterialSW = 1 ' Метка флажка "Материал SW": 0 - можно менять флажок; 1 - нельзя менять флажок
+    MChk3 = 1 ' Метка флажка "Сортамент": 0 - можно менять флажок; 1 - нельзя менять флажок
+    If ChkAssem.Value = True And swModel.GetType = swDocPART Or ChkAssem.Value = False And swModel.GetType = swDocASSEMBLY Then ' Выбрана сборка - Гасим все
+        Chk3.Value = False
+        Материал.Value = ""
+        If ChkBlank.Value = False Then
+            ChkMaterialSW.Value = False
+        Else
+            ChkMaterialSW.Value = True
+        End If
+        ChkMaterialTable.Value = False
+        CboBaseSW.Value = ""
+        CboGroupSW.Value = ""
+        CboMaterialSW.Value = ""
+        ChkMaterialSW.Enabled = False
+        Chk3.Enabled = False
+        TxtShape.Visible = False
+        TxtSortament.Visible = False
+        TxtMarka.Visible = False
+        Материал.Visible = True
+        Материал.Enabled = False
+        CmdPastSort.Enabled = False
+        ChkMaterialTable.Enabled = False
+        CboBaseSW.Enabled = False
+        CboGroupSW.Enabled = False
+        CboMaterialSW.Enabled = False
+        TxtDens.Enabled = False
+        CboHatch.Enabled = False
+        MChkMaterialSW = 0
+        MChk3 = 0
+    Else ' Выбрана деталь
+        ChkMaterialTable.Enabled = True
+        CboBaseSW.Enabled = True
+        CboGroupSW.Enabled = True
+        CboMaterialSW.Enabled = True
+        If ChkBlank.Value = False Then
+            Chk3.Enabled = True
+            Материал.Enabled = True
+            strTemp = swModel.CustomInfo2(sConfigName, prpMaterialTable) ' Считываем материал из модели
+            If strTemp = "" Then ' Если строчка пустая
+                strTemp = swModel.CustomInfo2(sConfigName, prpMaterial) ' Считываем материал из модели
+            End If
+            If strTemp = "" Then ' Если строчка пустая
+                strTemp = swModel.CustomInfo2("", prpMaterial) ' Считываем материал из модели
+            End If
+            varTemp1 = InStr(strTemp, "<OVER>") ' Проверяем разделитель
+            If varTemp1 > 0 Then ' Разделитель присутствует
+                Chk3.Value = True
+            Else ' Разделителя нет
+                Chk3.Value = False
+            End If
+        Else
+            Chk3.Enabled = False
+            Материал.Enabled = False
+            Chk3.Value = False
+        End If
+        If swModel.GetType = swDocPART Then ' Если открыта деталь
+            If ChkBlank.Value = False Then
+                ChkMaterialSW.Enabled = True
+                varTemp = InStr(strTemp, "SW-Material")
+                If varTemp > 0 Or strTemp = "" Then ' Если это материал SW или строчка вообще пустая
+                    ChkMaterialSW.Value = False
+                Else ' Если это не материал SW, то
+                    ChkMaterialSW.Value = True
+                End If
+            Else
+                ChkMaterialSW.Enabled = False
+                ChkMaterialSW.Value = True
+            End If
+           ' Плотность и штриховка
+           ' Debug.Print swModel.GetUserPreferenceDoubleValue(swUserPreferenceDoubleValue_e.swMaterialPropertyDensity)
+           ' Debug.Print swModel.GetUserPreferenceStringValue(swUserPreferenceStringValue_e.swMaterialPropertyCrosshatchPattern)
+            TxtDens.Value = swModel.GetUserPreferenceDoubleValue(swMaterialPropertyDensity)
+            strTemp = swModel.GetUserPreferenceStringValue(swMaterialPropertyCrosshatchPattern)
+            m = 0
+            For i = 0 To CboHatch.ListCount - 1
+                If CboHatch.List(i) = strTemp Then
+                    m = 1
+                    Exit For
+                End If
+            Next i
+            If m = 0 Then
+                CboHatch.AddItem strTemp
+            End If
+            CboHatch.Value = swModel.GetUserPreferenceStringValue(swMaterialPropertyCrosshatchPattern)
+            
+            sMaterial = swModel.GetMaterialPropertyName2(sConfigName, sMatDB)
+            If sMaterial = "" Then ' Материал не задан
+                TxtDens.Enabled = True
+                CboHatch.Enabled = True
+                CboBaseSW.Value = "" ' ???????????
+            Else ' Материал задан
+                TxtDens.Enabled = False
+                CboHatch.Enabled = False
+                If CboBaseSW.ListCount = 1 Then ' Баз материалов нет
+                    CboBaseSW.Value = "" ' ???????????
+                Else ' Базы есть
+                    m = 0
+                    k = 0
+                    For i = 0 To CboBaseSW.ListCount - 1
+                        If CboBaseSW.List(i) = sMatDB Then
+                            m = 1 ' База найдена
+                            Exit For
+                        End If
+                    Next i
+                    If MIni2 = 1 And sMatDB <> MIni3 Then ' Контроль материала SW включен и база не стандартная
+                        CboBaseSW.Value = MIni3
+                        n = 0
+                        For i = 0 To 500 ' Ищем материал в стандартной базе
+                            If SMatBase(i, 0) = "" Then
+                                Exit For
+                            End If
+                            For j = 0 To 1000
+                                If SMatBase(i, j) = "" Then
+                                    Exit For
+                                End If
+                                If SMatBase(i, j) = sMaterial Then
+                                    CboGroupSW.ListIndex = i
+                                    CboMaterialSW.Value = sMaterial
+                                    n = 1 ' Материал найден в стандартной базе
+                                End If
+                            Next j
+                        Next i
+                        If n = 1 Then ' Материал обнаружен в стандартной базе
+                            strMsg = "Замененить базу материалов на стандартную?"
+                            lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+                            If lRetval = swMbHitYes Then
+                                k = 1 ' Хотим менять базу на стандартную
+                            End If
+                        End If
+                    End If
+                    If m = 0 And k = 0 Then ' Временная база
+                        CboBaseSW.AddItem "Временная база"
+                        CboBaseSW.Value = "Временная база"
+                    ElseIf m = 1 And k = 0 Then ' Оставляем заданную базу
+                        CboBaseSW.Value = sMatDB
+                        n = 0
+                        For i = 0 To 500 ' Ищем материал в базе
+                            If SMatBase(i, 0) = "" Then
+                                Exit For
+                            End If
+                            For j = 0 To 1000
+                                If SMatBase(i, j) = "" Then
+                                    Exit For
+                                End If
+                               ' Debug.Print i, j, SMatBase(i, j)
+                                If SMatBase(i, j) = sMaterial Then
+                                    CboGroupSW.ListIndex = i
+                                    CboMaterialSW.Value = sMaterial
+                                    n = 1 ' Материал найден в базе
+                                End If
+                            Next j
+                        Next i
+                        If n = 0 Then ' Материал не найден в базе, хотя имя базы совпадает
+                            CboBaseSW.AddItem "Временная база"
+                            CboBaseSW.Value = "Временная база"
+                        End If
+                    End If
+                End If
+            End If
+        Else ' Если открыта сборка
+            CboBaseSW.Value = ""
+            CboGroupSW.Value = ""
+            CboMaterialSW.Value = ""
+            CboBaseSW.Enabled = False
+            CboGroupSW.Enabled = False
+            CboMaterialSW.Enabled = False
+            TxtDens.Enabled = False
+            CboHatch.Enabled = False
+            ChkMaterialSW.Value = True
+            ChkMaterialSW.Enabled = False
+        End If
+        ' Проверка: указывается ли материал в чертеже
+        strTemp = swModel.CustomInfo2(sConfigName, prpMaterial)
+        If strTemp = "" Then ' Если строчка пустая
+            strTemp = swModel.CustomInfo2("", prpMaterial) ' Считываем материал из модели
+        End If
+        varTemp1 = InStr(strTemp, "табл") ' Проверяем значение
+        If varTemp1 > 0 Then ' Значение присутствует
+            ChkMaterialTable.Value = True
+        Else
+            ChkMaterialTable.Value = False
+        End If
+        
+        MChkMaterialSW = 0
+        MChk3 = 0
+        ChkMaterialSW_Click
+    End If
+    ' Выставляем раздел
+    If ChkAssem.Value = True Then
+        If swModel.GetType = swDocPART Then
+            Раздел.Value = "Сборочные единицы"
+        Else
+            Раздел.Value = "Детали"
+        End If
+    Else
+        If swModel.GetType = swDocPART And Раздел.Value = "Сборочные единицы" Then
+            Раздел.Value = ""
+        ElseIf swModel.GetType = swDocASSEMBLY And Раздел.Value = "Детали" Then
+            Раздел.Value = ""
+        End If
+    End If
+End If
+End Sub
+
+Private Sub ChkMaterialSW_Click() ' Включение материала
+' Зависят Chk3
+If MChkMaterialSW = 0 Then ' Изменения разрешены
+    If ChkMaterialSW.Value = False And ChkMaterialSW.Enabled = True Then ' Материал SW
+        Chk3.Value = False
+        Chk3.Enabled = False
+        Материал.Enabled = False
+        CmdPastSort.Enabled = False
+    ElseIf ChkMaterialSW.Value = True Then ' Материал пользователя
+        If ChkBlank.Value = True Then
+            Chk3.Enabled = False
+            Материал.Enabled = False
+        Else
+            Chk3.Enabled = True
+            Материал.Enabled = True
+        End If
+        If swModel.CustomInfo2("", "SHAPE") = "" And swModel.CustomInfo2("", "MATERIAL_MIS") = "" Then ' Свойств нет
+            CmdPastSort.Enabled = False
+        Else
+            CmdPastSort.Enabled = True
+        End If
+    End If
+    Chk3_Click
+End If
+End Sub
+
+Private Sub Chk3_Click() ' Включение разделителя сортамента
+' Зависят Disp
+If MChk3 = 0 Then ' Изменения разрешены
+    If Chk3.Value = True Then
+        TxtShape.Visible = True
+        TxtSortament.Visible = True
+        TxtMarka.Visible = True
+        Материал.Visible = False
+    Else
+        TxtShape.Visible = False
+        TxtSortament.Visible = False
+        TxtMarka.Visible = False
+        Материал.Visible = True
+    End If
+    Disp
+End If
+End Sub
+
+Private Sub ChkBlank_Click() ' Заготовка
+If MChkBlank = 0 Then ' Изменения разрешены
+    If ChkBlank.Value = True Then
+        ChkBlankFile.Enabled = True
+        TxtBlankNumber.Enabled = True
+        TxtBlankDescription.Enabled = True
+        CboBlankFormat.Enabled = True
+        TxtBlankRemark.Enabled = True
+        CboBlankSection.Enabled = True
+        strTemp = swModel.CustomInfo2(sConfigName, prpBlank)
+        varTemp = InStr(strTemp, "$")
+        If varTemp > 0 Then
+            If varTemp > 1 Then
+                CboBlankFormat.Value = Left$(strTemp, varTemp - 1)
+            Else
+                CboBlankFormat.Value = ""
+            End If
+            strTemp = Right$(strTemp, Len(strTemp) - varTemp)
+            varTemp = InStr(strTemp, "$")
+            If varTemp > 0 Then
+                If varTemp > 1 Then
+                    TxtBlankNumber.Text = Left$(strTemp, varTemp - 1)
+                Else
+                    TxtBlankNumber.Text = ""
+                End If
+                strTemp = Right$(strTemp, Len(strTemp) - varTemp)
+                varTemp = InStr(strTemp, "$")
+                If varTemp > 0 Then
+                    If varTemp > 1 Then
+                        TxtBlankDescription.Text = Left$(strTemp, varTemp - 1)
+                    Else
+                        TxtBlankDescription.Text = ""
+                    End If
+                    strTemp = Right$(strTemp, Len(strTemp) - varTemp)
+                    varTemp = InStr(strTemp, "$")
+                    If varTemp > 0 Then
+                        If varTemp > 1 Then
+                            TxtBlankRemark = Left$(strTemp, varTemp - 1)
+                        Else
+                            TxtBlankRemark = ""
+                        End If
+                        strTemp = Right$(strTemp, Len(strTemp) - varTemp)
+                        varTemp = InStr(strTemp, "$")
+                        If varTemp > 0 Then
+                            If varTemp > 1 Then
+                                CboBlankSection.Value = Left$(strTemp, varTemp - 1)
+                            Else
+                                CboBlankSection.Value = ""
+                            End If
+                            strTemp = Right$(strTemp, Len(strTemp) - varTemp)
+                            varTemp = InStr(strTemp, "$")
+                            If varTemp > 0 Then
+                                If varTemp > 1 Then
+                                    CboBlankGroup.Value = Left$(strTemp, varTemp - 1)
+                                Else
+                                    CboBlankGroup.Value = ""
+                                End If
+                                strTemp = Right$(strTemp, Len(strTemp) - varTemp)
+                                varTemp = InStr(strTemp, "$")
+                                If varTemp > 0 Then
+                                    If varTemp > 1 Then
+                                        TxtBlankDocNumber.Text = Left$(strTemp, varTemp - 1)
+                                    Else
+                                        TxtBlankDocNumber.Text = ""
+                                    End If
+                                    strTemp = Right$(strTemp, Len(strTemp) - varTemp)
+                                    varTemp = InStr(strTemp, "$")
+                                    If varTemp > 0 Then
+                                        If varTemp > 1 Then
+                                            TxtRemarkVP.Text = Left$(strTemp, varTemp - 1)
+                                        Else
+                                            TxtRemarkVP.Text = ""
+                                        End If
+                                        strTemp = Right$(strTemp, Len(strTemp) - varTemp)
+                                        varTemp = InStr(strTemp, "$")
+                                        If varTemp > 0 Then
+                                            If varTemp > 1 Then
+                                                TxtVendorVP.Text = Left$(strTemp, varTemp - 1)
+                                            Else
+                                                TxtVendorVP.Text = ""
+                                            End If
+                                            TxtCodeVP.Text = Right$(strTemp, Len(strTemp) - varTemp)
+                                        End If
+                                    End If
+                                End If
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    Else
+        ChkBlankFile.Enabled = False
+        TxtBlankNumber.Enabled = False
+        TxtBlankDescription.Enabled = False
+        CboBlankFormat.Enabled = False
+        TxtBlankRemark.Enabled = False
+        CboBlankSection.Enabled = False
+        MChkBlankFile = 1 ' Метка флажка "Заготовка": 0 - можно менять флажок; 1 - нельзя менять флажок
+        ChkBlankFile.Value = False
+        MChkBlankFile = 0
+        TxtBlankNumber.Text = ""
+        TxtBlankDescription = ""
+        CboBlankFormat.Value = ""
+        TxtBlankRemark.Text = ""
+        CboBlankSection.Value = ""
+        CboBlankSection_Change
+    End If
+    ChkAssem_Click
+End If
+End Sub
+
+Private Sub TxtBlankNumber_Change()
+If ChkAssem.Value = True And swModel.GetType = swDocASSEMBLY Or ChkAssem.Value = False And swModel.GetType = swDocPART Then ' Выбрана деталь
+    If TxtBlankNumber.Text <> "" Then
+        Материал.Text = "Изделие-заготовка:" & Chr$(10) & TxtBlankNumber.Text
+    Else
+        Материал.Text = "Изделие-заготовка:" & Chr$(10) & TxtBlankDescription.Text
+    End If
+    If CboBlankSection.Value = "Стандартные изделия" Or CboBlankSection.Value = "Прочие изделия" Then
+        Материал.Text = Материал.Text & " " & TxtBlankDocNumber.Text
+    End If
+End If
+End Sub
+
+Private Sub TxtBlankDescription_Change()
+If ChkAssem.Value = True And swModel.GetType = swDocASSEMBLY Or ChkAssem.Value = False And swModel.GetType = swDocPART Then ' Выбрана деталь
+    If TxtBlankNumber.Text <> "" Then
+        Материал.Text = "Изделие-заготовка:" & Chr$(10) & TxtBlankNumber.Text
+    Else
+        Материал.Text = "Изделие-заготовка:" & Chr$(10) & TxtBlankDescription.Text
+    End If
+    If CboBlankSection.Value = "Стандартные изделия" Or CboBlankSection.Value = "Прочие изделия" Then
+        Материал.Text = Материал.Text & " " & TxtBlankDocNumber.Text
+    End If
+End If
+End Sub
+
+Private Sub TxtBlankDocNumber_Change()
+If ChkAssem.Value = True And swModel.GetType = swDocASSEMBLY Or ChkAssem.Value = False And swModel.GetType = swDocPART Then ' Выбрана деталь
+    If TxtBlankNumber.Text <> "" Then
+        Материал.Text = "Изделие-заготовка:" & Chr$(10) & TxtBlankNumber.Text
+    Else
+        Материал.Text = "Изделие-заготовка:" & Chr$(10) & TxtBlankDescription.Text
+    End If
+    If CboBlankSection.Value = "Стандартные изделия" Or CboBlankSection.Value = "Прочие изделия" Then
+        Материал.Text = Материал.Text & " " & TxtBlankDocNumber.Text
+    End If
+End If
+End Sub
+
+Private Sub ChkBlankFile_Click()
+If MChkBlankFile = 0 Then ' Изменения разрешены
+    If ChkBlankFile.Value = True Then
+        If swModel.GetType = swDocPART Then
+        ElseIf swModel.GetType = swDocASSEMBLY Then
+        End If
+        TxtBlankNumber.Enabled = False
+        TxtBlankDescription.Enabled = False
+        CboBlankFormat.Enabled = False
+        TxtBlankRemark.Enabled = False
+        CboBlankSection.Enabled = False
+        CboBlankGroup.Enabled = False
+    Else
+        ChkBlank_Click
+    End If
+End If
+End Sub
+
+Private Sub CboBlankSection_Change()
+If CboBlankSection.Value = "Стандартные изделия" Or CboBlankSection.Value = "Прочие изделия" Then
+    CboBlankGroup.Enabled = True
+    TxtBlankDocNumber.Enabled = True
+    TxtRemarkVP.Enabled = True
+    TxtVendorVP.Enabled = True
+    TxtCodeVP.Enabled = True
+    ' Чтение файла и заполнение списка CboGroup
+    CboBlankGroup.Clear
+    Open Source16 For Input As #1
+    Do While Not EOF(1)
+        Line Input #1, strTemp1
+        CboBlankGroup.AddItem strTemp1
+    Loop
+    Close #1
+Else
+    CboBlankGroup.Enabled = False
+    TxtBlankDocNumber.Enabled = False
+    TxtRemarkVP.Enabled = False
+    TxtVendorVP.Enabled = False
+    TxtCodeVP.Enabled = False
+    CboBlankGroup.Value = ""
+    TxtBlankDocNumber.Text = ""
+    TxtRemarkVP.Text = ""
+    TxtVendorVP.Text = ""
+    TxtCodeVP.Text = ""
+End If
+End Sub
+
+' Работа с профилями
+
+Private Sub CboProfile_Change()
+i1 = CboProfile.ListIndex
+'If i1 <> -1 Then
+'    Debug.Print "Выбран профиль №", i1
+'End If
+If i1 = -1 Then
+Else
+    Разработал.Text = ProfData(i1, 1)
+    Проверил.Text = ProfData(i1, 2)
+    Техконтроль.Text = ProfData(i1, 3)
+    Начальник.Text = ProfData(i1, 4)
+    Нормоконтроль.Text = ProfData(i1, 5)
+    Утвердил.Text = ProfData(i1, 6)
+    CboWork.Text = ProfData(i1, 7)
+End If
+End Sub
+
+Private Sub CmdAddProfile_Click()
+i = UBound(ProfDataCaption)
+'Debug.Print "Добавление"
+'Debug.Print "Всего пунктов -", i
+m = 0
+For j = 0 To i
+    If CboProfile.Text = ProfDataCaption(j) Then ' Такой пункт уже существует
+        m = 1
+        n = j
+    ElseIf CboProfile.Text = "Нет" Then ' Попытка добавить профиль с именем "Нет"
+        m = 2
+    End If
+Next j
+'Debug.Print "m=", m
+If m = 2 Then ' Попытка добавить профиль с именем "Нет"
+Else
+
+    If m = 0 Then ' Добавляется новый профиль
+        CboProfile.AddItem CboProfile.Text
+        ReDim Preserve ProfDataCaption(i + 1)
+'        Debug.Print "Добавлен пункт", i + 1
+    Else ' Такой пункт уже существует
+        i = n - 1
+    End If
+    
+    ProfDataCaption(i + 1) = CboProfile.Text
+    ProfData(i + 1, 1) = Разработал.Text
+    ProfData(i + 1, 2) = Проверил.Text
+    ProfData(i + 1, 3) = Техконтроль.Text
+    ProfData(i + 1, 4) = Начальник.Text
+    ProfData(i + 1, 5) = Нормоконтроль.Text
+    ProfData(i + 1, 6) = Утвердил.Text
+    ProfData(i + 1, 7) = CboWork.Text
+End If
+End Sub
+
+Private Sub CmdCopyDraftDescription_Click()
+strTemp = TxtDraftDescription.Value ' Эскизное Наименование
+If InStr(Наименование.Value, Chr$(13)) > 0 Then ' Проверка количества строк
+    TxtDraftDescription.Value = Replace(Наименование.Value, Chr$(13) & Chr$(10), " ")
+Else
+    TxtDraftDescription.Value = Наименование.Value
+End If
+If ChkManual.Value = True Then
+    Наименование.Value = strTemp
+End If
+End Sub
+
+Private Sub CmdCopyDraftFirstApply_Click()
+strTemp = TxtDraftFirstApply.Value ' Эскизное Первичное применение
+TxtDraftFirstApply.Value = Проект.Value
+Проект.Value = strTemp
+End Sub
+
+Private Sub CmdCopyDraftNumber_Click()
+strTemp = TxtDraftNumber.Value ' Эскизное Обозначение
+If ChkClass.Value = True Then
+    TxtDraftNumber.Value = CboClass.Value & "." & TxtClass.Value & "." & TxtCounter.Value
+    If Len(strTemp) = 15 And ChkManual.Value = True Then
+        CboClass.Value = Left$(strTemp, 4)
+        TxtClass.Value = Mid$(strTemp, 6, 6)
+        TxtCounter.Value = Right$(strTemp, 3)
+    End If
+Else
+    TxtDraftNumber.Value = TxtNumber.Value
+    If ChkManual.Value = True Then
+        TxtNumber.Value = strTemp
+    End If
+End If
+End Sub
+
+Private Sub CmdCopyFirstApply_Click()
+If ChkClass.Value = True Then
+    Проект.Value = CboClass.Value & "." & TxtClass.Value & "." & TxtCounter.Value
+Else
+    Проект.Value = TxtNumber.Value
+End If
+End Sub
+
+Private Sub CmdCopyInformNumber_Click()
+If ChkClass.Value = True Then
+    TxtChange.Value = CboClass.Value & "." & TxtClass.Value & "." & TxtCounter.Value
+Else
+    TxtChange.Value = TxtNumber.Value
+End If
+End Sub
+
+Private Sub CmdDelProfile_Click()
+' Зависит CboProfile
+If CboProfile.Text = "Нет" Or CboProfile.ListIndex = -1 Then ' Попытка удалить "Нет" или профиль не выбран
+Else
+    i = CboProfile.ListIndex
+    j = UBound(ProfDataCaption)
+'    Debug.Print "Удаление"
+'    Debug.Print "№ удаляемого пункта -", i
+'    Debug.Print "Всего пунктов -", j
+    If i <> j Then
+        For n = i To j - 1
+            ProfDataCaption(n) = ProfDataCaption(n + 1)
+            For m = 1 To 7
+                ProfData(n, m) = ProfData(n + 1, m)
+            Next m
+        Next n
+    Else
+    End If
+    ReDim Preserve ProfDataCaption(j - 1)
+    CboProfile.RemoveItem CboProfile.ListIndex
+    CboProfile.ListIndex = 0
+End If
+
+End Sub
+
+Private Sub CboConfig_Change()
+If MConf = 0 Then ' Если пользователь изменил конфигурацию
+    If longwarnings <> swFileLoadWarning_AlreadyOpen Then ' Если чертеж не был открыт
+        swApp.QuitDoc sDrawName ' то закрываем его
+        Set swModel = swApp.ActivateDoc(Source4)
+    Else
+        ok = swDraw.ActivateSheet(strActiveSheetName) ' Возвращаем активность листу
+    End If
+
+    sConfigName = LTrim(CboConfig.Value)
+    Unload Me
+    MStart = 1
+    main
+End If
+MConf = 0
+End Sub
+
+Private Sub CmdPref_Click() ' Настройки
+    Unload Me
+    MStart = 1
+    FrmMProp_Pref.Show ' vbModeless
+    main
+End Sub
+
+
+' ***************************
+' ***************************
+' !!!!!!!!!!!!!!!!!!!!!!!!!!!
+' ***************************
+' ***************************
+' Н А Ч А Л Ь Н А Я  З А Г Р У З К А  Ф О Р М Ы
+Private Sub UserForm_Activate()
+HWNDActiveWindow
+' Проверка типа открытого документа
+If MDoc = 1 Then ' Открыт чертеж
+    sModelName = swView.GetReferencedModelName
+    sConfigName = swView.ReferencedConfiguration
+    Set swModel = swView.ReferencedDocument
+Else ' Открыта модель
+    If MStart = 0 Then  ' Исходная загрузка
+        Set swConfig = swModel.GetActiveConfiguration
+        sConfigName = swConfig.Name
+    Else
+        swModel.ForceRebuild3 (True)
+    End If
+End If
+
+' Пути
+Source = swApp.GetCurrentMacroPathName ' Путь к файлу макроса
+Source1 = Left$(Source, Len(Source) - 4) + "_Fam.txt" ' Путь к файлу с фамилиями
+Source2 = Left$(Source, Len(Source) - 4) + "_Prof.txt" ' Путь к файлу с профилями
+Source3 = Left$(Source, Len(Source) - 4) + "_Firm.txt" ' Путь к файлу со списком фирм
+Source4 = swModel.GetPathName() ' Путь к файлу модели
+Source5 = Left$(Source, Len(Source) - 4) + "_Work.txt" ' Путь к файлу со списком значений графы "Характер работы"
+Source6 = Left$(Source, Len(Source) - 4) + "_Project.txt" ' Путь к файлу со списком проектов
+Source7 = Left$(Source, Len(Source) - 15) + "SpecEditor\MyProperties.swp" ' Путь к макросу MyProperties
+Source8 = Left$(Source, Len(Source) - 15) & "SpecEditor\MyProperties_1.ini" ' Путь к ini файлу макроса MyProperties
+Source9 = Left$(Source, Len(Source) - 15) & "SProp\SProp.swp" ' Путь к макросу SProp
+Source10 = Left$(Source, Len(Source) - 15) & "SpecEditor\SpecEditor_Sections.txt" ' Путь к файлу со списком разделов
+Source11 = Left$(Source, Len(Source) - 15) & "SpecEditor\MyProperties_2.ini" ' Путь к ini файлу макроса MyProperties
+Source12 = Left$(Source, Len(Source) - 15) & "SpecEditor\MyStandard.sldstd" ' Путь к файлу стандарта
+Source13 = Left$(Source, Len(Source) - 3) & "ini" ' Путь к ini файлу макроса MProp
+Source14 = swApp.GetUserPreferenceStringValue(swFileLocationsMaterialDatabases)
+Source15 = Left$(Source, Len(Source) - 15) & "SpecEditor\SpecEditor_Doc.txt" ' Путь к файлу со списком типов документов
+Source16 = Left$(Source, Len(Source) - 15) & "SpecEditor\SpecEditor_Groups.txt"    ' Группы разделов "Стандартные изделия" и "Прочие изделия"
+Source17 = Left$(Source, Len(Source) - 15) & "SpecEditor\SpecEditor_MaterialGroups.txt"    ' Группы раздела "Материалы"
+Source18 = Left$(Source, Len(Source) - 4) + "_Sort.txt" ' Путь к файлу сортаментов
+
+varTemp = InStr(Source14, ";")
+If varTemp > 0 Then
+    Source14 = Left$(Source14, varTemp - 1) ' Путь к каталогу баз материалов
+End If
+
+' Чтение ini файла
+Open Source13 For Input As #1
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        MIni1 = 1
+    Else
+        MIni1 = 0
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        MIni4 = 1
+    Else
+        MIni4 = 0
+    End If
+    '
+    Line Input #1, strTemp ' Автозаполнение списка Шифр
+    If strTemp = "1" Then
+        MIni5 = 1
+    Else
+        MIni5 = 0
+    End If
+    '
+    Line Input #1, strTemp ' Контроль списка Шифр
+    If strTemp = "1" Then
+        MIni6 = 1
+    Else
+        MIni6 = 0
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        MIni2 = 1
+    Else
+        MIni2 = 0
+    End If
+    '
+    Line Input #1, MIni3
+    '
+    Line Input #1, strTemp ' Масштаб основного окна
+    strTemp = Replace(strTemp, ".", ",")
+    MIni7 = CDbl(strTemp)
+Close #1
+
+' Масштабируем основное окно
+If MIni7 <> 100 Then
+    FrmMProp.Zoom = MIni7
+    FrmMProp.Height = FrmMProp.Height / 100 * MIni7
+    FrmMProp.Width = FrmMProp.Width / 100 * MIni7
+End If
+
+If MIni2 = 1 Then
+    strTemp = Source14 & "\" & MIni3 & ".sldmat"
+    Set fs = CreateObject("Scripting.FileSystemObject")
+    If fs.FileExists(strTemp) = False Then
+        strMsg = "Отсутствует стандартная база материалов " & MIni3 & "."
+        lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbOk)
+        MIni2 = 0
+    End If
+End If
+
+MyProperties
+If prpTestStandard = 1 Then
+    MyStandard
+End If
+
+' Чтение файла сортаментов
+Open Source18 For Input As #1
+TxtShape.Clear
+TxtSortament.Clear
+TxtMarka.Clear
+m = 1
+Do While Not EOF(1)
+Line Input #1, strTemp
+If Trim(strTemp) = "$" Then
+    m = m + 1
+Else
+    Select Case m
+    Case 1
+        TxtShape.AddItem strTemp
+    Case 2
+        TxtSortament.AddItem strTemp
+    Case 3
+        TxtMarka.AddItem strTemp
+    End Select
+End If
+Loop
+Close #1
+
+' Чтение файла фамилий
+Open Source1 For Input As #1
+i = 0
+Do While Not EOF(1)
+ReDim Preserve Fam(i)
+Input #1, Fam(i)
+i = i + 1
+Loop
+jfam = i - 1
+Close #1
+
+' Чтение файла и заполнение списка с профилями
+Open Source2 For Input As #1
+i = 0
+CboProfile.Clear
+CboProfile.AddItem "Нет"
+ReDim Preserve ProfDataCaption(i)
+Do While Not EOF(1)
+Line Input #1, strTemp
+ If Left$(strTemp, 3) = "$$$" Then ' Проверка, является ли строка заголовком раздела
+    i = i + 1
+    j1 = 1
+    k = Len(strTemp)
+    ReDim Preserve ProfDataCaption(i)
+    ProfDataCaption(i) = Right$(strTemp, k - 3)
+    CboProfile.AddItem ProfDataCaption(i)
+Else
+    ProfData(i, j1) = strTemp
+    j1 = j1 + 1
+End If
+Loop
+Close #1
+CboProfile.ListIndex = 0
+
+' Проверка свойства Исполнение
+If swModel.CustomInfo2(sConfigName, "Исполнение") = "1" Or swModel.CustomInfo2(sConfigName, "Исполнение") = "-1" Or swModel.CustomInfo2(sConfigName, "Исполнение") = "True" Then
+    Исполнение.Value = True
+    ChkConf.Value = True
+ElseIf swModel.CustomInfo2(sConfigName, "Исполнение") = "2" Then
+    Исполнение.Value = True
+    ChkConf.Value = False
+    strTemp = swModel.CustomInfo2(sConfigName, prpNumber)
+    varTemp = InStrRev(strTemp, "-")
+    If varTemp > 0 Then
+        strTemp = Right$(strTemp, Len(strTemp) - varTemp)
+    Else
+        strTemp = ""
+    End If
+    TxtConf.Value = strTemp
+Else
+    Исполнение.Value = False
+    TxtConf.Value = ""
+End If
+ChkConf_Click
+Исполнение_Click
+
+' Фирмы и Обозначение
+    ' Чтение файла с фирмами и заполнение списков фирм и буквенных кодов
+    Open Source3 For Input As #1
+    i = 0
+    CboFirm.Clear
+    CboClass.Clear
+    Do While Not EOF(1)
+    Line Input #1, strTemp
+    If i = 0 Then
+        CboFirm.AddItem strTemp
+        i = 1
+    Else
+        LTrim (strTemp)
+        If strTemp <> "" Then
+            CboClass.AddItem strTemp
+        End If
+        i = 0
+    End If
+    Loop
+    Close #1
+    ' Проверка свойства Контора
+    CboFirm.Value = swModel.CustomInfo2(sConfigName, prpFirm)
+    If CboFirm.Value = "" Then
+        CboFirm.ListIndex = 0
+    End If
+    ' Обозначение
+        ' Получение имени модели для Обозначения
+        sNumberTitle = swModel.GetTitle
+        ' Проверка на наличие расширения в имени файла
+        If Len(sNumberTitle) > 7 Then
+            strTemp = Mid$(sNumberTitle, Len(sNumberTitle) - 6, 4)
+            If strTemp = ".SLD" Or strTemp = ".sld" Then
+                sNumberTitle = Left$(sNumberTitle, Len(sNumberTitle) - 7)
+            End If
+        End If
+        
+        ' Проверяем наличие изменения Обозначения НЕ через MProp
+        If Исполнение.Value = False And swModel.CustomInfo(prpNumber) <> swModel.CustomInfo2(sConfigName, prpNumber) Then
+            strMsg = "Обозначение было изменено не через макрос? Обновляем Обозначение?"
+            lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+            If lRetval = swMbHitYes Then
+                ok = swModel.AddCustomInfo3("", prpNumber, 30, "")
+                swModel.CustomInfo2("", prpNumber) = swModel.CustomInfo2(sConfigName, prpNumber)
+            End If
+        ElseIf Исполнение.Value = True And swModel.CustomInfo(prpNumber) <> swModel.CustomInfo2(sConfigName, prpNumber) Then
+            strTemp = swModel.CustomInfo2(sConfigName, prpNumber)
+            varTemp = InStrRev(strTemp, "-")
+            If varTemp > 0 Then
+                strTemp = Left$(strTemp, varTemp - 1)
+                If swModel.CustomInfo(prpNumber) <> strTemp Then
+                    strMsg = "Обозначение было изменено не через макрос? Обновляем Обозначение?"
+                    lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+                    If lRetval = swMbHitYes Then
+                        ok = swModel.AddCustomInfo3("", prpNumber, 30, "")
+                        swModel.CustomInfo2("", prpNumber) = strTemp
+                    End If
+                End If
+            End If
+        Else
+        End If
+
+        ' Проверяем наличие ручного ввода Обозначения
+        m = 0 ' Метка заданного Наименования (=1)
+        strTemp = "$PRP:" & Chr$(34) & "SW-File Name" & Chr$(34)
+        If prpFileName = 0 Then ' Разделитель не используем
+            If swModel.CustomInfo(prpNumber) = strTemp Or swModel.CustomInfo(prpNumber) = "" Then
+                ChkManual.Value = False
+                TxtNumber.Value = sNumberTitle
+            Else
+                If swModel.CustomInfo2("", "RenameSWP") = "0" Then  ' Файл был переименован
+                    strMsg = "Файл был переименован? Обновляем Обозначение?"
+                    lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+                    If lRetval = swMbHitYes Then
+                        ChkManual.Value = False
+                        TxtNumber.Value = sNumberTitle
+                    Else
+                        ChkManual.Value = True
+                        TxtNumber.Value = swModel.CustomInfo(prpNumber)
+                    End If
+                Else
+                    ChkManual.Value = True
+                    If swModel.CustomInfo2("", prpNumber) = "" Then
+                        TxtNumber.Value = swModel.CustomInfo2(sConfigName, prpNumber)
+                    Else
+                        TxtNumber.Value = swModel.CustomInfo(prpNumber)
+                    End If
+                End If
+            End If
+        Else ' Разделитель используем
+            varTemp = InStr(sNumberTitle, prpNameSep)
+            If varTemp > 0 Then ' Разделитель найден
+                strTemp1 = swModel.CustomInfo(prpNumber) & prpNameSep & swModel.CustomInfo(prpDescription)
+                If sNumberTitle = strTemp1 Or swModel.CustomInfo(prpNumber) = "" Or swModel.CustomInfo(prpNumber) = strTemp Then
+                    ChkManual.Value = False
+                    TxtNumber.Value = Left$(sNumberTitle, varTemp - 1)
+                    Наименование.Value = Right$(sNumberTitle, Len(sNumberTitle) - varTemp - Len(prpNameSep) + 1)
+                    m = 1
+                Else
+                    If swModel.CustomInfo2("", "RenameSWP") = "0" Then  ' Файл был переименован
+                        strMsg = "Файл был переименован? Обновляем Обозначение и Наименование?"
+                        lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+                        If lRetval = swMbHitYes Then
+                            ChkManual.Value = False
+                            TxtNumber.Value = Left$(sNumberTitle, varTemp - 1)
+                            Наименование.Value = Right$(sNumberTitle, Len(sNumberTitle) - varTemp - Len(prpNameSep) + 1)
+                            m = 1
+                        Else
+                            ChkManual.Value = True
+                            TxtNumber.Value = swModel.CustomInfo(prpNumber)
+                        End If
+                    Else
+                        ChkManual.Value = True
+                        TxtNumber.Value = swModel.CustomInfo(prpNumber)
+                    End If
+                End If
+            Else ' Нет разделителя
+                If swModel.CustomInfo(prpNumber) = strTemp Or swModel.CustomInfo(prpNumber) = "" Then
+                    ChkManual.Value = False
+                    TxtNumber.Value = sNumberTitle
+                Else
+                    If swModel.CustomInfo2("", "RenameSWP") = "0" Then  ' Файл был переименован
+                        strMsg = "Файл был переименован? Обновляем Обозначение?"
+                        lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+                        If lRetval = swMbHitYes Then
+                            ChkManual.Value = False
+                            TxtNumber.Value = sNumberTitle
+                        Else
+                            ChkManual.Value = True
+                            TxtNumber.Value = swModel.CustomInfo(prpNumber)
+                        End If
+                    Else
+                        ChkManual.Value = True
+                        TxtNumber.Value = swModel.CustomInfo(prpNumber)
+                    End If
+                End If
+            End If
+        End If
+        ChkManual_Click
+    ' Проверка свойства Классификатор и заполнение полей для Обозначения из классификатора
+    If swModel.CustomInfo2("", "Классификатор") = "-1" Or swModel.CustomInfo2("", "Классификатор") = "True" Then
+        ChkClass.Value = True
+        strTemp = swModel.CustomInfo(prpNumber)
+        If strTemp <> "" Then
+            CboClass.Value = Left$(strTemp, 4)
+            TxtClass.Value = Mid$(strTemp, 6, 6)
+            TxtCounter.Value = Mid$(strTemp, 13, 3)
+        End If
+    Else
+        ChkClass.Value = False
+        CboClass.Value = ""
+        TxtClass.Value = ""
+        TxtCounter.Value = ""
+    End If
+    ChkClass_Click
+    
+' Проверка свойств Заголовок и Наименование_ФБ
+If m = 0 Then
+    ChkEnter.Enabled = True
+    varTemp = InStr(swModel.CustomInfo2("", prpDescription), Chr$(10))
+    If varTemp > 0 Then
+        ChkEnter.Value = True
+    Else
+        ChkEnter.Value = False
+    End If
+    strTemp = swModel.CustomInfo2("", prpDescriptionMulti)
+    
+    ' Проверяем наличие изменения Наименования НЕ через MProp
+    If swModel.CustomInfo2(sConfigName, prpCode) = "" And swModel.CustomInfo(prpDescription) <> swModel.CustomInfo2(sConfigName, prpDescription) And swModel.CustomInfo2(sConfigName, prpDescription) <> "" Then
+        strMsg = "Наименование было изменено не через макрос? Обновляем Наименование?"
+        lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+        If lRetval = swMbHitYes Then
+            ok = swModel.AddCustomInfo3("", prpDescription, 30, "")
+            swModel.CustomInfo2("", prpDescription) = swModel.CustomInfo2(sConfigName, prpDescription)
+            strTemp = swModel.CustomInfo2("", prpDescription)
+        End If
+    ElseIf swModel.CustomInfo2(sConfigName, prpCode) <> "" And swModel.CustomInfo(prpDescription) <> swModel.CustomInfo2(sConfigName, prpDescription) Then
+        If Len(swModel.CustomInfo2(sConfigName, prpDescription)) > Len(swModel.CustomInfo2(sConfigName, prpCode)) Then
+            strTemp1 = Left$(swModel.CustomInfo2(sConfigName, prpDescription), Len(swModel.CustomInfo2(sConfigName, prpDescription)) - Len(swModel.CustomInfo2(sConfigName, prpCode)) - 1)
+            If swModel.CustomInfo(prpDescription) <> strTemp1 Then
+                strMsg = "Наименование было изменено не через макрос? Обновляем Наименование?"
+                lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+                If lRetval = swMbHitYes Then
+                    ok = swModel.AddCustomInfo3("", prpDescription, 30, "")
+                    swModel.CustomInfo2("", prpDescription) = strTemp1
+                    strTemp = swModel.CustomInfo2("", prpDescription)
+                End If
+            End If
+        End If
+    Else
+    End If
+
+    If InStrRev(strTemp, "<FONT size=3.5>") > 0 Then
+        ChkFont.Value = True
+    Else
+        ChkFont.Value = False
+    End If
+    ChkFont_Click
+    If Left$(strTemp, 5) = "<FONT" Then
+        If InStr(strTemp, "PTS") > 0 Then
+            varTemp = InStrRev(strTemp, "S>") '<FONT size=14PTS> <FONT size=20PTS>
+            If Len(strTemp) > varTemp + 1 Then
+                strTemp = Right$(strTemp, Len(strTemp) - varTemp - 1) ' Удаляем пустую строку
+            Else
+                strTemp = ""
+            End If
+        Else
+            varTemp = InStrRev(strTemp, "5>")
+            If Len(strTemp) > varTemp + 1 Then
+                strTemp = Right$(strTemp, Len(strTemp) - varTemp - 1) ' Удаляем пустую строку
+            Else
+                strTemp = ""
+            End If
+        End If
+    End If
+    If strTemp = "" Then ' Если строчка пустая
+        strTemp = swModel.CustomInfo2("", prpDescription)
+        If strTemp = "" Then ' Если строчка пустая
+            Наименование.Value = swModel.SummaryInfo(0)
+        Else
+            Наименование.Value = strTemp
+        End If
+    Else
+        Наименование.Value = strTemp
+    End If
+Else
+    ChkFont.Value = False
+    ChkFont_Click
+    ChkEnter.Enabled = False
+    ChkEnter.Value = False
+End If
+If prpFontSize = 0 Then ' Управление шрифтом
+    ChkFont.Enabled = False
+Else
+    ChkFont.Enabled = True
+End If
+
+' Эскизные Обозначение и Наименование
+TxtDraftNumber.Value = swModel.CustomInfo2("", prpDraftNumber)  ' Эскизное Обозначение
+TxtDraftDescription.Value = swModel.CustomInfo2("", prpDraftDescription)  ' Эскизное Наименование
+
+' Список штриховок
+strTemp = swApp.GetExecutablePath
+
+strTemp = strTemp & "\lang\" & swApp.GetCurrentLanguage & "\SLDWKS.ptn"
+
+Open strTemp For Input As #1
+CboHatch.Clear
+Do While Not EOF(1)
+    Line Input #1, strTemp
+    If Left$(strTemp, 1) = "*" Then
+        varTemp = InStr(strTemp, ",")
+        If varTemp > 0 Then
+            If Mid$(strTemp, 2, 1) = ":" Then
+                strTemp = Mid$(strTemp, 7, varTemp - 7)
+            Else
+                strTemp = Mid$(strTemp, 2, varTemp - 2)
+            End If
+        Else
+            If Mid$(strTemp, 2, 1) = ":" Then
+                strTemp = Mid$(strTemp, 7, Len(strTemp) - 6)
+            Else
+                strTemp = Mid$(strTemp, 2, Len(strTemp) - 1)
+            End If
+        End If
+        CboHatch.AddItem strTemp
+    End If
+Loop
+Close #1
+
+' Код для групповой специи
+TxtCode.Text = swModel.CustomInfo2(sConfigName, prpCode)
+
+' Флажок "Группировка конфигураций"
+Set swConfig = swModel.GetConfigurationByName(sConfigName)
+If swConfig.BOMPartNoSource = swBOMPartNumber_UserSpecified Then
+    strTemp = swConfig.AlternateName
+    If swConfig.IsDerived Then  ' Производная конфигурация
+        While swConfig.IsDerived
+            Set swConfig = swConfig.GetParent
+        Wend
+    End If
+    If strTemp = TxtNumber.Value & "-" & swConfig.Name Then
+        ChkChildConfigName.Value = True
+    ElseIf strTemp = TxtNumber.Value Then
+        ChkConfigName.Value = True
+    End If
+Else
+    ChkConfigName.Value = False
+    ChkChildConfigName.Value = False
+End If
+
+' Характер работы
+    ' Чтение файла и заполнение списка Характер работы
+    CboWork.Clear
+    Open Source5 For Input As #1
+    Do While Not EOF(1)
+        Line Input #1, strTemp
+        CboWork.AddItem strTemp
+    Loop
+    Close #1
+    ' Проверка свойства "Характер_работы"
+    CboWork.Value = swModel.CustomInfo2(sConfigName, prpWorkType)
+'    If CboWork.Value = "" Then
+'        CboWork.ListIndex = 0
+'    End If
+
+' Чтение файла для списка Проектов и заполнение списка "Проект_ФБ"
+CboProject.Clear
+Open Source6 For Input As #1
+i = 0
+Do While Not EOF(1)
+    ReDim Preserve Project(i)
+    Line Input #1, Project(i)
+    CboProject.AddItem Project(i)
+    i = i + 1
+Loop
+jproject = i - 1
+Close #1
+CboProject.Value = swModel.CustomInfo(prpProject)
+If swModel.CustomInfo(prpProject) = "" Then
+    CboProject.Value = swModel.CustomInfo2(sConfigName, prpProject)
+End If
+
+' Проверка свойства Заимствование
+If swModel.CustomInfo2("", prpBor) <> "" Then
+    ChkBor.Value = True
+Else
+    ChkBor.Value = False
+End If
+ChkBor_Click
+
+' Заполнение списков Раздел и проверка свойства Раздел
+MSection = 1
+Раздел.Clear
+CboBlankSection.Clear
+Open Source10 For Input As #1
+Do While Not EOF(1)
+Input #1, strTemp
+If strTemp = "Документация" Or strTemp = "Комплекты" Then
+Else
+    Раздел.AddItem strTemp
+    CboBlankSection.AddItem strTemp
+End If
+Loop
+Close #1
+strTemp = swModel.CustomInfo2(sConfigName, prpSection)
+If strTemp = "" Then
+    strTemp = swModel.CustomInfo(prpSection)
+End If
+m = 0
+For i = 0 To Раздел.ListCount - 1
+    If strTemp = Раздел.List(i) Then
+        m = 1
+    End If
+Next i
+If m = 1 Then
+    Раздел.Value = strTemp
+Else
+    If strTemp = "Стандартные изделия" Or strTemp = "Прочие изделия" Or strTemp = "Материалы" Then
+        lRetval = swApp.SendMsgToUser2("Модели уже назначен раздел " & strTemp & Chr$(10) & "Запустить макрос SProp?", swMbWarning, swMbYesNo)
+        If lRetval = swMbHitYes Then
+            Hide
+            ok = swApp.RunMacro(Source9, "SProp_run", "main")
+            Unload Me
+            Exit Sub
+        End If
+    End If
+    If swModel.GetType = swDocPART Then
+        Раздел.Value = "Детали"
+    Else
+        Раздел.Value = "Сборочные единицы"
+    End If
+End If
+MSection = 0
+Раздел_Change
+
+' Проверка свойств Проект, Справочный_номер, Эскизное Перв. Примен.
+Проект.Text = swModel.CustomInfo2(sConfigName, prpFirstApply)
+If Проект.Text = "" Then
+    Проект.Text = swModel.CustomInfo(prpFirstApply)
+End If
+TxtChange.Text = swModel.CustomInfo2(sConfigName, prpInformNumber)
+TxtDraftFirstApply.Text = swModel.CustomInfo2(sConfigName, prpDraftFirstApply)
+If TxtDraftFirstApply.Text = "" Then
+    TxtDraftFirstApply.Text = swModel.CustomInfo(prpDraftFirstApply)
+End If
+
+' Заполнение списка литер и проверка свойства "Литера_ФБ"
+CboLit.Clear
+CboLit.AddItem " "
+CboLit.AddItem "П"
+CboLit.AddItem "Э"
+CboLit.AddItem "Т"
+CboLit.AddItem "И"
+CboLit.AddItem "О"
+CboLit.AddItem "О1"
+CboLit.AddItem "О2"
+CboLit.AddItem "А"
+CboLit.AddItem "Б"
+strTemp = swModel.CustomInfo2(sConfigName, prpLitTable)
+If strTemp = "" Then ' Если строчка пустая
+    strTemp = swModel.CustomInfo2(sConfigName, prpLit)
+End If
+If Left$(strTemp, 5) = "<FONT" Then
+    varTemp = InStrRev(strTemp, "5>")
+    If Len(strTemp) > varTemp + 1 Then
+        strTemp = Right$(strTemp, Len(strTemp) - varTemp - 1) ' Удаляем пустую строку
+    Else
+        strTemp = " "
+    End If
+End If
+' Проверка цифрового индекса
+If Left$(strTemp, 1) = "О" And Right$(strTemp, 1) = "1" Then  ' О<FONT size=1.8>1
+    strTemp = "О1"
+ElseIf Left$(strTemp, 1) = "О" And Right$(strTemp, 1) = "2" Then  ' О<FONT size=1.8>2
+    strTemp = "О2"
+End If
+CboLit.Value = strTemp
+' Проверка: указывается ли литера в чертеже
+strTemp = swModel.CustomInfo2(sConfigName, prpLit)
+varTemp = InStr(strTemp, "табл") ' Проверяем значение
+If varTemp > 0 Then ' Значение присутствует
+    ChkLitTable.Value = True
+Else
+    ChkLitTable.Value = False
+End If
+
+' Проверка свойства "Revision"
+LblRev.Caption = swModel.CustomInfo("Revision")
+If swModel.CustomInfo("Revision") = "" Then
+    LblRev.Caption = "Нет"
+End If
+
+' Проверка свойства "Удален"
+If swModel.CustomInfo2("", "Удален") = "ДА" Then
+   ChkDel.Value = True
+Else
+   ChkDel.Value = False
+End If
+
+' Заполнение списка Разраб. и проверка свойства Автор
+Разработал.Clear
+For i = 0 To jfam
+    Разработал.AddItem Fam(i)
+Next i
+Разработал.Value = swModel.SummaryInfo(2)
+
+' Заполнение списка Проверил и проверка свойства Проверил
+Проверил.Clear
+For i = 0 To jfam
+Проверил.AddItem Fam(i)
+Next i
+Проверил.Value = swModel.CustomInfo2(sConfigName, prpTester)
+If Проверил.Value = "" Then
+Проверил.Value = swModel.CustomInfo2("", prpTester)
+End If
+
+' Заполнение списка Техконтроль и проверка свойства Техконтроль
+Техконтроль.Clear
+For i = 0 To jfam
+Техконтроль.AddItem Fam(i)
+Next i
+Техконтроль.Value = swModel.CustomInfo2(sConfigName, prpTechcontrol)
+If Техконтроль.Value = "" Then
+Техконтроль.Value = swModel.CustomInfo2("", prpTechcontrol)
+End If
+
+' Заполнение списка Начальник и проверка свойства Начальник
+Начальник.Clear
+For i = 0 To jfam
+Начальник.AddItem Fam(i)
+Next i
+Начальник.Value = swModel.CustomInfo2(sConfigName, prpPerson)
+If Начальник.Value = "" Then
+Начальник.Value = swModel.CustomInfo2("", prpPerson)
+End If
+
+' Заполнение списка Нормоконтроль и проверка свойства Нормоконтроль
+Нормоконтроль.Clear
+For i = 0 To jfam
+Нормоконтроль.AddItem Fam(i)
+Next i
+Нормоконтроль.Value = swModel.CustomInfo2(sConfigName, prpNormcontrol)
+If Нормоконтроль.Value = "" Then
+Нормоконтроль.Value = swModel.CustomInfo2("", prpNormcontrol)
+End If
+
+' Заполнение списка Утвердил и проверка свойства Утвердил
+Утвердил.Clear
+For i = 0 To jfam
+Утвердил.AddItem Fam(i)
+Next i
+Утвердил.Value = swModel.CustomInfo2(sConfigName, prpApprove)
+If Утвердил.Value = "" Then
+Утвердил.Value = swModel.CustomInfo2("", prpApprove)
+End If
+
+' Заполнение списка База материалов
+MBase = 1
+CboBaseSW.Clear
+CboBaseSW.AddItem "Удалить материал"
+Set fs = CreateObject("Scripting.FileSystemObject")
+If fs.FolderExists(Source14) = True Then
+    Set fs1 = fs.GetFolder(Source14)
+    For Each fs2 In fs1.files
+        'Debug.Print fs2.Name
+        If Right$(fs2.Name, 6) = "sldmat" Then
+            CboBaseSW.AddItem Left$(fs2.Name, Len(fs2.Name) - 7)
+        End If
+    Next
+End If
+If CboBaseSW.ListCount = 1 Then
+    strMsg = "Отсутствуют доступные базы материалов."
+    lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbOk)
+End If
+MBase = 0
+
+' Проверка свойства "Сборка"
+MAssem = 1 ' Метка флажка Сборка: 0 - можно менять флажок; 1 - нельзя менять флажок
+If swModel.GetType = swDocPART Then ' Если открыта деталь
+    ChkAssem.Caption = "Сборка"
+    If swModel.CustomInfo2("", "Сборка") = "-1" Or swModel.CustomInfo2("", "Сборка") = "True" Then ' Это сборка
+        ChkAssem.Value = True
+    Else ' Это деталь
+        ChkAssem.Value = False
+    End If
+Else ' Если открыта сборка
+    ChkAssem.Caption = "Деталь"
+    If swModel.CustomInfo2("", "Сборка") = "0" Or swModel.CustomInfo2("", "Сборка") = "False" Then ' Это деталь
+        ChkAssem.Value = True
+    Else ' Это деталь
+        ChkAssem.Value = False
+    End If
+End If
+MAssem = 0 ' Метка флажка Сборка: 0 - можно менять флажок; 1 - нельзя менять флажок
+
+MChkBlank = 1 ' Метка флажка "Заготовка": 0 - можно менять флажок; 1 - нельзя менять флажок
+' Проверка свойства Заготовка
+strTemp = swModel.CustomInfo2(sConfigName, prpBlank)
+If strTemp <> "" Then
+    ChkBlank.Value = True
+Else
+    ChkBlank.Value = False
+End If
+MChkBlank = 0
+ChkBlank_Click
+'CboBlankSection_Change
+
+' Проверка свойства Сборка2_ФБ
+strTemp = swModel.CustomInfo2(sConfigName, prpDocDescription)
+If strTemp = "" Then
+    strTemp = swModel.CustomInfo2("", prpDocDescription)
+End If
+If Left$(strTemp, 5) = "<FONT" Then
+    varTemp = InStrRev(strTemp, "5>")
+    If Len(strTemp) > varTemp + 1 Then
+        strTemp = Right$(strTemp, Len(strTemp) - varTemp - 1) ' Удаляем пустую строку
+    Else
+        strTemp = " "
+    End If
+End If
+TxtAssem2.Value = strTemp
+
+' Заполнение списка Чертеж и проверка свойства Сборка1_ФБ
+MForm = 1 ' Метка флажка Задать формат: 0 - пользователь изменил флажок; 1 - флажок изменен из программы
+Чертеж.Clear
+Чертеж.AddItem ""
+Open Source15 For Input As #1
+n = 0
+ReDim sDocData(0)
+sDocData(0) = "СБ - Сборочный чертеж"
+Чертеж.AddItem "СБ"
+Do While Not EOF(1)
+    n = n + 1
+    ReDim Preserve sDocData(n)
+    Line Input #1, strTemp
+    sDocData(n) = strTemp
+    strTemp = Left$(strTemp, InStr(strTemp, "-") - 1)
+    strTemp = Trim(strTemp)
+    Чертеж.AddItem strTemp
+Loop
+Close #1
+Чертеж.Value = swModel.CustomInfo2(sConfigName, prpDocCode)
+If Чертеж.Value = "" Then
+    Чертеж.Value = swModel.CustomInfo2("", prpDocCode)
+End If
+'If Чертеж.Value = "" And swModel.GetType = swDocASSEMBLY And ChkAssem.Value = False Then
+'Чертеж.Value = "СБ"
+'End If
+MForm = 0 ' Метка флажка Задать формат: 0 - пользователь изменил флажок; 1 - флажок изменен из программы
+
+' Заполнение списка конфигураций
+    ' Проверка числа конфигураций
+    ConfNumb = swModel.GetConfigurationCount ' Общее число конфигураций
+    vConfNameArr = swModel.GetConfigurationNames ' Имена всех конфигураций
+    ChkAll.Value = 0
+    MConf = 1 ' Метка списка конфигураций: 0 - пользователь изменил список; 1 - список изменен из программы
+    ' Заполнение списка
+    If ConfNumb > 1 And MDoc = 0 Then ' Конфигураций много и открыта модель
+        ChkAll.Enabled = True
+        CboConfig.Enabled = True
+        CboConfig.Clear
+        ReDim NumChildren(ConfNumb)
+        ReDim NumLevel(ConfNumb)
+        LevelNumber = 0
+        For i = 0 To ConfNumb - 1 ' Заполняем список конфигураций
+            Set swConfig = swModel.GetConfigurationByName(vConfNameArr(i))
+            NumChildren(i) = swConfig.GetChildrenCount
+            NumLevel(i) = LevelNumber
+            
+            ' Уменьшающий счетчик для родителей
+            For jj = 0 To i - 1
+                If NumLevel(jj) = LevelNumber - 1 Then
+                    NumChildren(jj) = NumChildren(jj) - 1
+                End If
+            Next jj
+    
+            ' Добавляем пробелы перед вложенными конфигурациями
+            strTemp = ""
+            If LevelNumber > 0 Then
+                For ii = 0 To LevelNumber - 1
+                    strTemp = strTemp & "   "
+                Next ii
+            End If
+            CboConfig.AddItem strTemp & vConfNameArr(i)
+            
+            ' Учет конфигураций нулевого уровня
+            If NumChildren(i) = 0 Then
+               NumChildren(i) = -1
+            End If
+            
+            If NumChildren(i) > 0 Then ' дети есть
+                LevelNumber = LevelNumber + 1
+            Else ' детей нет
+                For j = 0 To i - 1
+                    If NumChildren(j) = 0 Then
+                        LevelNumber = LevelNumber - 1
+                        NumChildren(j) = NumChildren(j) - 1
+                    End If
+                Next j
+            End If
+        Next i
+        ' Выставляем имя текущей конфигурации
+        For i = 0 To ConfNumb - 1
+            If LTrim(vConfNameArr(i)) = sConfigName Then
+                CboConfig.ListIndex = i
+            End If
+        Next i
+    Else ' Конфигурация одна или открыт чертеж
+        ChkAll.Enabled = False
+        CboConfig.Enabled = False
+        CboConfig.Value = sConfigName
+    End If
+
+' Проверка соответствия чертежа и модели
+' Определение имени чертежа
+Set fs = CreateObject("Scripting.FileSystemObject")
+m = 0
+If prpTestName = 1 Then ' Есть проверка имени
+    strTemp = Left$(Source4, Len(Source4) - 7) ' Путь к файлу модели
+    varTemp1 = InStrRev(strTemp, "\")
+    varTemp = InStr(varTemp1, strTemp, prpNameSep)
+    If Исполнение.Value = True Then
+        If prpFileName = 1 And varTemp > 0 Then
+            If Чертеж.Value = "" Or Чертеж.Value = "СБ" Then
+                sDrawName = Left$(strTemp, varTemp - 1) & "-" & LTrim(TxtConf.Value) & Right$(strTemp, Len(strTemp) - varTemp + 1) & ".SLDDRW"
+                If fs.FileExists(sDrawName) = False Then
+                    sDrawName = Left$(strTemp, varTemp - 1) & Right$(strTemp, Len(strTemp) - varTemp + 1) & ".SLDDRW"
+                    m = 1
+                End If
+            Else
+                sDrawName = Left$(strTemp, varTemp - 1) & "-" & LTrim(TxtConf.Value) & Чертеж.Value & Right$(strTemp, Len(strTemp) - varTemp + 1) & ".SLDDRW"
+                If fs.FileExists(sDrawName) = False Then
+                    sDrawName = Left$(strTemp, varTemp - 1) & Чертеж.Value & Right$(strTemp, Len(strTemp) - varTemp + 1) & ".SLDDRW"
+                    m = 1
+                End If
+            End If
+        Else
+            If Чертеж.Value = "" Or Чертеж.Value = "СБ" Then
+                sDrawName = Left$(Source4, Len(Source4) - 7) & "-" & LTrim(TxtConf.Value) & ".SLDDRW"
+                If fs.FileExists(sDrawName) = False Then
+                    sDrawName = Left$(Source4, Len(Source4) - 7) & ".SLDDRW"
+                    m = 1
+                End If
+            Else
+                sDrawName = Left$(Source4, Len(Source4) - 7) & "-" & LTrim(TxtConf.Value) & Чертеж.Value & ".SLDDRW"
+                If fs.FileExists(sDrawName) = False Then
+                    sDrawName = Left$(Source4, Len(Source4) - 7) & Чертеж.Value & ".SLDDRW"
+                    m = 1
+                End If
+            End If
+        End If
+    Else
+        If prpFileName = 1 And varTemp > 0 Then
+            If Чертеж.Value = "" Or Чертеж.Value = "СБ" Then
+                sDrawName = Left$(Source4, Len(Source4) - 3) & "DRW"
+            Else
+                sDrawName = Left$(strTemp, varTemp - 1) & Чертеж.Value & Right$(strTemp, Len(strTemp) - varTemp + 1) & ".SLDDRW"
+            End If
+        Else
+            If Чертеж.Value = "" Or Чертеж.Value = "СБ" Then
+                sDrawName = Left$(Source4, Len(Source4) - 3) & "DRW"
+            Else
+                sDrawName = Left$(Source4, Len(Source4) - 7) & Чертеж.Value & ".SLDDRW"
+            End If
+        End If
+    End If
+Else
+    sDrawName = Left$(Source4, Len(Source4) - 3) & "DRW"
+End If
+' Проверка соответствия
+MDrw = 0
+If MDoc = 1 Then ' Открыт чертеж
+    LblType.Caption = " Модель: " & sModelName
+    LblType.ForeColor = vbBlack
+    MDrw = 1 ' Метка соответствия чертежа и модели: 0 - чертеж не соответсвует; 1 - чертеж нормальный
+Else ' Открыта модель
+    ' Проверка существования чертежа
+    If fs.FileExists(sDrawName) = True Then ' Чертеж существует
+        ' Проверка соответствия чертежа текущей конфигурации
+        Set swDraw = swApp.OpenDoc6(sDrawName, swDocDRAWING, swOpenDocOptions_Silent, "", longstatus, longwarnings)
+        Set swSheet = swDraw.GetCurrentSheet
+        strActiveSheetName = swSheet.GetName ' Узнаем имя активного листа
+        vSheetNames = swDraw.GetSheetNames
+        ok = swDraw.ActivateSheet(vSheetNames(0))
+        Set swSheet = swDraw.GetCurrentSheet
+        Set swView = swDraw.GetFirstView
+        m1 = 0
+        If swSheet.CustomPropertyView = "По умолчанию" Or swSheet.CustomPropertyView = "Default" Then
+            Set swView = swView.GetNextView ' Получаем первый вид
+        Else
+            Do Until swView Is Nothing
+                If swView.GetName2 = swSheet.CustomPropertyView Then
+                    m1 = 1
+                    Exit Do
+                End If
+                Set swView = swView.GetNextView
+            Loop
+            If m1 = 0 Then
+                Set swView = swDraw.GetFirstView
+                Set swView = swView.GetNextView
+                swApp.SendMsgToUser ("Не удалось определить вид из свойств листа. Используется первый вид.")
+            End If
+        End If
+        If swView Is Nothing Then
+            LblType.Caption = " Чертеж с именем " & sDrawName & " не содержит видов"
+            LblType.ForeColor = vbRed
+        Else
+            sModelName = swView.GetReferencedModelName
+            If sModelName = Source4 Then ' Модель соответствует
+                strTemp = swView.ReferencedConfiguration
+                If strTemp = sConfigName Then ' Конфигурация соответствует
+                    If m = 1 Then
+                        LblType.Caption = " Считан групповой чертеж: " & sDrawName & ". Конфигурация совпадает"
+                        LblType.ForeColor = vbBlue
+                        MDrw = 1 ' Метка соответствия чертежа и модели: 0 - чертеж не соответсвует; 1 - чертеж нормальный
+                    Else
+                        LblType.Caption = " Чертеж: " & sDrawName
+                        LblType.ForeColor = vbBlack
+                        MDrw = 1 ' Метка соответствия чертежа и модели: 0 - чертеж не соответсвует; 1 - чертеж нормальный
+                    End If
+                Else ' Конфигурация другая
+                    If m = 1 Then
+                        LblType.Caption = " Считан групповой чертеж: " & sDrawName & ". В чертеже использована конфигурация " & strTemp
+                        LblType.ForeColor = vbBlue
+                        MDrw = 1 ' Метка соответствия чертежа и модели: 0 - чертеж не соответсвует; 1 - чертеж нормальный
+                    Else
+                        Set swConfig = swModel.GetConfigurationByName(strTemp) ' Поверяем конфигурацию для чертежа
+                        If swConfig.IsDerived Then  ' Производная конфигурация
+                            If InStr(strTemp, "Для чертежа") > 0 Or InStr(strTemp, "для чертежа") > 0 Then
+                                m = 1
+                            End If
+                        End If
+                        If m = 1 Then
+                            LblType.Caption = " В чертеже с именем " & sDrawName & " использована конфигурация " & strTemp
+                            LblType.ForeColor = vbGreen
+                            MDrw = 1 ' Метка соответствия чертежа и модели: 0 - чертеж не соответсвует; 1 - чертеж нормальный
+                        Else
+                            LblType.Caption = " В чертеже с именем " & sDrawName & " использована конфигурация " & strTemp
+                            LblType.ForeColor = vbRed
+                        End If
+                    End If
+                End If
+            ElseIf sModelName = "" Then
+                LblType.Caption = " Чертеж с именем " & sDrawName & " не содержит вида с моделью"
+                LblType.ForeColor = vbRed
+            Else ' Модель другая
+                LblType.Caption = " Чертеж с именем " & sDrawName & " ссылается на модель" & sModelName
+                LblType.ForeColor = vbRed
+            End If
+        End If
+    Else ' Файла чертежа нет
+        LblType.Caption = " Файл чертежа с именем " & sDrawName & " не существует"
+        LblType.ForeColor = vbRed
+    End If
+Set swModel = swApp.ActivateDoc(Source4)
+End If
+
+' Проверка свойств "Формат", "Примечание" и "Формат_ФБ"
+' Проверка свойства "Примечание"
+Примечание.Value = swModel.CustomInfo2(sConfigName, prpRemark)
+If Примечание.Value = "" Then
+    Примечание.Value = swModel.CustomInfo2("", prpRemark)
+End If
+' Заполнение списка Формат и проверка свойства Формат
+Формат.Clear
+Формат.AddItem ""
+Формат.AddItem "А4"
+Формат.AddItem "А3"
+Формат.AddItem "А2"
+Формат.AddItem "А1"
+Формат.AddItem "А0"
+Формат.AddItem "БЧ"
+Формат.AddItem "*)"
+Формат.AddItem "-"
+Формат.Value = swModel.CustomInfo2(sConfigName, prpFormat)
+If Формат.Value = "" Then
+    Формат.Value = swModel.CustomInfo2("", prpFormat)
+End If
+' Проверка свойства "Формат_ФБ"
+If prpTestFormat = 1 Then ' Есть проверка
+    MForm = 1 ' Метка флажка Задать формат: 0 - пользователь изменил флажок; 1 - флажок изменен из программы
+    ChkFormat.Enabled = True
+    If swModel.CustomInfo2(sConfigName, "Формат_ФБ") = "-1" Or swModel.CustomInfo2(sConfigName, "Формат_ФБ") = "True" Or swModel.CustomInfo2(sConfigName, "Формат_ФБ") = "" Then
+        ChkFormat.Value = False ' В спецификации наоборот
+    Else
+        ChkFormat.Value = True
+    End If
+    MForm = 0
+Else ' Нет проверки
+    MForm = 1
+    ChkFormat.Enabled = False
+    ChkFormat.Value = True
+    Формат.Enabled = True
+    Примечание.Enabled = True
+    MForm = 0
+End If
+Tests (0)
+' Заполнение списка Формат для Заготовки
+CboBlankFormat.Clear
+CboBlankFormat.AddItem ""
+CboBlankFormat.AddItem "А4"
+CboBlankFormat.AddItem "А3"
+CboBlankFormat.AddItem "А2"
+CboBlankFormat.AddItem "А1"
+CboBlankFormat.AddItem "А0"
+CboBlankFormat.AddItem "БЧ"
+CboBlankFormat.AddItem "*)"
+CboBlankFormat.AddItem "-"
+
+' Заполнение списка масс
+CboMass.Clear
+CboMass.AddItem "Миллиграммы"
+CboMass.AddItem "Граммы"
+CboMass.AddItem "Килограммы"
+CboMass.AddItem "Фунты"
+
+' Заполнение списка точностей
+CboTol.Clear
+For i = 0 To 8
+CboTol.AddItem i
+Next i
+
+'Set swModExt = swModel.Extension
+'Set MassProp = swModel.Extension.CreateMassProperty
+'vMassProp = swModExt.GetMassProperties(1, nStatus)
+vMassProp = swApp.GetMassProperties2(Source4, sConfigName, 1)
+'If nStatus = swMassPropertiesStatus_OK Then ' Деталь имеет массу
+' Отображение массы
+If Not IsEmpty(vMassProp) Then ' Деталь имеет массу
+    mv = vMassProp(5)
+    vv = vMassProp(3)
+'    If TxtDens.Enabled = False Then
+'        dv = mv / vv
+'        MyRound dv, 1
+'        TxtDens.Value = dv
+'    End If
+    MMass = 1 ' Метка флажка "Задать единицы и точность": 0 - можно менять флажок; 1 - нельзя менять флажок
+    If swModel.CustomInfo2(sConfigName, "Единицы") = "0" Or swModel.CustomInfo2(sConfigName, "Единицы") = "False" Then ' Пользовательские настройки массы
+        swModel.SetUserPreferenceIntegerValue swUnitSystem, swUnitSystem_Custom
+        ChkDefMass.Value = True
+        longTemp = swModel.GetUserPreferenceIntegerValue(swUnitsMassPropMass)
+        Select Case longTemp
+        Case swUnitsMassPropMass_Milligrams
+            CboMass.ListIndex = 0
+        Case swUnitsMassPropMass_Grams
+            CboMass.ListIndex = 1
+        Case swUnitsMassPropMass_Kilograms
+            CboMass.ListIndex = 2
+        Case swUnitsMassPropMass_Pounds
+            CboMass.ListIndex = 3
+        End Select
+        
+        longTemp = swModel.GetUserPreferenceIntegerValue(swUnitsMassPropDecimalPlaces)
+        CboTol.ListIndex = CInt(longTemp)
+        
+    ElseIf swModel.CustomInfo2(sConfigName, "Единицы") = "-1" Or swModel.CustomInfo2(sConfigName, "Единицы") = "True" Then ' Масса по умолчанию
+        ChkDefMass.Value = False
+    Else ' Без настроек
+        ChkDefMass.Value = False
+    End If
+    MMass = 0 ' Метка флажка "Задать единицы и точность": 0 - можно менять флажок; 1 - нельзя менять флажок
+    ChkDefMass_Click
+Else ' Деталь не имеет массы
+    ChkDefMass.Enabled = False
+    CboMass.Enabled = False
+    CboTol.Enabled = False
+    TxtMass.Value = "0"
+    LblMass.Caption = ""
+End If
+
+' Проверка: указывается ли масса в чертеже
+strTemp = swModel.CustomInfo2(sConfigName, prpMass)
+If Left$(strTemp, 5) = "<FONT" Then
+    varTemp = InStrRev(strTemp, "5>")
+    If Len(strTemp) > varTemp + 1 Then
+        strTemp = Right$(strTemp, Len(strTemp) - varTemp - 1) ' Удаляем пустую строку
+    Else
+        strTemp = " "
+    End If
+End If
+If strTemp = "-" Then
+    ChkNoMass.Value = True
+ElseIf Left$(strTemp, 3) = "См." Then
+    ChkMassTable.Value = True
+Else
+    ChkNoMass.Value = False
+    ChkMassTable.Value = False
+End If
+ 
+If mRun = 1 Then
+    CmdClose_Click
+End If
+If prpLeftTopCorner = 1 Then ' Окно макроса в левом верхнем углу
+    FrmMProp.Left = 10
+    FrmMProp.Top = 10
+End If
+If prpTopAll = 1 Then ' Окно макроса поверх всех
+    KeepFormOnTop
+End If
+End Sub
+
+Private Sub Внести_изменения_Click() ' ***************************#######################################################*********************************
+
+If MIni2 = 1 And mRun = 0 Then
+    If CboMaterialSW.Value <> "" And CboBaseSW.Value <> MIni3 Then
+        strMsg = "Внимание! Используется нестандартная база материалов! Вы хотите продолжить?"
+        lRetval = swApp.SendMsgToUser2(strMsg, swMbQuestion, swMbYesNo)
+        If lRetval = swMbHitNo Then
+            Exit Sub
+        End If
+    End If
+End If
+If MIni6 = 1 And mRun = 0 Then
+    strTemp = LTrim(CboProject.Value)
+    n = 0
+    For i = 0 To jproject
+        If Project(i) = strTemp Or strTemp = "" Then
+            n = 1
+        End If
+    Next i
+    If n = 0 Then
+        strMsg = "Внимание! Указанный Шифр отсутствует в списке! Вы хотите продолжить?"
+        lRetval = swApp.SendMsgToUser2(strMsg, swMbQuestion, swMbYesNo)
+        If lRetval = swMbHitNo Then
+            Exit Sub
+        End If
+    End If
+End If
+
+If MIni1 = 1 Then ' Очистка свойств
+    MDel = 1
+    CmdDelete_Click
+End If
+
+' Запись профилей
+Open Source2 For Output As #1
+n = UBound(ProfDataCaption)
+For i = 1 To n
+    'ProfDataCaption(i) = "$$$" & ProfDataCaption(i)
+    Print #1, "$$$" & ProfDataCaption(i)
+    For j = 1 To 7
+        Print #1, ProfData(i, j)
+    Next j
+Next i
+Close #1
+
+' Назначение массовых характеристик
+swModel.SetUserPreferenceIntegerValue swUnitSystem, swUnitSystem_Custom
+Select Case CboMass.ListIndex
+Case 0
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropLength, swMM
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropMass, swUnitsMassPropMass_Milligrams
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropVolume, swUnitsMassPropVolume_Millimeters3
+Case 1
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropLength, swCM
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropMass, swUnitsMassPropMass_Grams
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropVolume, swUnitsMassPropVolume_Centimeters3
+Case 2
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropLength, swMETER
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropMass, swUnitsMassPropMass_Kilograms
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropVolume, swUnitsMassPropVolume_Meters3
+Case 3
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropLength, swFEET
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropMass, swUnitsMassPropMass_Pounds
+    swModel.SetUserPreferenceIntegerValue swUnitsMassPropVolume, swUnitsMassPropVolume_Feet3
+End Select
+swModel.SetUserPreferenceIntegerValue swUnitsMassPropDecimalPlaces, CboTol.ListIndex
+
+' Запись проектов
+strTemp = LTrim(CboProject.Value)
+If strTemp <> "" And MIni5 = 1 Then
+    n = 0
+    For i = 0 To jproject
+        If Project(i) = strTemp Then
+            n = 1
+        End If
+    Next i
+    If n = 0 Then
+        Open Source6 For Output As #1
+        For i = 0 To jproject
+            Print #1, Project(i)
+        Next i
+        Print #1, strTemp
+        Close #1
+    End If
+End If
+ok = swModel.AddCustomInfo2(prpProject, 30, strTemp)
+swModel.CustomInfo2("", prpProject) = strTemp
+If strTemp = "" Then
+    swModel.SummaryInfo(1) = ""
+Else
+    swModel.SummaryInfo(1) = strTemp
+End If
+
+' Заимствование
+ok = swModel.AddCustomInfo3("", prpBor, 30, "")
+strTemp = ""
+If ChkBor.Value = True Then
+    For i = 0 To LstBor.ListCount - 1
+        If LstBor.Selected(i) = True Then
+            strTemp = strTemp & LstBor.List(i) & "$"
+        End If
+    Next i
+    swModel.CustomInfo2("", prpBor) = strTemp
+Else
+    swModel.CustomInfo2("", prpBor) = ""
+End If
+
+' Обозначение и Number и свойство конфигурации для спецификации
+If ChkClass.Value = True Then ' Обозначение из классификатора
+    sNumber = CboClass.Value & "." & TxtClass.Value & "." & TxtCounter.Value ' sNumber - для Обозначения на вкладке Настройки
+Else ' Обозначение из txtNumber
+    If ChkManual.Value = True Then ' Обозначение вводится вручную
+        sNumber = TxtNumber.Value
+    Else
+        If prpFileName = 0 Then ' Не используем разделитель
+            sNumber = "$PRP:" & Chr$(34) & "SW-File Name" & Chr$(34)
+        Else
+            varTemp = InStr(sNumberTitle, prpNameSep)
+            If varTemp > 0 Then ' Разделитель найден
+                sNumber = TxtNumber.Value
+            Else
+                sNumber = "$PRP:" & Chr$(34) & "SW-File Name" & Chr$(34)
+            End If
+        End If
+    End If
+End If
+
+'sNumberReal = "$PRP:" & Chr$(34) & "SW-File Name" & Chr$(34) ' sNumberReal - для записи свойств масса, плотность, материал
+sNumberReal = sNumberTitle ' sNumberReal - для записи свойств масса, плотность, материал
+
+ok = swModel.AddCustomInfo2("Number", 30, sNumber)
+swModel.CustomInfo2("", "Number") = sNumber
+If TxtNumber.Value = "" Then
+    swModel.SummaryInfo(4) = ""
+Else
+    swModel.SummaryInfo(4) = TxtNumber.Value
+End If
+ok = swModel.AddCustomInfo2(prpNumber, 30, "")
+swModel.CustomInfo2("", prpNumber) = sNumber
+If Исполнение.Value = True And LTrim(TxtConf.Value) <> "" Then ' Используется исполнение
+    ok = swModel.AddCustomInfo3(sConfigName, prpNumber, 30, "")
+    swModel.CustomInfo2(sConfigName, prpNumber) = sNumber & "-" & LTrim(TxtConf.Value)
+Else
+    ok = swModel.AddCustomInfo3(sConfigName, prpNumber, 30, "")
+    swModel.CustomInfo2(sConfigName, prpNumber) = sNumber
+End If
+
+' Прописываем свойство конфигурации для спецификации
+If ChkConfigName.Value = True Then ' Все конфигурации
+    For i = 0 To ConfNumb - 1
+        Set swConfig = swModel.GetConfigurationByName(vConfNameArr(i))
+        swConfig.BOMPartNoSource = swBOMPartNumber_UserSpecified
+        swConfig.AlternateName = TxtNumber.Value
+        swConfig.UseAlternateNameInBOM = True
+        swConfig.AlternateName = TxtNumber.Value
+    Next i
+ElseIf ChkChildConfigName.Value = True Then ' Производные конфигурации
+    Set swConfig = swModel.GetConfigurationByName(sConfigName)
+    Debug.Print swConfig.Name, swConfig.IsDerived
+    If swConfig.IsDerived Then ' Находим родителя
+        While swConfig.IsDerived
+            Set swConfig = swConfig.GetParent
+        Wend
+    End If
+    strTemp = swConfig.Name ' Имя родителя
+    For i = 0 To CboConfig.ListCount - 1 ' Определяем номер родителя в списке
+        If LTrim(CboConfig.List(i)) = strTemp Then
+            n = i
+            Exit For
+        End If
+    Next i
+    For i = n To CboConfig.ListCount - 1 ' Прописываем свойства
+        If Left(CboConfig.List(i), 1) <> " " And i > n Then
+            Exit For
+        Else
+            Set swConfig = swModel.GetConfigurationByName(vConfNameArr(i))
+            swConfig.BOMPartNoSource = swBOMPartNumber_UserSpecified
+            swConfig.AlternateName = TxtNumber.Value & "-" & strTemp
+            swConfig.UseAlternateNameInBOM = True
+            swConfig.AlternateName = TxtNumber.Value & "-" & strTemp
+        End If
+    Next i
+Else ' Нет группировки
+    For i = 0 To ConfNumb - 1
+        Set swConfig = swModel.GetConfigurationByName(vConfNameArr(i))
+        swConfig.BOMPartNoSource = swBOMPartNumber_DocumentName
+'        swConfig.AlternateName = TxtNumber.Value
+        swConfig.UseAlternateNameInBOM = False
+'        swConfig.AlternateName = TxtNumber.Value
+    Next i
+End If
+
+' ReName (Ввести Обозначение, служебное свойство)
+ok = swModel.AddCustomInfo3("", "RenameSWP", 30, "")
+If ChkManual.Value = True Then
+    swModel.CustomInfo2("", "RenameSWP") = "1"
+Else
+    swModel.CustomInfo2("", "RenameSWP") = "0"
+End If
+
+' Исполнение
+ok = swModel.AddCustomInfo3(sConfigName, "Исполнение", 30, "")
+If Исполнение.Value = True Then
+    If ChkConf.Value = True Then
+        swModel.CustomInfo2(sConfigName, "Исполнение") = "1"
+    Else
+        swModel.CustomInfo2(sConfigName, "Исполнение") = "2"
+    End If
+Else
+    swModel.CustomInfo2(sConfigName, "Исполнение") = "0"
+End If
+
+' Наименование, Наименование_ФБ и Description
+' Преобразование Наименования к однострочному виду
+If InStr(Наименование.Value, Chr$(13)) > 0 Then ' Проверка количества строк
+    strDescription = Replace(Наименование.Value, Chr$(13) & Chr$(10), " ")
+Else
+    strDescription = Наименование.Value
+End If
+' Прописывание свойств
+If strDescription = "" Then
+    swModel.SummaryInfo(0) = ""
+Else
+    swModel.SummaryInfo(0) = strDescription
+End If
+ok = swModel.AddCustomInfo2(prpDescription, 30, "")
+If ChkEnter.Value = True Then
+    swModel.CustomInfo2("", prpDescription) = Наименование.Value
+Else
+    swModel.CustomInfo2("", prpDescription) = strDescription
+End If
+ok = swModel.AddCustomInfo2("Description", 30, strDescription)
+swModel.CustomInfo2("", "Description") = strDescription
+If prpFontSize = 1 Then ' Проверка количества строк
+    varTemp = InStr(Наименование.Value, Chr$(10))
+    If varTemp > 0 Then
+        If InStr(varTemp + 1, Наименование.Value, Chr$(10)) > 0 Then ' Три строки
+            strTemp = "<FONT size=3.5>" & Наименование.Value
+        Else ' Две строки
+            If ChkFont.Value = True Then
+                strTemp = "<FONT size=2> " & Chr$(13) & Chr$(10) & "<FONT size=3.5>" & Наименование.Value
+            Else
+                strTemp = "<FONT size=2> " & Chr$(13) & Chr$(10) & "<FONT size=5>" & Наименование.Value
+            End If
+        End If
+    Else ' Одна строка
+        If ChkFont.Value = True Then
+            strTemp = "<FONT size=4> " & Chr$(10) & "<FONT size=3.5>" & Наименование.Value
+        Else
+            strTemp = "<FONT size=4> " & Chr$(10) & "<FONT size=5>" & Наименование.Value
+        End If
+    End If
+Else
+    strTemp = Наименование.Value
+End If
+ok = swModel.AddCustomInfo2(prpDescriptionMulti, 30, "")
+swModel.CustomInfo2("", prpDescriptionMulti) = strTemp
+If Исполнение.Value = True And LTrim(TxtConf.Value) <> "" Then ' Используется исполнение
+    If TxtCode.Value <> "" Then
+        ok = swModel.AddCustomInfo3(sConfigName, prpDescription, 30, "")
+        If ChkEnter.Value = True Then
+            swModel.CustomInfo2(sConfigName, prpDescription) = Наименование.Value & " " & TxtCode.Value
+        Else
+            swModel.CustomInfo2(sConfigName, prpDescription) = strDescription & " " & TxtCode.Value
+        End If
+        ok = swModel.AddCustomInfo3(sConfigName, prpDescriptionMulti, 30, "")
+        swModel.CustomInfo2(sConfigName, prpDescriptionMulti) = strTemp & " " & TxtCode.Value
+    End If
+Else
+    ok = swModel.DeleteCustomInfo2(sConfigName, prpDescription)
+    ok = swModel.DeleteCustomInfo2(sConfigName, prpDescriptionMulti)
+End If
+
+' Обновляем постоянные части Обозначения  и Наименования для всех конфигураций
+For i = 0 To ConfNumb - 1
+    If swModel.CustomInfo2(vConfNameArr(i), "Исполнение") = "1" Or swModel.CustomInfo2(vConfNameArr(i), "Исполнение") = "2" Then ' Используется исполнение
+        strTemp1 = swModel.CustomInfo2(vConfNameArr(i), prpNumber)
+        varTemp = InStrRev(strTemp1, "-")
+        If varTemp > 0 Then
+            strTemp1 = Right$(strTemp1, Len(strTemp1) - varTemp)
+        Else
+            strTemp1 = ""
+        End If
+        ok = swModel.AddCustomInfo3(vConfNameArr(i), prpNumber, 30, "")
+        swModel.CustomInfo2(vConfNameArr(i), prpNumber) = sNumber & "-" & strTemp1
+    
+        If TxtCode.Value <> "" Then
+            ok = swModel.AddCustomInfo3(vConfNameArr(i), prpDescription, 30, "")
+            If ChkEnter.Value = True Then
+                swModel.CustomInfo2(vConfNameArr(i), prpDescription) = Наименование.Value & " " & swModel.CustomInfo2(vConfNameArr(i), prpCode)
+            Else
+                swModel.CustomInfo2(vConfNameArr(i), prpDescription) = strDescription & " " & swModel.CustomInfo2(vConfNameArr(i), prpCode)
+            End If
+            ok = swModel.AddCustomInfo3(vConfNameArr(i), prpDescriptionMulti, 30, "")
+            swModel.CustomInfo2(vConfNameArr(i), prpDescriptionMulti) = strTemp & " " & swModel.CustomInfo2(vConfNameArr(i), prpCode)
+        End If
+    Else
+        ok = swModel.AddCustomInfo3(vConfNameArr(i), prpNumber, 30, "")
+        swModel.CustomInfo2(vConfNameArr(i), prpNumber) = sNumber
+        ok = swModel.DeleteCustomInfo2(vConfNameArr(i), prpDescription)
+        ok = swModel.DeleteCustomInfo2(vConfNameArr(i), prpDescriptionMulti)
+    End If
+Next i
+
+' Эскизные Обозначение и Наименование
+ok = swModel.AddCustomInfo3("", prpDraftNumber, 30, "")
+swModel.CustomInfo2("", prpDraftNumber) = TxtDraftNumber.Value
+ok = swModel.AddCustomInfo3("", prpDraftDescription, 30, "")
+swModel.CustomInfo2("", prpDraftDescription) = TxtDraftDescription.Value
+
+' Код для групповой специи
+ok = swModel.AddCustomInfo3(sConfigName, prpCode, 30, "")
+swModel.CustomInfo2(sConfigName, prpCode) = TxtCode.Value
+
+' Разработал
+If Разработал.Value = "" Then
+    swModel.SummaryInfo(2) = ""
+Else
+    swModel.SummaryInfo(2) = Разработал.Value
+End If
+ok = swModel.AddCustomInfo2(prpDesigner, 30, Разработал.Value)
+swModel.CustomInfo2("", prpDesigner) = Разработал.Value
+
+' Сборка (служебное свойство)
+ok = swModel.AddCustomInfo3("", "Сборка", 30, "")
+If swModel.GetType = swDocPART Then ' Если открыта деталь
+    If ChkAssem.Value = True Then
+        swModel.CustomInfo2("", "Сборка") = "True"
+    Else
+        swModel.CustomInfo2("", "Сборка") = "False"
+    End If
+Else ' Если открыта сборка
+    If ChkAssem.Value = True Then
+        swModel.CustomInfo2("", "Сборка") = "False"
+    Else
+        swModel.CustomInfo2("", "Сборка") = "True"
+    End If
+End If
+
+' Группа
+If Раздел.Value = "Стандартные изделия" Or Раздел.Value = "Прочие изделия" Or Раздел.Value = "Материалы" Then
+    ok = swModel.AddCustomInfo3("", prpGroup, 30, "")
+    swModel.CustomInfo2("", prpGroup) = CboGroup.Value
+Else
+    ok = swModel.DeleteCustomInfo2("", prpGroup)
+End If
+
+ok = swModel.AddCustomInfo3("", "Классификатор", 30, "")
+swModel.CustomInfo2("", "Классификатор") = ChkClass.Value
+
+ok = swModel.AddCustomInfo3(sConfigName, "Формат_ФБ", 30, "")
+If ChkFormat.Value = True Then
+    swModel.CustomInfo2(sConfigName, "Формат_ФБ") = "False"
+Else
+    swModel.CustomInfo2(sConfigName, "Формат_ФБ") = "True"
+End If
+
+ok = swModel.AddCustomInfo3(sConfigName, "Единицы", 30, "")
+If ChkDefMass.Value = True Then
+    swModel.CustomInfo2(sConfigName, "Единицы") = "False"
+Else
+    swModel.CustomInfo2(sConfigName, "Единицы") = "True"
+End If
+
+' Литера
+ok = swModel.AddCustomInfo3(sConfigName, prpLit, 30, "")
+ok = swModel.AddCustomInfo3(sConfigName, prpLitTable, 30, "")
+If prpFontSize = 1 Then
+    If CboLit.Value = "О1" Then
+        strTemp = "О<FONT size=1.8>1"
+    ElseIf CboLit.Value = "О2" Then
+        strTemp = "О<FONT size=1.8>2"
+    Else
+        strTemp = CboLit.Value
+    End If
+Else
+    strTemp = CboLit.Value
+End If
+swModel.CustomInfo2(sConfigName, prpLitTable) = strTemp
+If ChkLitTable.Value = True Then ' Литера в таблице
+    If prpFontSize = 1 Then
+        swModel.CustomInfo2(sConfigName, prpLit) = "<FONT size=2.5>" & "См." & Chr$(10) & "таблицу"
+    Else
+        swModel.CustomInfo2(sConfigName, prpLit) = "См.таблицу"
+    End If
+Else
+    If prpFontSize = 1 Then
+        swModel.CustomInfo2(sConfigName, prpLit) = "<FONT size=1> " & Chr$(10) & "<FONT size=3.5>" & strTemp
+    Else
+        swModel.CustomInfo2(sConfigName, prpLit) = strTemp
+    End If
+End If
+If swModel.CustomInfo2(sConfigName, prpLitSP) <> "-" Then
+    swModel.CustomInfo2(sConfigName, prpLitSP) = swModel.CustomInfo2(sConfigName, prpLitTable)
+End If
+
+ok = swModel.AddCustomInfo3(sConfigName, prpFirm, 30, CboFirm.Value)
+swModel.CustomInfo2(sConfigName, prpFirm) = CboFirm.Value
+
+ok = swModel.DeleteCustomInfo2("", prpFirstApply)
+ok = swModel.AddCustomInfo3(sConfigName, prpFirstApply, 30, Проект.Text)
+swModel.CustomInfo2(sConfigName, prpFirstApply) = Проект.Text
+If Проект.Text = "" Then
+    swModel.SummaryInfo(3) = ""
+Else
+    swModel.SummaryInfo(3) = Проект.Text
+End If
+
+ok = swModel.DeleteCustomInfo2("", prpDraftFirstApply)
+ok = swModel.AddCustomInfo3(sConfigName, prpDraftFirstApply, 30, TxtDraftFirstApply.Text)
+swModel.CustomInfo2(sConfigName, prpDraftFirstApply) = TxtDraftFirstApply.Text
+
+ok = swModel.AddCustomInfo3(sConfigName, prpInformNumber, 30, TxtChange.Text)
+swModel.CustomInfo2(sConfigName, prpInformNumber) = TxtChange.Text
+
+' Запись свойства "Удален"
+ok = swModel.AddCustomInfo3("", "Удален", 30, "")
+If ChkDel.Value = True Then
+    swModel.CustomInfo2("", "Удален") = "ДА"
+Else
+    swModel.CustomInfo2("", "Удален") = "НЕТ"
+End If
+
+' Плотность и масса
+If swModel.GetType = swDocPART Then ' Деталь
+    ok = swModel.AddCustomInfo3(sConfigName, "Плотность_ФБ", 30, "SW-Density@@" & sConfigName & "@" & sNumberReal & ".SLDPRT")
+    ok = swModel.DeleteCustomInfo2("", "Плотность_ФБ")
+    swModel.CustomInfo2(sConfigName, "Плотность_ФБ") = Chr$(34) & "SW-Density@@" & sConfigName & "@" & sNumberReal & ".SLDPRT" & Chr$(34)
+    
+    ok = swModel.AddCustomInfo3(sConfigName, prpMass, 30, "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDPRT")
+    ok = swModel.AddCustomInfo3(sConfigName, prpMassTable, 30, "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDPRT")
+    ok = swModel.DeleteCustomInfo2("", prpMass)
+    If ChkNoMass.Value = True Then ' Без массы
+        If prpFontSize = 1 Then
+            swModel.CustomInfo2(sConfigName, prpMass) = "<FONT size=1> " & Chr$(10) & "<FONT size=3.5>" & "-"
+        Else
+            swModel.CustomInfo2(sConfigName, prpMass) = "-"
+        End If
+    ElseIf ChkMassTable.Value = True Then ' Масса в таблице
+        If prpFontSize = 1 Then
+            swModel.CustomInfo2(sConfigName, prpMass) = "<FONT size=2.5>" & "См." & Chr$(10) & "таблицу"
+        Else
+            swModel.CustomInfo2(sConfigName, prpMass) = "См.таблицу"
+        End If
+    Else ' C массой
+        If CboMass.ListIndex = 1 Then
+            If prpFontSize = 1 Then
+                swModel.CustomInfo2(sConfigName, prpMass) = "<FONT size=1> " & Chr$(10) & "<FONT size=3.5>" & Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDPRT" & Chr$(34) & " г"
+            Else
+                swModel.CustomInfo2(sConfigName, prpMass) = Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDPRT" & Chr$(34) & " г"
+            End If
+        Else
+            If prpFontSize = 1 Then
+                swModel.CustomInfo2(sConfigName, prpMass) = "<FONT size=1> " & Chr$(10) & "<FONT size=3.5>" & Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDPRT" & Chr$(34)
+            Else
+                swModel.CustomInfo2(sConfigName, prpMass) = Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDPRT" & Chr$(34)
+            End If
+        End If
+    End If
+    swModel.CustomInfo2(sConfigName, prpMassTable) = Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDPRT" & Chr$(34)
+Else ' Сборка
+    ok = swModel.AddCustomInfo3(sConfigName, prpMass, 30, "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDASM")
+    ok = swModel.AddCustomInfo3(sConfigName, prpMassTable, 30, "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDASM")
+    ok = swModel.DeleteCustomInfo2("", prpMass)
+    If ChkNoMass.Value = True Then ' Без массы
+        If prpFontSize = 1 Then
+            swModel.CustomInfo2(sConfigName, prpMass) = "<FONT size=1> " & Chr$(10) & "<FONT size=3.5>" & "-"
+        Else
+            swModel.CustomInfo2(sConfigName, prpMass) = "-"
+        End If
+    ElseIf ChkMassTable.Value = True Then ' Масса в таблице
+        If prpFontSize = 1 Then
+            swModel.CustomInfo2(sConfigName, prpMass) = "<FONT size=2.5>" & "См." & Chr$(10) & "таблицу"
+        Else
+            swModel.CustomInfo2(sConfigName, prpMass) = "См.таблицу"
+        End If
+    Else ' C массой
+        If CboMass.ListIndex = 1 Then
+            If prpFontSize = 1 Then
+                swModel.CustomInfo2(sConfigName, prpMass) = "<FONT size=1> " & Chr$(10) & "<FONT size=3.5>" & Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDASM" & Chr$(34) & " г"
+            Else
+                swModel.CustomInfo2(sConfigName, prpMass) = Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDASM" & Chr$(34) & " г"
+            End If
+        Else
+            If prpFontSize = 1 Then
+                swModel.CustomInfo2(sConfigName, prpMass) = "<FONT size=1> " & Chr$(10) & "<FONT size=3.5>" & Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDASM" & Chr$(34)
+            Else
+                swModel.CustomInfo2(sConfigName, prpMass) = Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDASM" & Chr$(34)
+            End If
+        End If
+    End If
+    swModel.CustomInfo2(sConfigName, prpMassTable) = Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDASM" & Chr$(34)
+End If
+                
+' Плотность и штриховка
+If TxtDens.Enabled = True Then
+    swModel.SetUserPreferenceDoubleValue swMaterialPropertyDensity, TxtDens.Value
+    swModel.SetUserPreferenceStringValue swMaterialPropertyCrosshatchPattern, CboHatch.Value
+End If
+    
+' Материал
+ok = swModel.DeleteCustomInfo2("", prpMaterial)
+ok = swModel.AddCustomInfo3(sConfigName, prpMaterialTable, 30, "")
+ok = swModel.AddCustomInfo3(sConfigName, prpMaterial, 30, "")
+If Материал.Visible = True Then ' Без сортамента
+    If ChkMaterialSW.Value = True Then ' Материал пользователя
+        If prpFontSize = 1 Then
+            If InStr(Материал.Value, Chr$(10)) > 0 Then ' Проверка количества строк
+                swModel.CustomInfo2(sConfigName, prpMaterial) = "<FONT size=5.0> " & "<FONT size=3.5>" & Материал.Value
+            Else
+                swModel.CustomInfo2(sConfigName, prpMaterial) = "<FONT size=1.8> " & Chr$(10) & "<FONT size=3.5>" & Материал.Value
+            End If
+        Else
+            swModel.CustomInfo2(sConfigName, prpMaterial) = Материал.Value
+        End If
+        swModel.CustomInfo2(sConfigName, prpMaterialTable) = Материал.Value
+    ElseIf ChkMaterialSW.Value = False And ChkMaterialSW.Enabled = True Then ' Материал SW
+        If prpFontSize = 1 Then
+            swModel.CustomInfo2(sConfigName, prpMaterial) = "<FONT size=1.8> " & Chr$(10) & "<FONT size=3.5>" & Chr$(34) & "SW-Material@@" & sConfigName & "@" & sNumberReal & ".SLDPRT" & Chr$(34)
+        Else
+            swModel.CustomInfo2(sConfigName, prpMaterial) = Chr$(34) & "SW-Material@@" & sConfigName & "@" & sNumberReal & ".SLDPRT" & Chr$(34)
+        End If
+        swModel.CustomInfo2(sConfigName, prpMaterialTable) = Chr$(34) & "SW-Material@@" & sConfigName & "@" & sNumberReal & ".SLDPRT" & Chr$(34)
+    Else ' Сборка, материал не задается
+        swModel.CustomInfo2(sConfigName, prpMaterial) = ""
+        swModel.CustomInfo2(sConfigName, prpMaterialTable) = ""
+    End If
+Else ' Сортамент
+    If prpFontSize = 1 Then
+        strTemp = "<FONT size=1.8> <FONT size=3.5>" & TxtShape.Value & " <STACK size=1>" & TxtSortament.Value & "<OVER>" & TxtMarka.Value & "</STACK>"
+    Else
+        strTemp = TxtShape.Value & " <STACK size=1>" & TxtSortament.Value & "<OVER>" & TxtMarka.Value & "</STACK>"
+    End If
+    swModel.CustomInfo2(sConfigName, prpMaterial) = strTemp
+    strTemp = TxtShape.Value & " <STACK size=1>" & TxtSortament.Value & "<OVER>" & TxtMarka.Value & "</STACK>"
+    swModel.CustomInfo2(sConfigName, prpMaterialTable) = strTemp
+End If
+If ChkMaterialTable.Value = True Then ' Материал в таблице
+    If prpFontSize = 1 Then
+        swModel.CustomInfo2(sConfigName, prpMaterial) = "<FONT size=1.8> " & Chr$(10) & "<FONT size=3.5>" & "См. таблицу"
+    Else
+        swModel.CustomInfo2(sConfigName, prpMaterial) = "См. таблицу"
+    End If
+End If
+' База материалов
+If CboMaterialSW.Value <> "" And CboBaseSW.Value <> "Временная база" Then
+    sMaterial = swModel.GetMaterialPropertyName2(sConfigName, sMatDB)
+    If CboMaterialSW.Value <> sMaterial Or sMatDB <> CboBaseSW.Value Then
+        strTemp = Source14 & "\" & CboBaseSW.Text & ".sldmat"
+        swModel.SetMaterialPropertyName2 sConfigName, strTemp, CboMaterialSW.Value
+    End If
+End If
+If CboBaseSW.Value = "Удалить материал" Then
+    swModel.SetMaterialPropertyName2 sConfigName, "", ""
+End If
+
+' Заготовка
+ok = swModel.AddCustomInfo3(sConfigName, prpBlank, 30, "")
+If ChkBlank.Value = True Then
+    strTemp = CboBlankFormat.Value & "$" & TxtBlankNumber.Text & "$" & TxtBlankDescription.Text & "$" & TxtBlankRemark.Text & "$" & CboBlankSection.Value & "$" & CboBlankGroup.Value _
+    & "$" & TxtBlankDocNumber.Text & "$" & TxtRemarkVP.Text & "$" & TxtVendorVP.Text & "$" & TxtCodeVP.Text
+    swModel.CustomInfo2(sConfigName, prpBlank) = strTemp
+Else
+    swModel.CustomInfo2(sConfigName, prpBlank) = ""
+End If
+
+' Доп. свойства
+If prpAddPRP1 = 1 Then ' Доп. свойство №1
+    ok = swModel.DeleteCustomInfo2("", LblAddPRP1.Caption)
+    ok = swModel.AddCustomInfo3(sConfigName, LblAddPRP1.Caption, 30, "")
+    swModel.CustomInfo2(sConfigName, LblAddPRP1.Caption) = TxtAddPRP1.Text
+Else
+    ok = swModel.DeleteCustomInfo2(sConfigName, LblAddPRP1.Caption)
+    ok = swModel.AddCustomInfo3("", LblAddPRP1.Caption, 30, "")
+    swModel.CustomInfo2("", LblAddPRP1.Caption) = TxtAddPRP1.Text
+End If
+If prpAddPRP2 = 1 Then ' Доп. свойство №1
+    ok = swModel.DeleteCustomInfo2("", LblAddPRP2.Caption)
+    ok = swModel.AddCustomInfo3(sConfigName, LblAddPRP2.Caption, 30, "")
+    swModel.CustomInfo2(sConfigName, LblAddPRP2.Caption) = TxtAddPRP2.Text
+Else
+    ok = swModel.DeleteCustomInfo2(sConfigName, LblAddPRP2.Caption)
+    ok = swModel.AddCustomInfo3("", LblAddPRP2.Caption, 30, "")
+    swModel.CustomInfo2("", LblAddPRP2.Caption) = TxtAddPRP2.Text
+End If
+
+' Свет
+If MIni4 = 1 Then
+    ' Удаляем источники света и сцену
+    Set swModExt = swModel.Extension
+    swModExt.DeleteScene
+    longTemp = swModel.GetLightSourceCount
+    For i = longTemp - 1 To 0 Step -1
+        swModel.DeleteLightSource (i)
+    Next i
+    strTemp = swModel.GetLightSourceName(0)
+
+    ' Добавляем источники света
+    ' Light type:
+    ' 1 = Ambient light
+    ' 2 = Spot light
+    ' 3 = Point light
+    ' 4 = Directional light
+    ok = swModel.AddLightSource("LD1", 4, "Направленный 1")
+    ok = swModel.AddLightSource("LD2", 4, "Направленный 2")
+    
+    ' Выставляем параметры источников
+    ok = swModel.SetAmbientLightProperties(strTemp, 0.3, 0#, 0#, 16777215, True, True)
+    doubleTemp = Tan(80 * 3.1416 / 180)
+    doubleTemp1 = Sqr(doubleTemp ^ 2 + 1) * Tan(50 * 3.1416 / 180)
+    Debug.Print doubleTemp, doubleTemp1
+    ok = swModel.SetDirectionLightProperties("LD1", 0.5, 0.1, 0.2, 16777215, True, True, doubleTemp, doubleTemp1, 1)
+    doubleTemp = Tan(-40 * 3.1416 / 180)
+    doubleTemp1 = Sqr(doubleTemp ^ 2 + 1) * Tan(20 * 3.1416 / 180)
+    ok = swModel.SetDirectionLightProperties("LD2", 0#, 0.1, 0.2, 16777215, True, True, doubleTemp, doubleTemp1, 1)
+End If
+
+' Примечание, Формат, Раздел
+ok = swModel.DeleteCustomInfo2("", prpRemark)
+ok = swModel.DeleteCustomInfo2("", prpFormat)
+ok = swModel.DeleteCustomInfo2("", prpSection)
+
+ok = swModel.DeleteCustomInfo2(sConfigName, prpRemark)
+ok = swModel.DeleteCustomInfo2(sConfigName, prpFormat)
+ok = swModel.DeleteCustomInfo2(sConfigName, prpSection)
+
+strTemp = Примечание.Value ' БЧ
+If Примечание.Value = "Масса" Then
+    If swModel.GetType = swDocPART Then ' Деталь
+        'strTemp = Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDPRT" & Chr$(34) & " " & LblMass.Caption
+        strTemp = Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberTitle & ".SLDPRT" & Chr$(34) & " " & LblMass.Caption
+    Else ' Сборка
+        'strTemp = Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberReal & ".SLDASM" & Chr$(34) & " " & LblMass.Caption
+        strTemp = Chr$(34) & "SW-Mass@@" & sConfigName & "@" & sNumberTitle & ".SLDASM" & Chr$(34) & " " & LblMass.Caption
+    End If
+End If
+
+ok = swModel.AddCustomInfo3(sConfigName, prpRemark, 30, strTemp)
+swModel.CustomInfo2(sConfigName, prpRemark) = strTemp
+ok = swModel.AddCustomInfo3(sConfigName, prpFormat, 30, Формат.Value)
+swModel.CustomInfo2(sConfigName, prpFormat) = Формат.Value
+ok = swModel.AddCustomInfo3(sConfigName, prpSection, 30, "")
+swModel.CustomInfo2(sConfigName, prpSection) = Раздел.Value
+If ConfNumb = 1 Then
+    ok = swModel.AddCustomInfo3("", prpRemark, 30, strTemp)
+    swModel.CustomInfo2("", prpRemark) = strTemp
+    ok = swModel.AddCustomInfo3("", prpFormat, 30, Формат.Value)
+    swModel.CustomInfo2("", prpFormat) = Формат.Value
+    ok = swModel.AddCustomInfo3("", prpSection, 30, "")
+    swModel.CustomInfo2("", prpSection) = Раздел.Value
+End If
+
+' Добавления свойств в сборку
+ok = swModel.DeleteCustomInfo2("", prpDocCode)
+ok = swModel.AddCustomInfo3(sConfigName, prpDocCode, 30, Чертеж.Value)
+swModel.CustomInfo2(sConfigName, prpDocCode) = Чертеж.Value
+
+ok = swModel.DeleteCustomInfo2("", prpDocDescription)
+ok = swModel.AddCustomInfo3(sConfigName, prpDocDescription, 30, "")
+If InStr(TxtAssem2.Value, Chr$(10)) > 0 Then ' Проверка количества строк
+    swModel.CustomInfo2(sConfigName, prpDocDescription) = TxtAssem2.Value
+Else
+    If prpFontSize = 1 Then
+        swModel.CustomInfo2(sConfigName, prpDocDescription) = "<FONT size=1> " & Chr$(10) & "<FONT size=2.5>" & TxtAssem2.Value
+    Else
+        swModel.CustomInfo2(sConfigName, prpDocDescription) = TxtAssem2.Value
+    End If
+End If
+
+' Нужно заносить во все конфигурации
+n = 1
+If ChkAll.Value = True Then
+    strTemp = sConfigName
+    n = ConfNumb - 1
+End If
+For i = 0 To n
+    If ChkAll.Value = True Then
+        sConfigName = vConfNameArr(i)
+    End If
+    
+    ok = swModel.AddCustomInfo3(sConfigName, prpTester, 30, Проверил.Value)
+    ok = swModel.DeleteCustomInfo2("", prpTester)
+    swModel.CustomInfo2(sConfigName, prpTester) = Проверил.Value
+    
+    ok = swModel.AddCustomInfo3(sConfigName, prpTechcontrol, swCustomInfoText, Техконтроль.Value)
+    ok = swModel.DeleteCustomInfo2("", prpTechcontrol)
+    swModel.CustomInfo2(sConfigName, prpTechcontrol) = Техконтроль.Value
+    
+    ok = swModel.AddCustomInfo3(sConfigName, prpPerson, 30, Начальник.Value)
+    ok = swModel.DeleteCustomInfo2("", prpPerson)
+    swModel.CustomInfo2(sConfigName, prpPerson) = Начальник.Value
+    
+    ok = swModel.AddCustomInfo3(sConfigName, prpNormcontrol, 30, Нормоконтроль.Value)
+    ok = swModel.DeleteCustomInfo2("", prpNormcontrol)
+    swModel.CustomInfo2(sConfigName, prpNormcontrol) = Нормоконтроль.Value
+    
+    ok = swModel.AddCustomInfo3(sConfigName, prpApprove, 30, Утвердил.Value)
+    ok = swModel.DeleteCustomInfo2("", prpApprove)
+    swModel.CustomInfo2(sConfigName, prpApprove) = Утвердил.Value
+    
+    ok = swModel.AddCustomInfo3(sConfigName, prpWorkType, 30, CboWork.Value)
+    swModel.CustomInfo2(sConfigName, prpWorkType) = CboWork.Value
+Next i
+If ChkAll.Value = True Then
+    sConfigName = strTemp
+End If
+
+' Запись свойств в чертеж
+If MDrw = 1 Then ' Метка соответствия чертежа и модели: 0 - чертеж не соответсвует; 1 - чертеж нормальный
+    If strDescription = "" Then
+        swDraw.SummaryInfo(0) = ""
+    Else
+        swDraw.SummaryInfo(0) = strDescription
+    End If
+    If LTrim(CboProject.Value) = "" Then
+        swDraw.SummaryInfo(1) = ""
+    Else
+        swDraw.SummaryInfo(1) = LTrim(CboProject.Value)
+    End If
+    If Разработал.Value = "" Then
+        swDraw.SummaryInfo(2) = ""
+    Else
+        swDraw.SummaryInfo(2) = Разработал.Value
+    End If
+    If Проект.Text = "" Then
+        swDraw.SummaryInfo(3) = ""
+    Else
+        swDraw.SummaryInfo(3) = Проект.Text
+    End If
+    If TxtNumber.Value = "" Then
+        swDraw.SummaryInfo(4) = ""
+    Else
+        swDraw.SummaryInfo(4) = TxtNumber.Value
+    End If
+
+    ok = swDraw.AddCustomInfo2("Description", 30, strDescription)
+    swDraw.CustomInfo2("", "Description") = strDescription
+    ok = swDraw.AddCustomInfo2("Number", 30, sNumber)
+    swDraw.CustomInfo2("", "Number") = sNumber
+    
+    ' Назначение массовых характеристик
+    Dim swModelDraw As ModelDoc2
+    Set swModelDraw = swDraw
+    ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitSystem, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swUnitSystem_Custom)
+    Select Case CboMass.ListIndex
+    Case 0
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropLength, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swMM)
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropMass, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swUnitsMassPropMass_Milligrams)
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropVolume, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swUnitsMassPropVolume_Millimeters3)
+    Case 1
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropLength, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swCM)
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropMass, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swUnitsMassPropMass_Grams)
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropVolume, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swUnitsMassPropVolume_Centimeters3)
+    Case 2
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropLength, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swMETER)
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropMass, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swUnitsMassPropMass_Kilograms)
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropVolume, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swUnitsMassPropVolume_Meters3)
+    Case 3
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropLength, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swFEET)
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropMass, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swUnitsMassPropMass_Pounds)
+        ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropVolume, swUserPreferenceOption_e.swDetailingNoOptionSpecified, swUnitsMassPropVolume_Feet3)
+    End Select
+    ok = swModelDraw.Extension.SetUserPreferenceInteger(swUserPreferenceIntegerValue_e.swUnitsMassPropDecimalPlaces, swUserPreferenceOption_e.swDetailingNoOptionSpecified, CboTol.ListIndex)
+
+End If
+
+If MClose <> 1 Then
+    Unload Me
+    MStart = 1
+    main
+End If
+End Sub
+
+Private Sub CmdClose_Click() ' Применить и закрыть
+MClose = 1
+lRetval = swMbHitYes
+Внести_изменения_Click
+If lRetval = swMbHitNo Then ' Проверка стандартной базы материалов
+    Exit Sub
+End If
+Отмена_Click
+End Sub
+
+Private Sub Отмена_Click() ' Закрыть
+If longwarnings <> swFileLoadWarning_AlreadyOpen And MDoc <> 1 Then ' Если чертеж не был открыт и редактируется модель
+    swApp.QuitDoc sDrawName ' то закрываем его
+    Set swModel = swApp.ActivateDoc(Source4)
+Else
+    ok = swDraw.ActivateSheet(strActiveSheetName) ' Возвращаем активность листу
+End If
+Unload Me
+If mRun = 0 Then
+    End
+End If
+End Sub
+
+Private Sub ChkManual_Click()
+If ChkManual.Value = True Then ' Ручной ввод
+    ChkClass.Enabled = True
+    TxtNumber.Enabled = True
+    ChkEnter.Enabled = True
+    Наименование.Enabled = True
+Else
+    ChkClass.Enabled = False
+    ChkClass.Value = False
+    TxtNumber.Enabled = False
+    ChkEnter.Enabled = True
+    If prpFileName = 0 Then ' Разделитель не используем
+        TxtNumber.Value = sNumberTitle
+    Else
+        varTemp = InStr(sNumberTitle, prpNameSep)
+        If varTemp > 0 Then ' Разделитель найден
+            Наименование.Enabled = False
+            TxtNumber.Value = Left$(sNumberTitle, varTemp - 1)
+            Наименование.Value = Right$(sNumberTitle, Len(sNumberTitle) - varTemp - Len(prpNameSep) + 1)
+            ChkFont.Value = False
+            ChkFont_Click
+            ChkEnter.Enabled = False
+            ChkEnter.Value = False
+        Else
+            TxtNumber.Value = sNumberTitle
+        End If
+    End If
+End If
+End Sub
+
+Private Sub ChkClass_Click()
+If ChkClass.Value = True Then
+    TxtNumber.Visible = False
+    CboClass.Visible = True
+    TxtClass.Visible = True
+    TxtCounter.Visible = True
+    LblClass1.Visible = True
+    LblClass2.Visible = True
+Else
+    TxtNumber.Visible = True
+    CboClass.Visible = False
+    TxtClass.Visible = False
+    TxtCounter.Visible = False
+    LblClass1.Visible = False
+    LblClass2.Visible = False
+End If
+End Sub
+
+Private Sub Исполнение_Click()
+If Исполнение.Value = True Then
+    ChkConf.Enabled = True
+    TxtConf.Visible = True
+    LblClass3.Visible = True
+    Чертеж.Left = 300
+Else
+    ChkConf.Enabled = False
+    ChkConf.Value = False
+    TxtConf.Visible = False
+    LblClass3.Visible = False
+    Чертеж.Left = 252
+End If
+End Sub
+
+Private Sub ChkConf_Click()
+If ChkConf.Value = True Then
+    TxtConf.Enabled = False
+    varTemp = InStr(sConfigName, " ")
+    If varTemp > 0 Then
+        strTemp = Left$(sConfigName, varTemp - 1)
+    Else
+        strTemp = sConfigName
+    End If
+    TxtConf.Value = strTemp
+Else
+    TxtConf.Enabled = True
+End If
+End Sub
+
+Private Sub CboClass_Change()
+For i = 0 To CboClass.ListCount - 1
+    If CboClass.Value = CboClass.List(i) Then
+        CboFirm.ListIndex = i
+    End If
+Next i
+End Sub
+
+Private Sub CmdAbout_Click()
+    swApp.SendMsgToUser ("Made by Leon, 2017")
+End Sub
+
+Private Sub MyRound(RoundValue As Double, PrecValue As Long) ' Округление
+Dim PrecValueInt As Integer
+Dim Delta As Double
+Dim j As Long
+PrecValue = Abs(PrecValue)
+PrecValueInt = CInt(PrecValue)
+j = 1
+For i = 1 To PrecValueInt
+    RoundValue = RoundValue * 10
+    j = j * 10
+Next i
+Delta = RoundValue - Int(RoundValue)
+If Delta >= 0.5 Then
+    RoundValue = Int(RoundValue)
+    RoundValue = RoundValue + 1
+Else
+    RoundValue = Int(RoundValue)
+End If
+RoundValue = RoundValue / j
+'Debug.Print "end"
+End Sub
+
+Private Sub ChkDefMass_Click()
+' Зависит mass
+If ChkDefMass.Value = False Then ' Масса по умолчанию
+    CboMass.Enabled = False
+    CboTol.Enabled = False
+Else ' Пользовательские настройки массы
+    CboMass.Enabled = True
+    CboTol.Enabled = True
+End If
+mass
+End Sub
+
+Private Sub CboMass_Change()
+mass
+End Sub
+
+Private Sub CboTol_Change()
+mass
+End Sub
+
+Private Sub mass()
+' Зависят CboMass, CboTol
+If ChkDefMass.Value = True Then ' Пользовательские настройки массы
+    Select Case CboMass.ListIndex
+    Case 0
+        singlTemp = 1000000
+        strTemp = "мг"
+    Case 1
+        singlTemp = 1000
+        strTemp = "г"
+    Case 2
+        singlTemp = 1
+        strTemp = "кг"
+    Case 3
+        singlTemp = 0.4536
+        strTemp = "ф"
+    End Select
+    intTemp = CboTol.ListIndex
+    mvTemp = mv * singlTemp
+    MyRound mvTemp, CInt(intTemp)
+    TxtMass.Value = mvTemp
+    LblMass.Caption = strTemp
+Else ' Масса по умолчанию
+        mvTemp = mv
+    If mv > 0.1 Then ' Масса больше 100 грамм
+        MyRound mvTemp, 2
+        TxtMass.Value = mvTemp
+        LblMass.Caption = "кг"
+        CboMass.ListIndex = 2
+        CboTol.ListIndex = 2
+    Else ' Масса меньше 100 грамм
+        mvTemp = mvTemp * 1000
+        MyRound mvTemp, 1
+        TxtMass.Value = mvTemp
+        LblMass.Caption = "г"
+        CboMass.ListIndex = 1
+        CboTol.ListIndex = 1
+    End If
+End If
+End Sub
+
+Private Sub CmdPastSort_Click() ' Вставка материала из свойств, полученных из базы материалов Компаса
+If swModel.CustomInfo2("", "SORTAMENT") = "" Then ' В одну строку (Над чертой)
+    Chk3.Value = False
+    If swModel.CustomInfo2("", "SHAPE") = "" Then
+        Материал.Value = swModel.CustomInfo2("", "MATERIAL_MIS")
+    Else
+        Материал.Value = swModel.CustomInfo2("", "SHAPE")
+    End If
+Else ' В две строки
+    Chk3.Value = True
+    TxtShape.Value = swModel.CustomInfo2("", "SHAPE")
+    TxtSortament.Value = swModel.CustomInfo2("", "SORTAMENT")
+    TxtMarka.Value = swModel.CustomInfo2("", "MARKA_MATERIAL")
+End If
+End Sub
+
+Private Sub ChkNoMass_Click()
+If ChkNoMass.Value = True Then
+    ChkMassTable.Value = False
+End If
+End Sub
+
+Private Sub ChkMassTable_Click()
+If ChkMassTable.Value = True Then
+    ChkNoMass.Value = False
+End If
+End Sub
+
+Private Sub CmdFam_Click()
+strTemp = "Notepad " & Source1
+dTaskID = Shell(strTemp, vbNormalFocus)
+End Sub
+
+Private Sub Раздел_Change()
+If MSection = 0 Then
+    If Раздел.Value = "Стандартные изделия" Or Раздел.Value = "Прочие изделия" Then
+        CboGroup.Enabled = True
+        ' Чтение файла и заполнение списка CboGroup
+        CboGroup.Clear
+        Open Source16 For Input As #1
+        Do While Not EOF(1)
+            Line Input #1, strTemp
+            CboGroup.AddItem strTemp
+        Loop
+        Close #1
+        strTemp = swModel.CustomInfo2("", prpGroup)
+        For i = 0 To CboGroup.ListCount - 1
+            If strTemp = CboGroup.List(i) Then
+                CboGroup.Value = strTemp
+            End If
+        Next i
+    ElseIf Раздел.Value = "Материалы" Then
+        CboGroup.Enabled = True
+        ' Чтение файла и заполнение списка CboGroup
+        CboGroup.Clear
+        Open Source17 For Input As #1
+        Do While Not EOF(1)
+            Line Input #1, strTemp
+            CboGroup.AddItem strTemp
+        Loop
+        Close #1
+        strTemp = swModel.CustomInfo2("", prpGroup)
+        For i = 0 To CboGroup.ListCount - 1
+            If strTemp = CboGroup.List(i) Then
+                CboGroup.Value = strTemp
+            End If
+        Next i
+    Else
+        CboGroup.Enabled = False
+        CboGroup.Clear
+    End If
+End If
+End Sub
+
+Private Sub Формат_Change()
+If Формат.Value = "БЧ" Then
+    Примечание.Enabled = False
+    Примечание.Value = "Масса"
+Else
+    If Примечание.Value = "Масса" Then
+        Примечание.Value = ""
+    End If
+    If Формат.ListIndex = 7 Then
+        Примечание.Enabled = False
+    Else
+        Примечание.Enabled = True
+    End If
+End If
+End Sub
+
+Private Sub Чертеж_Change()
+m = 0
+For i = 0 To UBound(sDocData)
+    strTemp = sDocData(i)
+    strTemp1 = Left$(strTemp, InStr(strTemp, "-") - 1)
+    strTemp1 = Trim(strTemp1)
+    If Чертеж.Value = strTemp1 Then
+        strTemp1 = Right$(strTemp, Len(strTemp) - InStr(strTemp, "-"))
+        strTemp1 = Trim(strTemp1)
+        TxtAssem2.Value = strTemp1
+        m = 1
+        Exit For
+    End If
+Next i
+If m = 1 Then
+    TxtAssem2.Enabled = False
+Else
+    TxtAssem2.Enabled = True
+End If
+If prpTestFormat = 1 Then
+    ChkFormat_Click
+End If
+End Sub
+
+Private Sub Disp() ' Отображение материала
+strTemp = swModel.CustomInfo2(sConfigName, prpMaterialTable)
+If strTemp = "" Then ' Если строчка пустая
+    strTemp = swModel.CustomInfo2(sConfigName, prpMaterial) ' Считываем материал из модели
+End If
+If strTemp = "" Then ' Если строчка пустая
+    strTemp = swModel.CustomInfo2("", prpMaterial) ' Считываем материал из модели
+End If
+Debug.Print strTemp
+If Left$(strTemp, 5) = "<FONT" Then
+    If InStr(strTemp, "PTS") > 0 Then
+        varTemp = InStrRev(strTemp, "S>")
+        If Len(strTemp) > varTemp + 1 Then
+            strTemp = Right$(strTemp, Len(strTemp) - varTemp - 1) ' Удаляем пустую строку
+        Else
+            strTemp = ""
+        End If
+    Else
+        varTemp = InStrRev(strTemp, "5>")
+        If Len(strTemp) > varTemp + 1 Then
+            strTemp = Right$(strTemp, Len(strTemp) - varTemp - 1) ' Удаляем пустую строку
+            Debug.Print "*", strTemp
+        Else
+            strTemp = ""
+        End If
+    End If
+End If
+varTemp = InStr(strTemp, "<OVER>") ' Проверяем разделитель
+If Chk3.Value = True Then ' Выбран сортамент
+    ' Заполняем поля сортамента
+    If varTemp > 0 Then ' Разделитель присутствует
+        varTemp = InStr(strTemp, "<")
+        TxtShape.Value = Left$(strTemp, varTemp - 2)
+        varTemp = InStr(strTemp, ">")
+        varTemp1 = InStr(varTemp, strTemp, "<")
+        TxtSortament.Value = Mid$(strTemp, varTemp + 1, varTemp1 - varTemp - 1)
+        varTemp = InStr(varTemp1, strTemp, ">")
+        varTemp1 = InStr(varTemp, strTemp, "<")
+        TxtMarka.Value = Mid$(strTemp, varTemp + 1, varTemp1 - varTemp - 1)
+    Else ' Разделителя нет
+        TxtShape.Value = ""
+        TxtSortament.Value = ""
+        TxtMarka.Value = ""
+    End If
+Else ' Сортамент не выбран
+    If ChkMaterialSW.Value = False And ChkMaterialSW.Enabled = True Then ' Материал SW
+        sMaterial = swModel.GetMaterialPropertyName2(sConfigName, sMatDB)
+        If sMaterial = "" Then
+            Материал.Value = "Материал не задан"
+        Else
+            Материал.Value = sMaterial
+        End If
+    ElseIf ChkMaterialSW.Value = True Then ' Материал пользователя
+        If varTemp > 0 Then ' Разделитель присутствует
+            Материал.Value = ""
+        Else ' Разделителя нет
+        varTemp = InStr(strTemp, "SW-Material")
+            If varTemp > 0 Then  ' Был задан материал SW
+                'Материал.value = ""
+            Else
+                Материал.Value = strTemp
+            End If
+        End If
+    End If
+End If
+If ChkBlank.Value = True Then
+    If TxtBlankNumber.Text <> "" Then
+        Материал.Text = "Изделие-заготовка:" & Chr$(10) & TxtBlankNumber.Text
+    Else
+        Материал.Text = "Изделие-заготовка:" & Chr$(10) & TxtBlankDescription.Text
+    End If
+    If CboBlankSection.Value = "Стандартные изделия" Or CboBlankSection.Value = "Прочие изделия" Then
+        Материал.Text = Материал.Text & " " & TxtBlankDocNumber.Text
+    End If
+End If
+End Sub
+
+Private Sub CmdDelete_Click() ' Удаление всех свойств из файла
+If MDel <> 1 Then
+    For i = 0 To UBound(vConfNameArr)
+        vCustInfoNameArr = swModel.GetCustomInfoNames2(vConfNameArr(i))
+        For j = 0 To UBound(vCustInfoNameArr)
+            ok = swModel.DeleteCustomInfo2(vConfNameArr(i), vCustInfoNameArr(j))
+        Next j
+    Next i
+Else
+    vCustInfoNameArr = swModel.GetCustomInfoNames2(sConfigName)
+    For j = 0 To UBound(vCustInfoNameArr)
+        If vCustInfoNameArr(j) <> prpFirstApplySP And vCustInfoNameArr(j) <> prpDraftFirstApplySP _
+        And vCustInfoNameArr(j) <> prpInformNumberSP And vCustInfoNameArr(j) <> prpLitSP _
+        And vCustInfoNameArr(j) <> prpInformNumberVP And vCustInfoNameArr(j) <> prpQuantity Then
+            ok = swModel.DeleteCustomInfo2(sConfigName, vCustInfoNameArr(j))
+        End If
+    Next j
+End If
+vCustInfoNameArr = swModel.GetCustomInfoNames2("")
+For j = 0 To UBound(vCustInfoNameArr)
+    ok = swModel.DeleteCustomInfo2("", vCustInfoNameArr(j))
+Next j
+swModel.SummaryInfo(swSumInfoTitle) = ""
+swModel.SummaryInfo(swSumInfoSubject) = ""
+swModel.SummaryInfo(swSumInfoAuthor) = ""
+swModel.SummaryInfo(swSumInfoKeywords) = ""
+swModel.SummaryInfo(swSumInfoComment) = ""
+If MDel <> 1 Then
+    Unload Me
+    MStart = 1
+    main
+End If
+End Sub
+
+Private Sub MyProperties()
+' Чтение ini файла
+Open Source8 For Input As #1
+    Line Input #1, strTemp
+    prpNumber = strTemp ' Обозначение
+    Line Input #1, strTemp
+    prpDocCode = strTemp ' Код документа
+    Line Input #1, strTemp
+    prpDocDescription = strTemp ' Наименование документа
+    Line Input #1, strTemp
+    prpDescription = strTemp ' Наименование изделия в одну строку
+    Line Input #1, strTemp
+    prpDescriptionMulti = strTemp ' Наименование изделия в несколько строк
+    Line Input #1, strTemp
+    prpCode = strTemp ' Условное наименование (код)
+    Line Input #1, strTemp
+    prpFormat = strTemp ' Формат
+    Line Input #1, strTemp
+    prpRemark = strTemp ' Примечание
+    Line Input #1, strTemp
+    prpLit = strTemp ' Литера
+    Line Input #1, strTemp
+    prpLitTable = strTemp ' Литера для таблицы параметров
+    Line Input #1, strTemp
+    prpFirm = strTemp ' Наименование организации
+    Line Input #1, strTemp
+    prpSection = strTemp ' Раздел
+    Line Input #1, strTemp
+    prpGroup = strTemp ' Группа
+    '
+    Line Input #1, strTemp
+    prpDesigner = strTemp ' Разраб.
+    Line Input #1, strTemp
+    prpTester = strTemp ' Пров.
+    Line Input #1, strTemp
+    prpTechcontrol = strTemp ' Т.контр.
+    Line Input #1, strTemp
+    prpWorkType = strTemp ' Характер работы
+    Line Input #1, strTemp
+    prpPerson = strTemp ' Фамилия для "Характер работы"
+    Line Input #1, strTemp
+    prpNormcontrol = strTemp ' Н.контр
+    Line Input #1, strTemp
+    prpApprove = strTemp ' Утв.
+    '
+    Line Input #1, strTemp
+    prpMass = strTemp ' Масса
+    Line Input #1, strTemp
+    prpMassTable = strTemp ' Масса для таблицы параметров
+    Line Input #1, strTemp
+    prpMaterial = strTemp ' Материал
+    Line Input #1, strTemp
+    prpMaterialTable = strTemp ' Материал для таблицы параметров
+    '
+    Line Input #1, strTemp
+    prpFirstApply = strTemp ' Перв.примен. для чертежей и ВП
+    Line Input #1, strTemp
+    prpInformNumber = strTemp ' Справ.№ для чертежей
+    '
+    Line Input #1, strTemp
+    prpFirstApplySP = strTemp ' Перв.примен. для спецификации
+    Line Input #1, strTemp
+    prpInformNumberSP = strTemp ' Справ.№ для спецификаций
+    Line Input #1, strTemp
+    prpLitSP = strTemp ' Литера для спецификаций
+    '
+    Line Input #1, strTemp
+    prpInformNumberVP = strTemp ' Справ.№ для ВП
+    Line Input #1, strTemp
+    prpDescriptionVP = strTemp ' Наименование для ВП
+    Line Input #1, strTemp
+    prpProductCodeVP = strTemp ' Код продукции
+    Line Input #1, strTemp
+    prpNumberDocVP = strTemp ' Обозначение документа на поставку
+    Line Input #1, strTemp
+    prpVendorVP = strTemp ' Поставщик
+    Line Input #1, strTemp
+    prpRemarkVP = strTemp ' Примечание для ВП
+    '
+    Line Input #1, strTemp
+    prpProject = strTemp ' Проект
+    Line Input #1, strTemp
+    prpDraftNumber = strTemp ' Эскизное Обозначение
+    Line Input #1, strTemp
+    prpDraftDescription = strTemp ' Эскизное Наименование
+    Line Input #1, strTemp
+    prpDraftFirstApply = strTemp ' Эскизное Перв.примен. для чертежей и ВП
+    Line Input #1, strTemp
+    prpDraftFirstApplySP = strTemp ' Эскизное Перв.примен. для спецификации
+    '
+    Line Input #1, strTemp
+    prpBlank = strTemp ' Заготовка
+    '
+    Line Input #1, strTemp
+    prpBor = strTemp ' Заимствование
+    '
+    Line Input #1, strTemp
+    prpQuantity = strTemp ' Количество в СП
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка версии
+        prpTestVersion = 1
+    Else
+        prpTestVersion = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка формата
+        prpTestFormat = 1
+    Else
+        prpTestFormat = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка имен
+        prpTestName = 1
+    Else
+        prpTestName = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка оформления
+        prpTestStandard = 1
+    Else
+        prpTestStandard = 0
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Имя файла
+        prpFileName = 1
+    Else
+        prpFileName = 0
+    End If
+    Line Input #1, strTemp
+    prpNameSep = strTemp ' Разделитель
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Управление шрифтом
+        prpFontSize = 1
+    Else
+        prpFontSize = 0
+    End If
+    '
+    Line Input #1, strTemp
+    LblAddPRP1.Caption = strTemp ' Доп. свойство №1
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Доп. свойство №1
+        prpAddPRP1 = 1
+        TxtAddPRP1.Text = swModel.CustomInfo2(sConfigName, LblAddPRP1.Caption)
+        If TxtAddPRP1.Text = "" Then
+            TxtAddPRP1.Text = swModel.CustomInfo2("", LblAddPRP1.Caption)
+        End If
+    Else
+        prpAddPRP1 = 0
+        TxtAddPRP1.Text = swModel.CustomInfo2("", LblAddPRP1.Caption)
+        If TxtAddPRP1.Text = "" Then
+            TxtAddPRP1.Text = swModel.CustomInfo2(sConfigName, LblAddPRP1.Caption)
+        End If
+    End If
+    Line Input #1, strTemp
+    LblAddPRP2.Caption = strTemp ' Доп. свойство №2
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Доп. свойство №2
+        prpAddPRP2 = 1
+        TxtAddPRP2.Text = swModel.CustomInfo2(sConfigName, LblAddPRP2.Caption)
+        If TxtAddPRP2.Text = "" Then
+            TxtAddPRP2.Text = swModel.CustomInfo2("", LblAddPRP2.Caption)
+        End If
+    Else
+        prpAddPRP2 = 0
+        TxtAddPRP2.Text = swModel.CustomInfo2("", LblAddPRP2.Caption)
+        If TxtAddPRP2.Text = "" Then
+            TxtAddPRP2.Text = swModel.CustomInfo2(sConfigName, LblAddPRP2.Caption)
+        End If
+    End If
+'
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Окно макроса в левом верхнем углу
+        prpLeftTopCorner = 1
+    Else
+        prpLeftTopCorner = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Окно макроса поверх всех
+        prpTopAll = 1
+    Else
+        prpTopAll = 0
+    End If
+Close #1
+End Sub
+
+Private Sub MyStandard()
+' Чтение ini файла
+Open Source11 For Input As #1
+    Line Input #1, strTemp ' Шрифт
+    stdFontName = strTemp
+    Line Input #1, strTemp ' Размер шрифта
+    strTemp = Replace(strTemp, ".", ",")
+    stdFontSize = CDbl(strTemp)
+    Line Input #1, strTemp ' Наклонный
+    If strTemp = "1" Then
+        stdFontItalic = 1
+    Else
+        stdFontItalic = 0
+    End If
+    Line Input #1, strTemp ' Жирный
+    If strTemp = "1" Then
+        stdFontBold = 1
+    Else
+        stdFontBold = 0
+    End If
+        Line Input #1, strTemp
+    stdDay = strTemp
+    Line Input #1, strTemp
+    stdMonth = strTemp
+    Line Input #1, strTemp
+    stdYear = strTemp
+    Line Input #1, strTemp
+    stdHour = strTemp
+    Line Input #1, strTemp
+    stdMinute = strTemp
+    Line Input #1, strTemp
+    stdSecond = strTemp
+Close #1
+' Проверяем дату у файла стандарта
+MyDateTime = FileDateTime(Source12)
+If stdDay = Day(MyDateTime) And stdMonth = Month(MyDateTime) And stdYear = Year(MyDateTime) And stdHour = Hour(MyDateTime) And stdMinute = Minute(MyDateTime) And stdSecond = Second(MyDateTime) Then
+Else
+    strTemp = swApp.GetUserPreferenceStringValue(swDefaultTemplateDrawing)
+    Set swDraw1 = swApp.NewDocument(strTemp, 0, 0, 0)
+    Set swModExt = swDraw1.Extension
+    ok = swModExt.LoadDraftingStandard(Source12)
+    Set swTextFormat = swModExt.GetUserPreferenceTextFormat(swDetailingDimensionTextFormat, swDetailingDimension)
+    strTemp = swDraw1.GetTitle
+    swApp.QuitDoc strTemp
+    
+    stdFontName = swTextFormat.TypeFaceName
+    stdFontSize = swTextFormat.CharHeight * 1000
+    If swTextFormat.Italic Then
+        stdFontItalic = 1
+    Else
+        stdFontItalic = 0
+    End If
+    If swTextFormat.Bold Then
+        stdFontBold = 1
+    Else
+        stdFontBold = 0
+    End If
+    
+    ' Запись ini
+    Open Source11 For Output As #1
+        Print #1, stdFontName
+        strTemp = LTrim(CStr(stdFontSize))
+        strTemp = Replace(strTemp, ".", ",")
+        Print #1, strTemp
+        If stdFontItalic = 1 Then
+            Print #1, "1"
+        Else
+            Print #1, "0"
+        End If
+        If stdFontBold = 1 Then
+            Print #1, "1"
+        Else
+            Print #1, "0"
+        End If
+        strTemp = Day(MyDateTime)
+        Print #1, strTemp
+        strTemp = Month(MyDateTime)
+        Print #1, strTemp
+        strTemp = Year(MyDateTime)
+        Print #1, strTemp
+        strTemp = Hour(MyDateTime)
+        Print #1, strTemp
+        strTemp = Minute(MyDateTime)
+        Print #1, strTemp
+        strTemp = Second(MyDateTime)
+        Print #1, strTemp
+    Close #1
+End If
+End Sub
+
+''''Temp
+
+Private Sub Temp()
+Dim ModelDocExtension As SldWorks.ModelDocExtension
+Dim MassProp As SldWorks.MassProperty
+
+Set ModelDocExtension = ModelDoc2.Extension
+Set MassProp = ModelDoc2.Extension.CreateMassProperty
+
+
+'Const swMaterialPropertyDensity = 7
+'ModelDoc2.SetUserPreferenceDoubleValue swMaterialPropertyDensity, 2700
+'dv = MassProp.Density
+'If dv = 0 Then
+'    LblDens.Caption = "Нет"
+'Else
+'    LblDens.Caption = dv & " кг/м3"
+'End If
+
+vMassProp = swApp.GetMassProperties2(Source4, sConfigName, 1)
+'vMassProp = swModelDocExt.GetMassProperties(1, nStatus)
+'If nStatus = swMassPropertiesStatus_OK Then ' Деталь имеет массу
+' Отображение массы
+If Not IsEmpty(vMassProp) Then ' Деталь имеет массу
+    mv = vMassProp(5)
+    vv = vMassProp(3)
+
+boolstatus = Part.Extension.CreateMassProperty.SetAssignedMassProp(1.600699638497, 0.00352688866596, 0.001639737481622, 0.01994842627491, 1, Empty)
+
+
+End Sub
+

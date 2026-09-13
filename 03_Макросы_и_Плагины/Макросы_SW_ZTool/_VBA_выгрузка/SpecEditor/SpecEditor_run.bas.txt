@@ -1,0 +1,320 @@
+Attribute VB_Name = "SpecEditor_run"
+Option Explicit
+'Public swApp As Object
+'Public swModel As Object
+'Public swDraw As Object
+'Public swView As Object
+'Public swSheet As Object
+Public swApp As SldWorks.SldWorks
+Public swModel As SldWorks.ModelDoc2
+Public swDraw As SldWorks.DrawingDoc
+Public swView As SldWorks.View
+Public swSheet As SldWorks.Sheet
+Public swModelView As SldWorks.ModelView
+Public vSheetNames As Variant
+Public strActiveSheetName As String
+Public sSource4 As String ' ini
+Public sSource5 As String ' Doc
+Public sSource8 As String ' Sections
+Public sSource9 As String ' Groups
+Public sSource10 As String ' MaterialGroups
+Public sSource14 As String ' MyProperties
+Public strTempData() As String ' Массив документов раздела документация, прочитанных из файла SpecEditor_Doc.txt
+Public DocData() As String ' Массив документов раздела документация прочитанных из спецификации и массив документов отмеченных в окне Добавления
+Public mRunDoc As Integer ' Метка запуска окна Документация
+Public mDocShow As Integer ' Метка запуска окна Документация (борьба с глюком отображения списка)
+Public mRunPref As Integer ' Метка запуска окна Настройки
+Public mSpec As Integer ' Метка наличия спецификации
+Public mChkAssem As Integer ' Метка наличия спецификации на листе сборки
+Public mSpecType As Integer ' Метка типа спецификации
+Public mConfigCount As Integer ' Метка больше 10 исполнений
+Public mComplect As Integer ' Метка наличия раздела Комплекты
+Public mElectro As Integer ' Метка наличия раздела Устанавливают при электромонтаже
+Public mElectro1 As Integer ' Метка наличия раздела Устанавливают при электромонтаже МЭ
+Public mElectro2 As Integer ' Метка наличия раздела Устанавливают при электромонтаже ТБ
+Public mBlankRow As Integer ' Метка добавления строк
+Public strBlankRow As String ' Число пустых строк
+Dim ok As Boolean
+Dim m As Integer
+
+#If VBA7 Then
+Public Declare PtrSafe Function OpenClipboard Lib "user32" (ByVal hwnd As LongPtr) As Long
+Public Declare PtrSafe Function EmptyClipboard Lib "user32" () As Long
+Public Declare PtrSafe Function CloseClipboard Lib "user32" () As Long
+Public hwndAW As LongPtr
+Public Declare PtrSafe Function GetActiveWindow _
+  Lib "user32.dll" () As LongPtr
+#Else
+Public Declare Function OpenClipboard Lib "user32" (ByVal hwnd As Long) As Long
+Public Declare Function EmptyClipboard Lib "user32" () As Long
+Public Declare Function CloseClipboard Lib "user32" () As Long
+Public hwndAW As Long
+Public Declare Function GetActiveWindow _
+  Lib "user32.dll" () As Long
+#End If
+
+Public prpTestStandard As Integer
+'
+Public prpLeftTopCorner As Integer
+Public prpTopAll As Integer
+
+' *** MyStandard
+    Public stdFontName As String
+    Public stdFontSize As Double
+    Public stdFontItalic As Integer
+    Public stdFontBold As Integer
+    Public stdDay As String
+    Public stdMonth As String
+    Public stdYear As String
+    Public stdHour As String
+    Public stdMinute As String
+    Public stdSecond As String
+    
+'Public Const swDocNONE = 0
+'Public Const swDocPART = 1
+'Public Const swDocASSEMBLY = 2
+'Public Const swDocDRAWING = 3
+
+'Public Const swSumInfoTitle = 0
+'Public Const swSumInfoSubject = 1
+'Public Const swSumInfoAuthor = 2
+'Public Const swSumInfoKeywords = 3
+'Public Const swSumInfoComment = 4
+'Public Const swSumInfoSavedBy = 5
+'Public Const swSumInfoCreateDate = 6
+'Public Const swSumInfoSaveDate = 7
+'Public Const swSumInfoCreateDate2 = 8
+'Public Const swSumInfoSaveDate2 = 9
+
+'Public Const swMbWarning = 1
+'Public Const swMbInformation = 2
+'Public Const swMbQuestion = 3
+'Public Const swMbStop = 4
+
+'Public Const swMbAbortRetryIgnore = 1
+'Public Const swMbOk = 2
+'Public Const swMbOkCancel = 3
+'Public Const swMbRetryCancel = 4
+'Public Const swMbYesNo = 5
+'Public Const swMbYesNoCancel = 6
+
+'Public Const swMbHitAbort = 1
+'Public Const swMbHitIgnore = 2
+'Public Const swMbHitNo = 3
+'Public Const swMbHitOk = 4
+'Public Const swMbHitRetry = 5
+'Public Const swMbHitYes = 6
+'Public Const swMbHitCancel = 7
+
+'Public Const swRebuildAll = 1
+'Public Const swForceRebuildAll = 2
+'Public Const swUpdateMates = 4
+'Public Const swCurrentSheetDisp = 8
+'Public Const swUpdateDirtyOnly = 16
+
+'Public Const swOpenDocOptions_Silent = 1
+
+'Public Const swSetValue_InAllConfigurations = 2
+
+'Public Const swDwgPapersUserDefined = 12
+
+'Public Const swDwgTemplateCustom = 12
+
+'Public Const swDwgTemplateA4sizeVertical = 7
+
+'Public Const swDefaultTemplateDrawing = 10
+
+'Public Const swDetailingDimension = 200
+
+'Public Const swDetailingDimensionTextFormat = 1
+
+'Public Const swFileLocationsMaterialDatabases = 28
+
+'Public Const swMaterialPropertyDensity = 7
+
+'Public Const swMaterialPropertyCrosshatchPattern = 13
+
+'Public Const swBOMPartNumber_UserSpecified = 8
+
+'Public Const swUnitSystem_Custom = 4
+
+'Public Const swUnitsMassPropLength = 258
+'Public Const swUnitsMassPropMass = 259
+'Public Const swUnitsMassPropVolume = 260
+'Public Const swUnitsMassPropDecimalPlaces = 261
+'Public Const swUnitSystem = 263
+
+'Public Const swUnitsMassPropMass_Milligrams = 1
+'Public Const swUnitsMassPropMass_Grams = 2
+'Public Const swUnitsMassPropMass_Kilograms = 3
+'Public Const swUnitsMassPropMass_Pounds = 4
+
+'Public Const swFileLoadWarning_AlreadyOpen = 128
+
+'Public Const swAnnotationOwner_DrawingTemplate = 2
+
+'Public Const swDontCopyQTYColumnNameFromTemplate = 223
+'Public Const swOneConfigOnlyTopLevelBom = 254
+'Public Const swBomTableDontAddQTYNextToConfigName = 289
+
+'Public Const swBOMConfigurationAnchor_TopLeft = 1
+'Public Const swBOMConfigurationAnchor_TopRight = 2
+'Public Const swBOMConfigurationAnchor_BottomLeft = 3
+'Public Const swBOMConfigurationAnchor_BottomRight = 4
+
+'Public Const swBomType_PartsOnly = 1
+'Public Const swBomType_TopLevelOnly = 2
+'Public Const swBomType_Indented = 3
+
+'Public Const swDisplay_ConfigurationOfSamePart_AsSeparateItem = 1
+'Public Const swDisplay_AllConfigurationOfSamePart_AsOneItem = 2
+Public Const swDisplay_ConfigurationWithSameName_AsOneItem = 3
+
+'Public Const swBomTableZeroQuantityDisplay = 224
+
+'Public Const swZeroQuantityBlank = 3
+
+'Public Const swAnnotationHidden = 3
+
+'Public Const swBomTableColumnType_PartNumber = 201
+
+'Public Const swTableItemInsertPosition_First = 1
+'Public Const swTableItemInsertPosition_Before = 2
+'Public Const swTableItemInsertPosition_After = 3
+'Public Const swTableItemInsertPosition_Last = 4
+'Public Const swTableItemMovePosition_Relative = 5
+
+'Public Const swWeldTableColumnType_CustomProperty = 404
+
+'Public Const swTableRowColChange_TableSizeCanChange = 0
+
+'Public Const swTextJustificationNone = 0
+'Public Const swTextJustificationLeft = 1
+'Public Const swTextJustificationCenter = 2
+'Public Const swTextJustificationRight = 3
+
+'Public Const swCustomInfoText = 30
+
+'Public Const swTextAlignmentTop = 0
+'Public Const swTextAlignmentMiddle = 1
+'Public Const swTextAlignmentBottom = 2
+
+'Public Const swAnnotationVisible = 1
+
+'Public Const swTableSplit_BeforeRow = 1
+
+'Public Const swTableSplit_None = 0
+
+'Public Const swTableSplit_AfterRow = 2
+
+'Public Const swDetailingNoteTextItemNumber = 2
+
+'Public Const swDetailingTablesUseTemplateSettings = 408
+
+Public Const swDetailingTablesVerticalPadding = 180
+
+Sub main()
+mRunPref = 0
+mRunDoc = 0
+mSpec = 0
+mChkAssem = 0
+mSpecType = 0
+mConfigCount = 0
+mComplect = 0
+mElectro = 0
+mBlankRow = 0
+strBlankRow = "1"
+ReDim DocData(0)
+DocData(0) = "СБ - Сборочный чертеж"
+Set swApp = Application.SldWorks
+'Set swApp = CreateObject("SldWorks.Application")
+Set swModel = swApp.ActiveDoc
+
+' Проверка открытого документа
+If swModel Is Nothing Then
+    swApp.SendMsgToUser ("Откройте чертеж")
+    End
+    Exit Sub
+End If
+
+If swModel.GetType <> swDocDRAWING Then
+    swApp.SendMsgToUser ("Откройте чертеж")
+    End
+    Exit Sub
+End If
+
+'If swModel.GetPathName() = "" Then
+'    swApp.SendMsgToUser ("Сохраните файл!")
+'    Exit Sub
+'End If
+
+Set swDraw = swModel
+
+Set swModelView = swDraw.ActiveView
+swModelView.EnableGraphicsUpdate = False
+swModelView.UpdateAllGraphicsLayers = False
+
+' Получение первого листа
+Set swSheet = swDraw.GetCurrentSheet
+strActiveSheetName = swSheet.GetName ' Узнаем имя активного листа
+vSheetNames = swDraw.GetSheetNames
+ok = swDraw.ActivateSheet(vSheetNames(0))
+Set swSheet = swDraw.GetCurrentSheet
+
+Set swView = swDraw.GetFirstView
+m = 0
+Debug.Print swSheet.CustomPropertyView
+If swSheet.CustomPropertyView <> "ОТСУТСТВУЕТ" Or swSheet.CustomPropertyView = "Default" Then
+    Set swView = swView.GetNextView ' Получаем первый вид
+Else
+    Do Until swView Is Nothing
+        If swView.GetName2 = swSheet.CustomPropertyView Then
+            m = 1
+            Exit Do
+        End If
+        Set swView = swView.GetNextView
+    Loop
+    If m = 0 Then
+        Set swView = swDraw.GetFirstView
+        Set swView = swView.GetNextView
+        swApp.SendMsgToUser ("Не удалось определить вид из свойств листа. Используется первый вид.")
+    End If
+End If
+
+If swView Is Nothing Then
+    swApp.SendMsgToUser ("Отсутствует модель!")
+    ' Возвращение активного листа
+    ok = swDraw.ActivateSheet(strActiveSheetName)
+    Finish
+    Exit Sub
+End If
+
+If swView.ReferencedDocument Is Nothing Then
+    swApp.SendMsgToUser ("Отсутствует модель!")
+    ' Возвращение активного листа
+    ok = swDraw.ActivateSheet(strActiveSheetName)
+    Finish
+    Exit Sub
+End If
+
+Set swModel = swView.ReferencedDocument
+If swModel.GetType <> swDocASSEMBLY Then
+    swApp.SendMsgToUser ("Чертеж должен быть сборочным!")
+    ' Возвращение активного листа
+    ok = swDraw.ActivateSheet(strActiveSheetName)
+    Finish
+    Exit Sub
+End If
+
+FrmSpecEditor.Show vbModeless
+
+End Sub
+
+Private Sub Finish()
+' Возвращение активного листа
+ok = swDraw.ActivateSheet(strActiveSheetName)
+swModelView.EnableGraphicsUpdate = True
+swModelView.UpdateAllGraphicsLayers = True
+End
+End Sub
+

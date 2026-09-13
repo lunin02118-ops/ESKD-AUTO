@@ -1,0 +1,211 @@
+Attribute VB_Name = "MProp_run"
+Option Explicit
+'Public swApp As Object
+'Public swModel As Object
+'Public swDraw As Object
+'Public swSheet As Object
+'Public swView As Object
+Public swApp As SldWorks.SldWorks
+Public swModel As SldWorks.ModelDoc2
+Public swDraw As SldWorks.DrawingDoc
+Public swSheet As SldWorks.Sheet
+Public swView As SldWorks.View
+Public Source7 As String ' Путь к файлу макроса MyProperties
+Public Source10 As String ' Sections
+Public Source13 As String ' Путь к ini файлу макроса MProp
+Public Source16 As String ' Groups
+Public Source17 As String ' MaterialGroups
+Dim m As Integer
+Public vSheetNames As Variant ' Массив с именами листов чертежа
+Public strActiveSheetName As String ' Имя листа, который был активен при открытии чертежа
+Public ok As Boolean
+Public MDoc As Integer ' Метка документа: 0 - модель; 1 - чертеж
+Public MStart As Integer ' Метка старта: 0 - первый старт; 1 - перезапуск
+Public sConfigName As String ' Имя конфигурации
+Public mRun As Integer
+'
+Public prpLeftTopCorner As Integer
+Public prpTopAll As Integer
+
+#If VBA7 Then
+Public hwndAW As LongPtr
+Public Declare PtrSafe Function GetActiveWindow _
+  Lib "user32.dll" () As LongPtr
+#Else
+Public hwndAW As Long
+Public Declare Function GetActiveWindow _
+  Lib "user32.dll" () As Long
+#End If
+
+'Public Const swDocNONE = 0
+'Public Const swDocPART = 1
+'Public Const swDocASSEMBLY = 2
+'Public Const swDocDRAWING = 3
+
+'Public Const swSumInfoTitle = 0
+'Public Const swSumInfoSubject = 1
+'Public Const swSumInfoAuthor = 2
+'Public Const swSumInfoKeywords = 3
+'Public Const swSumInfoComment = 4
+'Public Const swSumInfoSavedBy = 5
+'Public Const swSumInfoCreateDate = 6
+'Public Const swSumInfoSaveDate = 7
+'Public Const swSumInfoCreateDate2 = 8
+'Public Const swSumInfoSaveDate2 = 9
+
+'Public Const swMbWarning = 1
+'Public Const swMbInformation = 2
+'Public Const swMbQuestion = 3
+'Public Const swMbStop = 4
+
+'Public Const swMbAbortRetryIgnore = 1
+'Public Const swMbOk = 2
+'Public Const swMbOkCancel = 3
+'Public Const swMbRetryCancel = 4
+'Public Const swMbYesNo = 5
+'Public Const swMbYesNoCancel = 6
+
+'Public Const swMbHitAbort = 1
+'Public Const swMbHitIgnore = 2
+'Public Const swMbHitNo = 3
+'Public Const swMbHitOk = 4
+'Public Const swMbHitRetry = 5
+'Public Const swMbHitYes = 6
+'Public Const swMbHitCancel = 7
+
+'Public Const swRebuildAll = 1
+'Public Const swForceRebuildAll = 2
+'Public Const swUpdateMates = 4
+'Public Const swCurrentSheetDisp = 8
+'Public Const swUpdateDirtyOnly = 16
+
+'Public Const swOpenDocOptions_Silent = 1
+
+'Public Const swSetValue_InAllConfigurations = 2
+
+'Public Const swDwgPapersUserDefined = 12
+
+'Public Const swDwgTemplateCustom = 12
+
+'Public Const swDwgTemplateA4sizeVertical = 7
+
+'Public Const swDefaultTemplateDrawing = 10
+
+'Public Const swDetailingDimension = 200
+
+'Public Const swDetailingDimensionTextFormat = 1
+
+'Public Const swFileLocationsMaterialDatabases = 28
+
+'Public Const swMaterialPropertyDensity = 7
+
+'Public Const swMaterialPropertyCrosshatchPattern = 13
+
+'Public Const swBOMPartNumber_UserSpecified = 8
+
+'Public Const swUnitSystem_Custom = 4
+
+'Public Const swUnitsMassPropLength = 258
+'Public Const swUnitsMassPropMass = 259
+'Public Const swUnitsMassPropVolume = 260
+'Public Const swUnitsMassPropDecimalPlaces = 261
+'Public Const swUnitSystem = 263
+
+'Public Const swUnitsMassPropMass_Milligrams = 1
+'Public Const swUnitsMassPropMass_Grams = 2
+'Public Const swUnitsMassPropMass_Kilograms = 3
+'Public Const swUnitsMassPropMass_Pounds = 4
+
+'Public Const swFileLoadWarning_AlreadyOpen = 128
+
+'Public Const swAnnotationOwner_DrawingTemplate = 2
+
+'Public Const swMM = 0
+'Public Const swCM = 1
+'Public Const swMETER = 2
+'Public Const swFEET = 4
+
+'Public Const swUnitsMassPropVolume_Millimeters3 = 4
+'Public Const swUnitsMassPropVolume_Centimeters3 = 5
+'Public Const swUnitsMassPropVolume_Meters3 = 6
+'Public Const swUnitsMassPropVolume_Feet3 = 10
+
+'Public Const swBOMPartNumber_DocumentName = 1
+
+'Public Const swCustomInfoText = 30
+
+Sub main()
+mRun = 0
+Test
+End Sub
+
+Sub main_reload() ' Перезагрузка листа DProp
+mRun = 1
+Test
+End Sub
+
+Sub Test()
+Set swApp = Application.SldWorks
+'Set swApp = CreateObject("SldWorks.Application")
+Set swModel = swApp.ActiveDoc
+
+' Проверка открытого документа
+If swModel Is Nothing Then
+    swApp.SendMsgToUser ("Откройте модель, сборку или чертеж!")
+    End
+    Exit Sub
+End If
+
+' Проверка пути сохранения
+If swModel.GetPathName() = "" Then
+    swApp.SendMsgToUser ("Сохраните файл!")
+    End
+    Exit Sub
+End If
+
+' Определение типа документа
+If swModel.GetType = swDocDRAWING Then ' Чертеж
+    MDoc = 1 ' Метка документа: 0 - модель; 1 - чертеж
+    
+    ' Проверка наличия модели
+    Set swDraw = swModel
+    Set swSheet = swDraw.GetCurrentSheet ' Получаем текущий лист
+    strActiveSheetName = swSheet.GetName ' Узнаем имя активного листа
+    vSheetNames = swDraw.GetSheetNames
+    ok = swDraw.ActivateSheet(vSheetNames(0)) ' Активируем первый лист
+    Set swSheet = swDraw.GetCurrentSheet '
+    Set swView = swDraw.GetFirstView
+    m = 0
+    If swSheet.CustomPropertyView = "По умолчанию" Or swSheet.CustomPropertyView = "Default" Then
+        Set swView = swView.GetNextView ' Получаем первый вид
+    Else
+        Do Until swView Is Nothing
+            If swView.GetName2 = swSheet.CustomPropertyView Then
+                m = 1
+                Exit Do
+            End If
+            Set swView = swView.GetNextView
+        Loop
+        If m = 0 Then
+            Set swView = swDraw.GetFirstView
+            Set swView = swView.GetNextView
+            swApp.SendMsgToUser ("Не удалось определить вид из свойств листа. Используется первый вид.")
+        End If
+    End If
+    If swView Is Nothing Then
+        swApp.SendMsgToUser ("Отсутствует модель!")
+        End
+        Exit Sub
+    End If
+    If swView.ReferencedDocument Is Nothing Then
+        swApp.SendMsgToUser ("Отсутствует модель!")
+        End
+        Exit Sub
+    End If
+Else ' Модель
+    MDoc = 0 ' Метка документа: 0 - модель; 1 - чертеж
+End If
+
+FrmMProp.Show 'vbModeless
+
+End Sub

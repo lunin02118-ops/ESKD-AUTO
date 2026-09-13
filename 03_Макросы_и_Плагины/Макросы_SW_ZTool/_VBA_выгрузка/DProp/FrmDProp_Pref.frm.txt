@@ -1,0 +1,98 @@
+Attribute VB_Name = "FrmDProp_Pref"
+Attribute VB_Base = "0{484797D7-D246-4105-9FC4-A0DE776DAFE6}{12A213C4-B87F-4C65-A733-C1C2024F3539}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = False
+Option Explicit
+Dim strTemp As String
+Dim ok As Boolean
+
+Private Sub CmdPRPName_Click() ' Запускаем MyProperties
+ok = swApp.RunMacro(Source6, "MyProperties_run", "main")
+End Sub
+
+Private Sub UserForm_Activate()
+HWNDActiveWindow
+' Чтение ini файла
+Open Source1 For Input As #1
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkIns.Value = True
+    Else
+        ChkIns.Value = False
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkAdd.Value = True
+    Else
+        ChkAdd.Value = False
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkRoug.Value = True
+    Else
+        ChkRoug.Value = False
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkLRI.Value = True
+    Else
+        ChkLRI.Value = False
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkRev.Value = True
+    Else
+        ChkRev.Value = False
+    End If
+Close #1
+If prpLeftTopCorner = 1 Then ' Окно макроса в левом верхнем углу
+    FrmDProp_Pref.Left = 10
+    FrmDProp_Pref.Top = 10
+End If
+If prpTopAll = 1 Then ' Окно макроса поверх всех
+    KeepFormOnTop
+End If
+End Sub
+
+Private Sub CmdSave_Click()
+' Запись в ini
+Open Source1 For Output As #1
+    If ChkIns.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkAdd.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkRoug.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkLRI.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkRev.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+Close #1
+Hide
+FrmDProp.UserForm_Activate
+End Sub
+
+Private Sub CmdExit_Click()
+Hide
+'Unload Me
+End Sub
+

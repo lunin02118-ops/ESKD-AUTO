@@ -522,6 +522,15 @@ class StaticRepository(StaticTestCase):
                 pass
             backup.unlink(missing_ok=True)
 
+    def test_T0_vba_export_matches_swp(self):
+        """T0: текстовая выгрузка модулей VBA пяти макросов SWPlus и SHA-256 в manifest.json совпадают с .swp (WP-0.2);
+        после правки макроса выгрузку обновляет tools/export_vba.py в том же коммите."""
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("export_vba", paths.TESTS / "tools" / "export_vba.py")
+        export_vba = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(export_vba)
+        self.assertEqual([], export_vba.check())
+
     def test_T0_documentation_matches_code(self):
         """T0: руководство описывает все параметры ESKD_Settings и кнопки вкладки и ссылается только на существующие тесты;
         README, руководство и окно настроек не повторяют утверждений v5; устаревшие документы помечены (WP-5.1)."""

@@ -1,0 +1,208 @@
+Attribute VB_Name = "FrmSpecEditor_Doc"
+Attribute VB_Base = "0{8B8ECDBD-10E5-4CDD-A141-DFAC73A397D0}{1FFA3EBC-5BA5-4DF0-9D93-19BFE7E74123}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = False
+Option Explicit
+Dim i As Integer
+Dim j As Integer
+Dim n As Integer
+Dim strTemp As String
+Dim dTaskID As Double ' Открытие блокнота
+Dim iHeight As Integer
+
+Private Sub ChkBlankRow_Click()
+If ChkBlankRow.Value = True Then
+    CboBlankRow.Enabled = True
+    CboBlankRow.Value = strBlankRow
+Else
+    CboBlankRow.Enabled = False
+    CboBlankRow.ListIndex = 0
+End If
+
+End Sub
+
+Private Sub ChkElectro_Click()
+If ChkElectro.Value = True Then
+    ChkElectro1.Enabled = True
+    ChkElectro2.Enabled = True
+Else
+    ChkElectro1.Enabled = False
+    ChkElectro1.Value = False
+    ChkElectro2.Enabled = False
+    ChkElectro2.Value = False
+End If
+End Sub
+
+Private Sub ChkElectro1_Click()
+If ChkElectro1.Value = True Then
+    ChkElectro2.Value = False
+End If
+End Sub
+
+Private Sub ChkElectro2_Click()
+If ChkElectro2.Value = True Then
+    ChkElectro1.Value = False
+End If
+End Sub
+
+Private Sub CmdExit_Click()
+Hide
+End Sub
+
+Private Sub CmdSave_Click()
+ReDim DocData(0) ' Обнуляем массив
+DocData(0) = "СБ - Сборочный чертеж"
+n = 0
+For i = 0 To LstDoc.ListCount - 1
+    If LstDoc.Selected(i) = True Then
+        n = n + 1
+        ReDim Preserve DocData(n)
+        strTemp = LstDoc.List(i)
+        For j = 0 To UBound(strTempData)
+            If "+" & strTemp = strTempData(j) Then
+                strTemp = "+" & strTemp
+                Exit For
+            End If
+        Next j
+        DocData(n) = strTemp
+    End If
+Next i
+If ChkComplect.Value = True Then
+    mComplect = 1
+Else
+    mComplect = 0
+End If
+If ChkElectro.Value = True Then
+    If ChkElectro1.Value = True Then
+        mElectro = 2
+    ElseIf ChkElectro2.Value = True Then
+        mElectro = 3
+    Else
+        mElectro = 1
+    End If
+Else
+    mElectro = 0
+End If
+If ChkBlankRow.Value = True Then
+    mBlankRow = 1
+    strBlankRow = CboBlankRow.Value
+Else
+    mBlankRow = 0
+End If
+mRunDoc = 1
+Hide
+End Sub
+
+Private Sub CmdEdit_Click()
+strTemp = "Notepad " & sSource5
+dTaskID = Shell(strTemp, vbNormalFocus)
+End Sub
+
+
+Private Sub UserForm_Activate()
+HWNDActiveWindow
+' Чтение файла SpecEditor_Doc.txt
+Open sSource5 For Input As #1
+n = 0
+LstDoc.Clear
+Do While Not EOF(1)
+    Input #1, strTemp
+    If Left$(strTemp, 1) = "+" Then
+        strTemp = Right$(strTemp, Len(strTemp) - 1)
+    End If
+    LstDoc.AddItem strTemp
+    n = n + 1
+Loop
+Close #1
+Debug.Print "n=", n
+
+' Заполнение списка CboBlankRow
+CboBlankRow.Clear
+For i = 1 To 99
+CboBlankRow.AddItem i
+Next i
+
+' Устанавливаем размеры формы
+If n > 3 Then
+    iHeight = (n - 3) * 14
+    FrmSpecEditor_Doc.Height = 188 + iHeight
+    LstDoc.Height = 42 + iHeight
+    CmdSave.Top = 138 + iHeight
+    CmdExit.Top = 138 + iHeight
+    CmdEdit.Top = 138 + iHeight
+    ChkComplect.Top = 54 + iHeight
+    ChkElectro.Top = 75 + iHeight
+    ChkElectro1.Top = 93 + iHeight
+    ChkElectro2.Top = 93 + iHeight
+    ChkBlankRow.Top = 114 + iHeight
+    CboBlankRow.Top = 114 + iHeight
+End If
+
+' Отмечаем элементы списка
+For i = 0 To UBound(DocData)
+    strTemp = DocData(i)
+    If Left$(strTemp, 1) = "+" Then
+        strTemp = Right$(strTemp, Len(strTemp) - 1)
+    End If
+    For j = 0 To LstDoc.ListCount - 1
+        If LstDoc.List(j) = strTemp Then
+            LstDoc.Selected(j) = True
+        End If
+    Next j
+Next i
+
+' Проверяем флажок ChkComplect
+If mComplect = 1 Then
+    ChkComplect.Value = True
+Else
+    ChkComplect.Value = False
+End If
+
+' Проверяем флажки ChkElectro
+If mElectro = 1 Then
+    ChkElectro.Value = True
+Else
+    ChkElectro.Value = False
+End If
+If mElectro = 2 Then
+    ChkElectro.Value = True
+    ChkElectro1.Value = True
+Else
+    ChkElectro1.Value = False
+End If
+If mElectro = 3 Then
+    ChkElectro.Value = True
+    ChkElectro2.Value = True
+Else
+    ChkElectro2.Value = False
+End If
+ChkElectro_Click
+ChkElectro1_Click
+ChkElectro2_Click
+
+' Проверяем флажок ChkBlankRow
+If mBlankRow = 1 Then
+    ChkBlankRow.Value = True
+Else
+    ChkBlankRow.Value = False
+End If
+ChkBlankRow_Click
+
+If mDocShow = 0 Then
+    CmdExit_Click
+    Exit Sub
+End If
+
+If prpLeftTopCorner = 1 Then ' Окно макроса в левом верхнем углу
+    FrmSpecEditor_Doc.Left = 10
+    FrmSpecEditor_Doc.Top = 10
+End If
+If prpTopAll = 1 Then ' Окно макроса поверх всех
+    KeepFormOnTop
+End If
+
+End Sub

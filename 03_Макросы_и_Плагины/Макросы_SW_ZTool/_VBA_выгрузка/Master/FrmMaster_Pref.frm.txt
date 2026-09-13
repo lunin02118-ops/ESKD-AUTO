@@ -1,0 +1,289 @@
+Attribute VB_Name = "FrmMaster_Pref"
+Attribute VB_Base = "0{A98FE748-57AD-4708-BF02-73FB26DB2592}{CA3711C1-572B-460F-B9BD-87819CECBAFA}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = False
+Option Explicit
+'Dim swDraw As Object
+'Dim swSheet As Object
+'Dim swView As Object
+'Dim swSelMgr As Object
+'Dim swNote As Object
+'Dim swAnn As Object
+'Dim swTextFormat As Object
+Dim swDraw As SldWorks.DrawingDoc
+Dim swSheet As SldWorks.Sheet
+Dim swView As SldWorks.View
+Dim swSelMgr As SldWorks.SelectionMgr
+Dim swNote As SldWorks.Note
+Dim swAnn As SldWorks.Annotation
+Dim swTextFormat As SldWorks.TextFormat
+Dim strTemp As String
+Dim strTemp1 As String
+Dim SourceTemp As String
+Dim ok As Boolean
+Dim longstatus As Long
+Dim longwarnings As Long
+Dim strSheetFormatName As String
+Dim MyPRP(26) As String
+Dim i As Integer
+
+Private Sub ChkFrame_Click()
+If ChkFrame.Value = True Then
+    ChkFrameAll.Value = False
+End If
+End Sub
+
+Private Sub ChkFrameAll_Click()
+If ChkFrameAll.Value = True Then
+    ChkFrame.Value = False
+End If
+End Sub
+
+Private Sub CmdPRPName_Click() ' Запускаем MyProperties
+ok = swApp.RunMacro(Source5, "MyProperties_run", "main")
+UserForm_Activate
+End Sub
+
+Private Sub UserForm_Activate()
+HWNDActiveWindow
+'FrmMaster.MyProperties
+If prpTestStandard = 1 Then
+    FrmMaster.MyStandard
+    TxtFontName.Value = stdFontName
+    If stdFontItalic = 1 Then
+        ChkFontItalic.Value = True
+    Else
+        ChkFontItalic.Value = False
+    End If
+    If stdFontBold = 1 Then
+        ChkFontBold.Value = True
+    Else
+        ChkFontBold.Value = False
+    End If
+    TxtFontName.Enabled = False
+    ChkFontItalic.Enabled = False
+    ChkFontBold.Enabled = False
+Else
+    TxtFontName.Enabled = True
+    ChkFontItalic.Enabled = True
+    ChkFontBold.Enabled = True
+End If
+' Чтение ini файла
+Open Source3 For Input As #1
+    If prpTestStandard = 1 Then
+        Line Input #1, strTemp
+        Line Input #1, strTemp
+        Line Input #1, strTemp
+    Else
+        Line Input #1, strTemp ' Шрифт
+        TxtFontName.Value = strTemp
+        Line Input #1, strTemp ' Наклонный
+        If strTemp = "1" Then
+            ChkFontItalic.Value = True
+        Else
+            ChkFontItalic.Value = False
+        End If
+        Line Input #1, strTemp ' Жирный
+        If strTemp = "1" Then
+            ChkFontBold.Value = True
+        Else
+            ChkFontBold.Value = False
+        End If
+    End If
+    Line Input #1, strTemp
+    TxtPath.Value = strTemp ' Путь
+    Line Input #1, strTemp ' Рамка
+    If strTemp = "1" Then
+        ChkFrame.Value = True
+    Else
+        ChkFrame.Value = False
+    End If
+    Line Input #1, strTemp ' Рамка для всех
+    If strTemp = "1" Then
+        ChkFrameAll.Value = True
+    Else
+        ChkFrameAll.Value = False
+    End If
+Close #1
+If prpLeftTopCorner = 1 Then ' Окно макроса в левом верхнем углу
+    FrmMaster_Pref.Left = 10
+    FrmMaster_Pref.Top = 10
+End If
+If prpTopAll = 1 Then ' Окно макроса поверх всех
+    KeepFormOnTop
+End If
+End Sub
+
+Private Sub CmdSave_Click()
+' Запись в ini
+Open Source3 For Output As #1
+    Print #1, TxtFontName.Value ' Шрифт
+    If ChkFontItalic.Value = True Then ' Наклонный
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkFontBold.Value = True Then ' Жирный
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    Print #1, TxtPath.Value ' Путь
+    If ChkFrame.Value = True Then ' Рамка
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkFrameAll.Value = True Then ' Рамка для всех
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+Close #1
+Hide
+'Unload Me
+End Sub
+
+Private Sub CmdExit_Click()
+Hide
+'Unload Me
+End Sub
+
+Private Sub CmdTune_Click()
+sTune (Source1)
+sTune (Source2)
+strTemp1 = Left$(Source8, Len(Source8) - 6) & "SLDDRW"
+Name Source8 As strTemp1   ' Rename file
+sTune (strTemp1)
+Name strTemp1 As Source8   ' Rename file
+
+strTemp1 = Left$(Source9, Len(Source9) - 6) & "SLDDRW"
+Name Source9 As strTemp1   ' Rename file
+sTune (strTemp1)
+Name strTemp1 As Source9   ' Rename file
+
+strTemp1 = Left$(Source10, Len(Source10) - 6) & "SLDDRW"
+Name Source10 As strTemp1   ' Rename file
+sTune (strTemp1)
+Name strTemp1 As Source10   ' Rename file
+
+strTemp1 = Left$(Source11, Len(Source11) - 6) & "SLDDRW"
+Name Source11 As strTemp1   ' Rename file
+sTune (strTemp1)
+Name strTemp1 As Source11   ' Rename file
+
+strTemp1 = Left$(Source12, Len(Source12) - 6) & "SLDDRW"
+Name Source12 As strTemp1   ' Rename file
+sTune (strTemp1)
+Name strTemp1 As Source12   ' Rename file
+
+strTemp1 = Left$(Source13, Len(Source13) - 6) & "SLDDRW"
+Name Source13 As strTemp1   ' Rename file
+sTune (strTemp1)
+Name strTemp1 As Source13   ' Rename file
+
+strTemp1 = Left$(Source16, Len(Source16) - 6) & "SLDDRW"
+Name Source16 As strTemp1   ' Rename file
+sTune (strTemp1)
+Name strTemp1 As Source16   ' Rename file
+
+strTemp1 = Left$(Source17, Len(Source17) - 6) & "SLDDRW"
+Name Source17 As strTemp1   ' Rename file
+sTune (strTemp1)
+Name strTemp1 As Source17   ' Rename file
+
+strTemp1 = Left$(Source18, Len(Source18) - 6) & "SLDDRW"
+Name Source18 As strTemp1   ' Rename file
+sTune (strTemp1)
+Name strTemp1 As Source18   ' Rename file
+
+End Sub
+
+Private Sub sTune(SourceTemp)
+' Открываем файл шаблона
+Set swDraw = swApp.OpenDoc6(SourceTemp, swDocDRAWING, swOpenDocOptions_Silent, "", longstatus, longwarnings)
+
+' Исправление шрифтов форматки
+Set swView = swDraw.GetFirstView
+Set swNote = swView.GetFirstNote()
+
+Do While Not swNote Is Nothing
+    Set swAnn = swNote.GetAnnotation()
+    Set swTextFormat = swAnn.GetTextFormat(0)
+    swTextFormat.TypeFaceName = TxtFontName.Value
+    If ChkFontItalic.Value = True Then
+        swTextFormat.Italic = True
+    Else
+        swTextFormat.Italic = False
+    End If
+    If ChkFontBold.Value = True Then
+        swTextFormat.Bold = True
+    Else
+        swTextFormat.Bold = False
+    End If
+    If swNote.GetName = "MYPRP16" Then ' Материал
+        ok = swAnn.SetTextFormat(0, True, swTextFormat)
+        ok = swAnn.SetTextFormat(0, False, swTextFormat)
+    Else ' Прочие
+        ok = swAnn.SetTextFormat(0, False, swTextFormat)
+    End If
+    Set swNote = swNote.GetNext
+Loop
+
+' Заменяем свойства
+MyPRP(0) = "$PRPSHEET:" & Chr$(34) & prpNumber & Chr$(34) & "$PRPSHEET:" & Chr$(34) & prpDocCode & Chr$(34)
+MyPRP(1) = "$PRPSHEET:" & Chr$(34) & prpNumber & Chr$(34) & "$PRPSHEET:" & Chr$(34) & prpDocCode & Chr$(34)
+MyPRP(2) = "$PRPSHEET:" & Chr$(34) & prpNumber & Chr$(34) & "$PRPSHEET:" & Chr$(34) & prpDocCode & Chr$(34)
+MyPRP(3) = "$PRPSHEET:" & Chr$(34) & prpDocDescription & Chr$(34)
+MyPRP(4) = "$PRPSHEET:" & Chr$(34) & prpDescriptionMulti & Chr$(34)
+MyPRP(5) = "$PRPSHEET:" & Chr$(34) & prpLit & Chr$(34)
+MyPRP(6) = "$PRPSHEET:" & Chr$(34) & prpLitTable & Chr$(34)
+MyPRP(7) = "$PRPSHEET:" & Chr$(34) & prpFirm & Chr$(34)
+MyPRP(8) = "$PRPSHEET:" & Chr$(34) & prpDesigner & Chr$(34)
+MyPRP(9) = "$PRPSHEET:" & Chr$(34) & prpTester & Chr$(34)
+MyPRP(10) = "$PRPSHEET:" & Chr$(34) & prpTechcontrol & Chr$(34)
+MyPRP(11) = "$PRPSHEET:" & Chr$(34) & prpWorkType & Chr$(34)
+MyPRP(12) = "$PRPSHEET:" & Chr$(34) & prpPerson & Chr$(34)
+MyPRP(13) = "$PRPSHEET:" & Chr$(34) & prpNormcontrol & Chr$(34)
+MyPRP(14) = "$PRPSHEET:" & Chr$(34) & prpApprove & Chr$(34)
+MyPRP(15) = "$PRPSHEET:" & Chr$(34) & prpMass & Chr$(34)
+If prpFontSize = 1 Then
+    MyPRP(16) = "<FONT size=1.8> <FONT size=3.5>$PRPSHEET:" & Chr$(34) & prpMaterial & Chr$(34)
+Else
+    MyPRP(16) = " $PRPSHEET:" & Chr$(34) & prpMaterial & Chr$(34)
+End If
+MyPRP(17) = "$PRPSHEET:" & Chr$(34) & prpFirstApply & Chr$(34)
+MyPRP(18) = "$PRPSHEET:" & Chr$(34) & prpInformNumber & Chr$(34)
+MyPRP(19) = "$PRPSHEET:" & Chr$(34) & prpNumber & Chr$(34)
+MyPRP(20) = "Кол. на исполнение $PRPSHEET:" & Chr$(34) & prpNumber & Chr$(34) & " -"
+MyPRP(21) = "$PRPSHEET:" & Chr$(34) & prpNumber & Chr$(34) & "ВП"
+MyPRP(22) = "$PRPSHEET:" & Chr$(34) & prpFirstApplySP & Chr$(34)
+MyPRP(23) = "$PRPSHEET:" & Chr$(34) & prpInformNumberSP & Chr$(34)
+MyPRP(24) = "$PRPSHEET:" & Chr$(34) & prpLitSP & Chr$(34)
+MyPRP(25) = "$PRPSHEET:" & Chr$(34) & prpInformNumberVP & Chr$(34)
+MyPRP(26) = "Шифр: $PRPSHEET:" & Chr$(34) & prpProject & Chr$(34)
+
+Set swSheet = swDraw.GetCurrentSheet
+strSheetFormatName = swSheet.GetSheetFormatName()
+Set swSelMgr = swDraw.SelectionManager
+For i = 0 To 26
+    strTemp = "MYPRP" & i & "@" & strSheetFormatName
+    ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+    If ok = True Then
+        Set swNote = swSelMgr.GetSelectedObject2(1)
+        swNote.SetText MyPRP(i)
+    End If
+Next i
+
+' Перестраиваем и сохраняем
+swDraw.EditSheet
+swDraw.Rebuild (swRebuildAll)
+ok = swDraw.GraphicsRedraw2()
+swDraw.Save2 False
+swApp.QuitDoc SourceTemp
+
+End Sub

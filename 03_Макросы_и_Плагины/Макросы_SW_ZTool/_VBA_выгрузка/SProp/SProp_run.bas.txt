@@ -1,0 +1,90 @@
+Attribute VB_Name = "SProp_run"
+Option Explicit
+'Public swApp As Object
+'Public swModel As Object
+Public swApp As SldWorks.SldWorks
+Public swModel As SldWorks.ModelDoc2
+Public Source1 As String
+Public Source2 As String
+Public Source3 As String
+Public Source5 As String
+Public Source6 As String
+Public MStart As Integer ' Метка старта: 0 - первый старт; 1 - перезапуск
+'
+Public prpLeftTopCorner As Integer
+Public prpTopAll As Integer
+
+#If VBA7 Then
+Public hwndAW As LongPtr
+Public Declare PtrSafe Function GetActiveWindow _
+  Lib "user32.dll" () As LongPtr
+#Else
+Public hwndAW As Long
+Public Declare Function GetActiveWindow _
+  Lib "user32.dll" () As Long
+#End If
+
+'Public Const swDocNONE = 0
+'Public Const swDocPART = 1
+'Public Const swDocASSEMBLY = 2
+'Public Const swDocDRAWING = 3
+
+'Public Const swSumInfoTitle = 0
+'Public Const swSumInfoSubject = 1
+'Public Const swSumInfoAuthor = 2
+'Public Const swSumInfoKeywords = 3
+'Public Const swSumInfoComment = 4
+'Public Const swSumInfoSavedBy = 5
+'Public Const swSumInfoCreateDate = 6
+'Public Const swSumInfoSaveDate = 7
+'Public Const swSumInfoCreateDate2 = 8
+'Public Const swSumInfoSaveDate2 = 9
+
+'Public Const swMbWarning = 1
+'Public Const swMbInformation = 2
+'Public Const swMbQuestion = 3
+'Public Const swMbStop = 4
+
+'Public Const swMbAbortRetryIgnore = 1
+'Public Const swMbOk = 2
+'Public Const swMbOkCancel = 3
+'Public Const swMbRetryCancel = 4
+'Public Const swMbYesNo = 5
+'Public Const swMbYesNoCancel = 6
+
+'Public Const swMbHitAbort = 1
+'Public Const swMbHitIgnore = 2
+'Public Const swMbHitNo = 3
+'Public Const swMbHitOk = 4
+'Public Const swMbHitRetry = 5
+'Public Const swMbHitYes = 6
+'Public Const swMbHitCancel = 7
+
+'Public Const swBOMPartNumber_DocumentName = 1
+'Public Const swBOMPartNumber_ConfigurationName = 2
+'Public Const swBOMPartNumber_ParentName = 4
+'Public Const swBOMPartNumber_UserSpecified = 8
+
+
+Sub main()
+
+Set swApp = Application.SldWorks
+'Set swApp = CreateObject("SldWorks.Application")
+
+Set swModel = swApp.ActiveDoc
+
+' Проверка открытого документа
+If swModel Is Nothing Then
+    swApp.SendMsgToUser ("Откройте модель или сборку")
+    End
+    Exit Sub
+End If
+
+If swModel.GetType <> swDocASSEMBLY And swModel.GetType <> swDocPART Then
+    swApp.SendMsgToUser ("Откройте модель или сборку")
+    End
+    Exit Sub
+End If
+
+FrmSProp.Show
+End Sub

@@ -1,0 +1,181 @@
+Attribute VB_Name = "Master_run"
+Option Explicit
+'Public swApp As Object
+Public swApp As SldWorks.SldWorks
+Public mRun As Integer
+Public Source1 As String
+Public Source2 As String
+Public Source3 As String ' ini
+Public Source5 As String ' MyProperties
+Public Source8 As String ' SP-1
+Public Source9 As String ' SP-2
+Public Source10 As String ' GSP-1
+Public Source11 As String ' GSP-2
+Public Source12 As String ' VP-1
+Public Source13 As String ' VP-2
+Public Source16 As String ' SP-LRI
+Public Source17 As String ' LRI
+Public Source18 As String ' VP-LRI
+
+#If VBA7 Then
+Public hwndAW As LongPtr
+Public Declare PtrSafe Function GetActiveWindow _
+  Lib "user32.dll" () As LongPtr
+#Else
+Public hwndAW As Long
+Public Declare Function GetActiveWindow _
+  Lib "user32.dll" () As Long
+#End If
+' *** MyProperties
+    Public prpNumber As String
+    Public prpDocCode As String
+    Public prpDocDescription As String
+    Public prpDescription As String
+    Public prpDescriptionMulti As String
+    Public prpCode As String
+    Public prpFormat As String
+    Public prpRemark As String
+    Public prpLit As String
+    Public prpLitTable As String
+    Public prpFirm As String
+    Public prpSection As String
+    Public prpGroup As String
+    '
+    Public prpDesigner As String
+    Public prpTester As String
+    Public prpTechcontrol As String
+    Public prpWorkType As String
+    Public prpPerson As String
+    Public prpNormcontrol As String
+    Public prpApprove As String
+    '
+    Public prpMass As String
+    Public prpMassTable As String
+    Public prpMaterial As String
+    Public prpMaterialTable As String
+    '
+    Public prpFirstApply As String
+    Public prpInformNumber As String
+    '
+    Public prpFirstApplySP As String
+    Public prpInformNumberSP As String
+    Public prpLitSP As String
+    '
+    Public prpInformNumberVP As String
+    Public prpDescriptionVP As String
+    Public prpProductCodeVP As String
+    Public prpNumberDocVP As String
+    Public prpVendorVP As String
+    Public prpRemarkVP As String
+    '
+    Public prpProject As String
+    Public prpDraftNumber As String
+    Public prpDraftDescription As String
+    Public prpDraftFirstApply As String
+    Public prpDraftFirstApplySP As String
+    '
+    Public prpBlank As String
+    '
+    Public prpBor As String
+    '
+    Public prpQuantity As String
+    '
+    Public prpTestVersion As Integer
+    Public prpTestFormat As Integer
+    Public prpTestName As Integer
+    Public prpTestStandard As Integer
+    '
+    Public prpFileName As Integer
+    Public prpNameSep As String
+    '
+    Public prpFontSize As String
+    '
+    Public prpAddPRP1 As String
+    Public prpAddPRP2 As String
+    '
+    Public prpLeftTopCorner As Integer
+    Public prpTopAll As Integer
+' *** MyStandard
+    Public stdFontName As String
+    Public stdFontSize As Double
+    Public stdFontItalic As Integer
+    Public stdFontBold As Integer
+    Public stdDay As String
+    Public stdMonth As String
+    Public stdYear As String
+    Public stdHour As String
+    Public stdMinute As String
+    Public stdSecond As String
+    
+'Public Const swDocNONE = 0
+'Public Const swDocPART = 1
+'Public Const swDocASSEMBLY = 2
+'Public Const swDocDRAWING = 3
+
+'Public Const swSumInfoTitle = 0
+'Public Const swSumInfoSubject = 1
+'Public Const swSumInfoAuthor = 2
+'Public Const swSumInfoKeywords = 3
+'Public Const swSumInfoComment = 4
+'Public Const swSumInfoSavedBy = 5
+'Public Const swSumInfoCreateDate = 6
+'Public Const swSumInfoSaveDate = 7
+'Public Const swSumInfoCreateDate2 = 8
+'Public Const swSumInfoSaveDate2 = 9
+
+'Public Const swMbWarning = 1
+'Public Const swMbInformation = 2
+'Public Const swMbQuestion = 3
+'Public Const swMbStop = 4
+
+'Public Const swMbAbortRetryIgnore = 1
+'Public Const swMbOk = 2
+'Public Const swMbOkCancel = 3
+'Public Const swMbRetryCancel = 4
+'Public Const swMbYesNo = 5
+'Public Const swMbYesNoCancel = 6
+
+'Public Const swMbHitAbort = 1
+'Public Const swMbHitIgnore = 2
+'Public Const swMbHitNo = 3
+'Public Const swMbHitOk = 4
+'Public Const swMbHitRetry = 5
+'Public Const swMbHitYes = 6
+'Public Const swMbHitCancel = 7
+
+'Public Const swRebuildAll = 1
+'Public Const swForceRebuildAll = 2
+'Public Const swUpdateMates = 4
+'Public Const swCurrentSheetDisp = 8
+'Public Const swUpdateDirtyOnly = 16
+
+'Public Const swOpenDocOptions_Silent = 1
+
+'Public Const swSetValue_InAllConfigurations = 2
+
+'Public Const swDwgPapersUserDefined = 12
+
+'Public Const swDwgTemplateCustom = 12
+
+'Public Const swDwgTemplateA4sizeVertical = 7
+
+'Public Const swDefaultTemplateDrawing = 10
+
+'Public Const swDetailingDimension = 200
+
+'Public Const swDetailingDimensionTextFormat = 1
+
+Sub main() ' Обычный запуск
+mRun = 0
+FrmMaster.Show
+End Sub
+
+Sub main_add() ' Добавление листа DProp
+mRun = 1
+FrmMaster.Show
+End Sub
+
+Sub main_change() ' Замена форматки DProp
+mRun = 2
+FrmMaster.Show
+End Sub

@@ -1,0 +1,144 @@
+Attribute VB_Name = "FrmMProp_Pref"
+Attribute VB_Base = "0{A224CA20-1441-4CB1-B73A-40C64087E267}{D692227C-C094-4C72-84B4-D13ACD1ECA46}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = False
+Option Explicit
+Dim strTemp As String
+Dim dTaskID As Double
+
+Private Sub ChkProject_Click()
+    If ChkProject.Value = True Then
+        ChkProjectTest.Value = False
+        ChkProjectTest.Enabled = False
+    Else
+        ChkProjectTest.Enabled = True
+    End If
+End Sub
+
+Private Sub CmdPRPName_Click() ' Запускаем MyProperties
+ok = swApp.RunMacro(Source7, "MyProperties_run", "main")
+End Sub
+
+Private Sub CmdGroups_Click()
+strTemp = "Notepad " & Source16
+dTaskID = Shell(strTemp, vbNormalFocus)
+End Sub
+
+Private Sub CmdMaterialGroups_Click()
+strTemp = "Notepad " & Source17
+dTaskID = Shell(strTemp, vbNormalFocus)
+End Sub
+
+Private Sub CmdSections_Click() ' Вызов редактора списка разделов
+strTemp = "Notepad " & Source10
+dTaskID = Shell(strTemp, vbNormalFocus)
+End Sub
+
+
+Private Sub UserForm_Activate()
+HWNDActiveWindow
+' Чтение ini файла
+Open Source13 For Input As #1
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkClean.Value = True
+    Else
+        ChkClean.Value = False
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkLight.Value = True
+    Else
+        ChkLight.Value = False
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkProject.Value = True
+    Else
+        ChkProject.Value = False
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkProjectTest.Value = True
+    Else
+        ChkProjectTest.Value = False
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then
+        ChkMatCheck.Value = True
+    Else
+        ChkMatCheck.Value = False
+    End If
+    '
+    Line Input #1, strTemp
+    TxtMatBase.Text = strTemp
+    '
+    Line Input #1, strTemp
+    strTemp = Replace(strTemp, ".", ",")
+    TxtScale.Text = strTemp
+Close #1
+ChkProject_Click
+If prpLeftTopCorner = 1 Then ' Окно макроса в левом верхнем углу
+    FrmMProp_Pref.Left = 10
+    FrmMProp_Pref.Top = 10
+End If
+If prpTopAll = 1 Then ' Окно макроса поверх всех
+    KeepFormOnTop
+End If
+End Sub
+
+Private Sub CmdSave_Click()
+' Запись в ini
+Open Source13 For Output As #1
+    If ChkClean.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    '
+    If ChkLight.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    '
+    If ChkProject.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    '
+    If ChkProjectTest.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    '
+    If ChkMatCheck.Value = True Then
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    '
+    Print #1, TxtMatBase.Text
+    '
+    Print #1, TxtScale.Text
+Close #1
+Hide
+'Unload Me
+End Sub
+
+Private Sub CmdExit_Click()
+Hide
+'Unload Me
+End Sub
+
+

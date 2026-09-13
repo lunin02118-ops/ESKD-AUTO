@@ -1,0 +1,1115 @@
+Attribute VB_Name = "FrmSProp"
+Attribute VB_Base = "0{6E6DC8BF-65AC-452A-9846-94729AFDF123}{82106521-4373-4FDC-9FD4-33FEF31D69B3}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = False
+Option Explicit
+'Dim swConfig As Object
+'Dim swModExt As Object
+Dim swConfig As SldWorks.Configuration
+Dim swModExt As SldWorks.ModelDocExtension
+Dim swCustPropMgr As SldWorks.CustomPropertyManager
+Dim vConfNameArr As Variant
+Dim sConfigName As String
+Dim vCustInfoNameArr As Variant
+Dim sName As String
+Dim sStand As String
+Dim sNameVP As String
+Dim varTemp As Variant
+Dim varTemp1 As Variant
+Dim longTemp As Long
+Dim strTemp As String
+Dim strTemp1 As String
+Dim doubleTemp As Double
+Dim doubleTemp1 As Double
+Dim ok As Boolean
+Dim MIni As Integer
+Dim MIni2 As Integer
+Dim MIni3 As Integer
+Dim MDel As Integer
+Dim i As Integer
+Dim j As Integer
+Dim n As Integer
+Dim Source As String
+Dim Source4 As String
+Dim lRetval As Long
+Dim Section As String
+Dim mConfig_Click As Integer ' Метка ChkConfig_Click
+Dim mConfig As Integer ' Метка
+Dim dTaskID As Double
+Dim nTxt As Integer
+' *** MyProperties
+    Dim prpNumber As String
+    Dim prpDocCode As String
+    Dim prpDocDescription As String
+    Dim prpDescription As String
+    Dim prpDescriptionMulti As String
+    Dim prpCode As String
+    Dim prpFormat As String
+    Dim prpRemark As String
+    Dim prpLit As String
+    Dim prpLitTable As String
+    Dim prpFirm As String
+    Dim prpSection As String
+    Dim prpGroup As String
+    '
+    Dim prpDesigner As String
+    Dim prpTester As String
+    Dim prpTechcontrol As String
+    Dim prpWorkType As String
+    Dim prpPerson As String
+    Dim prpNormcontrol As String
+    Dim prpApprove As String
+    '
+    Dim prpMass As String
+    Dim prpMassTable As String
+    Dim prpMaterial As String
+    Dim prpMaterialTable As String
+    '
+    Dim prpFirstApply As String
+    Dim prpInformNumber As String
+    '
+    Dim prpFirstApplySP As String
+    Dim prpInformNumberSP As String
+    Dim prpLitSP As String
+    '
+    Dim prpInformNumberVP As String
+    Dim prpDescriptionVP As String
+    Dim prpProductCodeVP As String
+    Dim prpNumberDocVP As String
+    Dim prpVendorVP As String
+    Dim prpRemarkVP As String
+    '
+    Dim prpProject As String
+    Dim prpDraftNumber As String
+    Dim prpDraftDescription As String
+    Dim prpDraftFirstApply As String
+    Dim prpDraftFirstApplySP As String
+    '
+    Dim prpBlank As String
+    '
+    Dim prpBor As String
+    '
+    Dim prpQuantity As String
+    '
+    Dim prpTestVersion As Integer
+    Dim prpTestFormat As Integer
+    Dim prpTestName As Integer
+    Dim prpTestStandard As Integer
+    '
+    Dim prpFileName As Integer
+    Dim prpNameSep As String
+    '
+    Dim prpFontSize As String
+    '
+    Dim prpAddPRP1 As String
+    Dim prpAddPRP2 As String
+    '
+    'Dim prpLeftTopCorner As Integer
+    'Dim prpTopAll As Integer
+
+Private Sub ChkEnter_Click()
+    Look
+End Sub
+
+Private Sub CmdPref_Click() ' Настройки
+    FrmSProp_Pref.Show ' vbModeless
+End Sub
+
+Private Sub ChkConfig_Click()
+If mConfig_Click = 1 Then
+    Test
+    sStand = swModel.CustomInfo2("", prpNumberDocVP)
+    sStand = ReConvert(sStand)
+    If ChkConfig.Value = True Then
+        If mConfig = 0 Then
+            ImgOk.BackColor = &HFF&
+        End If
+        LblConfig.Visible = True
+        LblConfig.Caption = sConfigName
+        TxtParam1.Visible = True
+        TxtParam.Visible = True
+        sName = swModel.CustomInfo2(sConfigName, prpDescription)
+        sName = ReConvert(sName)
+        If sName = "" Then
+            strTemp = swModel.CustomInfo2("", prpDescription)
+            TxtPre.Text = ReConvert(strTemp)
+            TxtParam1.Text = ""
+            TxtParam.Text = ""
+        Else
+            varTemp = InStr(sName, "$PRP:" & Chr$(34) & "SW-Configuration Name" & Chr$(34))
+            If varTemp > 0 Then
+                varTemp1 = InStrRev(sName, " ", varTemp)
+                If varTemp1 > 0 Then
+                    TxtPre.Text = Left$(sName, varTemp1 - 1)
+                    Debug.Print Len(sName), varTemp + 28 + Len(sStand) ' 28 символов в $PRP:"SW-Configuration Name"
+                    If varTemp > varTemp1 + 1 Then
+                        TxtParam1.Text = Mid$(sName, varTemp1 + 1, varTemp - varTemp1 - 1)
+                    Else
+                        TxtParam1.Text = ""
+                    End If
+                    If Len(sName) > varTemp + 28 + Len(sStand) Then
+                        TxtParam.Text = Mid$(sName, varTemp + 28, Len(sName) - varTemp - 28 - Len(sStand))
+                    Else
+                        TxtParam.Text = ""
+                    End If
+                Else
+                    TxtPre.Text = Left$(sName, varTemp - 2)
+                    TxtParam1.Text = ""
+                    TxtParam.Text = ""
+                End If
+            Else
+                TxtPre.Text = sName
+                TxtParam1.Text = ""
+                TxtParam.Text = ""
+            End If
+        End If
+    Else
+        If mConfig = 1 Then
+            ImgOk.BackColor = &HFF&
+        End If
+        LblConfig.Visible = False
+        LblConfig.Caption = ""
+        TxtParam1.Visible = False
+        TxtParam.Visible = False
+        TxtParam1.Text = ""
+        TxtParam.Text = ""
+        sNameVP = swModel.CustomInfo2("", prpDescriptionVP)
+        sNameVP = ReConvert(sNameVP)
+        TxtPre.Text = sNameVP
+        If sNameVP = "" Then
+            sName = swModel.CustomInfo2("", prpDescription)
+            sName = ReConvert(sName)
+            TxtPre.Text = sName
+        End If
+    End If
+
+    If OptOther.Value = True Or OptStandard.Value = True Then
+        If ImgOk.BackColor = &HFF00& Then
+            TxtPost.Text = sStand
+        Else
+            If ChkConfig.Value = True Then
+                If varTemp > 0 And Len(sStand) > 0 Then ' Разделитель присутствует
+                    TxtPost.Text = Right$(sName, Len(sStand))
+                Else
+                    TxtPost.Text = sName
+                End If
+            Else
+                TxtPost.Text = sName
+            End If
+        End If
+    Else
+        TxtPost.Text = ""
+    End If
+    Look
+End If
+End Sub
+
+Private Sub CmdDelete_Click() ' Убиваем все свойства
+If MIni2 = 1 Then
+    For i = 0 To UBound(vConfNameArr)
+        vCustInfoNameArr = swModel.GetCustomInfoNames2(vConfNameArr(i))
+        For j = 0 To UBound(vCustInfoNameArr)
+            If MDel = 1 And vCustInfoNameArr(j) = prpQuantity Then
+            Else
+                ok = swModel.DeleteCustomInfo2(vConfNameArr(i), vCustInfoNameArr(j))
+            End If
+            swModel.CustomInfo2(vConfNameArr(i), "UNIT_OF_MEASURE") = ""
+        Next j
+    Next i
+    vCustInfoNameArr = swModel.GetCustomInfoNames2("")
+    For j = 0 To UBound(vCustInfoNameArr)
+        If MDel = 1 And vCustInfoNameArr(j) = prpQuantity Then
+        Else
+            ok = swModel.DeleteCustomInfo2("", vCustInfoNameArr(j))
+        End If
+    Next j
+    swModel.CustomInfo2("", "UNIT_OF_MEASURE") = ""
+    swModel.SummaryInfo(swSumInfoTitle) = ""
+    swModel.SummaryInfo(swSumInfoSubject) = ""
+    swModel.SummaryInfo(swSumInfoAuthor) = ""
+    swModel.SummaryInfo(swSumInfoKeywords) = ""
+    swModel.SummaryInfo(swSumInfoComment) = ""
+End If
+End Sub
+
+Private Sub CmdTab_Click()
+    Select Case nTxt
+    Case 0
+        TxtPre.Text = TxtPre.Text & "|"
+    Case 1
+        TxtPost.Text = TxtPost.Text & "|"
+    Case 2
+        TxtParam1.Text = TxtParam1.Text & "|"
+    Case 3
+        TxtParam.Text = TxtParam.Text & "|"
+    Case 4
+        TxtRemark.Text = TxtRemark.Text & "|"
+    Case 5
+        TxtRemarkVP.Text = TxtRemarkVP.Text & "|"
+    Case 6
+        TxtVendorVP.Text = TxtVendorVP.Text & "|"
+    Case 7
+        TxtCodeVP.Text = TxtCodeVP.Text & "|"
+    End Select
+End Sub
+
+Private Sub OptMaterial_Click()
+
+' Чтение файла и заполнение списка CboGroup
+CboGroup.Clear
+Open Source3 For Input As #1
+Do While Not EOF(1)
+    Line Input #1, strTemp
+    CboGroup.AddItem strTemp
+Loop
+Close #1
+TxtPost.Enabled = False
+TxtCodeVP.Enabled = False
+TxtVendorVP.Enabled = False
+TxtRemarkVP.Enabled = False
+LblPost.Enabled = False
+LblCodeVP.Enabled = False
+LblVendorVP.Enabled = False
+LblRemarkVP.Enabled = False
+LblPre.Caption = "Наименование"
+ChkEnter.Enabled = False
+ChkEnter.Value = False
+ChkSP.Enabled = True
+Test
+If Section = "Материалы" Or Section = "ЭМ-Материалы" Then
+Else
+    ImgOk.BackColor = &HFF&
+End If
+Look
+End Sub
+
+Private Sub OptStandard_Click()
+
+' Чтение файла и заполнение списка CboGroup
+CboGroup.Clear
+Open Source2 For Input As #1
+Do While Not EOF(1)
+    Line Input #1, strTemp
+    CboGroup.AddItem strTemp
+Loop
+Close #1
+TxtPost.Enabled = True
+TxtCodeVP.Enabled = True
+TxtVendorVP.Enabled = True
+TxtRemarkVP.Enabled = True
+LblPost.Enabled = True
+LblCodeVP.Enabled = True
+LblVendorVP.Enabled = True
+LblRemarkVP.Enabled = True
+LblPre.Caption = "Наименование ВП"
+ChkEnter.Enabled = True
+ChkSP.Value = False
+ChkSP.Enabled = False
+Test
+If Section <> "Стандартные изделия" Then
+    ImgOk.BackColor = &HFF&
+End If
+Look
+End Sub
+
+Private Sub OptOther_Click()
+
+' Чтение файла и заполнение списка CboGroup
+CboGroup.Clear
+Open Source2 For Input As #1
+Do While Not EOF(1)
+    Line Input #1, strTemp
+    CboGroup.AddItem strTemp
+Loop
+Close #1
+TxtPost.Enabled = True
+TxtCodeVP.Enabled = True
+TxtVendorVP.Enabled = True
+TxtRemarkVP.Enabled = True
+LblPost.Enabled = True
+LblCodeVP.Enabled = True
+LblVendorVP.Enabled = True
+LblRemarkVP.Enabled = True
+LblPre.Caption = "Наименование ВП"
+ChkEnter.Enabled = True
+ChkSP.Value = False
+ChkSP.Enabled = False
+Test
+If Section <> "Прочие изделия" Then
+    ImgOk.BackColor = &HFF&
+End If
+Look
+End Sub
+
+Private Sub TxtPost_Change()
+nTxt = 1
+Look
+End Sub
+
+Private Sub TxtPre_Change()
+nTxt = 0
+Look
+End Sub
+
+Private Sub TxtParam1_Change()
+nTxt = 2
+Look
+End Sub
+
+Private Sub TxtParam_Change()
+nTxt = 3
+Look
+End Sub
+
+Private Sub TxtRemark_Change()
+nTxt = 4
+End Sub
+
+Private Sub TxtRemarkVP_Change()
+nTxt = 5
+End Sub
+
+Private Sub TxtVendorVP_Change()
+nTxt = 6
+End Sub
+
+Private Sub TxtCodeVP_Change()
+nTxt = 7
+End Sub
+
+Private Sub ChkSP_Click()
+If ChkSP.Value Then
+    strTemp = "Заполните через Файл, Свойства."
+    If ChkConfig.Value Then
+        If swModel.CustomInfo2(sConfigName, prpQuantity) <> "" Then
+            Set swCustPropMgr = swModExt.CustomPropertyManager(sConfigName)
+            ok = swCustPropMgr.Get4(prpQuantity, False, strTemp1, strTemp)
+        End If
+    Else
+        If swModel.CustomInfo2("", prpQuantity) <> "" Then
+            Set swCustPropMgr = swModExt.CustomPropertyManager("")
+            ok = swCustPropMgr.Get4(prpQuantity, False, strTemp1, strTemp)
+        End If
+    End If
+    LblSP.Caption = "Свойство " & Chr$(34) & prpQuantity & Chr$(34) & ":" & Chr$(10) & strTemp
+Else
+    LblSP.Caption = ""
+End If
+    'swModel.CustomInfo2("", "UNIT_OF_MEASURE") = " - none - "
+End Sub
+
+Public Sub UserForm_Activate()
+HWNDActiveWindow
+' Пути
+Source = swApp.GetCurrentMacroPathName ' Get macro path+filename
+Source1 = Left$(Source, Len(Source) - 15) + "SpecEditor\MyProperties.swp" ' Путь к макросу MyProperties
+Source2 = Left$(Source, Len(Source) - 15) & "SpecEditor\SpecEditor_Groups.txt"    ' Группы разделов "Стандартные изделия" и "Прочие изделия"
+Source3 = Left$(Source, Len(Source) - 15) & "SpecEditor\SpecEditor_MaterialGroups.txt"    ' Группы раздела "Материалы"
+Source4 = Left$(Source, Len(Source) - 15) & "SpecEditor\MyProperties_1.ini" ' Путь к списку свойств
+Source5 = Left$(Source, Len(Source) - 15) & "SpecEditor\SpecEditor_Sections.txt" ' Путь к файлу со списком разделов
+Source6 = Left$(Source, Len(Source) - 3) & "ini" ' Путь к ini файлу макроса SProp
+
+nTxt = 0
+MDel = 0
+
+' Чтение ini файла
+Open Source6 For Input As #1
+Line Input #1, strTemp
+MIni = CInt(Left$(strTemp, 1))
+Line Input #1, strTemp
+MIni2 = CInt(Left$(strTemp, 1))
+Line Input #1, strTemp
+MIni3 = CInt(Left$(strTemp, 1))
+Close #1
+
+MyProperties
+
+If MIni3 = 1 Then
+    ImgOk.Visible = True
+Else
+    ImgOk.Visible = False
+End If
+
+' Определяем раздел
+Section = swModel.CustomInfo2("", prpSection)
+If Section = "Стандартные изделия" Then
+    OptStandard.Value = True
+    ChkEM.Value = False
+ElseIf Section = "ЭМ-Стандартные изделия" Then
+    OptStandard.Value = True
+    ChkEM.Value = True
+ElseIf Section = "Материалы" Then
+    OptMaterial.Value = True
+    ChkEM.Value = False
+ElseIf Section = "ЭМ-Материалы" Then
+    OptMaterial.Value = True
+    ChkEM.Value = True
+ElseIf Section = "Прочие изделия" Or Section = "" Then
+    OptOther.Value = True
+    ChkEM.Value = False
+ElseIf Section = "ЭМ-Прочие изделия" Then
+    OptOther.Value = True
+    ChkEM.Value = True
+Else
+    lRetval = swApp.SendMsgToUser2("Модели уже назначен раздел " & Section & Chr$(10) & "Продолжить?", swMbWarning, swMbYesNo)
+    If lRetval = swMbHitNo Then
+        CmdCansel_Click
+        Exit Sub
+    End If
+    OptStandard.Value = True
+    ChkEM.Value = False
+    ImgOk.BackColor = &HFF&
+End If
+
+If swModel.CustomInfo2("", "IsFastener") = "1" Then
+    ChkIsFastener.Value = True
+Else
+    ChkIsFastener.Value = False
+End If
+
+Set swConfig = swModel.GetActiveConfiguration
+sConfigName = swConfig.Name
+Set swModExt = swModel.Extension
+
+mConfig_Click = 0
+If mConfig = 1 Then
+    ChkConfig.Value = True
+    varTemp = InStr(swModel.CustomInfo2(sConfigName, prpDescription), Chr$(10))
+    varTemp1 = InStr(swModel.CustomInfo2(sConfigName, prpDescription), swModel.CustomInfo2("", prpNumberDocVP))
+Else
+    ChkConfig.Value = False
+    varTemp = InStrRev(swModel.CustomInfo2("", prpDescription), Chr$(10))
+    varTemp1 = InStr(swModel.CustomInfo2("", prpDescription), swModel.CustomInfo2("", prpNumberDocVP))
+End If
+If varTemp > 0 Then
+    If Section = "Материалы" Or Section = "ЭМ-Материалы" Then
+        ChkEnter.Value = False
+    Else
+        If varTemp1 > 0 And swModel.CustomInfo2("", prpNumberDocVP) <> "" Then
+            If varTemp = varTemp1 - 1 Then
+                ChkEnter.Value = True
+            Else
+                ChkEnter.Value = False
+            End If
+        Else
+            ChkEnter.Value = False
+        End If
+    End If
+Else
+    ChkEnter.Value = False
+End If
+mConfig_Click = 1
+
+' Количество в СП
+If Section = "Материалы" Or Section = "ЭМ-Материалы" Then
+    If mConfig = 1 Then
+        If swModel.CustomInfo2(sConfigName, "UNIT_OF_MEASURE") = prpQuantity Then
+            ChkSP.Value = True
+        Else
+            ChkSP.Value = False
+        End If
+    Else
+        If swModel.CustomInfo2("", "UNIT_OF_MEASURE") = prpQuantity Then
+            ChkSP.Value = True
+        Else
+            ChkSP.Value = False
+        End If
+    End If
+End If
+
+strTemp = swModel.CustomInfo2("", prpRemark)
+TxtRemark.Value = ReConvert(strTemp)
+strTemp = swModel.CustomInfo2("", prpProductCodeVP)
+TxtCodeVP.Value = ReConvert(strTemp)
+strTemp = swModel.CustomInfo2("", prpVendorVP)
+TxtVendorVP.Value = ReConvert(strTemp)
+strTemp = swModel.CustomInfo2("", prpRemarkVP)
+TxtRemarkVP.Value = ReConvert(strTemp)
+
+ChkConfig_Click
+
+If MStart = 1 And ImgOk.BackColor = &HFF00& Then
+    CmdCansel_Click
+End If
+If prpLeftTopCorner = 1 Then ' Окно макроса в левом верхнем углу
+    FrmSProp.Left = 10
+    FrmSProp.Top = 10
+End If
+If prpTopAll = 1 Then ' Окно макроса поверх всех
+    KeepFormOnTop
+End If
+End Sub
+
+Private Sub CmdOk_Click()
+' Проверка заполнения полей
+If OptOther.Value = True Or OptStandard.Value = True Then
+    If TxtPre.Text = "" Or TxtPost.Text = "" Or CboGroup.Value = "" Then
+        lRetval = swApp.SendMsgToUser2("Не заполнены обязательные поля (выделены желтым). Продолжить?", swMbWarning, swMbYesNo)
+        If lRetval = swMbHitNo Then
+            Exit Sub
+        End If
+    End If
+Else
+    If TxtPre.Text = "" Or CboGroup.Value = "" Then
+        lRetval = swApp.SendMsgToUser2("Не заполнены обязательные поля (выделены желтым). Продолжить?", swMbWarning, swMbYesNo)
+        If lRetval = swMbHitNo Then
+            Exit Sub
+        End If
+    End If
+End If
+
+MDel = 1
+CmdDelete_Click
+MDel = 0
+
+If ChkConfig.Value Then
+    If ChkEnter.Value = True Then
+        sName = TxtPre.Text & " " & TxtParam1.Text & "$PRP:" & Chr$(34) & "SW-Configuration Name" & Chr$(34) & TxtParam.Text & Chr$(10) & TxtPost.Text
+    Else
+        sName = TxtPre.Text & " " & TxtParam1.Text & "$PRP:" & Chr$(34) & "SW-Configuration Name" & Chr$(34) & TxtParam.Text & " " & TxtPost.Text
+    End If
+    sNameVP = TxtPre.Text & " " & TxtParam1.Text & "$PRP:" & Chr$(34) & "SW-Configuration Name" & Chr$(34) & TxtParam.Text
+    For i = 0 To UBound(vConfNameArr)
+        sName = Convert(sName)
+        ok = swModel.AddCustomInfo3(vConfNameArr(i), prpDescription, 30, "")
+        swModel.CustomInfo2(vConfNameArr(i), prpDescription) = sName
+        
+        Set swConfig = swModel.GetConfigurationByName(vConfNameArr(i))
+        strTemp = TxtPre.Text & " " & TxtParam1.Text & vConfNameArr(i) & TxtParam.Text & " " & TxtPost.Text
+        swConfig.BOMPartNoSource = swBOMPartNumber_UserSpecified
+        swConfig.AlternateName = strTemp
+        swConfig.UseAlternateNameInBOM = True
+        swConfig.AlternateName = strTemp
+        If swModel.GetType = swDocASSEMBLY Then
+            swConfig.ShowChildComponentsInBOM = False
+        End If
+    Next i
+    If OptOther.Value = True Or OptStandard.Value = True Then
+        For i = 0 To UBound(vConfNameArr)
+            sNameVP = Convert(sNameVP)
+            ok = swModel.AddCustomInfo3(vConfNameArr(i), prpDescriptionVP, 30, "")
+            swModel.CustomInfo2(vConfNameArr(i), prpDescriptionVP) = sNameVP
+        Next i
+    End If
+    ' Количество в СП
+    If ChkSP.Value = True Then
+        For i = 0 To UBound(vConfNameArr)
+            ok = swModel.AddCustomInfo3(vConfNameArr(i), "UNIT_OF_MEASURE", 30, "")
+            swModel.CustomInfo2(vConfNameArr(i), "UNIT_OF_MEASURE") = prpQuantity
+            If swModel.CustomInfo2(vConfNameArr(i), prpQuantity) = "" Then
+                ok = swModel.AddCustomInfo3(vConfNameArr(i), prpQuantity, 30, "")
+                swModel.CustomInfo2(vConfNameArr(i), prpQuantity) = ""
+            End If
+        Next i
+    End If
+Else
+    If OptOther.Value = True Or OptStandard.Value = True Then
+        sNameVP = TxtPre.Text
+        sNameVP = Convert(sNameVP)
+        ok = swModel.AddCustomInfo3("", prpDescriptionVP, 30, "")
+        swModel.CustomInfo2("", prpDescriptionVP) = sNameVP
+        If ChkEnter.Value = True Then
+            sName = TxtPre.Text & Chr$(10) & TxtPost.Text
+        Else
+            sName = TxtPre.Text & " " & TxtPost.Text
+        End If
+    Else
+        sName = TxtPre.Text
+    End If
+    sName = Convert(sName)
+    ok = swModel.AddCustomInfo3("", prpDescription, 30, "")
+    swModel.CustomInfo2("", prpDescription) = sName
+    
+    Set swConfig = swModel.GetActiveConfiguration
+    swConfig.BOMPartNoSource = swBOMPartNumber_UserSpecified
+    swConfig.AlternateName = sName
+    swConfig.UseAlternateNameInBOM = True
+    swConfig.AlternateName = sName
+    If swModel.GetType = swDocASSEMBLY Then
+        swConfig.ShowChildComponentsInBOM = False
+    End If
+    ' Количество в СП
+    If ChkSP.Value = True Then
+        ok = swModel.AddCustomInfo3("", "UNIT_OF_MEASURE", 30, "")
+        swModel.CustomInfo2("", "UNIT_OF_MEASURE") = prpQuantity
+        If swModel.CustomInfo2("", prpQuantity) = "" Then
+            ok = swModel.AddCustomInfo3("", prpQuantity, 30, "")
+            swModel.CustomInfo2("", prpQuantity) = ""
+        End If
+    End If
+End If
+
+strTemp = TxtRemark.Value
+strTemp = Convert(strTemp)
+ok = swModel.AddCustomInfo3("", prpRemark, 30, "")
+swModel.CustomInfo2("", prpRemark) = strTemp
+
+ok = swModel.AddCustomInfo3("", prpGroup, 30, "")
+swModel.CustomInfo2("", prpGroup) = CboGroup.Value
+
+If OptStandard.Value = True Then
+    If ChkEM.Value = True Then
+        ok = swModel.AddCustomInfo3("", prpSection, 30, "")
+        swModel.CustomInfo2("", prpSection) = "ЭМ-Стандартные изделия"
+    Else
+        ok = swModel.AddCustomInfo3("", prpSection, 30, "")
+        swModel.CustomInfo2("", prpSection) = "Стандартные изделия"
+    End If
+ElseIf OptMaterial.Value = True Then
+    If ChkEM.Value = True Then
+        ok = swModel.AddCustomInfo3("", prpSection, 30, "")
+        swModel.CustomInfo2("", prpSection) = "ЭМ-Материалы"
+    Else
+        ok = swModel.AddCustomInfo3("", prpSection, 30, "")
+        swModel.CustomInfo2("", prpSection) = "Материалы"
+    End If
+Else
+    If ChkEM.Value = True Then
+        ok = swModel.AddCustomInfo3("", prpSection, 30, "")
+        swModel.CustomInfo2("", prpSection) = "ЭМ-Прочие изделия"
+    Else
+        ok = swModel.AddCustomInfo3("", prpSection, 30, "")
+        swModel.CustomInfo2("", prpSection) = "Прочие изделия"
+    End If
+End If
+
+If ChkIsFastener.Value = True Then
+    ok = swModel.AddCustomInfo3("", "IsFastener", 30, "")
+    swModel.CustomInfo2("", "IsFastener") = "1"
+Else
+    ok = swModel.AddCustomInfo3("", "IsFastener", 30, "")
+    swModel.CustomInfo2("", "IsFastener") = "0"
+End If
+
+If OptOther.Value = True Or OptStandard.Value = True Then
+    strTemp = TxtCodeVP.Value
+    strTemp = Convert(strTemp)
+    ok = swModel.AddCustomInfo3("", prpProductCodeVP, 30, "")
+    swModel.CustomInfo2("", prpProductCodeVP) = strTemp
+    
+    strTemp = TxtPost.Value
+    strTemp = Convert(strTemp)
+    ok = swModel.AddCustomInfo3("", prpNumberDocVP, 30, "")
+    swModel.CustomInfo2("", prpNumberDocVP) = strTemp
+    
+    strTemp = TxtVendorVP.Value
+    strTemp = Convert(strTemp)
+    ok = swModel.AddCustomInfo3("", prpVendorVP, 30, "")
+    swModel.CustomInfo2("", prpVendorVP) = strTemp
+    
+    strTemp = TxtRemarkVP.Value
+    strTemp = Convert(strTemp)
+    ok = swModel.AddCustomInfo3("", prpRemarkVP, 30, "")
+    swModel.CustomInfo2("", prpRemarkVP) = strTemp
+End If
+
+' Свет
+If MIni = 1 Then
+    ' Удаляем источники света и сцену
+    swModExt.DeleteScene
+    longTemp = swModel.GetLightSourceCount
+    For i = longTemp - 1 To 0 Step -1
+        swModel.DeleteLightSource (i)
+    Next i
+    strTemp = swModel.GetLightSourceName(0)
+
+    ' Добавляем источники света
+    ' Light type:
+    ' 1 = Ambient light
+    ' 2 = Spot light
+    ' 3 = Point light
+    ' 4 = Directional light
+    ok = swModel.AddLightSource("LD1", 4, "Направленный 1")
+    ok = swModel.AddLightSource("LD2", 4, "Направленный 2")
+    
+    ' Выставляем параметры источников
+    ok = swModel.SetAmbientLightProperties(strTemp, 0.3, 0#, 0#, 16777215, True, True)
+    doubleTemp = Tan(80 * 3.1416 / 180)
+    doubleTemp1 = Sqr(doubleTemp ^ 2 + 1) * Tan(50 * 3.1416 / 180)
+    Debug.Print doubleTemp, doubleTemp1
+    ok = swModel.SetDirectionLightProperties("LD1", 0.5, 0.1, 0.2, 16777215, True, True, doubleTemp, doubleTemp1, 1)
+    doubleTemp = Tan(-40 * 3.1416 / 180)
+    doubleTemp1 = Sqr(doubleTemp ^ 2 + 1) * Tan(20 * 3.1416 / 180)
+    ok = swModel.SetDirectionLightProperties("LD2", 0#, 0.1, 0.2, 16777215, True, True, doubleTemp, doubleTemp1, 1)
+End If
+
+If MIni3 = 1 Then
+    CmdCansel_Click
+End If
+Hide
+Unload Me
+MStart = 1
+main
+End Sub
+
+Private Sub CmdCansel_Click()
+Hide
+Unload Me
+End
+End Sub
+
+Private Sub Look()
+If OptOther.Value = True Or OptStandard.Value = True Then
+    If ChkEnter.Value = True Then
+        strTemp = TxtPre.Text & " " & TxtParam1.Text & LblConfig.Caption & TxtParam.Text & Chr$(10) & TxtPost.Text
+    Else
+        strTemp = TxtPre.Text & " " & TxtParam1.Text & LblConfig.Caption & TxtParam.Text & " " & TxtPost.Text
+    End If
+    LblInfo.Caption = Convert(strTemp)
+Else
+    strTemp = TxtPre.Text & " " & TxtParam1.Text & LblConfig.Caption & TxtParam.Text
+    LblInfo.Caption = Convert(strTemp)
+End If
+ChkSP_Click
+End Sub
+
+Function Convert(ConvertString As String) As String
+Convert = Replace(ConvertString, "|", Chr$(10))
+End Function
+
+Function ReConvert(ConvertString As String) As String
+ConvertString = Replace(ConvertString, Chr$(10), "|")
+ReConvert = Replace(ConvertString, Chr$(13), "")
+End Function
+
+Private Sub Test()
+ImgOk.BackColor = &HFF00& ' Зеленый
+' Проверка модели
+sName = swModel.CustomInfo2("", prpDescription)
+sName = ReConvert(sName)
+sNameVP = swModel.CustomInfo2("", prpDescriptionVP)
+sNameVP = ReConvert(sNameVP)
+vConfNameArr = swModel.GetConfigurationNames
+mConfig = 1
+' Проверка свойств Наименование и Наименование_ВП
+If sName = "" Then ' На вкладке Настройки Наименование пустое
+    For i = 0 To UBound(vConfNameArr) ' Проверяем конфигурации
+        n = 0
+        vCustInfoNameArr = swModel.GetCustomInfoNames2(vConfNameArr(i))
+        For j = 0 To UBound(vCustInfoNameArr)
+            If vCustInfoNameArr(j) = prpQuantity Or vCustInfoNameArr(j) = "UNIT_OF_MEASURE" Then
+                n = n + 1
+            End If
+        Next j
+        sName = swModel.CustomInfo2(vConfNameArr(i), prpDescription)
+        sName = ReConvert(sName)
+        sNameVP = swModel.CustomInfo2(vConfNameArr(i), prpDescriptionVP)
+        sNameVP = ReConvert(sNameVP)
+        If sName = "" Then ' На вкладке Конфигурации Наименование пустое
+            ImgOk.BackColor = &HFF& ' Красный
+            mConfig = 0
+            Exit For
+        Else ' Проверяем наличие имени конфигурации в Наименовании
+            varTemp = InStr(sName, "$PRP:" & Chr$(34) & "SW-Configuration Name" & Chr$(34))
+            If varTemp > 0 Then ' Разделитель присутствует
+            Else ' Разделителя нет
+                ImgOk.BackColor = &HFF&
+                mConfig = 0
+                Exit For
+            End If
+        End If
+        If OptOther.Value = True Or OptStandard.Value = True Then
+            If sNameVP = "" Then ' На вкладке Конфигурации Наименование ВП пустое
+                ImgOk.BackColor = &HFF&
+                mConfig = 0
+                Exit For
+            Else ' Проверяем наличие имени конфигурации в Наименовании ВП
+                varTemp = InStr(sNameVP, "$PRP:" & Chr$(34) & "SW-Configuration Name" & Chr$(34))
+                If varTemp > 0 Then ' Разделитель присутствует
+                    If swModel.GetCustomInfoCount2(vConfNameArr(i)) > 2 + n Then
+                        ImgOk.BackColor = &HFF&
+                        Exit For
+                    End If
+                Else ' Разделителя нет
+                    ImgOk.BackColor = &HFF&
+                    mConfig = 0
+                    Exit For
+                End If
+            End If
+        Else
+            If swModel.GetCustomInfoCount2(vConfNameArr(i)) > 1 + n Then
+                ImgOk.BackColor = &HFF&
+                Exit For
+            End If
+        End If
+        If swModel.GetType = swDocASSEMBLY Then
+            Set swConfig = swModel.GetConfigurationByName(vConfNameArr(i))
+            If swConfig.ShowChildComponentsInBOM Then
+                ImgOk.BackColor = &HFF&
+            End If
+        End If
+    Next i
+Else
+    mConfig = 0
+    If OptOther.Value = True Or OptStandard.Value = True Then
+        If sNameVP = "" Then ' На вкладке Настройки Наименование ВП пустое
+            ImgOk.BackColor = &HFF&
+        Else
+            For i = 0 To UBound(vConfNameArr) ' Проверяем конфигурации
+                n = 0
+                vCustInfoNameArr = swModel.GetCustomInfoNames2(vConfNameArr(i))
+                For j = 0 To UBound(vCustInfoNameArr)
+                    If vCustInfoNameArr(j) = prpQuantity Or vCustInfoNameArr(j) = "UNIT_OF_MEASURE" Then
+                        n = n + 1
+                    End If
+                Next j
+                If swModel.GetCustomInfoCount2(vConfNameArr(i)) > 0 + n Then
+                    ImgOk.BackColor = &HFF&
+                    Exit For
+                End If
+            Next i
+        End If
+    End If
+    If swModel.GetType = swDocASSEMBLY Then
+        Set swConfig = swModel.GetActiveConfiguration
+        If swConfig.ShowChildComponentsInBOM Then
+            ImgOk.BackColor = &HFF&
+        End If
+    End If
+End If
+
+n = 0
+vCustInfoNameArr = swModel.GetCustomInfoNames2("")
+For j = 0 To UBound(vCustInfoNameArr)
+    'Debug.Print vCustInfoNameArr(j)
+    If vCustInfoNameArr(j) = prpQuantity Or vCustInfoNameArr(j) = "UNIT_OF_MEASURE" Then
+        n = n + 1
+    End If
+Next j
+If ChkConfig.Value = False Then
+    If Section = "Материалы" Or Section = "ЭМ-Материалы" Then
+        'Debug.Print swModel.GetCustomInfoCount2(""), 5 + n
+        If swModel.GetCustomInfoCount2("") > 5 + n Then
+            ImgOk.BackColor = &HFF&
+        End If
+    Else
+        If swModel.GetCustomInfoCount2("") > 10 + n Then
+            ImgOk.BackColor = &HFF&
+        End If
+    End If
+Else
+    If Section = "Материалы" Or Section = "ЭМ-Материалы" Then
+        If swModel.GetCustomInfoCount2("") > 5 + n Then
+            ImgOk.BackColor = &HFF&
+        End If
+    Else
+        If swModel.GetCustomInfoCount2("") > 8 + n Then
+            ImgOk.BackColor = &HFF&
+        End If
+    End If
+End If
+        
+If Section = "Материалы" Or Section = "ЭМ-Материалы" Then
+Else
+    If swModel.CustomInfo2("", prpNumberDocVP) = "" Then
+            ImgOk.BackColor = &HFF&
+    End If
+End If
+    
+If swModel.CustomInfo2("", "IsFastener") = "1" Or swModel.CustomInfo2("", "IsFastener") = "0" Then
+Else
+    ImgOk.BackColor = &HFF&
+End If
+
+If swModel.SummaryInfo(swSumInfoTitle) <> "" Then
+    ImgOk.BackColor = &HFF&
+End If
+If swModel.SummaryInfo(swSumInfoSubject) <> "" Then
+    ImgOk.BackColor = &HFF&
+End If
+If swModel.SummaryInfo(swSumInfoAuthor) <> "" Then
+    ImgOk.BackColor = &HFF&
+End If
+If swModel.SummaryInfo(swSumInfoKeywords) <> "" Then
+    ImgOk.BackColor = &HFF&
+End If
+If swModel.SummaryInfo(swSumInfoComment) <> "" Then
+    ImgOk.BackColor = &HFF&
+End If
+
+strTemp = swModel.CustomInfo2("", prpGroup)
+For i = 0 To CboGroup.ListCount - 1
+    If strTemp = CboGroup.List(i) Then
+        CboGroup.Value = strTemp
+    End If
+Next i
+If CboGroup.Value = "" Then
+    ImgOk.BackColor = &HFF&
+End If
+
+' Конец проверки
+End Sub
+
+Private Sub MyProperties()
+' Чтение ini файла
+Open Source4 For Input As #1
+    Line Input #1, strTemp
+    prpNumber = strTemp ' Обозначение
+    Line Input #1, strTemp
+    prpDocCode = strTemp ' Код документа
+    Line Input #1, strTemp
+    prpDocDescription = strTemp ' Наименование документа
+    Line Input #1, strTemp
+    prpDescription = strTemp ' Наименование изделия в одну строку
+    Line Input #1, strTemp
+    prpDescriptionMulti = strTemp ' Наименование изделия в несколько строк
+    Line Input #1, strTemp
+    prpCode = strTemp ' Условное наименование (код)
+    Line Input #1, strTemp
+    prpFormat = strTemp ' Формат
+    Line Input #1, strTemp
+    prpRemark = strTemp ' Примечание
+    Line Input #1, strTemp
+    prpLit = strTemp ' Литера
+    Line Input #1, strTemp
+    prpLitTable = strTemp ' Литера для таблицы параметров
+    Line Input #1, strTemp
+    prpFirm = strTemp ' Наименование организации
+    Line Input #1, strTemp
+    prpSection = strTemp ' Раздел
+    Line Input #1, strTemp
+    prpGroup = strTemp ' Группа
+    '
+    Line Input #1, strTemp
+    prpDesigner = strTemp ' Разраб.
+    Line Input #1, strTemp
+    prpTester = strTemp ' Пров.
+    Line Input #1, strTemp
+    prpTechcontrol = strTemp ' Т.контр.
+    Line Input #1, strTemp
+    prpWorkType = strTemp ' Характер работы
+    Line Input #1, strTemp
+    prpPerson = strTemp ' Фамилия для "Характер работы"
+    Line Input #1, strTemp
+    prpNormcontrol = strTemp ' Н.контр
+    Line Input #1, strTemp
+    prpApprove = strTemp ' Утв.
+    '
+    Line Input #1, strTemp
+    prpMass = strTemp ' Масса
+    Line Input #1, strTemp
+    prpMassTable = strTemp ' Масса для таблицы параметров
+    Line Input #1, strTemp
+    prpMaterial = strTemp ' Материал
+    Line Input #1, strTemp
+    prpMaterialTable = strTemp ' Материал для таблицы параметров
+    '
+    Line Input #1, strTemp
+    prpFirstApply = strTemp ' Перв.примен. для чертежей и ВП
+    Line Input #1, strTemp
+    prpInformNumber = strTemp ' Справ.№ для чертежей
+    '
+    Line Input #1, strTemp
+    prpFirstApplySP = strTemp ' Перв.примен. для спецификации
+    Line Input #1, strTemp
+    prpInformNumberSP = strTemp ' Справ.№ для спецификаций
+    Line Input #1, strTemp
+    prpLitSP = strTemp ' Литера для спецификаций
+    '
+    Line Input #1, strTemp
+    prpInformNumberVP = strTemp ' Справ.№ для ВП
+    Line Input #1, strTemp
+    prpDescriptionVP = strTemp ' Наименование для ВП
+    Line Input #1, strTemp
+    prpProductCodeVP = strTemp ' Код продукции
+    Line Input #1, strTemp
+    prpNumberDocVP = strTemp ' Обозначение документа на поставку
+    Line Input #1, strTemp
+    prpVendorVP = strTemp ' Поставщик
+    Line Input #1, strTemp
+    prpRemarkVP = strTemp ' Примечание для ВП
+    '
+    Line Input #1, strTemp
+    prpProject = strTemp ' Проект (дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftNumber = strTemp ' Эскизное Обозначение (дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftDescription = strTemp ' Эскизное Наименование (дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftFirstApply = strTemp ' Эскизное Перв.примен. для чертежей и ВП(дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftFirstApplySP = strTemp ' Эскизное Перв.примен. для спецификации (дополнительное свойство)
+    '
+    Line Input #1, strTemp
+    prpBlank = strTemp ' Заготовка
+    '
+    Line Input #1, strTemp
+    prpBor = strTemp ' Заимствование
+    '
+    Line Input #1, strTemp
+    prpQuantity = strTemp ' Количество в СП
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка версии
+        prpTestVersion = 1
+    Else
+        prpTestVersion = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка формата
+        prpTestFormat = 1
+    Else
+        prpTestFormat = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка имен
+        prpTestName = 1
+    Else
+        prpTestName = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка оформления
+        prpTestStandard = 1
+    Else
+        prpTestStandard = 0
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Имя файла
+        prpFileName = 1
+    Else
+        prpFileName = 0
+    End If
+    Line Input #1, strTemp
+    prpNameSep = strTemp ' Разделитель
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Управление шрифтом
+        prpFontSize = 1
+    Else
+        prpFontSize = 0
+    End If
+    '
+    Line Input #1, strTemp
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Доп. свойство №1
+        prpAddPRP1 = 1
+    Else
+        prpAddPRP1 = 0
+    End If
+    Line Input #1, strTemp
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Доп. свойство №2
+        prpAddPRP2 = 1
+    Else
+        prpAddPRP2 = 0
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Окно макроса в левом верхнем углу
+        prpLeftTopCorner = 1
+    Else
+        prpLeftTopCorner = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Окно макроса поверх всех
+        prpTopAll = 1
+    Else
+        prpTopAll = 0
+    End If
+Close #1
+End Sub

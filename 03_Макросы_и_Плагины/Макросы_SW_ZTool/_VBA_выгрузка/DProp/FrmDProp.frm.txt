@@ -1,0 +1,1712 @@
+Attribute VB_Name = "FrmDProp"
+Attribute VB_Base = "0{0CC784EA-0369-42B5-B256-34E7B9D80D5A}{01599D81-6C65-4EBF-81BD-18577C883276}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = False
+Option Explicit
+'Dim swDraw1 As Object
+'Dim swSheet As Object
+'Dim swView As Object
+'Dim swSelMgr As Object
+'Dim swNote As Object
+'Dim swAnnSFSymbol As Object
+'Dim swAnn As Object
+'Dim swTextFormat As Object
+'Dim swModExt As Object
+Dim swDraw1 As SldWorks.DrawingDoc
+Dim swSheet As SldWorks.Sheet
+Dim swView As SldWorks.View
+Dim swSelMgr As SldWorks.SelectionMgr
+Dim swNote As SldWorks.Note
+Dim swAnnSFSymbol As SldWorks.SFSymbol
+Dim swAnn As SldWorks.Annotation
+Dim swTextFormat As SldWorks.TextFormat
+Dim swModExt As SldWorks.ModelDocExtension
+Dim vModelViewNames As Variant
+Dim sConfigName As String
+Dim fs As Object
+Dim Source As String
+Dim Source2 As String
+Dim Source3 As String
+Dim Source4 As String
+Dim Source5 As String
+Dim Source7 As String
+Dim Source8 As String
+Dim Source9 As String
+Dim Source10 As String
+Dim vRetval As Variant
+Dim vSheetProps As Variant
+Dim ok As Boolean
+Dim strTemp As String
+Dim strTemp1 As String
+Dim varTemp As Variant
+Dim varTemp1 As Variant
+Dim varTemp2 As Variant
+Dim Numerator As Double
+Dim Denominator As Double
+Dim DTemp As Double
+Dim strSheetFormatName As String
+Dim strActiveSheetName As String
+Dim vSheetNames As Variant
+Dim TemplateName As String
+Dim strMsg As String
+'Dim MyDate As Variant
+'Dim MyDay As Variant
+'Dim MyMonth As Variant
+'Dim MyYear As Variant
+Dim strData As String
+Dim lRetval As Long
+Dim s(35) As String
+Dim MIni As Integer
+Dim MIniRoug As Integer
+Dim MIniMaster As String
+Dim MIniLRI As Integer
+Dim MIniRev As Integer
+Dim MImpr As Integer ' Метка процедуры Исправления
+Dim MAdd As Integer ' Метка процедуры Добавления листа
+Dim mEx1 As Integer
+Dim mEx2 As Integer
+Dim MView As Integer '  Метка наличия вида
+Dim sSheetsNames1 As String ' Имена листов со старыми версиями
+Dim sSheetsNames2 As String ' Имена листов с нечитаемыми форматами
+Dim sSheetsNames3 As String ' Имена листов с проблемами оформления
+Dim sSheetsNames4 As String ' Имена листов с проблемами оформления
+Dim DeleteOption As Long
+Dim i As Integer
+Dim j As Integer
+Dim k As Integer ' Носитель
+Dim k1 As Integer ' Носитель
+Dim k2 As Integer ' Носитель
+Dim k3 As Integer ' Носитель
+Dim m As Integer
+Dim m1 As Integer
+Dim MyDateTime As Date
+Dim FormatArr(27, 2) As String
+Dim MChkScale As Integer ' Метка флажка Без масштаба: 0 - пользователь изменил флажок; 1 - флажок изменен из программы
+' *** MyProperties
+    Dim prpNumber As String
+    Dim prpDocCode As String
+    Dim prpDocDescription As String
+    Dim prpDescription As String
+    Dim prpDescriptionMulti As String
+    Dim prpCode As String
+    Dim prpFormat As String
+    Dim prpRemark As String
+    Dim prpLit As String
+    Dim prpLitTable As String
+    Dim prpFirm As String
+    Dim prpSection As String
+    Dim prpGroup As String
+    '
+    Dim prpDesigner As String
+    Dim prpTester As String
+    Dim prpTechcontrol As String
+    Dim prpWorkType As String
+    Dim prpPerson As String
+    Dim prpNormcontrol As String
+    Dim prpApprove As String
+    '
+    Dim prpMass As String
+    Dim prpMassTable As String
+    Dim prpMaterial As String
+    Dim prpMaterialTable As String
+    '
+    Dim prpFirstApply As String
+    Dim prpInformNumber As String
+    '
+    Dim prpFirstApplySP As String
+    Dim prpInformNumberSP As String
+    Dim prpLitSP As String
+    '
+    Dim prpInformNumberVP As String
+    Dim prpDescriptionVP As String
+    Dim prpProductCodeVP As String
+    Dim prpNumberDocVP As String
+    Dim prpVendorVP As String
+    Dim prpRemarkVP As String
+    '
+    Dim prpProject As String
+    Dim prpDraftNumber As String
+    Dim prpDraftDescription As String
+    Dim prpDraftFirstApply As String
+    Dim prpDraftFirstApplySP As String
+    '
+    Dim prpBlank As String
+    '
+    Dim prpBor As String
+    '
+    Dim prpQuantity As String
+    '
+    Dim prpTestVersion As Integer
+    Dim prpTestFormat As Integer
+    Dim prpTestName As Integer
+    Dim prpTestStandard As Integer
+    '
+    Dim prpFileName As Integer
+    Dim prpNameSep As String
+    '
+    Dim prpFontSize As String
+    '
+    Dim prpAddPRP1 As String
+    Dim prpAddPRP2 As String
+    '
+    'Dim prpLeftTopCorner As Integer
+    'Dim prpTopAll As Integer
+' *** MyStandard
+    Dim stdFontName As String
+    Dim stdFontSize As Double
+    Dim stdFontItalic As Integer
+    Dim stdFontBold As Integer
+    Dim stdDay As String
+    Dim stdMonth As String
+    Dim stdYear As String
+    Dim stdHour As String
+    Dim stdMinute As String
+    Dim stdSecond As String
+
+Private Sub ChkScale_Click()
+If MChkScale = 0 Then
+    ' Узнаем имя активного листа
+    Set swSheet = swDraw.GetCurrentSheet
+    strActiveSheetName = swSheet.GetName
+    ' Активируем первый лист
+    vSheetNames = swDraw.GetSheetNames
+    ok = swDraw.ActivateSheet(vSheetNames(0))
+    Set swSheet = swDraw.GetCurrentSheet
+    strSheetFormatName = swSheet.GetSheetFormatName()
+    strTemp = "Scale@" & strSheetFormatName
+    ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+    If ok = True Then
+        Set swNote = swSelMgr.GetSelectedObject2(1)
+        If ChkScale.Value = True Then
+            swNote.SetText "-"
+        Else
+            swNote.SetText "$PRP:" & Chr$(34) & "SW-Sheet Scale" & Chr$(34)
+        End If
+    End If
+    
+    ' Возвращение активного листа
+    ok = swDraw.ActivateSheet(strActiveSheetName)
+End If
+End Sub
+
+Private Sub CmdPref_Click() ' Настройки
+    FrmDProp_Pref.Show
+End Sub
+
+Private Sub CmdStandard_Click() ' Исправить оформление чертежа
+    Set swModExt = swDraw.Extension
+    ok = swModExt.LoadDraftingStandard(Source8)
+    If MIni = 1 Then
+        Add ' Доп. оформление
+    End If
+    AnnDef
+    ' Узнаем имя активного листа
+    Set swSheet = swDraw.GetCurrentSheet
+    strActiveSheetName = swSheet.GetName
+    
+    Tests
+
+    ' Возвращение активного листа
+    ok = swDraw.ActivateSheet(strActiveSheetName)
+
+End Sub
+
+Public Sub UserForm_Activate()
+HWNDActiveWindow
+Source = swApp.GetCurrentMacroPathName             ' Get macro path+filename
+Source1 = Left$(Source, Len(Source) - 3) + "ini"    ' Путь к ini файлу
+Source2 = Left$(Source1, Len(Source1) - 15) & "Master\Master.swp" ' Путь к макросу Мастер
+Source3 = Left$(Source1, Len(Source1) - 15) & "MProp\MProp.swp" ' Путь к макросу MProp
+Source4 = Left$(Source1, Len(Source1) - 15) & "Roughness\Roughness.swp" ' Путь к макросу Roughness
+Source5 = Left$(Source, Len(Source) - 15) & "SpecEditor\MyProperties_1.ini" ' Путь к списку свойств
+Source6 = Left$(Source, Len(Source) - 15) & "SpecEditor\MyProperties.swp" ' Путь к макросу MyProperties
+Source7 = Left$(Source, Len(Source) - 15) & "SpecEditor\MyProperties_2.ini" ' Путь к ini файлу макроса MyProperties
+Source8 = Left$(Source, Len(Source) - 15) & "SpecEditor\MyStandard.sldstd" ' Путь к файлу стандарта
+Source9 = Left$(Source1, Len(Source1) - 15) & "Master\Master.ini" ' Путь к ini-файлу макроса Мастер
+Source10 = Left$(Source, Len(Source) - 15) & "SpecEditor\LRI.slddrt"    ' Шаблон ЛРИ
+
+' Чтение ini файла
+Open Source1 For Input As #1
+Line Input #1, strTemp
+Line Input #1, strTemp
+MIni = CInt(Left$(strTemp, 1))
+Line Input #1, strTemp
+MIniRoug = CInt(Left$(strTemp, 1))
+Line Input #1, strTemp
+MIniLRI = CInt(Left$(strTemp, 1))
+Line Input #1, strTemp
+MIniRev = CInt(Left$(strTemp, 1))
+Close #1
+
+' Чтение ini файла макроса Мастер
+Open Source9 For Input As #1
+Line Input #1, strTemp
+Line Input #1, strTemp
+Line Input #1, strTemp
+Line Input #1, MIniMaster
+Close #1
+
+MyProperties
+If prpTestStandard = 1 Then
+    MyStandard
+End If
+
+Set swSelMgr = swDraw.SelectionManager
+
+' Узнаем имя активного листа
+Set swSheet = swDraw.GetCurrentSheet
+strActiveSheetName = swSheet.GetName
+
+' Активируем первый лист
+vSheetNames = swDraw.GetSheetNames
+ok = swDraw.ActivateSheet(vSheetNames(0))
+Set swSheet = swDraw.GetCurrentSheet
+
+'  Получаем параметры модели
+MView = 1
+Set swView = swDraw.GetFirstView
+m = 0
+If swSheet.CustomPropertyView = "По умолчанию" Or swSheet.CustomPropertyView = "Default" Then
+    Set swView = swView.GetNextView ' Получаем первый вид
+Else
+    Do Until swView Is Nothing
+        If swView.GetName2 = swSheet.CustomPropertyView Then
+            m = 1
+            Exit Do
+        End If
+        Set swView = swView.GetNextView
+    Loop
+    If m = 0 Then
+        Set swView = swDraw.GetFirstView
+        Set swView = swView.GetNextView
+        swApp.SendMsgToUser ("Не удалось определить вид из свойств листа. Используется первый вид.")
+    End If
+End If
+If swView Is Nothing Then
+    MView = 0
+Else
+    If swView.ReferencedDocument Is Nothing Then
+        MView = 0
+    Else
+        sConfigName = swView.ReferencedConfiguration ' Имя конфигурации вида
+        Set swModel = swView.ReferencedDocument
+        vModelViewNames = swModel.GetModelViewNames
+    End If
+End If
+
+' Считываем масштаб
+vSheetProps = swSheet.GetProperties
+Numerator = vSheetProps(2)
+Denominator = vSheetProps(3)
+If Numerator < 1 Then
+    DTemp = 1 / Numerator
+    Numerator = Numerator * DTemp
+    Denominator = Denominator * DTemp
+End If
+If Denominator < 1 Then
+    DTemp = 1 / Denominator
+    Numerator = Numerator * DTemp
+    Denominator = Denominator * DTemp
+End If
+Debug.Print Numerator, Denominator
+' Определяем системный разделитель
+If swApp.GetUserPreferenceToggle(swUseSystemSeparatorForDims) Then
+    strTemp = swApp.GetUserPreferenceStringValue(swSeparatorCharacterForDims)
+Else
+    strTemp1 = swApp.GetUserPreferenceStringValue(swSeparatorCharacterForDims)
+    swApp.SetUserPreferenceToggle swUseSystemSeparatorForDims, True
+    strTemp = swApp.GetUserPreferenceStringValue(swSeparatorCharacterForDims)
+    swApp.SetUserPreferenceToggle swUseSystemSeparatorForDims, False
+    ok = swApp.SetUserPreferenceStringValue(swSeparatorCharacterForDims, strTemp1)
+End If
+If strTemp = "." Then
+    m = 0
+ElseIf strTemp = "," Then
+    m = 1
+Else
+    swApp.SendMsgToUser ("Устанавите системным разделителем точку или запятую")
+    CmdCancel_Click
+    Exit Sub
+End If
+
+' Заполнение списка "Масштаб"
+CboScale.Clear
+CboScale.AddItem "1:10"
+CboScale.AddItem "1:5"
+CboScale.AddItem "1:4"
+If m = 0 Then
+    CboScale.AddItem "1:2.5"
+Else
+    CboScale.AddItem "1:2,5"
+End If
+CboScale.AddItem "1:2"
+CboScale.AddItem "1:1"
+CboScale.AddItem "2:1"
+If m = 0 Then
+    CboScale.AddItem "2.5:1"
+Else
+    CboScale.AddItem "2,5:1"
+End If
+CboScale.AddItem "4:1"
+CboScale.AddItem "5:1"
+CboScale.AddItem "10:1"
+m1 = 0
+For i = 0 To CboScale.ListCount - 1
+    If CboScale.List(i) = CStr(Numerator) & ":" & CStr(Denominator) Then
+        m1 = 1
+        Exit For
+    End If
+Next i
+If m1 = 0 Then
+    CmdAllScale_Click
+Else
+    CboScale.Value = CStr(Numerator) & ":" & CStr(Denominator)
+End If
+
+' Проверяем флажок ChkScale
+MChkScale = 1
+ChkScale.Value = False
+strSheetFormatName = swSheet.GetSheetFormatName()
+strTemp = "Scale@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    If swNote.GetText = "-" Then
+        ChkScale.Value = True
+    End If
+End If
+MChkScale = 0
+
+' Проверка редакции чертежа
+strTemp = swDraw.CustomInfo2("", "Revision")
+If strTemp = "" Then
+    LblGetRev.Caption = "нет"
+    SpinButton1.Value = 1
+Else
+    LblGetRev.Caption = strTemp
+    SpinButton1.Value = CInt(strTemp) + 1
+End If
+' № докум.
+strTemp = "Revision3@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    TxtDoc.Value = swNote.GetText()
+End If
+
+Tests
+SheetsControl
+
+' Возвращение активного листа
+ok = swDraw.ActivateSheet(strActiveSheetName)
+
+If prpLeftTopCorner = 1 Then ' Окно макроса в левом верхнем углу
+    FrmDProp.Left = 10
+    FrmDProp.Top = 10
+End If
+If prpTopAll = 1 Then ' Окно макроса поверх всех
+    KeepFormOnTop
+End If
+End Sub
+
+Private Sub CmdCancel_Click()
+swDraw.ClearSelection2 True
+Hide
+Unload Me
+End
+End Sub
+
+Private Sub CmdAddSheet_Click() ' Добавление нового листа
+MAdd = 1
+ok = swApp.RunMacro(Source2, "Master_run", "main_add")
+
+' Узнаем имя активного листа
+Set swSheet = swDraw.GetCurrentSheet
+strActiveSheetName = swSheet.GetName
+
+' Проверка редакции чертежа
+strTemp = swDraw.CustomInfo2("", "Revision")
+If strTemp <> "" Then
+    strSheetFormatName = swSheet.GetSheetFormatName()
+    strTemp = "Revision2@" & strSheetFormatName
+    ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+    If ok = True Then
+        Set swNote = swSelMgr.GetSelectedObject2(1)
+        swNote.SetText "Нов."
+    End If
+    ' Предложение внести изменение
+    lRetval = swApp.SendMsgToUser2("Изменить версию чертежа?", swMbQuestion, swMbYesNo)
+    If lRetval = swMbHitYes Then
+        CmdRev_Click
+    Else
+        ' № докум.
+        strTemp = "Revision3@" & strSheetFormatName
+        ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+        If ok = True Then
+            Set swNote = swSelMgr.GetSelectedObject2(1)
+            swNote.SetText TxtDoc.Value
+        End If
+        ' Дата
+        strTemp = "Revision4@" & strSheetFormatName
+        ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+        If ok = True Then
+            ' Определяем и устанавливаем дату
+            strData = Format(Now, "dd.mm.yy")
+            Set swNote = swSelMgr.GetSelectedObject2(1)
+            swNote.SetText strData
+        End If
+    End If
+End If
+
+Tests
+SheetsControl
+
+' Возвращение активного листа
+ok = swDraw.ActivateSheet(strActiveSheetName)
+MAdd = 0
+End Sub
+
+Private Sub CmdDelSheet_Click() ' Удаление листа
+' Узнаем имя активного листа
+Set swSheet = swDraw.GetCurrentSheet
+strActiveSheetName = swSheet.GetName
+
+'DeleteOption = SwConst.swDelete_Absorbed + SwConst.swDelete_Children
+DeleteOption = 3
+ok = swDraw.Extension.SelectByID2(strActiveSheetName, "SHEET", 0, 0, 0, False, 0, Nothing, 0)
+ok = swDraw.Extension.DeleteSelection2(DeleteOption)
+
+SheetsControl
+
+End Sub
+
+Private Sub CmdChange_Click() ' Замена форматки
+SaveData
+ok = swApp.RunMacro(Source2, "Master_run", "main_change")
+RestoreData
+
+' Узнаем имя активного листа
+Set swSheet = swDraw.GetCurrentSheet
+strActiveSheetName = swSheet.GetName
+
+Tests
+
+' Возвращение активного листа
+ok = swDraw.ActivateSheet(strActiveSheetName)
+
+End Sub
+
+Private Sub CmdReload_Click() ' Перезагрузка форматки
+SaveData
+Set swSheet = swDraw.GetCurrentSheet
+vSheetProps = swSheet.GetProperties
+TemplateName = swSheet.GetTemplateName ' Запоминаем название шаблона
+varTemp = InStrRev(TemplateName, "\")
+If Left$(swSheet.GetName, 3) = "DRW" Or Left$(swSheet.GetName, 4) = "Лист" Or Left$(swSheet.GetName, 5) = "Sheet" Then
+    If Left$(TemplateName, varTemp) <> MIniMaster Then
+        FormatSize
+    End If
+ElseIf Left$(swSheet.GetName, 2) = "SP" Or Left$(swSheet.GetName, 2) = "VP" Or Left$(swSheet.GetName, 3) = "LRI" Then
+    If Left$(TemplateName, varTemp) <> Left$(Source6, Len(Source6) - 16) Then
+        TemplateName = Left$(Source6, Len(Source6) - 16) & Right$(TemplateName, Len(TemplateName) - varTemp)
+    End If
+Else
+    FormatSize
+End If
+
+' Проверяем существование такой форматки
+Set fs = CreateObject("Scripting.FileSystemObject")
+If fs.FileExists(TemplateName) = False Then
+    strTemp = "Не удалось перезагрузить основную надпись для листа " & swSheet.GetName & " !" & Chr$(10) & "Выберите команду Заменить основную надпись."
+    lRetval = swApp.SendMsgToUser2(strTemp, swMbWarning, swMbOk)
+    Exit Sub
+End If
+
+'ok = swDraw.SetupSheet5(swSheet.GetName, vSheetProps(0), swDwgTemplateA4sizeVertical, vSheetProps(2), vSheetProps(3), vSheetProps(4), vbNullString, vSheetProps(5), vSheetProps(6), swSheet.CustomPropertyView, True)
+'ok = swDraw.SetupSheet5(swSheet.GetName, vSheetProps(0), vSheetProps(1), vSheetProps(2), vSheetProps(3), vSheetProps(4), TemplateName, vSheetProps(5), vSheetProps(6), swSheet.CustomPropertyView, True)
+ok = swDraw.SetupSheet4(swSheet.GetName, vSheetProps(0), swDwgTemplateA4sizeVertical, vSheetProps(2), vSheetProps(3), vSheetProps(4), vbNullString, vSheetProps(5), vSheetProps(6), swSheet.CustomPropertyView)
+'Debug.Print ok, TemplateName
+ok = swDraw.SetupSheet4(swSheet.GetName, vSheetProps(0), vSheetProps(1), vSheetProps(2), vSheetProps(3), vSheetProps(4), TemplateName, vSheetProps(5), vSheetProps(6), swSheet.CustomPropertyView)
+'Debug.Print ok
+
+If ok = False Then
+    strTemp = "Не удалось перезагрузить основную надпись для листа " & swSheet.GetName & " !" & Chr$(10) & "Выберите команду Заменить основную надпись."
+    lRetval = swApp.SendMsgToUser2(strTemp, swMbWarning, swMbOk)
+    Exit Sub
+End If
+
+swDraw.ForceRebuild3 (True)
+RestoreData
+
+' Проверка первого листа и вызов макросов MProp и Roughness, чтобы исправить форматирование
+Set swSheet = swDraw.GetCurrentSheet
+strActiveSheetName = swSheet.GetName
+vSheetNames = swDraw.GetSheetNames
+If strActiveSheetName = vSheetNames(0) Then
+    ok = swApp.RunMacro(Source3, "MProp_run", "main_reload")
+    If swDraw.CustomInfo2("", "Обработка") <> "" And MIniRoug = 1 Then
+        ok = swApp.RunMacro(Source4, "Roughness_run", "main_reload")
+    End If
+End If
+
+If MImpr <> 1 Then ' Нет вызова из Impr
+    ' Узнаем имя активного листа
+    Set swSheet = swDraw.GetCurrentSheet
+    strActiveSheetName = swSheet.GetName
+    
+    Tests
+
+    ' Возвращение активного листа
+    ok = swDraw.ActivateSheet(strActiveSheetName)
+End If
+End Sub
+
+Private Sub CmdRev_Click() ' Изменить версию
+' Узнаем имя активного листа
+Set swSheet = swDraw.GetCurrentSheet
+strActiveSheetName = swSheet.GetName
+
+' Изм.
+If LblSetRev.Caption = "нет" Then
+    ok = swDraw.AddCustomInfo3("", "Revision", 30, "")
+    swDraw.CustomInfo2("", "Revision") = ""
+Else
+    ok = swDraw.AddCustomInfo3("", "Revision", 30, LblSetRev.Caption)
+    swDraw.CustomInfo2("", "Revision") = LblSetRev.Caption
+End If
+
+' Определяем дату
+'MyDate = Date
+'MyDay = Day(MyDate)
+'MyMonth = Month(MyDate)
+'MyYear = Year(MyDate)
+'strData = CStr(MyDay) & "." & CStr(MyMonth) & "." & Right$(CStr(MyYear), 2)
+' Устанавливаем Лист и Дату
+vSheetNames = swDraw.GetSheetNames
+For i = 0 To UBound(vSheetNames)
+    ok = swDraw.ActivateSheet(vSheetNames(i))
+    Set swSheet = swDraw.GetCurrentSheet
+    strSheetFormatName = swSheet.GetSheetFormatName()
+    ' Лист
+    strTemp = "Revision2@" & strSheetFormatName
+    ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+    If ok = True Then
+        ' Определяем и устанавливаем Лист
+        If LblSetRev.Caption = "нет" Then
+            strTemp = " "
+        Else
+            strTemp = "Зам."
+        End If
+        Set swNote = swSelMgr.GetSelectedObject2(1)
+        If swNote.GetText = "Нов." And MAdd = 1 Then
+        Else
+            swNote.SetText strTemp
+        End If
+    End If
+    ' № докум.
+    strTemp = "Revision3@" & strSheetFormatName
+    ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+    If ok = True Then
+        Set swNote = swSelMgr.GetSelectedObject2(1)
+        swNote.SetText TxtDoc.Value
+    End If
+    ' Дата
+    strTemp = "Revision4@" & strSheetFormatName
+    ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+    If ok = True Then
+        strData = Format(Now, "dd.mm.yy")
+        ' Определяем и устанавливаем дату
+        If LblSetRev.Caption = "нет" Then
+            strTemp = " "
+        Else
+            strTemp = strData
+        End If
+        Set swNote = swSelMgr.GetSelectedObject2(1)
+        swNote.SetText strTemp
+    End If
+Next i
+
+' Возвращение активного листа
+ok = swDraw.ActivateSheet(strActiveSheetName)
+
+' Перестраиваем чертеж
+swDraw.Rebuild (swRebuildAll)
+ok = swDraw.GraphicsRedraw2()
+swDraw.ClearSelection2 True
+
+' Изменение отображения редакции чертежа
+strTemp = swDraw.CustomInfo2("", "Revision")
+If strTemp = "" Then
+    LblGetRev.Caption = "нет"
+    SpinButton1.Value = 1
+Else
+    LblGetRev.Caption = strTemp
+    SpinButton1.Value = CInt(strTemp) + 1
+End If
+
+End Sub
+
+Private Sub SpinButton1_Change()
+If SpinButton1.Value < 10 And MIniRev = 1 Then
+    LblSetRev.Caption = "0" & SpinButton1.Value
+ElseIf SpinButton1.Value = 0 Then
+    LblSetRev.Caption = "нет"
+Else
+    LblSetRev.Caption = SpinButton1.Value
+End If
+End Sub
+
+Private Sub CmdScale_Click()
+' Узнаем имя активного листа
+Set swSheet = swDraw.GetCurrentSheet
+strActiveSheetName = swSheet.GetName
+
+strTemp = CboScale.Value
+varTemp = InStr(strTemp, ":") ' Проверяем разделитель
+Numerator = CDbl(Left$(strTemp, varTemp - 1))
+Denominator = CDbl(Right$(strTemp, Len(strTemp) - varTemp))
+'Debug.Print Numerator, Denominator
+
+SheetsControl
+
+' Возвращение активного листа
+ok = swDraw.ActivateSheet(strActiveSheetName)
+
+End Sub
+
+Private Sub CmdAllScale_Click()
+' Заполнение списка "Масштаб"
+CboScale.Clear
+CboScale.AddItem "1:1000"
+CboScale.AddItem "1:800"
+CboScale.AddItem "1:500"
+CboScale.AddItem "1:400"
+CboScale.AddItem "1:200"
+CboScale.AddItem "1:100"
+CboScale.AddItem "1:75"
+CboScale.AddItem "1:50"
+CboScale.AddItem "1:40"
+CboScale.AddItem "1:25"
+CboScale.AddItem "1:20"
+CboScale.AddItem "1:15"
+CboScale.AddItem "1:10"
+CboScale.AddItem "1:5"
+CboScale.AddItem "1:4"
+If m = 0 Then
+    CboScale.AddItem "1:2.5"
+Else
+    CboScale.AddItem "1:2,5"
+End If
+CboScale.AddItem "1:2"
+CboScale.AddItem "1:1"
+CboScale.AddItem "2:1"
+If m = 0 Then
+    CboScale.AddItem "2.5:1"
+Else
+    CboScale.AddItem "2,5:1"
+End If
+CboScale.AddItem "4:1"
+CboScale.AddItem "5:1"
+CboScale.AddItem "10:1"
+CboScale.AddItem "20:1"
+CboScale.AddItem "40:1"
+CboScale.AddItem "50:1"
+CboScale.AddItem "100:1"
+m1 = 0
+For i = 0 To CboScale.ListCount - 1
+    If CboScale.List(i) = CStr(Numerator) & ":" & CStr(Denominator) Then
+        m1 = 1
+        Exit For
+    End If
+Next i
+If m1 = 0 Then
+    swApp.SendMsgToUser ("Установлен нестандартный масштаб!")
+    CboScale.AddItem CStr(Numerator) & ":" & CStr(Denominator)
+End If
+CboScale.Value = CStr(Numerator) & ":" & CStr(Denominator)
+End Sub
+
+Private Sub SheetsControl()
+
+' Переименовываем листы и выставляем масштаб
+vSheetNames = swDraw.GetSheetNames
+j = 0
+m = 0
+k = 0
+k1 = 0
+'Debug.Print "UBound(vSheetNames)", UBound(vSheetNames)
+For i = 0 To UBound(vSheetNames)
+    ' Проверка имени листа
+    If Left$(vSheetNames(i), 3) = "LRI" Then
+        m = 1
+        k = i
+        j = j + 1
+    End If
+    If Left$(vSheetNames(i), 3) = "DRW" Or Left$(vSheetNames(i), 4) = "Лист" Or Left$(vSheetNames(i), 5) = "Sheet" Then
+        j = j + 1
+        k1 = i
+        ok = swDraw.ActivateSheet(vSheetNames(i))
+        Set swSheet = swDraw.GetCurrentSheet
+        strTemp = "DRW" & CStr(j)
+        vSheetProps = swSheet.GetProperties
+        ok = swDraw.SetupSheet4(strTemp, vSheetProps(0), vSheetProps(1), Numerator, Denominator, vSheetProps(4), swSheet.GetTemplateName, vSheetProps(5), vSheetProps(6), swSheet.CustomPropertyView)
+    End If
+Next i
+
+' Вставляем ЛРИ
+If MIniLRI = 1 And j > 2 And m = 0 Then ' вставляем ЛРИ
+    strTemp = "LRI"
+    vRetval = swDraw.NewSheet3(strTemp, swDwgPapersUserDefined, swDwgTemplateCustom, 1#, 1#, True, Source10, 0.21, 0.297, "По умолчанию")
+    Set swSheet = swDraw.GetCurrentSheet
+    swSheet.SheetFormatVisible = True
+    If MView = 1 Then ' Вставляем вид
+        Set swView = swDraw.CreateDrawViewFromModelView3(swModel.GetPathName, vModelViewNames(0), -0.1, 0, 0)
+        swView.ReferencedConfiguration = sConfigName
+        swDraw.SuppressView
+        swDraw.ForceRebuild3 (True)
+    End If
+    j = j + 1
+    ' Тасуем листы
+    vSheetNames = swDraw.GetSheetNames
+    For i = UBound(vSheetNames) To k1 + 2 Step -1
+        vSheetNames(i) = vSheetNames(i - 1)
+    Next i
+    vSheetNames(k1 + 1) = strTemp
+    ok = swDraw.ReorderSheets(vSheetNames)
+ElseIf MIniLRI = 1 And j < 4 And m = 1 Then   ' удаляем ЛРИ
+    strMsg = "Удалить ЛРИ?"
+    lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+    If lRetval = swMbHitYes Then
+        ok = swDraw.ActivateSheet(vSheetNames(k))
+        Set swSheet = swDraw.GetCurrentSheet
+        DeleteOption = 3
+        ok = swDraw.Extension.SelectByID2(swSheet.GetName, "SHEET", 0, 0, 0, False, 0, Nothing, 0)
+        ok = swDraw.Extension.DeleteSelection2(DeleteOption)
+        j = j - 1
+    End If
+End If
+
+' Заносим количество листов
+vSheetNames = swDraw.GetSheetNames
+ok = swDraw.ActivateSheet(vSheetNames(0))
+Set swSheet = swDraw.GetCurrentSheet
+strSheetFormatName = swSheet.GetSheetFormatName()
+strTemp = "Sheet1@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    If j > 1 Then ' Листов больше одного
+        strTemp = "Лист 1"
+    Else
+        strTemp = "Лист"
+    End If
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    swNote.SetText strTemp
+End If
+strTemp = "Sheet2@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    strTemp = "Листов " & j
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    swNote.SetText CStr(strTemp)
+End If
+
+End Sub
+
+Private Sub Tests()
+If prpTestVersion = 1 Or prpTestFormat = 1 Or prpTestStandard = 1 Then
+    vSheetNames = swDraw.GetSheetNames
+    ReDim sFormatArray(UBound(vSheetNames))
+    ' Считываем и проверяем версии форматов всех листов
+    k = 0
+    k1 = 0
+    k2 = 0
+    k3 = 0
+    sSheetsNames1 = ""
+    sSheetsNames2 = ""
+    sSheetsNames3 = ""
+    sSheetsNames4 = ""
+    strMsg = ""
+    For i = 0 To UBound(vSheetNames)
+        ok = swDraw.ActivateSheet(vSheetNames(i))
+        Set swSheet = swDraw.GetCurrentSheet
+        strSheetFormatName = swSheet.GetSheetFormatName()
+        ' Проверка имени листа
+        If Left$(vSheetNames(i), 3) = "DRW" Or Left$(vSheetNames(i), 4) = "Лист" Or Left$(vSheetNames(i), 5) = "Sheet" Or Left$(vSheetNames(i), 2) = "SP" Or Left$(vSheetNames(i), 2) = "VP" Or Left$(vSheetNames(i), 3) = "LRI" Then
+            If prpTestVersion = 1 Then
+                ' Проверка версии форматки
+                strTemp = "Version@" & strSheetFormatName
+                ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+                If ok = True Then
+                    Set swNote = swSelMgr.GetSelectedObject2(1)
+                    strTemp = swNote.GetText()
+                    ' Проверка версии
+                    If Right$(strTemp, 1) <> "3" Then
+                        k1 = k1 + 1
+                        sSheetsNames1 = sSheetsNames1 & vSheetNames(i) & ", "
+                    End If
+                Else
+                    k1 = k1 + 1
+                    sSheetsNames1 = sSheetsNames1 & vSheetNames(i) & ", "
+                End If
+            End If
+            If prpTestStandard = 1 Then
+                ' Проверка оформления
+                mEx1 = 0
+                mEx2 = 0
+                Set swView = swDraw.GetFirstView ' Проверяем шрифты форматки
+                If Not swView Is Nothing Then
+                    Set swNote = swView.GetFirstNote()
+                    j = 0
+                    While j = 0
+                        If Not swNote Is Nothing Then
+                            Set swAnn = swNote.GetAnnotation()
+                            If Not swAnn.OwnerType = swAnnotationOwner_DrawingTemplate Then ' Исключаем объекты форматки
+                                Set swNote = swNote.GetNext
+                            Else
+                                j = 1
+                            End If
+                        Else
+                            j = 1
+                        End If
+                    Wend
+                    If Not swNote Is Nothing Then
+                        Set swAnn = swNote.GetAnnotation()
+                        Set swTextFormat = swAnn.GetTextFormat(0)
+                        If swTextFormat.TypeFaceName <> stdFontName Then
+                            mEx1 = 1
+                        End If
+                        If swTextFormat.Italic = True And stdFontItalic = 0 Then
+                            mEx1 = 1
+                        ElseIf swTextFormat.Italic = False And stdFontItalic = 1 Then
+                            mEx1 = 1
+                        End If
+                        If swTextFormat.Bold = True And stdFontBold = 0 Then
+                            mEx1 = 1
+                        ElseIf swTextFormat.Bold = False And stdFontBold = 1 Then
+                            mEx1 = 1
+                        End If
+                    Else
+                        mEx1 = 1
+                    End If
+                Else
+                    mEx1 = 1
+                End If
+                Set swView = swView.GetNextView ' Проверяем шрифты чертежа
+                If Not swView Is Nothing Then
+                    Set swNote = swView.GetFirstNote()
+                    If Not swNote Is Nothing Then
+                        Set swAnn = swNote.GetAnnotation()
+                        Set swTextFormat = swAnn.GetTextFormat(0)
+                        If swTextFormat.TypeFaceName <> stdFontName Then
+                            mEx2 = 1
+                        End If
+                        If swTextFormat.Italic = True And stdFontItalic = 0 Then
+                            mEx2 = 1
+                        ElseIf swTextFormat.Italic = False And stdFontItalic = 1 Then
+                            mEx2 = 1
+                        End If
+                        If swTextFormat.Bold = True And stdFontBold = 0 Then
+                            mEx2 = 1
+                        ElseIf swTextFormat.Bold = False And stdFontBold = 1 Then
+                            mEx2 = 1
+                        End If
+                    End If
+                End If
+                Set swModExt = swDraw.Extension
+                Set swTextFormat = swModExt.GetUserPreferenceTextFormat(swDetailingDimensionTextFormat, swDetailingDimension)
+                If swTextFormat.TypeFaceName <> stdFontName Or swTextFormat.CharHeight <> stdFontSize / 1000 Then
+                    mEx2 = 1
+                End If
+                If swTextFormat.Italic = True And stdFontItalic = 0 Then
+                    mEx2 = 1
+                ElseIf swTextFormat.Italic = False And stdFontItalic = 1 Then
+                    mEx2 = 1
+                End If
+                If swTextFormat.Bold = True And stdFontBold = 0 Then
+                    mEx2 = 1
+                ElseIf swTextFormat.Bold = False And stdFontBold = 1 Then
+                    mEx2 = 1
+                End If
+                If mEx1 = 1 Then
+                    k3 = k3 + 1
+                    sSheetsNames4 = sSheetsNames4 & vSheetNames(i) & ", "
+                End If
+                If mEx2 = 1 Then
+                    k2 = k2 + 1
+                    sSheetsNames2 = sSheetsNames2 & vSheetNames(i) & ", "
+                End If
+            End If
+        End If
+        If prpTestFormat = 1 Then
+            If Left$(vSheetNames(i), 3) = "DRW" Or Left$(vSheetNames(i), 4) = "Лист" Or Left$(vSheetNames(i), 5) = "Sheet" Or Left$(vSheetNames(i), 3) = "LRI" Then
+                ' Проверка имени формата
+                strTemp = "Format@" & strSheetFormatName
+                ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+                If ok = True Then
+                    Set swNote = swSelMgr.GetSelectedObject2(1)
+                    strTemp = swNote.GetText()
+                    ' Проверка корректности и длины записи
+                    If Len(Trim(strTemp)) > 8 And Left$(strTemp, 6) = "Формат" Then
+                    Else
+                        k = k + 1
+                        sSheetsNames3 = sSheetsNames3 & vSheetNames(i) & ", "
+                    End If
+                Else
+                    k = k + 1
+                    sSheetsNames3 = sSheetsNames3 & vSheetNames(i) & ", "
+                End If
+            End If
+        End If
+    Next i
+    If k > 0 Or k1 > 0 Or k2 > 0 Or k3 > 0 Then  ' Предупреждение об ошибках
+        If k1 > 0 Then
+            sSheetsNames1 = Left$(sSheetsNames1, Len(sSheetsNames1) - 2)
+            strMsg = "Лист(ы) " & sSheetsNames1 & " имеют нестандартную или устаревшую основную надпись."
+        End If
+        If k2 > 0 Then
+            sSheetsNames2 = Left$(sSheetsNames2, Len(sSheetsNames2) - 2)
+            strMsg = strMsg & Chr$(10) & "Лист(ы) " & sSheetsNames2 & " имеют ошибки оформления чертежа."
+        End If
+        If k3 > 0 Then
+            sSheetsNames4 = Left$(sSheetsNames4, Len(sSheetsNames4) - 2)
+            strMsg = strMsg & Chr$(10) & "Лист(ы) " & sSheetsNames4 & " имеют ошибки оформления основной надписи."
+        End If
+        If k > 0 Then
+            sSheetsNames3 = Left$(sSheetsNames3, Len(sSheetsNames3) - 2)
+            strMsg = strMsg & Chr$(10) & "Лист(ы) " & sSheetsNames3 & " не позволяют определить формат."
+        End If
+        strMsg = strMsg & Chr$(10) & "Исправить?"
+        lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+        If lRetval = swMbHitYes Then
+            Set swModExt = swDraw.Extension
+            ok = swModExt.LoadDraftingStandard(Source8)
+            If MIni = 1 Then
+                Add ' Доп. оформление
+            End If
+            Impr ' Перегружаем все форматки чертежа
+        End If
+    End If
+End If
+End Sub
+
+Private Sub Impr() ' Перезагрузка форматок чертежа
+    MImpr = 1
+    For j = 0 To UBound(vSheetNames)
+        If Left$(vSheetNames(j), 3) = "DRW" Or Left$(vSheetNames(j), 4) = "Лист" Or Left$(vSheetNames(j), 5) = "Sheet" Or Left$(vSheetNames(j), 2) = "SP" Or Left$(vSheetNames(j), 2) = "VP" Or Left$(vSheetNames(j), 3) = "LRI" Then
+            varTemp = InStr(sSheetsNames1, vSheetNames(j)) ' Проверяем имя
+            varTemp1 = InStr(sSheetsNames3, vSheetNames(j)) ' Проверяем имя
+            varTemp2 = InStr(sSheetsNames4, vSheetNames(j)) ' Проверяем имя
+            If varTemp > 0 Or varTemp1 > 0 Or varTemp2 > 0 Then ' Значение присутствует
+                ok = swDraw.ActivateSheet(vSheetNames(j))
+                Set swSheet = swDraw.GetCurrentSheet
+                CmdReload_Click
+                varTemp = InStr(sSheetsNames2, vSheetNames(j)) ' Проверяем имя
+                If varTemp > 0 Then ' Значение присутствует
+                    AnnDef
+                End If
+            Else
+                varTemp = InStr(sSheetsNames2, vSheetNames(j)) ' Проверяем имя
+                If varTemp > 0 Then ' Значение присутствует
+                    AnnDef
+                End If
+            End If
+        End If
+    Next j
+    Tests
+    MImpr = 0
+End Sub
+
+Private Sub AnnDef() ' Выставляем все по умолчанию
+'Dim vvv As Variant
+' Поиск объектов со шрифтом не по умолчанию
+Set swView = swDraw.GetFirstView
+Do While Not swView Is Nothing
+    Set swAnn = swView.GetFirstAnnotation3
+    Do While Not swAnn Is Nothing
+        If Not swAnn.OwnerType = swAnnotationOwner_DrawingTemplate Then ' Исключаем объекты форматки
+            If swAnn.GetUseDocTextFormat(0) = False Then ' Шрифт не по умолчанию
+                Set swTextFormat = swAnn.GetTextFormat(0)
+                ok = swAnn.SetTextFormat(0, True, swTextFormat) ' Выставляем по умолчанию
+            End If
+            If swAnn.GetType = swSFSymbol Then ' Значек шероховатости
+                Set swAnnSFSymbol = swAnn.GetSpecificAnnotation
+                strTemp = swAnnSFSymbol.GetText(swSFSymbolRoughnessSpacing)
+                If strTemp <> "" Then
+                    varTemp = InStrRev(strTemp, ">")
+                    If varTemp > 0 Then
+                        strTemp = Right$(strTemp, Len(strTemp) - varTemp)
+                    End If
+                Else ' Текст над значком
+                    strTemp = swAnnSFSymbol.GetText(swSFSymbolMinimumRoughness)
+                    ok = swAnnSFSymbol.SetText(swSFSymbolMinimumRoughness, "")
+                End If
+                strTemp = "<FONT size=" & LTrim(CStr(stdFontSize)) & ">" & strTemp
+                ok = swAnnSFSymbol.SetText(swSFSymbolRoughnessSpacing, strTemp)
+            End If
+        End If
+        'Debug.Print "Ann Type=", swAnn.GetType
+        'Debug.Print "Ann Name=", swAnn.GetName
+        'vvv = swAnn.GetPosition
+        'Debug.Print "Ann Pos=", vvv(0), vvv(1)
+        Set swAnn = swAnn.GetNext3
+    Loop
+    Set swView = swView.GetNextView
+Loop
+End Sub
+
+Private Sub Add()
+
+' Оформление
+Const swDetailingBreakLineGap = 11
+Const swDetailingBreakLineExtension = 70
+ok = swDraw.SetUserPreferenceDoubleValue(swDetailingBreakLineGap, 0.006)
+ok = swDraw.SetUserPreferenceDoubleValue(swDetailingBreakLineExtension, 0#)
+
+' Line Font
+Const swLineFontVisibleEdgesThickness = 53
+Const swLineFontHiddenEdgesThickness = 55
+Const swLineFontSketchCurvesThickness = 57
+Const swLineFontConstructionCurvesThickness = 65
+Const swLineFontCrosshatchThickness = 67
+Const swLineFontTangentEdgesThickness = 69
+Const swLineFontCosmeticThreadThickness = 73
+Const swLineFontHideTangentEdgeThickness = 90
+Const swLineFontExplodedLinesThickness = 187
+Const swLineFontBreakLineThickness = 199
+Const swLineFontSpeedPakDrawingsModelEdgesThickness = 400
+Const swLineFontAdjoiningComponent = 461
+Const swLW_THIN = 0
+Const swLW_NORMAL = 1
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontVisibleEdgesThickness, swLW_NORMAL)
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontHiddenEdgesThickness, swLW_THIN)
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontSketchCurvesThickness, swLW_THIN)
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontConstructionCurvesThickness, swLW_THIN)
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontCrosshatchThickness, swLW_THIN)
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontTangentEdgesThickness, swLW_THIN)
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontCosmeticThreadThickness, swLW_THIN)
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontHideTangentEdgeThickness, swLW_THIN)
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontExplodedLinesThickness, swLW_THIN)
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontBreakLineThickness, swLW_THIN)
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontSpeedPakDrawingsModelEdgesThickness, swLW_NORMAL)
+ok = swDraw.SetUserPreferenceIntegerValue(swLineFontAdjoiningComponent, swLW_THIN)
+
+' Толщина линии
+Const swPageSetupPrinterThinLineWeight = 48
+Const swPageSetupPrinterNormalLineWeight = 49
+Const swPageSetupPrinterThickLineWeight = 50
+Const swPageSetupPrinterThick2LineWeight = 51
+Const swPageSetupPrinterThick3LineWeight = 52
+Const swPageSetupPrinterThick4LineWeight = 53
+Const swPageSetupPrinterThick5LineWeight = 54
+Const swPageSetupPrinterThick6LineWeight = 55
+ok = swApp.SetUserPreferenceDoubleValue(swPageSetupPrinterThinLineWeight, 0.0002)
+ok = swApp.SetUserPreferenceDoubleValue(swPageSetupPrinterNormalLineWeight, 0.0006)
+ok = swApp.SetUserPreferenceDoubleValue(swPageSetupPrinterThickLineWeight, 0.0008)
+ok = swApp.SetUserPreferenceDoubleValue(swPageSetupPrinterThick2LineWeight, 0.001)
+ok = swApp.SetUserPreferenceDoubleValue(swPageSetupPrinterThick3LineWeight, 0.0012)
+ok = swApp.SetUserPreferenceDoubleValue(swPageSetupPrinterThick4LineWeight, 0.0014)
+ok = swApp.SetUserPreferenceDoubleValue(swPageSetupPrinterThick5LineWeight, 0.0016)
+ok = swApp.SetUserPreferenceDoubleValue(swPageSetupPrinterThick6LineWeight, 0.0018)
+ok = swDraw.SetUserPreferenceDoubleValue(swPageSetupPrinterThinLineWeight, 0.0002)
+ok = swDraw.SetUserPreferenceDoubleValue(swPageSetupPrinterNormalLineWeight, 0.0006)
+ok = swDraw.SetUserPreferenceDoubleValue(swPageSetupPrinterThickLineWeight, 0.0008)
+ok = swDraw.SetUserPreferenceDoubleValue(swPageSetupPrinterThick2LineWeight, 0.001)
+ok = swDraw.SetUserPreferenceDoubleValue(swPageSetupPrinterThick3LineWeight, 0.0012)
+ok = swDraw.SetUserPreferenceDoubleValue(swPageSetupPrinterThick4LineWeight, 0.0014)
+ok = swDraw.SetUserPreferenceDoubleValue(swPageSetupPrinterThick5LineWeight, 0.0016)
+ok = swDraw.SetUserPreferenceDoubleValue(swPageSetupPrinterThick6LineWeight, 0.0018)
+
+End Sub
+
+Private Sub SaveData() ' Сохранение данных листа
+For i = 0 To 35
+    s(i) = " "
+Next i
+
+Set swSheet = swDraw.GetCurrentSheet
+strSheetFormatName = swSheet.GetSheetFormatName()
+' Лист
+strTemp = "Revision2@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    s(0) = swNote.GetText()
+End If
+' № докум.
+strTemp = "Revision3@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    s(1) = swNote.GetText()
+End If
+' Дата изм.
+strTemp = "Revision4@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    s(2) = swNote.GetText()
+End If
+' Дата
+strTemp = "Date@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    s(3) = swNote.GetText()
+End If
+' Лист
+strTemp = "Sheet1@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    s(4) = swNote.GetText()
+End If
+' Листов
+strTemp = "Sheet2@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    s(5) = swNote.GetText()
+End If
+If Left$(swSheet.GetName, 2) = "SP" Or Left$(swSheet.GetName, 2) = "VP" Then
+    strTemp = "Conf_00@" & strSheetFormatName
+    ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+    If ok = True Then
+        For i = 0 To 9
+            ' Исполнение
+            strTemp = "Conf_0" & i & "@" & strSheetFormatName
+            ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+            If ok = True Then
+                Set swNote = swSelMgr.GetSelectedObject2(1)
+                Set swAnn = swNote.GetAnnotation
+                If swAnn.Visible = swAnnotationHidden Then
+                    s(i + 6) = 0
+                Else
+                    s(i + 6) = 1
+                End If
+            End If
+            ' Код
+            strTemp = "Code0" & i & "@" & strSheetFormatName
+            ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+            If ok = True Then
+                Set swNote = swSelMgr.GetSelectedObject2(1)
+                s(i + 16) = swNote.GetText()
+            End If
+            ' Литера
+            strTemp = "Lit0" & i & "@" & strSheetFormatName
+            ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+            If ok = True Then
+                Set swNote = swSelMgr.GetSelectedObject2(1)
+                s(i + 26) = swNote.GetText()
+            End If
+        Next i
+    End If
+End If
+swDraw.ClearSelection2 True
+End Sub
+
+Private Sub RestoreData() ' Восстановление данных листа
+Set swSheet = swDraw.GetCurrentSheet
+strSheetFormatName = swSheet.GetSheetFormatName()
+' Лист
+strTemp = "Revision2@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    ok = swNote.SetText(s(0))
+End If
+' № докум.
+strTemp = "Revision3@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    ok = swNote.SetText(s(1))
+End If
+' Дата изм.
+strTemp = "Revision4@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    ok = swNote.SetText(s(2))
+End If
+' Дата
+strTemp = "Date@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    ok = swNote.SetText(s(3))
+End If
+
+' Лист
+strTemp = "Sheet1@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    ok = swNote.SetText(s(4))
+End If
+' Листов
+strTemp = "Sheet2@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+If ok = True Then
+    Set swNote = swSelMgr.GetSelectedObject2(1)
+    ok = swNote.SetText(s(5))
+End If
+If Left$(swSheet.GetName, 2) = "SP" Or Left$(swSheet.GetName, 2) = "VP" Then
+strTemp = "Conf_00@" & strSheetFormatName
+ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+    If ok = True Then
+        For i = 0 To 9
+            ' Исполнение
+            strTemp = "Conf_0" & i & "@" & strSheetFormatName
+            ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+            If ok = True Then
+                Set swNote = swSelMgr.GetSelectedObject2(1)
+                Set swAnn = swNote.GetAnnotation
+                If s(i + 6) = 0 Then
+                    swAnn.Visible = swAnnotationHidden
+                Else
+                    swAnn.Visible = swAnnotationVisible
+                End If
+            End If
+            ' Код
+            strTemp = "Code0" & i & "@" & strSheetFormatName
+            ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+            If ok = True Then
+                Set swNote = swSelMgr.GetSelectedObject2(1)
+                ok = swNote.SetText(s(i + 16))
+            End If
+            ' Литера
+            strTemp = "Lit0" & i & "@" & strSheetFormatName
+            ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+            If ok = True Then
+                Set swNote = swSelMgr.GetSelectedObject2(1)
+                ok = swNote.SetText(s(i + 26))
+            End If
+        Next i
+    End If
+End If
+swDraw.ClearSelection2 True
+End Sub
+
+Private Sub FormatSize()
+FormatArr(0, 0) = "A4-P"
+FormatArr(0, 1) = "210"
+FormatArr(0, 2) = "297"
+
+FormatArr(1, 0) = "A3-P"
+FormatArr(1, 1) = "297"
+FormatArr(1, 2) = "420"
+
+FormatArr(2, 0) = "A3-A"
+FormatArr(2, 1) = "420"
+FormatArr(2, 2) = "297"
+
+FormatArr(3, 0) = "A2-P"
+FormatArr(3, 1) = "420"
+FormatArr(3, 2) = "594"
+
+FormatArr(4, 0) = "A2-A"
+FormatArr(4, 1) = "594"
+FormatArr(4, 2) = "420"
+
+FormatArr(5, 0) = "A1-P"
+FormatArr(5, 1) = "594"
+FormatArr(5, 2) = "841"
+
+FormatArr(6, 0) = "A1-A"
+FormatArr(6, 1) = "841"
+FormatArr(6, 2) = "594"
+
+FormatArr(7, 0) = "A0-P"
+FormatArr(7, 1) = "841"
+FormatArr(7, 2) = "1189"
+
+FormatArr(8, 0) = "A0-A"
+FormatArr(8, 1) = "1189"
+FormatArr(8, 2) = "841"
+' -------------
+FormatArr(9, 0) = "A4x3-A"
+FormatArr(9, 1) = "630"
+FormatArr(9, 2) = "297"
+
+FormatArr(10, 0) = "A4x4-A"
+FormatArr(10, 1) = "841"
+FormatArr(10, 2) = "297"
+
+FormatArr(11, 0) = "A4x5-A"
+FormatArr(11, 1) = "1051"
+FormatArr(11, 2) = "297"
+
+FormatArr(12, 0) = "A4x6-A"
+FormatArr(12, 1) = "1261"
+FormatArr(12, 2) = "297"
+
+FormatArr(13, 0) = "A4x7-A"
+FormatArr(13, 1) = "1471"
+FormatArr(13, 2) = "297"
+
+FormatArr(14, 0) = "A4x8-A"
+FormatArr(14, 1) = "1682"
+FormatArr(14, 2) = "297"
+
+FormatArr(15, 0) = "A4x9-A"
+FormatArr(15, 1) = "1892"
+FormatArr(15, 2) = "297"
+' -------------
+FormatArr(16, 0) = "A3x3-A"
+FormatArr(16, 1) = "891"
+FormatArr(16, 2) = "420"
+
+FormatArr(17, 0) = "A3x4-A"
+FormatArr(17, 1) = "1189"
+FormatArr(17, 2) = "420"
+
+FormatArr(18, 0) = "A3x5-A"
+FormatArr(18, 1) = "1486"
+FormatArr(18, 2) = "420"
+
+FormatArr(19, 0) = "A3x6-A"
+FormatArr(19, 1) = "1783"
+FormatArr(19, 2) = "420"
+
+FormatArr(20, 0) = "A3x7-A"
+FormatArr(20, 1) = "2080"
+FormatArr(20, 2) = "420"
+' -------------
+FormatArr(21, 0) = "A2x3-A"
+FormatArr(21, 1) = "1261"
+FormatArr(21, 2) = "594"
+
+FormatArr(22, 0) = "A2x4-A"
+FormatArr(22, 1) = "1682"
+FormatArr(22, 2) = "594"
+
+FormatArr(23, 0) = "A2x5-A"
+FormatArr(23, 1) = "2102"
+FormatArr(23, 2) = "594"
+' -------------
+FormatArr(24, 0) = "A1x3-A"
+FormatArr(24, 1) = "1783"
+FormatArr(24, 2) = "841"
+
+FormatArr(25, 0) = "A1x4-A"
+FormatArr(25, 1) = "2378"
+FormatArr(25, 2) = "841"
+' -------------
+FormatArr(26, 0) = "A0x2-A"
+FormatArr(26, 1) = "1682"
+FormatArr(26, 2) = "1189"
+
+FormatArr(27, 0) = "A0x3-A"
+FormatArr(27, 1) = "2523"
+FormatArr(27, 2) = "1189"
+
+If swSheet.GetName = vSheetNames(0) Then
+    TemplateName = MIniMaster & FormatArr(0, 0) & "-1.slddrt"
+Else
+    TemplateName = MIniMaster & FormatArr(0, 0) & "-2.slddrt"
+End If
+For i = 0 To 27
+    If vSheetProps(5) * 1000 = FormatArr(i, 1) And vSheetProps(6) * 1000 = FormatArr(i, 2) Then
+        If swSheet.GetName = vSheetNames(0) Then
+            TemplateName = MIniMaster & FormatArr(i, 0) & "-1.slddrt"
+        Else
+            TemplateName = MIniMaster & FormatArr(i, 0) & "-2.slddrt"
+        End If
+        Exit For
+    End If
+Next i
+
+End Sub
+
+Private Sub CmdAbout_Click()
+    swApp.SendMsgToUser ("Made by Leon, 2017")
+End Sub
+
+Private Sub MyProperties()
+' Чтение ini файла
+Open Source5 For Input As #1
+    Line Input #1, strTemp
+    prpNumber = strTemp ' Обозначение
+    Line Input #1, strTemp
+    prpDocCode = strTemp ' Код документа
+    Line Input #1, strTemp
+    prpDocDescription = strTemp ' Наименование документа
+    Line Input #1, strTemp
+    prpDescription = strTemp ' Наименование изделия в одну строку
+    Line Input #1, strTemp
+    prpDescriptionMulti = strTemp ' Наименование изделия в несколько строк
+    Line Input #1, strTemp
+    prpCode = strTemp ' Условное наименование (код)
+    Line Input #1, strTemp
+    prpFormat = strTemp ' Формат
+    Line Input #1, strTemp
+    prpRemark = strTemp ' Примечание
+    Line Input #1, strTemp
+    prpLit = strTemp ' Литера
+    Line Input #1, strTemp
+    prpLitTable = strTemp ' Литера для таблицы параметров
+    Line Input #1, strTemp
+    prpFirm = strTemp ' Наименование организации
+    Line Input #1, strTemp
+    prpSection = strTemp ' Раздел
+    Line Input #1, strTemp
+    prpGroup = strTemp ' Группа
+    '
+    Line Input #1, strTemp
+    prpDesigner = strTemp ' Разраб.
+    Line Input #1, strTemp
+    prpTester = strTemp ' Пров.
+    Line Input #1, strTemp
+    prpTechcontrol = strTemp ' Т.контр.
+    Line Input #1, strTemp
+    prpWorkType = strTemp ' Характер работы
+    Line Input #1, strTemp
+    prpPerson = strTemp ' Фамилия для "Характер работы"
+    Line Input #1, strTemp
+    prpNormcontrol = strTemp ' Н.контр
+    Line Input #1, strTemp
+    prpApprove = strTemp ' Утв.
+    '
+    Line Input #1, strTemp
+    prpMass = strTemp ' Масса
+    Line Input #1, strTemp
+    prpMassTable = strTemp ' Масса для таблицы параметров
+    Line Input #1, strTemp
+    prpMaterial = strTemp ' Материал
+    Line Input #1, strTemp
+    prpMaterialTable = strTemp ' Материал для таблицы параметров
+    '
+    Line Input #1, strTemp
+    prpFirstApply = strTemp ' Перв.примен. для чертежей и ВП
+    Line Input #1, strTemp
+    prpInformNumber = strTemp ' Справ.№ для чертежей
+    '
+    Line Input #1, strTemp
+    prpFirstApplySP = strTemp ' Перв.примен. для спецификации
+    Line Input #1, strTemp
+    prpInformNumberSP = strTemp ' Справ.№ для спецификаций
+    Line Input #1, strTemp
+    prpLitSP = strTemp ' Литера для спецификаций
+    '
+    Line Input #1, strTemp
+    prpInformNumberVP = strTemp ' Справ.№ для ВП
+    Line Input #1, strTemp
+    prpDescriptionVP = strTemp ' Наименование для ВП
+    Line Input #1, strTemp
+    prpProductCodeVP = strTemp ' Код продукции
+    Line Input #1, strTemp
+    prpNumberDocVP = strTemp ' Обозначение документа на поставку
+    Line Input #1, strTemp
+    prpVendorVP = strTemp ' Поставщик
+    Line Input #1, strTemp
+    prpRemarkVP = strTemp ' Примечание для ВП
+    '
+    Line Input #1, strTemp
+    prpProject = strTemp ' Проект (дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftNumber = strTemp ' Эскизное Обозначение (дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftDescription = strTemp ' Эскизное Наименование (дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftFirstApply = strTemp ' Эскизное Перв.примен. для чертежей и ВП(дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftFirstApplySP = strTemp ' Эскизное Перв.примен. для спецификации (дополнительное свойство)
+    '
+    Line Input #1, strTemp
+    prpBlank = strTemp ' Заготовка
+    '
+    Line Input #1, strTemp
+    prpBor = strTemp ' Заимствование
+    '
+    Line Input #1, strTemp
+    prpQuantity = strTemp ' Количество в СП
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка версии
+        prpTestVersion = 1
+    Else
+        prpTestVersion = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка формата
+        prpTestFormat = 1
+    Else
+        prpTestFormat = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка имен
+        prpTestName = 1
+    Else
+        prpTestName = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка оформления
+        prpTestStandard = 1
+    Else
+        prpTestStandard = 0
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Имя файла
+        prpFileName = 1
+    Else
+        prpFileName = 0
+    End If
+    Line Input #1, strTemp
+    prpNameSep = strTemp ' Разделитель
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Управление шрифтом
+        prpFontSize = 1
+    Else
+        prpFontSize = 0
+    End If
+    '
+    Line Input #1, strTemp
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Доп. свойство №1
+        prpAddPRP1 = 1
+    Else
+        prpAddPRP1 = 0
+    End If
+    Line Input #1, strTemp
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Доп. свойство №2
+        prpAddPRP2 = 1
+    Else
+        prpAddPRP2 = 0
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Окно макроса в левом верхнем углу
+        prpLeftTopCorner = 1
+    Else
+        prpLeftTopCorner = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Окно макроса поверх всех
+        prpTopAll = 1
+    Else
+        prpTopAll = 0
+    End If
+Close #1
+End Sub
+
+Private Sub MyStandard()
+' Чтение ini файла
+Open Source7 For Input As #1
+    Line Input #1, strTemp ' Шрифт
+    stdFontName = strTemp
+    Line Input #1, strTemp ' Размер шрифта
+    strTemp = Replace(strTemp, ".", ",")
+    stdFontSize = CDbl(strTemp)
+    Line Input #1, strTemp ' Наклонный
+    If strTemp = "1" Then
+        stdFontItalic = 1
+    Else
+        stdFontItalic = 0
+    End If
+    Line Input #1, strTemp ' Жирный
+    If strTemp = "1" Then
+        stdFontBold = 1
+    Else
+        stdFontBold = 0
+    End If
+        Line Input #1, strTemp
+    stdDay = strTemp
+    Line Input #1, strTemp
+    stdMonth = strTemp
+    Line Input #1, strTemp
+    stdYear = strTemp
+    Line Input #1, strTemp
+    stdHour = strTemp
+    Line Input #1, strTemp
+    stdMinute = strTemp
+    Line Input #1, strTemp
+    stdSecond = strTemp
+Close #1
+' Проверяем дату у файла стандарта
+MyDateTime = FileDateTime(Source8)
+If stdDay = Day(MyDateTime) And stdMonth = Month(MyDateTime) And stdYear = Year(MyDateTime) And stdHour = Hour(MyDateTime) And stdMinute = Minute(MyDateTime) And stdSecond = Second(MyDateTime) Then
+Else
+    strTemp = swApp.GetUserPreferenceStringValue(swDefaultTemplateDrawing)
+    Set swDraw1 = swApp.NewDocument(strTemp, 0, 0, 0)
+    Set swModExt = swDraw1.Extension
+    ok = swModExt.LoadDraftingStandard(Source8)
+    Set swTextFormat = swModExt.GetUserPreferenceTextFormat(swDetailingDimensionTextFormat, swDetailingDimension)
+    strTemp = swDraw1.GetTitle
+    swApp.QuitDoc strTemp
+    
+    stdFontName = swTextFormat.TypeFaceName
+    stdFontSize = swTextFormat.CharHeight * 1000
+    If swTextFormat.Italic Then
+        stdFontItalic = 1
+    Else
+        stdFontItalic = 0
+    End If
+    If swTextFormat.Bold Then
+        stdFontBold = 1
+    Else
+        stdFontBold = 0
+    End If
+    
+    ' Запись ini
+    Open Source7 For Output As #1
+        Print #1, stdFontName
+        strTemp = LTrim(CStr(stdFontSize))
+        strTemp = Replace(strTemp, ".", ",")
+        Print #1, strTemp
+        If stdFontItalic = 1 Then
+            Print #1, "1"
+        Else
+            Print #1, "0"
+        End If
+        If stdFontBold = 1 Then
+            Print #1, "1"
+        Else
+            Print #1, "0"
+        End If
+        strTemp = Day(MyDateTime)
+        Print #1, strTemp
+        strTemp = Month(MyDateTime)
+        Print #1, strTemp
+        strTemp = Year(MyDateTime)
+        Print #1, strTemp
+        strTemp = Hour(MyDateTime)
+        Print #1, strTemp
+        strTemp = Minute(MyDateTime)
+        Print #1, strTemp
+        strTemp = Second(MyDateTime)
+        Print #1, strTemp
+    Close #1
+End If
+End Sub
+
+Private Sub Temp()
+For i = 0 To swAnn.GetTextFormatCount - 1
+    Set swTextFormat = swAnn.GetTextFormat(i)
+    swTextFormat.Italic = True
+    swTextFormat.TypeFaceName = "Arial Narrow"
+    If swAnn.GetType = 6 Then ' swNote
+        swTextFormat.CharHeightInPts = 30
+        Set swNote = swAnn.GetSpecificAnnotation
+        Debug.Print swAnn.GetName, swNote.GetText
+        If swNote.IsBomBalloon() = True Then
+            swTextFormat.CharHeightInPts = 5
+        End If
+        If swNote.ReadOnly = True Then
+        Debug.Print "YEyeyee"
+            swTextFormat.CharHeightInPts = 5
+        End If
+    Else
+        swTextFormat.CharHeightInPts = 16
+    End If
+    ok = swAnn.SetTextFormat(i, False, swTextFormat)
+Next i
+End Sub
+
+

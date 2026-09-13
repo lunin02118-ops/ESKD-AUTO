@@ -1,0 +1,356 @@
+Attribute VB_Name = "FrmSpecEditor_Pref"
+Attribute VB_Base = "0{C2BD2A90-A366-4918-BD4E-1BC2318A3954}{63E34E9C-8A17-4131-9B9C-238BFC853420}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = False
+Option Explicit
+Dim strTemp As String
+Dim dTaskID As Double
+Dim ok As Boolean
+
+Private Sub ChkDescription_Click()
+If ChkDescription.Value = True Then
+    ChkNumber.Value = False
+End If
+End Sub
+
+Private Sub ChkNumber_Click()
+If ChkNumber.Value = True Then
+    ChkDescription.Value = False
+End If
+End Sub
+
+Private Sub ChkPosLine_Click()
+If ChkPosLine.Value = True Then
+    ChkPosReserve.Value = False
+End If
+End Sub
+
+Private Sub ChkPosSection_Click()
+If ChkPosSection.Value = True Then
+    ChkPosReserve.Value = False
+End If
+End Sub
+
+Private Sub ChkPosReserve_Click()
+If ChkPosReserve.Value = True Then
+    ChkPosLine.Value = False
+    ChkPosSection.Value = False
+End If
+End Sub
+
+
+Private Sub CmdGroups_Click()
+strTemp = "Notepad " & sSource9
+dTaskID = Shell(strTemp, vbNormalFocus)
+End Sub
+
+Private Sub CmdMaterialGroups_Click()
+strTemp = "Notepad " & sSource10
+dTaskID = Shell(strTemp, vbNormalFocus)
+End Sub
+
+Private Sub CmdPRPName_Click() ' Запускаем MyProperties
+ok = swApp.RunMacro(sSource14, "MyProperties_run", "main")
+UserForm_Activate
+End Sub
+
+Private Sub CmdSections_Click()
+strTemp = "Notepad " & sSource8
+dTaskID = Shell(strTemp, vbNormalFocus)
+End Sub
+
+Private Sub UserForm_Activate()
+HWNDActiveWindow
+FrmSpecEditor.MyProperties
+If prpTestStandard = 1 Then
+    FrmSpecEditor.MyStandard
+    TxtFontName.Value = stdFontName
+    TxtFontSize.Value = LTrim(CStr(stdFontSize))
+    If stdFontItalic = 1 Then
+        ChkFontItalic.Value = True
+    Else
+        ChkFontItalic.Value = False
+    End If
+    If stdFontBold = 1 Then
+        ChkFontBold.Value = True
+    Else
+        ChkFontBold.Value = False
+    End If
+    TxtFontName.Enabled = False
+    TxtFontSize.Enabled = False
+    ChkFontItalic.Enabled = False
+    ChkFontBold.Enabled = False
+Else
+    TxtFontName.Enabled = True
+    TxtFontSize.Enabled = True
+    ChkFontItalic.Enabled = True
+    ChkFontBold.Enabled = True
+End If
+' Чтение ini файла
+Open sSource4 For Input As #1
+    If prpTestStandard = 1 Then
+        Line Input #1, strTemp
+        Line Input #1, strTemp
+        Line Input #1, strTemp
+        Line Input #1, strTemp
+    Else
+        Line Input #1, strTemp ' Шрифт
+        TxtFontName.Value = strTemp
+        Line Input #1, strTemp ' Размер шрифта
+        strTemp = Replace(strTemp, ".", ",")
+        TxtFontSize.Value = strTemp
+        Line Input #1, strTemp ' Наклонный
+        If strTemp = "1" Then
+            ChkFontItalic.Value = True
+        Else
+            ChkFontItalic.Value = False
+        End If
+        Line Input #1, strTemp ' Жирный
+        If strTemp = "1" Then
+            ChkFontBold.Value = True
+        Else
+            ChkFontBold.Value = False
+        End If
+    End If
+    Line Input #1, strTemp
+    TxtFontWidth.Value = strTemp ' Сжатие общее
+    Line Input #1, strTemp
+    TxtRowWidth.Value = strTemp ' Сжатие длинных строк
+    Line Input #1, strTemp
+    TxtRemarkWidth.Value = strTemp ' Сжатие столбца Примечание
+    '
+    Line Input #1, strTemp ' Обозначение
+    If strTemp = "1" Then
+        ChkNumber.Value = True
+    Else
+        ChkNumber.Value = False
+    End If
+    Line Input #1, strTemp ' Наименование
+    If strTemp = "1" Then
+        ChkDescription.Value = True
+    Else
+        ChkDescription.Value = False
+    End If
+    Line Input #1, strTemp
+    TxtSP1.Value = strTemp
+    Line Input #1, strTemp
+    TxtSP2.Value = strTemp
+    Line Input #1, strTemp
+    TxtGSP1.Value = strTemp
+    Line Input #1, strTemp
+    TxtGSP2.Value = strTemp
+    Line Input #1, strTemp
+    TxtVP1.Value = strTemp
+    Line Input #1, strTemp
+    TxtVP2.Value = strTemp
+    '
+    ' Резервирование строк
+    Line Input #1, strTemp ' После каждой строки
+    If strTemp = "1" Then
+        ChkLine.Value = True
+    Else
+        ChkLine.Value = False
+    End If
+    Line Input #1, strTemp
+    TxtLine.Value = strTemp
+    '
+    Line Input #1, strTemp ' В конце раздела
+    If strTemp = "1" Then
+        ChkSection.Value = True
+    Else
+        ChkSection.Value = False
+    End If
+    Line Input #1, strTemp
+    TxtSection.Value = strTemp
+    '
+    ' Резервирование позиций
+    Line Input #1, strTemp ' После каждой строки
+    If strTemp = "1" Then
+        ChkPosLine.Value = True
+    Else
+        ChkPosLine.Value = False
+    End If
+    Line Input #1, strTemp
+    TxtPosLine.Value = strTemp
+    '
+    Line Input #1, strTemp ' В конце раздела
+    If strTemp = "1" Then
+        ChkPosSection.Value = True
+    Else
+        ChkPosSection.Value = False
+    End If
+    Line Input #1, strTemp
+    TxtPosSection.Value = strTemp
+    '
+    Line Input #1, strTemp ' По числу резервированных строк
+    If strTemp = "1" Then
+        ChkPosReserve.Value = True
+    Else
+        ChkPosReserve.Value = False
+    End If
+    '
+    ' Форматирование
+    Line Input #1, strTemp ' Помечать цветом
+    If strTemp = "1" Then
+        ChkForm0.Value = True
+    Else
+        ChkForm0.Value = False
+    End If
+    Line Input #1, strTemp ' Убирать базовую часть обозначения для исполнений
+    If strTemp = "1" Then
+        ChkForm1.Value = True
+    Else
+        ChkForm1.Value = False
+    End If
+    Line Input #1, strTemp ' Группировать стандартные
+    If strTemp = "1" Then
+        ChkForm2.Value = True
+    Else
+        ChkForm2.Value = False
+    End If
+    '
+    Line Input #1, strTemp ' Добавлять ЛРИ
+    If strTemp = "1" Then
+        ChkLRI.Value = True
+    Else
+        ChkLRI.Value = False
+    End If
+    '
+    Line Input #1, strTemp ' Использовать быструю сортировку
+    If strTemp = "1" Then
+        ChkSort.Value = True
+    Else
+        ChkSort.Value = False
+    End If
+    '
+    Line Input #1, strTemp ' Сортировка Прочих как Стандартных
+    If strTemp = "1" Then
+        ChkOther.Value = True
+    Else
+        ChkOther.Value = False
+    End If
+Close #1
+ChkDescription_Click
+ChkNumber_Click
+If prpLeftTopCorner = 1 Then ' Окно макроса в левом верхнем углу
+    FrmSpecEditor_Pref.Left = 10
+    FrmSpecEditor_Pref.Top = 10
+End If
+If prpTopAll = 1 Then ' Окно макроса поверх всех
+    KeepFormOnTop
+End If
+End Sub
+
+Private Sub CmdSave_Click()
+' Запись в ini
+Open sSource4 For Output As #1
+    Print #1, TxtFontName.Value ' Шрифт
+    strTemp = TxtFontSize.Value
+    strTemp = Replace(strTemp, ".", ",")
+    Print #1, strTemp ' Высота
+    If ChkFontItalic.Value = True Then ' Наклонный
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkFontBold.Value = True Then ' Жирный
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    Print #1, TxtFontWidth.Value ' Сжатие общее
+    Print #1, TxtRowWidth.Value ' Сжатие длинных строк
+    Print #1, TxtRemarkWidth.Value ' Сжатие столбца Примечание
+    If ChkNumber.Value = True Then ' Обозначение
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkDescription.Value = True Then ' Наименование
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    Print #1, TxtSP1.Value
+    Print #1, TxtSP2.Value
+    Print #1, TxtGSP1.Value
+    Print #1, TxtGSP2.Value
+    Print #1, TxtVP1.Value
+    Print #1, TxtVP2.Value
+    If ChkLine.Value = True Then ' Строки после каждой строки
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    Print #1, TxtLine.Value
+    If ChkSection.Value = True Then ' В конце раздела
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    Print #1, TxtSection.Value
+    If ChkPosLine.Value = True Then ' Позиции после каждой строки
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    Print #1, TxtPosLine.Value
+    If ChkPosSection.Value = True Then ' В конце раздела
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    Print #1, TxtPosSection.Value
+    If ChkPosReserve.Value = True Then ' По числу резервированных строк
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkForm0.Value = True Then ' Помечать цветом
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkForm1.Value = True Then ' Убирать базовую часть обозначения для исполнений
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkForm2.Value = True Then ' Группировать стандартные
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkLRI.Value = True Then ' Добавлять ЛРИ
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkSort.Value = True Then ' Использовать быструю сортировку
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+    If ChkOther.Value = True Then ' Сортировка Прочих как Стандартных
+        Print #1, "1"
+    Else
+        Print #1, "0"
+    End If
+Close #1
+mRunPref = 0
+Hide
+'SpecEditor_run.main
+'FrmSpecEditor.UserForm_Activate
+'Unload Me
+End Sub
+
+Private Sub CmdExit_Click()
+Hide
+'Unload Me
+End Sub
+
+
