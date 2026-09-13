@@ -94,6 +94,7 @@ namespace ESKD.MaterialSync.Sw
                     SyncMaterials(w, app, (PartDoc)doc, dict, report);
                 if (req.Mass && settings.AutoMass)
                     SyncMass(w, doc, dict, report);
+                SyncLevels(w, dict, isAssembly);
             }
             catch (Exception ex)
             {
@@ -485,6 +486,44 @@ namespace ESKD.MaterialSync.Sw
                 name.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0)
                 return null;
             return name;
+        }
+
+        // ------------------------------------------------------------------ уровни, как у MProp
+        /// <summary>
+        /// Уровни хранения, как их оставляет MProp (Правила записи свойств SWPlus, раздел 8): общую копию «Материал_ФБ» со
+        /// значением шаблона или записью системы MProp удаляет (FrmMProp:2904); «Формат», «Примечание», «Раздел» у документа с
+        /// несколькими конфигурациями живут в конфигурациях, общую копию MProp удаляет (FrmMProp:3021–3055) — надстройка
+        /// переносит значение в конфигурации, где его нет, и удаляет общую копию (Н-22).
+        /// </summary>
+        private static void SyncLevels(PropertyWriter w, PropertyDictionary dict, bool isAssembly)
+        {
+            string material = dict[Role.Material];
+            string generalMaterial = w.Raw("", material);
+            if (generalMaterial != null && (PropertyWriter.IsEmptyOrTemplate(generalMaterial) ||
+                generalMaterial.IndexOf("<STACK", StringComparison.OrdinalIgnoreCase) >= 0 && !isAssembly && AllConfigurationsHave(w, material)))
+                w.Delete("", material);
+
+            string[] configs = w.ConfigurationNames();
+            if (configs.Length <= 1) return;
+            foreach (string name in new[] { dict[Role.Format], dict[Role.Remark], dict[Role.Section] })
+            {
+                string general = w.Raw("", name);
+                if (general == null) continue;
+                foreach (string cfg in configs)
+                {
+                    if (w.Raw(cfg, name) == null) w.Set(cfg, name, general);
+                }
+                w.Delete("", name);
+            }
+        }
+
+        private static bool AllConfigurationsHave(PropertyWriter w, string name)
+        {
+            foreach (string cfg in w.ConfigurationNames())
+            {
+                if (string.IsNullOrWhiteSpace(w.Raw(cfg, name))) return false;
+            }
+            return true;
         }
 
         // ------------------------------------------------------------------ масса

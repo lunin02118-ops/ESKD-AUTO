@@ -100,6 +100,15 @@ def snapshot(doc):
     return {"levels": levels, "author": author, "units": units}
 
 
+def _sw_material_mode(level, name, value, before):
+    """MProp в режиме «материал SW»: у конфигурации без материала в пустую графу 3 он вписывает выражение SW-Material
+    (FrmMProp:2921, 2925). Надстройка конфигурации без материала ничего не пишет (решение Д-33) — это известное поведение MProp,
+    Правила записи свойств SWPlus, раздел 9."""
+    if level == "общие" or before["levels"].get(level, {}).get("Материал_ФБ"):
+        return False
+    return value.replace("<FONT size=1.8> \n<FONT size=3.5>", "").startswith('"SW-Material@@')
+
+
 def differences(before, after):
     """Изменения после MProp: изменённые и удалённые значения, добавления вне перечня первого применения, автор, единицы."""
     out = []
@@ -111,6 +120,8 @@ def differences(before, after):
                 out.append(f"{level} · {name}: удалено «{b[name]}»")
             elif name not in b:
                 check = allowed.get(name)
+                if name in ("Материал_ФБ", "Материал_Таблица") and _sw_material_mode(level, name, a[name], before):
+                    continue
                 if check is None or not check(a[name], before):
                     out.append(f"{level} · {name}: добавлено «{a[name]}»")
             elif a[name] != b[name]:
