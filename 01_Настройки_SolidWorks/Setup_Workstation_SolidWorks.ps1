@@ -503,6 +503,8 @@ if (Test-Path $regProfile) {
         [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $escDouble },
         [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
     )
+    # WP-4.1: каталоги пользователя (резервные копии, автовосстановление, журналы) записаны в профиле как %USERPROFILE%
+    $adaptedText = $adaptedText.Replace('%USERPROFILE%', $env:USERPROFILE.Replace('\', '\\'))
     # B7: профиль собран под "SOLIDWORKS 2025" — при другой целевой версии переписываем корневую ветку версии
     if ($swYear -and ($SwVersion -ne "SOLIDWORKS 2025")) {
         $adaptedText = [System.Text.RegularExpressions.Regex]::Replace($adaptedText, 'SOLIDWORKS 20\d{2}', $SwVersion)

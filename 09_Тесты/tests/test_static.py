@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 import unittest
+from collections import Counter
 from pathlib import Path
 
 from PIL import Image
@@ -212,14 +213,52 @@ class StaticRepository(StaticTestCase):
 
     @known_defect("Д-23")
     def test_T0_reg_profile_has_no_unescaped_backslashes(self):
-        """T0: в .reg нет значений с одиночными «\\» — reg.exe их молча теряет (Д-23)."""
+        """T0: профиль .reg — «\\» экранированы, нет EULA, личных каталогов и недавних файлов, избранные материалы из библиотеки ГОСТ (Д-23)."""
+        from eskd_e2e import build
         reg = ROOT / "01_Настройки_SolidWorks" / "Реестровые_Профили" / "01_SW2025_Корпоративный_Стандарт_ЕСКД.reg"
-        bad = []
-        for i, line in enumerate(reg.read_bytes().decode("utf-16").splitlines(), 1):
-            m = re.match(r'^"[^"]*"="(.*)"$', line)
-            if m and re.search(r'(?<!\\)\\(?![\\"])', m.group(1).replace("\\\\", "")):
-                bad.append(i)
-        self.assertEqual([], bad[:20])
+        text = reg.read_bytes().decode("utf-16")
+        problems, key, sections = [], "", Counter()
+        favorites, favorites_declared, seen = [], None, {}
+        for i, line in enumerate(text.splitlines(), 1):
+            if line.startswith("["):
+                key = line
+                sections[key] += 1
+                continue
+            m = re.match(r'^"((?:[^"\\]|\\.)*)"=(.*)$', line)
+            if not m:
+                continue
+            name, value = m.group(1), m.group(2)
+            # повторный раздел в конце профиля допустим, но не должен молча переопределять значение другим
+            if (key, name) in seen and seen[(key, name)] != value:
+                problems.append(f"{i}: {name} в {key} переопределяет значение другим")
+            seen[(key, name)] = value
+            if value.startswith('"') and re.search(r'\\(?![\\"])', value[1:-1].replace("\\\\", "")):
+                problems.append(f"{i}: одиночная «\\» в {name}")
+            if name.startswith("EULA Accepted"):
+                problems.append(f"{i}: принятие EULA чужой учётной записью")
+            if re.search(r"(?i)[a-z]:\\\\users\\\\", value):
+                problems.append(f"{i}: личный каталог в {name} (нужен %USERPROFILE%)")
+            if name in ("JumpListFileName", "Last user path", "AutoCenterMass") or re.match(r"^document\d+$", name):
+                problems.append(f"{i}: {name}")
+            if key.endswith("SOLIDWORKS 2025\\Material]"):
+                if name.startswith("Favorite Material "):
+                    favorites.append(value.strip('"'))
+                elif name == "__NumOfFavs":
+                    favorites_declared = int(value.split(":")[1], 16)
+        problems += [k for k in sections if "Recent Command Searches" in k]
+        library = paths.MATERIAL_DB.read_bytes().decode("utf-16")
+        known = set(build.material_library())
+        for favorite in favorites:
+            db, material, matid = favorite.split("|")
+            if db != paths.MATERIAL_DB.stem or material not in known or \
+                    not re.search(r'<material name="%s"[^>]*matid="%s"' % (re.escape(material), matid), library):
+                problems.append(f"избранный материал не из библиотеки ГОСТ: {favorite}")
+        if favorites_declared != len(favorites):
+            problems.append(f"__NumOfFavs = {favorites_declared}, записей {len(favorites)}")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        if "%USERPROFILE%" in text and "'%USERPROFILE%'" not in setup:
+            problems.append("Setup не подставляет %USERPROFILE%")
+        self.assertEqual([], problems[:30])
 
     @known_defect("Д-19")
     def test_T0_property_tab_templates_use_dictionary_names(self):
