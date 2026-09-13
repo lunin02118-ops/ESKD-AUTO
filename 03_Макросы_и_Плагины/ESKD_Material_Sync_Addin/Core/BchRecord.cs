@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace ESKD.MaterialSync.Core
 {
@@ -44,6 +45,23 @@ namespace ESKD.MaterialSync.Core
             return s.Contains("лист") || s.Contains("плита") || s.Contains("лента");
         }
 
+        /// <summary>Знак умножения в размерах записи (Р-14: шрифт «GOST 2.304 type A» рисует настоящий «×»).</summary>
+        public const string Times = "\u00D7";
+
+        /// <summary>
+        /// Запись БЧ, которую сделала надстройка: наименование, при материале — строка материала, последняя строка — размер
+        /// заготовки «L = … мм» или «B×L мм» (прежняя буква «х» тоже). Такую запись сохранение пересобирает по модели (WP-2.7);
+        /// запись, изменённую вручную, не трогает.
+        /// </summary>
+        public static bool IsOwnRecord(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return false;
+            string[] lines = value.Replace("\r\n", "\n").Split('\n');
+            if (lines.Length < 2 || lines.Length > 3 || lines[0].Trim().Length == 0) return false;
+            if (lines.Length == 3 && lines[1].Trim().Length == 0) return false;
+            return Regex.IsMatch(lines[lines.Length - 1], "^(L = \\d+ мм|\\d+[х\u00D7]\\d+ мм)$");
+        }
+
         /// <summary>Размер заготовки: для проката «L = …», для листа «B×L», иначе «L = …» по наибольшему габариту.</summary>
         public static string SizeText(string materialText, double[] sortedDimsMm, double lengthFromModelMm)
         {
@@ -52,7 +70,7 @@ namespace ESKD.MaterialSync.Core
             double length = lengthFromModelMm > 0 ? lengthFromModelMm : max;
             if (IsSheet(materialText) && !IsProfile(materialText))
             {
-                return string.Format(CultureInfo.InvariantCulture, "{0}х{1} мм", Number(mid), Number(max));
+                return Number(mid) + Times + Number(max) + " мм";
             }
             return length > 0 ? "L = " + Number(length) + " мм" : "";
         }
@@ -75,8 +93,8 @@ namespace ESKD.MaterialSync.Core
         public static bool IsMassNote(string value)
         {
             return !string.IsNullOrEmpty(value) &&
-                   (System.Text.RegularExpressions.Regex.IsMatch(value.Trim(), @"^\d+([.,]\d+)?\s*кг$") ||
-                    System.Text.RegularExpressions.Regex.IsMatch(value.Trim(), "^\"SW-Mass@@[^\"]*\" (кг|г)$"));
+                   (Regex.IsMatch(value.Trim(), @"^\d+([.,]\d+)?\s*кг$") ||
+                    Regex.IsMatch(value.Trim(), "^\"SW-Mass@@[^\"]*\" (кг|г)$"));
         }
 
         private static string Number(double mm)

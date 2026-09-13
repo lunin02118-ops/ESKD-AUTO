@@ -98,8 +98,27 @@ namespace ESKD.MaterialSync.Sw
 
             // Наименование для спецификации
             string baseTitle = CurrentTitle(w, doc, dict);
+            string titleLevel = RecordLevel(w);
+            w.Set(titleLevel, title, BuildRecord(app, doc, w.ActiveConfigurationName(), baseTitle));
+            string fb = w.Raw("", titleFb);
+            if (PropertyWriter.IsEmptyOrTemplate(fb))
+                w.Set("", titleFb, SwPlusFormat.TitleStamp(SwPlusFormat.WrapTitle(BchRecord.ShortTitle(baseTitle)), dict.SmallFontMarkup));
+
+            RemoveLegacyFlag(w);
+            return Enabled;
+        }
+
+        /// <summary>Уровень записи БЧ в «Наименовании»: общие при одной конфигурации, иначе активная конфигурация.</summary>
+        internal static string RecordLevel(PropertyWriter w)
+        {
+            return w.ConfigurationNames().Length <= 1 ? "" : w.ActiveConfigurationName();
+        }
+
+        /// <summary>Запись БЧ вида V1 (решение владельца, S-2b): наименование ⏎ дробь «сортамент / марка» ⏎ размер заготовки.</summary>
+        internal static string BuildRecord(ISldWorks app, ModelDoc2 doc, string cfg, string baseTitle)
+        {
             string sortament = "", grade = "", materialText = "";
-            MaterialInfo info = Material(app, (PartDoc)doc, w.ActiveConfigurationName(), out materialText);
+            MaterialInfo info = Material(app, (PartDoc)doc, cfg, out materialText);
             if (info != null)
             {
                 sortament = info.Sortament;
@@ -115,15 +134,22 @@ namespace ESKD.MaterialSync.Sw
             double[] dims = BodyDimensions(doc);
             double lengthFromModel = DimensionMm(doc, "RD1@Примечания");
             string size = BchRecord.SizeText(materialText + " " + sortament, dims, lengthFromModel);
-            string record = BchRecord.SpecTitle(baseTitle, sortament, grade, size);
-            string titleLevel = w.ConfigurationNames().Length <= 1 ? "" : w.ActiveConfigurationName();
-            w.Set(titleLevel, title, record);
-            string fb = w.Raw("", titleFb);
-            if (PropertyWriter.IsEmptyOrTemplate(fb))
-                w.Set("", titleFb, SwPlusFormat.TitleStamp(SwPlusFormat.WrapTitle(BchRecord.ShortTitle(baseTitle)), dict.SmallFontMarkup));
+            return BchRecord.SpecTitle(baseTitle, sortament, grade, size);
+        }
 
-            RemoveLegacyFlag(w);
-            return Enabled;
+        /// <summary>
+        /// При сохранении детали БЧ своя запись (BchRecord.IsOwnRecord) пересобирается по материалу и габаритам модели: после
+        /// смены материала или размеров спецификация не отстаёт (WP-2.7). Запись, изменённая вручную, остаётся.
+        /// </summary>
+        internal static void UpdateOnSave(PropertyWriter w, ISldWorks app, ModelDoc2 doc, PropertyDictionary dict)
+        {
+            if (!IsBch(w, dict)) return;
+            string title = dict[Role.Description];
+            string level = RecordLevel(w);
+            string current = w.Raw(level, title);
+            if (!BchRecord.IsOwnRecord(current)) return;
+            string wanted = BuildRecord(app, doc, w.ActiveConfigurationName(), BchRecord.ShortTitle(current));
+            if (MaterialRecord.Normalize(current) != wanted) w.Set(level, title, wanted);
         }
 
         private static int Disable(PropertyWriter w, ModelDoc2 doc, PropertyDictionary dict, Settings settings)

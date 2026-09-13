@@ -75,7 +75,30 @@ class Bch(SwTestCase):
         self.s.close(doc)
         record = (V(self.persisted(path), "Наименование") or "").replace("\r\n", "\n")
         self.assertTrue(record.startswith("Пластина опорная\n<STACK size=1>"), record)
-        self.assertTrue(record.endswith("\n100х200 мм"), record)
+        self.assertTrue(record.endswith("\n100\u00d7200 мм"), record)
+
+    def _set_and_resave(self, path, title):
+        with self.s.eskd_muted():
+            doc = self.s.open(path)
+            build.props(doc, {"Наименование": title}, "")
+            self.s.save(doc)
+            self.s.close(doc)
+        doc = self.s.open(path)
+        self.s.save(doc)
+        self.s.close(doc)
+        return (V(self.persisted(path), "Наименование") or "").replace("\r\n", "\n")
+
+    def test_B07_own_record_follows_model_on_save(self):
+        """B07: своя запись БЧ пересобирается при сохранении по модели (WP-2.7); запись, исправленная вручную, остаётся."""
+        path, doc = self.open_copy(A01)
+        self.assertEqual(1, self._toggle(doc))
+        self.s.save(doc)
+        self.s.close(doc)
+        record = self._set_and_resave(path, "Пластина опорная\n<STACK size=1>Лист 4,0<OVER>Ст3сп</STACK>\n90х190 мм")
+        self.assertTrue(record.endswith("\n100\u00d7200 мм"), f"размер по модели: {record!r}")
+        self.assertIn("ГОСТ 19903-2015", record, "дробь из библиотеки")
+        manual = "Пластина опорная\n<STACK size=1>Лист 4,0<OVER>Ст3сп</STACK>\n100\u00d7200±1 мм"
+        self.assertEqual(manual, self._set_and_resave(path, manual), "ручная запись остаётся")
 
     @known_defect("Д-41")
     def test_B06_bch_takes_material_of_its_own_configuration(self):

@@ -404,13 +404,23 @@ namespace ESKD.Tests
         {
             Assert.AreEqual("L = 300 мм", BchRecord.SizeText("Труба 80х80х4,0 ГОСТ 8639-82", new double[] { 80, 80, 300 }, 0), "труба по габариту");
             Assert.AreEqual("L = 250 мм", BchRecord.SizeText("Труба 80х80х4,0", new double[] { 80, 80, 300 }, 250), "длина из размера модели");
-            Assert.AreEqual("100х200 мм", BchRecord.SizeText("Лист 4,0 ГОСТ 19903-2015", new double[] { 4, 100, 200 }, 0), "лист");
+            Assert.AreEqual("100\u00D7200 мм", BchRecord.SizeText("Лист 4,0 ГОСТ 19903-2015", new double[] { 4, 100, 200 }, 0), "лист — знак «×» (Р-14)");
         }
 
         public static void Test_spec_title_record()
         {
             string record = BchRecord.SpecTitle("Стойка", "Труба 80х80х4,0 ГОСТ 8639-82", "В 10 ГОСТ 13663-86", "L = 300 мм");
             Assert.AreEqual("Стойка\n<STACK size=1>Труба 80х80х4,0 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>\nL = 300 мм", record, "черт. 40");
+        }
+
+        public static void Test_own_bch_record_is_recognized()
+        {
+            Assert.IsTrue(BchRecord.IsOwnRecord("Стойка\n<STACK size=1>Труба<OVER>В 10</STACK>\nL = 300 мм"), "прокат");
+            Assert.IsTrue(BchRecord.IsOwnRecord("Пластина опорная\r\n<STACK size=1>Лист<OVER>Ст3сп</STACK>\r\n100х200 мм"), "лист с прежней буквой «х», CR LF");
+            Assert.IsTrue(BchRecord.IsOwnRecord("Планка\n100\u00D7200 мм"), "без материала");
+            Assert.IsFalse(BchRecord.IsOwnRecord("Стойка\n<STACK size=1>Труба<OVER>В 10</STACK>\nL=24±0,5мм"), "размер с допуском, набранный вручную");
+            Assert.IsFalse(BchRecord.IsOwnRecord("Стойка"), "одна строка");
+            Assert.IsFalse(BchRecord.IsOwnRecord(null), "пусто");
         }
 
         public static void Test_bch_remark_is_mprop_mass_expression()

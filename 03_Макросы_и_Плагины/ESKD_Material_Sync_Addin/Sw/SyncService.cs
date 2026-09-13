@@ -92,6 +92,8 @@ namespace ESKD.MaterialSync.Sw
                     SyncSignatures(w, dict, settings);
                 if (req.Materials && !isAssembly && settings.AutoSyncMaterials)
                     SyncMaterials(w, app, (PartDoc)doc, dict, report);
+                if (!isAssembly)
+                    BchService.UpdateOnSave(w, app, doc, dict);
                 if (req.Mass && settings.AutoMass)
                     SyncMass(w, doc, dict, report);
                 SyncLevels(w, dict, isAssembly);
