@@ -33,7 +33,8 @@ SUITES = {
     "unit": ["tests.test_unit"],
     "contract": ["tests.test_contract"],
     "e2e": ["tests.test_e2e_persistence", "tests.test_e2e_model", "tests.test_e2e_bch",
-            "tests.test_e2e_drawing", "tests.test_e2e_spec", "tests.test_e2e_real", "tests.test_e2e_install", "tests.test_e2e_mprop"],
+            "tests.test_e2e_drawing", "tests.test_e2e_spec", "tests.test_e2e_real", "tests.test_e2e_install", "tests.test_e2e_mprop",
+            "tests.test_e2e_stamp"],
 }
 SUITES["full"] = SUITES["static"] + SUITES["unit"] + SUITES["contract"] + SUITES["e2e"]
 SUITES["smoke"] = SUITES["static"] + SUITES["unit"] + SUITES["contract"]
