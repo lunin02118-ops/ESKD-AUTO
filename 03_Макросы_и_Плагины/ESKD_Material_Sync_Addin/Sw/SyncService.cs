@@ -117,8 +117,10 @@ namespace ESKD.MaterialSync.Sw
             foreach (string cfg in levels)
             {
                 string section = (w.Resolved(cfg, "Раздел") ?? "").Trim().ToLowerInvariant();
+                // «ЭМ-Детали» и «ЭМ-Сборочные единицы» заполняются как обычные; «ЭМ-Стандартные изделия», «ЭМ-Прочие изделия»
+                // и «ЭМ-Материалы» защищены по словам раздела (Н-15).
                 if (section.Contains("стандартн") || section.Contains("прочи") || section.Contains("покупн") ||
-                    section.Contains("материал") || section.StartsWith("эм-")) return true;
+                    section.Contains("материал")) return true;
                 string fastener = (w.Resolved(cfg, "IsFastener") ?? "").Trim().ToLowerInvariant();
                 if (fastener == "1" || fastener == "true" || fastener == "да" || fastener == "yes") return true;
                 foreach (string purchased in new[] { "Наименование_ВП", "Поставщик", "Код_Продукции", "Обозначение_ДНП", "Справочный_номер_ВП" })

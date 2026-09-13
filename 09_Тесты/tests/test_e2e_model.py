@@ -16,6 +16,7 @@ A06 = "ПРТИ.468211.104 Кронштейн направляющий удли�
 A07 = "ПРТИ.468211.105 Рама сварная.sldprt"
 A08 = "ПРТИ.468211.110 СБ Узел опоры.sldasm"
 A13 = "ПРТИ.468211.106 Крышка.sldprt"
+A16 = "ПРТИ.468211.112 Панель монтажная.sldprt"
 SHEET4 = "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
 SHEET6 = "Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
 # Дробь, набранная в MProp в режиме «Сортамент», — не материал детали
@@ -148,6 +149,31 @@ class ModelNames(SwTestCase):
                 self.assertNoPropertyWrites(mark)
                 self.s.close(doc)
                 self.assertEqual(before, self.persisted(path))
+
+    def test_M18_em_sections_filled_like_ordinary_parts(self):
+        """M18: деталь раздела «ЭМ-Детали» (A-16) заполняется как обычная; «ЭМ-Стандартные изделия» и «ЭМ-Прочие изделия»
+        по-прежнему не трогаются (Н-15)."""
+        path, doc = self.open_copy(A16)
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual("ЭМ-Детали", V(disk, "Раздел", "00"))
+        self.assertEqual("ПРТИ.468211.112", V(disk, "Обозначение", "00"))
+        self.assertEqual("Панель монтажная", V(disk, "Наименование"))
+        self.assertIn("STACK", V(disk, "Материал_ФБ", "00") or "", "дробь материала из библиотеки")
+        self.assertIsNotNone(V(disk, "Масса_ФБ", "00"), "масса для графы 5")
+        for section in ("ЭМ-Стандартные изделия", "ЭМ-Прочие изделия"):
+            with self.subTest(section=section):
+                path = self.s.workspace_copy(paths.FIXTURES_A / A16, name=f"ПРТИ.468211.112 Панель {section[3:7].lower()}.sldprt",
+                                             subdir=self._case_name())
+                doc = self.s.open(path)
+                build.props(doc, {"Раздел": section}, str(doc.GetActiveConfiguration.Name))
+                before = oracles.dump_properties(doc)
+                mark = self.mark("M18-" + section)
+                self.s.save(doc)
+                self.assertNoPropertyWrites(mark, f"раздел «{section}» защищён")
+                self.assertEqual(before, oracles.dump_properties(doc))
+                self.s.close(doc)
 
     def test_M08_long_title_two_lines_for_stamp(self):
         """M08: длинное наименование — две строки для штампа, слова не режутся."""
