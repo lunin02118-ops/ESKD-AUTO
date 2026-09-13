@@ -61,7 +61,7 @@ namespace ESKD.MaterialSync
                     cur = p != null ? p.FullName : null;
                 }
             }
-            catch { }
+            catch (Exception ex) { Core.Log.Error("FindRepoRootsByMarker", ex); }
             return roots;
         }
 
@@ -84,7 +84,7 @@ namespace ESKD.MaterialSync
                     cur = p != null ? p.FullName : null;
                 }
             }
-            catch { }
+            catch (Exception ex) { Core.Log.Error("FindCandidatePaths " + relativeSubPath, ex); }
 
             // D-12: fallback от каталога сборки — если жёсткие каталоги не существуют,
             // вычисляем корень репозитория по маркёрам (MProp.ini / папка Макросы_SW_ZTool)
@@ -98,28 +98,8 @@ namespace ESKD.MaterialSync
                     string fb2 = Path.Combine(root, @"03_Макросы_и_Плагины", relativeSubPath);
                     if (File.Exists(fb2)) list.Add(fb2);
                 }
-                catch { }
+                catch (Exception ex) { Core.Log.Error("FindCandidatePaths " + root, ex); }
             }
-
-            // Primary: жёсткие пути этой станции (используются, когда существуют)
-            try
-            {
-                string primaryDir = @"D:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины";
-                if (Directory.Exists(primaryDir))
-                {
-                    string cand = Path.Combine(primaryDir, relativeSubPath);
-                    if (File.Exists(cand)) list.Add(cand);
-                }
-                string devDir = @"D:\_dev\solidworks-eskd-suite\macros\SWPlus_ESKD";
-                if (Directory.Exists(devDir))
-                {
-                    string fn = Path.GetFileName(relativeSubPath);
-                    string parentDir = Path.GetFileName(Path.GetDirectoryName(relativeSubPath));
-                    string cand = Path.Combine(devDir, parentDir, fn);
-                    if (File.Exists(cand)) list.Add(cand);
-                }
-            }
-            catch { }
 
             List<string> res = new List<string>();
             foreach (string s in list)
@@ -155,7 +135,6 @@ namespace ESKD.MaterialSync
         private CheckBox chkAutoSyncMaterials;
         private CheckBox chkAutoMass;
         private NumericUpDown numMassDecimals;
-        private CheckBox chkAutoCenterMass;
         private CheckBox chkAutoSplitName;
         private Button btnSave;
         private Button btnCancel;
@@ -204,8 +183,9 @@ namespace ESKD.MaterialSync
                     this.ShowIcon = false;
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Core.Log.Error("Иконка окна настроек", ex);
                 this.ShowIcon = false;
             }
 
@@ -719,42 +699,11 @@ namespace ESKD.MaterialSync
             pnlDecimals.Controls.Add(numMassDecimals);
             pnlDecimals.Controls.Add(lblDecimalsNote);
 
-            chkAutoCenterMass = new CheckBox()
-            {
-                Text = "Автоматически выравнивать и центрировать наименование, массу, масштаб и материал в штампе чертежа",
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Regular),
-                ForeColor = Color.FromArgb(15, 23, 42),
-                AutoSize = true,
-                Checked = true, // ALWAYS CHECKED BY DEFAULT
-                Margin = new Padding(0, 0, 0, 2)
-            };
-
-            Label lblAutoCenterNote = new Label()
-            {
-                Text = "Выравнивание по ГОСТ 2.104: наименование (гр. 1), масса и масштаб на одной линии (гр. 5, 6), материал (гр. 3)",
-                Font = new Font("Segoe UI", 8.5F),
-                ForeColor = Color.FromArgb(100, 116, 139),
-                AutoSize = true,
-                Margin = new Padding(24, 0, 0, 4)
-            };
-
-            Label lblFormatkaNote = new Label()
-            {
-                Text = "Применяется ко всем шаблонам форматок (A0-A4) и динамически при сохранении",
-                Font = new Font("Segoe UI", 8.5F, FontStyle.Italic),
-                ForeColor = Color.FromArgb(148, 163, 184),
-                AutoSize = true,
-                Margin = new Padding(24, 0, 0, 4)
-            };
-
             tblMass.Controls.Add(lblMassTitle, 0, 0);
             tblMass.Controls.Add(lblMassSub, 0, 1);
             tblMass.Controls.Add(chkAutoMass, 0, 2);
             tblMass.Controls.Add(lblAutoMassNote, 0, 3);
             tblMass.Controls.Add(pnlDecimals, 0, 4);
-            tblMass.Controls.Add(chkAutoCenterMass, 0, 5);
-            tblMass.Controls.Add(lblAutoCenterNote, 0, 6);
-            tblMass.Controls.Add(lblFormatkaNote, 0, 7);
             cardMass.Controls.Add(tblMass);
 
             // -------------------------------------------------------------
@@ -801,7 +750,7 @@ namespace ESKD.MaterialSync
 
             Label lblMatRule2 = new Label()
             {
-                Text = "✔ Для спецификаций и ЛЗК: свойство «Материал» в линейном виде (Лист... / Ст3сп...)",
+                Text = "✔ Для таблицы параметров: «Материал_Таблица» в той же разметке",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(51, 65, 85),
                 AutoSize = true,
@@ -810,7 +759,7 @@ namespace ESKD.MaterialSync
 
             Label lblMatRule3 = new Label()
             {
-                Text = "✔ Сортамент, ГОСТ_Материал, ГОСТ_Сортамент и масса полностью совместимы с SWPlus (MProp, SProp)",
+                Text = "✔ Уровни хранения как у MProp; значения, записанные в MProp вручную или выражением, не переписываются",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(51, 65, 85),
                 AutoSize = true,
@@ -893,7 +842,7 @@ namespace ESKD.MaterialSync
                                 if (!string.IsNullOrEmpty(t)) authors.Add(t);
                             }
                         }
-                        catch { }
+                        catch (Exception ex) { Core.Log.Error("Чтение справочника фамилий " + famFile, ex); }
                     }
                 }
 
@@ -912,7 +861,7 @@ namespace ESKD.MaterialSync
                                 if (!string.IsNullOrEmpty(t)) firms.Add(t);
                             }
                         }
-                        catch { }
+                        catch (Exception ex) { Core.Log.Error("Чтение справочника организаций " + firmFile, ex); }
                     }
                 }
 
@@ -925,7 +874,6 @@ namespace ESKD.MaterialSync
                 int autoSyncMat = 1;
                 int autoMass = 1;
                 int decimals = 2;
-                int autoCenter = 1;
                 int autoSplit = 1;
 
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegPath))
@@ -935,12 +883,11 @@ namespace ESKD.MaterialSync
                         currentAuthor = (key.GetValue("Author") as string) ?? currentAuthor;
                         currentChecker = (key.GetValue("Checker") as string) ?? currentChecker;
                         currentOrg = (key.GetValue("Organization") as string) ?? currentOrg;
-                        serviceEnabled = MaterialSyncEngine.ReadIntSafe(key, "ServiceEnabled", 1);
-                        autoSyncMat = MaterialSyncEngine.ReadIntSafe(key, "AutoSyncMaterials", 1);
-                        autoMass = MaterialSyncEngine.ReadIntSafe(key, "AutoMass", 1);
-                        decimals = MaterialSyncEngine.ReadIntSafe(key, "MassDecimals", 2);
-                        autoCenter = MaterialSyncEngine.ReadIntSafe(key, "AutoCenterMass", 1);
-                        autoSplit = MaterialSyncEngine.ReadIntSafe(key, "AutoSplitName", 1);
+                        serviceEnabled = Core.Settings.Int(key, "ServiceEnabled", 1);
+                        autoSyncMat = Core.Settings.Int(key, "AutoSyncMaterials", 1);
+                        autoMass = Core.Settings.Int(key, "AutoMass", 1);
+                        decimals = Core.Settings.Int(key, "MassDecimals", 2);
+                        autoSplit = Core.Settings.Int(key, "AutoSplitName", 1);
 
                         string authorList = key.GetValue("AuthorList") as string;
                         if (!string.IsNullOrEmpty(authorList))
@@ -988,7 +935,6 @@ namespace ESKD.MaterialSync
                 chkAutoSyncMaterials.Checked = (autoSyncMat == 1);
                 chkAutoMass.Checked = (autoMass == 1);
                 numMassDecimals.Value = Math.Max(0, Math.Min(4, decimals));
-                chkAutoCenterMass.Checked = (autoCenter == 1);
                 chkAutoSplitName.Checked = (autoSplit == 1);
             }
             catch (Exception ex)
@@ -1016,7 +962,6 @@ namespace ESKD.MaterialSync
                         key.SetValue("Organization", org, RegistryValueKind.String);
                         key.SetValue("AutoMass", chkAutoMass.Checked ? 1 : 0, RegistryValueKind.DWord);
                         key.SetValue("MassDecimals", (int)numMassDecimals.Value, RegistryValueKind.DWord);
-                        key.SetValue("AutoCenterMass", chkAutoCenterMass.Checked ? 1 : 0, RegistryValueKind.DWord);
                         key.SetValue("AutoSplitName", chkAutoSplitName.Checked ? 1 : 0, RegistryValueKind.DWord);
 
                         UpdateRegistryList(key, "AuthorList", author);
@@ -1055,103 +1000,61 @@ namespace ESKD.MaterialSync
             key.SetValue(valName, string.Join(";", items), RegistryValueKind.String);
         }
 
-        private void SyncFullListToSwPlus(string[] paths, string primary, string secondary, ComboBox.ObjectCollection existingItems)
+        private static void SyncFullListToSwPlus(string[] paths, string primary, string secondary, ComboBox.ObjectCollection existingItems)
         {
-            List<string> orderedList = new List<string>();
-            if (!string.IsNullOrEmpty(primary)) orderedList.Add(primary);
-            if (!string.IsNullOrEmpty(secondary) && !orderedList.Contains(secondary)) orderedList.Add(secondary);
-
-            if (existingItems != null)
-            {
-                foreach (object item in existingItems)
-                {
-                    string s = item != null ? item.ToString().Trim() : "";
-                    if (!string.IsNullOrEmpty(s) && !orderedList.Contains(s))
-                    {
-                        orderedList.Add(s);
-                    }
-                }
-            }
-
             foreach (string path in paths)
             {
                 try
                 {
-                    if (File.Exists(path))
+                    if (!File.Exists(path)) continue;
+                    List<string> names = new List<string>();
+                    foreach (string line in File.ReadAllLines(path, Encoding.GetEncoding(1251)))
                     {
-                        string[] fileLines = File.ReadAllLines(path, Encoding.GetEncoding(1251));
-                        foreach (string fl in fileLines)
+                        string t = line.Trim();
+                        if (t.Length > 0 && !names.Contains(t)) names.Add(t);
+                    }
+                    bool changed = false;
+                    foreach (string candidate in new[] { primary, secondary })
+                    {
+                        if (!string.IsNullOrEmpty(candidate) && !names.Contains(candidate))
                         {
-                            string t = fl.Trim();
-                            if (!string.IsNullOrEmpty(t) && !orderedList.Contains(t))
-                            {
-                                orderedList.Add(t);
-                            }
+                            names.Add(candidate);
+                            changed = true;
                         }
                     }
-                    string dir = Path.GetDirectoryName(path);
-                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
-                    {
-                        File.WriteAllLines(path, orderedList.ToArray(), Encoding.GetEncoding(1251));
-                    }
+                    if (changed) File.WriteAllLines(path, names.ToArray(), Encoding.GetEncoding(1251));
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Core.Log.Error("MProp_Fam.txt", ex);
+                }
             }
         }
 
-        private void SyncFirmsToSwPlus(string[] paths, string primaryOrg, ComboBox.ObjectCollection existingItems)
+        // Формат MProp: пары строк «организация» / «буквенный код». Новая организация добавляется в конец с пустым кодом.
+        private static void SyncFirmsToSwPlus(string[] paths, string primaryOrg, ComboBox.ObjectCollection existingItems)
         {
-            List<string> orderedFirms = new List<string>();
-            if (!string.IsNullOrEmpty(primaryOrg)) orderedFirms.Add(primaryOrg);
-
-            if (existingItems != null)
-            {
-                foreach (object item in existingItems)
-                {
-                    string s = item != null ? item.ToString().Trim() : "";
-                    if (!string.IsNullOrEmpty(s) && !orderedFirms.Contains(s))
-                    {
-                        orderedFirms.Add(s);
-                    }
-                }
-            }
-
+            if (string.IsNullOrEmpty(primaryOrg)) return;
             foreach (string path in paths)
             {
                 try
                 {
-                    Dictionary<string, string> existingClassifiers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    if (File.Exists(path))
+                    if (!File.Exists(path)) continue;
+                    string[] lines = File.ReadAllLines(path, Encoding.GetEncoding(1251));
+                    for (int i = 0; i < lines.Length; i += 2)
                     {
-                        string[] fileLines = File.ReadAllLines(path, Encoding.GetEncoding(1251));
-                        for (int i = 0; i < fileLines.Length; i += 2)
-                        {
-                            string f = fileLines[i].Trim();
-                            string c = (i + 1 < fileLines.Length) ? fileLines[i + 1].Trim() : "";
-                            if (!string.IsNullOrEmpty(f))
-                            {
-                                if (!existingClassifiers.ContainsKey(f)) existingClassifiers[f] = c;
-                                if (!orderedFirms.Contains(f)) orderedFirms.Add(f);
-                            }
-                        }
+                        if (string.Equals(lines[i].Trim(), primaryOrg, StringComparison.OrdinalIgnoreCase)) return;
                     }
-
-                    List<string> outputLines = new List<string>();
-                    foreach (string f in orderedFirms)
-                    {
-                        outputLines.Add(f);
-                        string c = "";
-                        if (existingClassifiers.ContainsKey(f)) c = existingClassifiers[f];
-                        outputLines.Add(c);
-                    }
-
-                    string dir = Path.GetDirectoryName(path);
-                    if (!string.IsNullOrEmpty(dir) && Directory.Exists(dir))
-                    {
-                        File.WriteAllLines(path, outputLines.ToArray(), Encoding.GetEncoding(1251));
-                    }
+                    List<string> output = new List<string>(lines);
+                    if (output.Count % 2 == 1) output.Add("");
+                    output.Add(primaryOrg);
+                    output.Add("");
+                    File.WriteAllLines(path, output.ToArray(), Encoding.GetEncoding(1251));
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Core.Log.Error("MProp_Firm.txt", ex);
+                }
             }
         }
 
@@ -1186,18 +1089,24 @@ namespace ESKD.MaterialSync
 
                     List<string> lines = new List<string>(File.ReadAllLines(iniPath, Encoding.GetEncoding(1251)));
                     while (lines.Count < 5) lines.Add("0");
+                    if (lines[0] == authorIndex.ToString()) continue;
                     lines[0] = authorIndex.ToString();
                     // Note: Line 6 (index 5) is MIni3 which is the Material Database name (.sldmat), NOT organization!
                     // We preserve line 6 intact so MProp never warns about missing material database.
                     File.WriteAllLines(iniPath, lines.ToArray(), Encoding.GetEncoding(1251));
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Core.Log.Error("MProp.ini", ex);
+                MessageBox.Show("Фамилия не записана в MProp.ini: " + ex.Message, "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
         }
 
         private void BtnSave_Click(object sender, EventArgs e)
         {
             SaveSettings();
+            string syncProblem = null;
             if (_swApp != null && chkServiceEnabled.Checked)
             {
                 try
@@ -1205,15 +1114,22 @@ namespace ESKD.MaterialSync
                     ModelDoc2 doc = (ModelDoc2)_swApp.ActiveDoc;
                     if (doc != null)
                     {
-                        MaterialSyncEngine.SyncModelProperties(doc, _swApp, true, true);
-                        // Zero-Drift: ForceRebuild3 смещает заметки чертежа (до 9 мм)
-                        if (doc.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
-                        {
-                            doc.ForceRebuild3(true);
-                        }
+                        Sw.SyncReport report = Sw.SyncService.SyncExplicit(_swApp, doc);
+                        if (report.Failures > 0) syncProblem = report.ToString();
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Core.Log.Error("BtnSave: синхронизация активного документа", ex);
+                    syncProblem = ex.Message;
+                }
+            }
+            if (syncProblem != null)
+            {
+                MessageBox.Show("Настройки ЕСКД сохранены, но активный документ не синхронизирован: " + syncProblem +
+                    "\n\nПодробности в журнале %TEMP%\\eskd_material_sync.log.", "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                this.Close();
+                return;
             }
             string statusMsg = chkServiceEnabled.Checked
                 ? "Настройки ЕСКД успешно сохранены и синхронизированы с макросами SWPlus!\n\nФоновая служба ЕСКД: ВКЛЮЧЕНА (автоматическое оформление активно)."
@@ -1232,14 +1148,9 @@ namespace ESKD.MaterialSync
                     ModelDoc2 doc = (ModelDoc2)_swApp.ActiveDoc;
                     if (doc != null)
                     {
-                        MaterialSyncEngine.SyncModelProperties(doc, _swApp, true, true);
-                        // Zero-Drift: ForceRebuild3 смещает заметки чертежа (до 9 мм)
-                        if (doc.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
-                        {
-                            doc.ForceRebuild3(true);
-                        }
+                        Sw.SyncReport report = Sw.SyncService.SyncExplicit(_swApp, doc);
                         string docTypeTitle = doc.GetType() == (int)swDocumentTypes_e.swDocDRAWING ? "чертежа (штамп и ссылочная модель)" : "модели";
-                        MessageBox.Show(string.Format("Настройки ЕСКД применены к активному документу!\n\nРеквизиты, масса и свойства {0} успешно обновлены.", docTypeTitle),
+                        MessageBox.Show(string.Format("Настройки ЕСКД применены к активному документу ({0}).\n\n{1}\n\nФамилии и организация записываются только в пустые поля.", docTypeTitle, report),
                             "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         this.Close();
                         return;

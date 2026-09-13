@@ -1,0 +1,195 @@
+# -*- coding: utf-8 -*-
+"""E2E, группа M — модель свойств: имена, уровни хранения, владение значениями (план, §3.2)."""
+import unittest
+
+from eskd_e2e import build, oracles
+from eskd_e2e.testing import SwTestCase, known_defect, tags
+
+V = oracles.value
+A01 = "ПРТИ.468211.101 Пластина опорная.sldprt"
+A02 = "ПРТИ.468211.102 Стойка.sldprt"
+A03 = "ПРТИ.468211.103 Планка.sldprt"
+A04 = "Болт М6-6gх20.58 ГОСТ 7798-70.sldprt"
+A05 = "Электродвигатель АИР71А4.sldprt"
+A06 = "ПРТИ.468211.104 Кронштейн направляющий удлинённый.sldprt"
+A07 = "ПРТИ.468211.105 Рама сварная.sldprt"
+A08 = "ПРТИ.468211.110 СБ Узел опоры.sldasm"
+A13 = "ПРТИ.468211.106 Крышка.sldprt"
+
+ALLOWED_NEW = {"Обозначение", "Наименование", "Наименование_ФБ", "Сборка1_ФБ", "Сборка2_ФБ", "Конструктор",
+               "Проверил", "Контора", "Масса_ФБ", "Материал_ФБ", "Материал_Таблица", "Исполнение"}
+LEGACY = {"Разраб.", "Разработал", "Автор", "п_Разраб", "DrawnBy", "п_Разраб_Дата", "DrawnDate", "Пров.", "п_Пров",
+          "CheckedBy", "п_Пров_Дата", "Организация", "Организация_ФБ", "Компания", "Firm", "Organization", "PartNo",
+          "Сортамент", "ГОСТ_Сортамент", "ГОСТ_Материал", "БЧ"}
+
+
+def names_by_level(dump):
+    out = {"": set(dump["general"])}
+    for cfg, props in dump["configs"].items():
+        out[cfg] = set(props)
+    return out
+
+
+def legacy_values(dump):
+    """Сырые значения алиасов v5 по уровням: {(уровень, имя): значение}."""
+    out = {("", n): p["raw"] for n, p in dump["general"].items() if n in LEGACY}
+    for cfg, props in dump["configs"].items():
+        out.update({(cfg, n): p["raw"] for n, p in props.items() if n in LEGACY})
+    return out
+
+
+class ModelNames(SwTestCase):
+
+    def _save_and_diff(self, name, *extra):
+        for n in extra:
+            self.copy_fixture(n)
+        path = self.copy_fixture(name)
+        before = self.persisted(path)
+        doc = self.s.open(path)
+        self.s.save(doc)
+        self.s.close(doc)
+        after = self.persisted(path)
+        added = {}
+        b, a = names_by_level(before), names_by_level(after)
+        for level, props in a.items():
+            new = props - b.get(level, set())
+            if new:
+                added[level or "общие"] = sorted(new)
+        return before, after, added
+
+    @tags("smoke")
+    @known_defect("Д-07")
+    def test_M01_save_adds_only_dictionary_names(self):
+        """M01: сохранение добавляет только словарные имена; ни одного из 21 лишнего."""
+        for fixture, extra in ((A01, ()), (A02, ()), (A03, ()), (A06, ()), (A07, ()), (A08, (A01, A04))):
+            with self.subTest(fixture=fixture):
+                before, after, added = self._save_and_diff(fixture, *extra)
+                unexpected = {lvl: [n for n in names if n not in ALLOWED_NEW] for lvl, names in added.items()}
+                unexpected = {k: v for k, v in unexpected.items() if v}
+                self.assertEqual({}, unexpected, "надстройка добавила имена вне словаря")
+                # Алиасы, пришедшие из шаблона (Д-18, тест I03), надстройка не заполняет и не меняет.
+                self.assertEqual(legacy_values(before), legacy_values(after), "надстройка изменила алиасы v5")
+
+    @known_defect("Д-08")
+    def test_M02_levels_follow_mprop(self):
+        """M02: уровни хранения как у MProp."""
+        _, after, added = self._save_and_diff(A01)
+        general_new = set(added.get("общие", []))
+        config_new = set(added.get("00", []))
+        self.assertTrue({"Обозначение", "Наименование", "Наименование_ФБ", "Конструктор"} <= set(after["general"]),
+                        "общие: обозначение, наименование, конструктор")
+        self.assertTrue({"Обозначение", "Материал_ФБ", "Масса_ФБ", "Проверил", "Контора"} <= set(after["configs"]["00"]),
+                        "конфигурация: обозначение, материал, масса, проверил, контора")
+        self.assertFalse(general_new & {"Масса_ФБ", "Материал_ФБ", "Проверил", "Контора"},
+                         f"в общих не должны появляться конфигурационные свойства: {sorted(general_new)}")
+        self.assertNotIn("Конструктор", config_new, "конструктор хранится в общих свойствах")
+
+    @tags("smoke")
+    def test_M03_second_save_writes_nothing(self):
+        """M03: повторное сохранение без изменений не пишет свойства (нет «пинг-понга»)."""
+        path, doc = self.open_copy(A01)
+        self.s.save(doc)
+        mark = self.mark("M03-second-save")
+        self.s.save(doc)
+        self.assertNoPropertyWrites(mark, "второе сохранение изменило свойства")
+        self.s.close(doc)
+
+    @known_defect("Д-03")
+    def test_M05_foreign_part_keeps_signatures_and_designation(self):
+        """M05: «чужая» деталь — подписи, организация и ручное обозначение не меняются."""
+        path, doc = self.open_copy(A13)
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual("Петров П.П.", V(disk, "Конструктор"))
+        self.assertEqual("ООО «Вектор»", V(disk, "Контора", "00"))
+        self.assertEqual("Сидоров С.С.", V(disk, "Проверил", "00"))
+        self.assertEqual("ПРТИ.468211.199", V(disk, "Обозначение"))
+        self.assertNotEqual("Тестов Т.Т.", V(disk, "Конструктор", "00"), "подпись из настроек затенила ручную")
+
+    def test_M06_executions_by_configuration(self):
+        """M06: исполнения по конфигурациям (ГОСТ 2.113)."""
+        path, doc = self.open_copy(A03)
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual("ПРТИ.468211.103", V(disk, "Обозначение", "00"))
+        self.assertEqual("ПРТИ.468211.103-01", V(disk, "Обозначение", "01"))
+        self.assertEqual("ПРТИ.468211.103-02", V(disk, "Обозначение", "02"))
+        self.assertEqual("2", V(disk, "Исполнение", "01"))
+
+    @tags("smoke")
+    def test_M07_standard_and_purchased_parts_untouched(self):
+        """M07: стандартное и покупное изделия — надстройка не пишет ни одного свойства."""
+        for fixture in (A04, A05):
+            with self.subTest(fixture=fixture):
+                path = self.copy_fixture(fixture)
+                before = self.persisted(path)
+                doc = self.s.open(path)
+                mark = self.mark("M07-" + fixture)
+                self.s.save(doc)
+                self.assertNoPropertyWrites(mark)
+                self.s.close(doc)
+                self.assertEqual(before, self.persisted(path))
+
+    def test_M08_long_title_two_lines_for_stamp(self):
+        """M08: длинное наименование — две строки для штампа, слова не режутся."""
+        path, doc = self.open_copy(A06)
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual("Кронштейн направляющий удлинённый", V(disk, "Наименование"))
+        self.assertEqual("Кронштейн направляющий\nудлинённый", V(disk, "Наименование_ФБ").replace("\r\n", "\n"))
+
+    def test_M09_weldment_material_in_configurations(self):
+        """M09: сварная деталь — дробь материала в конфигурациях."""
+        path, doc = self.open_copy(A07)
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        for cfg in disk["configs"]:
+            self.assertIn("40х40х2,0", V(disk, "Материал_ФБ", cfg) or "", f"конфигурация {cfg}")
+
+    def test_M10_non_library_material_plain_text(self):
+        """M10: материал вне корпоративной библиотеки — строка без дроби, без ошибок."""
+        path, doc = self.open_copy(A01)
+        doc.SetMaterialPropertyName2("00", "SOLIDWORKS Materials", "Простая углеродистая сталь")
+        self.s.save(doc)
+        self.s.close(doc)
+        self.assertEqual("Простая углеродистая сталь", V(self.persisted(path), "Материал_ФБ", "00"))
+        self.assertEqual([], self.addin_errors())
+
+    @known_defect("Д-09")
+    def test_M11_assembly_code_and_second_line_in_configuration(self):
+        """M11: сборка — код СБ и «Сборочный чертёж» в конфигурации, обозначение без кода."""
+        self.copy_fixtures(A01, A04)
+        path, doc = self.open_copy(A08)
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual("ПРТИ.468211.110", V(disk, "Обозначение"))
+        self.assertEqual(" СБ", V(disk, "Сборка1_ФБ", "00"))
+        self.assertEqual("Сборочный чертёж", V(disk, "Сборка2_ФБ", "00"))
+        self.assertIn("<FONT size=3.5>", V(disk, "Масса_ФБ", "00") or "")
+
+    @known_defect("Д-10")
+    def test_M01_live_mass_and_material_expressions_kept(self):
+        """M01: живые выражения MProp для массы и материала не заменяются статичным текстом (§3.2)."""
+        path = self.copy_fixture(A01)
+        live_mass = '<FONT size=1> \n<FONT size=3.5>"SW-Mass@@00@ПРТИ.468211.101 Пластина опорная.sldprt"'
+        live_material = '"SW-Material@@00@ПРТИ.468211.101 Пластина опорная.sldprt"'
+        with self.s.eskd_muted():
+            doc = self.s.open(path)
+            build.props(doc, {"Масса_ФБ": live_mass, "Материал_ФБ": live_material}, "00")
+            self.s.save(doc)
+            self.s.close(doc)
+        doc = self.s.open(path)
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual(live_mass, (V(disk, "Масса_ФБ", "00") or "").replace("\r\n", "\n"), "масса")
+        self.assertEqual(live_material, V(disk, "Материал_ФБ", "00"), "материал")
+
+
+if __name__ == "__main__":
+    unittest.main()

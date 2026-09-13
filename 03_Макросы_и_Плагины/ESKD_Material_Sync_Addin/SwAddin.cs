@@ -1,588 +1,220 @@
 using System;
 using System.IO;
 using System.Reflection;
-using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
-using Microsoft.Win32;
+using ESKD.MaterialSync.Core;
+using ESKD.MaterialSync.Sw;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
 
 namespace ESKD.MaterialSync
 {
+    /// <summary>
+    /// Надстройка ЕСКД v6: оболочка COM. События — Sw.EventHub, синхронизация — Sw.SyncService,
+    /// кнопка «Деталь БЧ» — Sw.BchService. CLSID и ProgId не меняются: регистрация рабочих мест остаётся прежней.
+    /// </summary>
     [Guid("B64E6875-B101-4D5C-B245-FF8D50772E25")]
     [ComVisible(true)]
     [ClassInterface(ClassInterfaceType.AutoDispatch)]
     [ProgId("ESKD.MaterialSync.SwAddin_v5")]
     public class SwAddin : ISwAddin
     {
+        public const string Version = "6.0.0";
+        private const int CommandGroupId = 9997;
+        private const string TabTitle = "ЕСКД";
+        private static readonly int[] CommandUserIds = { 9900, 9901, 9902, 9903 };
+
+        private ISldWorks _app;
+        private ICommandManager _commands;
+        private int _cookie;
+        private EventHub _hub;
+
         static SwAddin()
         {
-            try
-            {
-                AppDomain.CurrentDomain.AssemblyResolve += CurrentDomain_AssemblyResolve;
-            }
-            catch { }
+            AppDomain.CurrentDomain.AssemblyResolve += ResolveNextToAddin;
         }
 
-        private static Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
+        private static Assembly ResolveNextToAddin(object sender, ResolveEventArgs args)
         {
             try
             {
-                string loc = typeof(SwAddin).Assembly.Location;
-                if (!string.IsNullOrEmpty(loc))
-                {
-                    string dir = Path.GetDirectoryName(loc);
-                    string simpleName = new AssemblyName(args.Name).Name;
-                    string candidate = Path.Combine(dir, simpleName + ".dll");
-                    if (File.Exists(candidate))
-                    {
-                        return Assembly.LoadFrom(candidate);
-                    }
-                }
+                string dir = Path.GetDirectoryName(typeof(SwAddin).Assembly.Location);
+                string candidate = Path.Combine(dir ?? "", new AssemblyName(args.Name).Name + ".dll");
+                return File.Exists(candidate) ? Assembly.LoadFrom(candidate) : null;
             }
-            catch { }
-            return null;
-        }
-
-        private const int SwCmdEditMaterial = 175; // swCommands_EditMaterial
-        private const int CommandGroupId = 9997;
-
-        private ISldWorks iSwApp;
-        private ICommandManager iCmdMgr;
-        private int iSwCookie;
-        private bool _isSyncing = false;
-
-        /// <summary>
-        /// D-3: подписки FileSaveNotify/FileSaveAsNotify2/DestroyNotify одного документа.
-        /// Делегаты хранятся явно, чтобы их можно было снять оператором -=
-        /// при DestroyNotify документа и в DisconnectFromSW.
-        /// </summary>
-        private class DocEventHooks
-        {
-            public string Key;
-            public ModelDoc2 Doc;
-            public int DocType;
-            public DPartDocEvents_FileSaveNotifyEventHandler PartFileSave;
-            public DPartDocEvents_FileSaveAsNotify2EventHandler PartFileSaveAs;
-            public DPartDocEvents_DestroyNotifyEventHandler PartDestroy;
-            public DAssemblyDocEvents_FileSaveNotifyEventHandler AsmFileSave;
-            public DAssemblyDocEvents_FileSaveAsNotify2EventHandler AsmFileSaveAs;
-            public DAssemblyDocEvents_DestroyNotifyEventHandler AsmDestroy;
-            public DDrawingDocEvents_FileSaveNotifyEventHandler DrwFileSave;
-            public DDrawingDocEvents_FileSaveAsNotify2EventHandler DrwFileSaveAs;
-            public DDrawingDocEvents_DestroyNotifyEventHandler DrwDestroy;
-        }
-
-        // D-3: ключ хука — стабильный (полный путь документа, при его отсутствии — заголовок),
-        // а не нестабильный doc.GetHashCode()
-        private readonly Dictionary<string, DocEventHooks> _docHooks =
-            new Dictionary<string, DocEventHooks>(StringComparer.OrdinalIgnoreCase);
-
-        public static void Log(string msg)
-        {
-            try
+            catch (Exception ex)
             {
-                string logFile = Path.Combine(Path.GetTempPath(), "eskd_material_sync.log");
-
-                // D-15: ротация лога — при превышении 5 МБ файл перезаписывается (обрезается) с пометкой
-                try
-                {
-                    FileInfo fi = new FileInfo(logFile);
-                    if (fi.Exists && fi.Length > 5 * 1024 * 1024)
-                    {
-                        File.WriteAllText(logFile, string.Format(
-                            "[{0:yyyy-MM-dd HH:mm:ss.fff}] LOG ROTATED: eskd_material_sync.log превысил 5 МБ и был усечён\r\n",
-                            DateTime.Now));
-                    }
-                }
-                catch { }
-
-                File.AppendAllText(logFile, string.Format("[{0:yyyy-MM-dd HH:mm:ss.fff}] {1}\r\n", DateTime.Now, msg));
+                Core.Log.Error("AssemblyResolve " + args.Name, ex);
+                return null;
             }
-            catch { }
+        }
+
+        // Совместимость: прежние макросы и тесты вызывали SwAddin.Log.
+        public static void Log(string message)
+        {
+            Core.Log.Info(message);
         }
 
         public bool ConnectToSW(object ThisSW, int cookie)
         {
-            Log("=== ConnectToSW called. Cookie: " + cookie + " ===");
+            Core.Log.Info("=== ConnectToSW v" + Version + ", cookie " + cookie + " ===");
             try
             {
-                iSwApp = (ISldWorks)ThisSW;
-                iSwCookie = cookie;
-
-                try
-                {
-                    bool cbOk = iSwApp.SetAddinCallbackInfo2(0L, this, cookie);
-                    Log("SetAddinCallbackInfo2 result: " + cbOk);
-                }
-                catch { }
-
-                // 1. Build UI: CommandManager and Menus
-                try
-                {
-                    AddCommandManager();
-                    AddMenuItems();
-                    Log("UI (CommandManager & Menus) created successfully.");
-                }
-                catch (Exception exUI)
-                {
-                    Log("UI creation exception: " + exUI.Message);
-                }
-
-                // 2. Hook application-level document lifecycle events
-                try
-                {
-                    AttachAppEvents();
-                    Log("AttachAppEvents completed.");
-                }
-                catch (Exception exEv)
-                {
-                    Log("AttachAppEvents exception: " + exEv.Message);
-                }
-
-                // 3. Hook current active document if already open
-                try
-                {
-                    ModelDoc2 currentDoc = (ModelDoc2)iSwApp.ActiveDoc;
-                    if (currentDoc != null)
-                    {
-                        AttachDocEvents(currentDoc);
-                        Log("AttachDocEvents for active doc: " + currentDoc.GetTitle());
-                    }
-                }
-                catch { }
-
-                Log("=== ConnectToSW finished successfully. ===");
+                _app = (ISldWorks)ThisSW;
+                _cookie = cookie;
+                _app.SetAddinCallbackInfo2(0, this, cookie);
+                CreateCommands();
+                _hub = new EventHub(_app);
+                _hub.Attach();
+                return true;
             }
-            catch (Exception exGlobal)
+            catch (Exception ex)
             {
-                Log("CRITICAL GLOBAL EXCEPTION in ConnectToSW: " + exGlobal.ToString());
-                // D-16: после глобального сбоя инициализации аддин обязан сообщить SolidWorks о неудаче
+                Core.Log.Error("ConnectToSW", ex);
                 return false;
             }
-
-            return true;
         }
 
         public bool DisconnectFromSW()
         {
-            Log("=== DisconnectFromSW called. ===");
+            Core.Log.Info("=== DisconnectFromSW ===");
             try
             {
-                RemoveCommandManager();
-                DetachAppEvents();
-                DetachAllDocEvents();
-                iSwApp = null;
-                Log("DisconnectFromSW finished successfully.");
+                if (_hub != null) _hub.Detach();
+                RemoveCommands();
             }
             catch (Exception ex)
             {
-                Log("DisconnectFromSW exception: " + ex.Message);
+                Core.Log.Error("DisconnectFromSW", ex);
             }
+            _hub = null;
+            _commands = null;
+            _app = null;
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
             return true;
         }
 
-        public bool ActivateTab(int docType)
+        // ------------------------------------------------------------------ вкладка и меню
+        private void CreateCommands()
         {
+            _commands = _app.GetCommandManager(_cookie);
+            if (_commands == null)
+            {
+                Core.Log.Error("GetCommandManager вернул null");
+                return;
+            }
+            object registryIds;
+            bool haveRegistry = _commands.GetGroupDataFromRegistry(CommandGroupId, out registryIds);
+            bool ignorePrevious = !haveRegistry || !SameIds(registryIds as int[], CommandUserIds);
+
+            int error = 0;
+            ICommandGroup group = _commands.CreateCommandGroup2(CommandGroupId, TabTitle,
+                "Инструменты ЕСКД: реквизиты, материал, масса, безчертёжные детали", "", -1, ignorePrevious, ref error);
+            if (group == null)
+            {
+                Core.Log.Error("CreateCommandGroup2: код " + error);
+                return;
+            }
+            string iconDir = Path.Combine(Path.GetDirectoryName(typeof(SwAddin).Assembly.Location) ?? "", "Icons");
+            SetIcon(iconDir, "icons_large.bmp", delegate(string p) { group.LargeIconList = p; });
+            SetIcon(iconDir, "icons_small.bmp", delegate(string p) { group.SmallIconList = p; });
+            SetIcon(iconDir, "main_24.bmp", delegate(string p) { group.LargeMainIcon = p; });
+            SetIcon(iconDir, "main_16.bmp", delegate(string p) { group.SmallMainIcon = p; });
+
+            // Пустой первый элемент занимает внутренний идентификатор, который SolidWorks сопоставляет с Routing.
+            group.AddCommandItem2("", -1, "", "", 0, "", "", CommandUserIds[0], 0);
+            int buttons = (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem);
+            int settings = group.AddCommandItem2("Настройки ЕСКД", -1, "Фамилии, организация, масса, флаги синхронизации",
+                "Настройки ЕСКД", 0, "ShowSettings", "EnableCommand", CommandUserIds[1], buttons);
+            int sync = group.AddCommandItem2("Синхронизировать", -1, "Обновить реквизиты, материал и массу активного документа",
+                "Синхронизировать", 1, "SyncCurrentDoc", "EnableCommand", CommandUserIds[2], buttons);
+            int bch = group.AddCommandItem2("Деталь БЧ", -1, "Установить или снять признак безчертёжной детали (ГОСТ 2.109)",
+                "Деталь БЧ", 2, "ToggleDrawingless", "EnablePartCommand", CommandUserIds[3], buttons);
+            group.HasToolbar = true;
+            group.HasMenu = true;
+            group.Activate();
             try
             {
-                Log("ActivateTab called for docType=" + docType);
-                if (iCmdMgr == null)
-                {
-                    Log("ActivateTab: iCmdMgr is null");
-                    return false;
-                }
-                CommandTab tab = iCmdMgr.GetCommandTab(docType, "ЕСКД");
-                if (tab == null)
-                {
-                    try
-                    {
-                        object tabsObj = iCmdMgr.CommandTabs(docType);
-                        if (tabsObj != null)
-                        {
-                            foreach (object o in (object[])tabsObj)
-                            {
-                                CommandTab t = (CommandTab)o;
-                                if (t != null && !string.IsNullOrEmpty(t.Name) && t.Name.StartsWith("ЕСКД"))
-                                {
-                                    tab = t;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    catch { }
-                }
-
-                if (tab != null)
-                {
-                    tab.Visible = true;
-                    tab.Active = true;
-                    Log("ActivateTab: tab found and activated. Name=" + tab.Name + ", Visible=" + tab.Visible + ", Active=" + tab.Active);
-                    return true;
-                }
-                else
-                {
-                    Log("ActivateTab: tab is null for docType=" + docType);
-                }
+                if (group.ToolbarId > 0) _app.SetToolbarVisibility(group.ToolbarId, false);
             }
             catch (Exception ex)
             {
-                Log("ActivateTab exception: " + ex.Message);
+                Core.Log.Error("SetToolbarVisibility", ex);
             }
-            return false;
+
+            int[] ids = { group.get_CommandID(settings), group.get_CommandID(sync), group.get_CommandID(bch) };
+            foreach (int docType in new[] { (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, (int)swDocumentTypes_e.swDocDRAWING })
+            {
+                try
+                {
+                    CommandTab tab = _commands.GetCommandTab(docType, TabTitle);
+                    if (tab != null && ignorePrevious)
+                    {
+                        _commands.RemoveCommandTab(tab);
+                        tab = null;
+                    }
+                    if (tab == null)
+                    {
+                        tab = _commands.AddCommandTab(docType, TabTitle);
+                        CommandTabBox box = tab.AddCommandTabBox();
+                        bool part = docType == (int)swDocumentTypes_e.swDocPART;
+                        int below = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
+                        box.AddCommands(part ? ids : new[] { ids[0], ids[1] }, part ? new[] { below, below, below } : new[] { below, below });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Core.Log.Error("Вкладка ЕСКД для типа " + docType, ex);
+                }
+            }
         }
 
-        #region CommandManager & Menu Integration
-
-        public void AddCommandManager()
+        private void RemoveCommands()
         {
+            if (_commands == null) return;
             try
             {
-                Log("AddCommandManager: Start");
-                iCmdMgr = iSwApp.GetCommandManager(iSwCookie);
-                if (iCmdMgr == null)
-                {
-                    Log("AddCommandManager: iCmdMgr is null!");
-                    return;
-                }
-
-                int cmdGroupErr = 0;
-                bool ignorePreviousVersion = false;
-                object registryIDsObj;
-                bool getRegResult = iCmdMgr.GetGroupDataFromRegistry(CommandGroupId, out registryIDsObj);
-                int[] expectedIDs = new int[] { 9900, 9901, 9902 };
-                if (!getRegResult || registryIDsObj == null)
-                {
-                    ignorePreviousVersion = true;
-                }
-                else
-                {
-                    int[] regIDs = (int[])registryIDsObj;
-                    if (regIDs.Length != expectedIDs.Length)
-                    {
-                        ignorePreviousVersion = true;
-                    }
-                    else
-                    {
-                        for (int i = 0; i < expectedIDs.Length; i++)
-                        {
-                            if (regIDs[i] != expectedIDs[i])
-                            {
-                                ignorePreviousVersion = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                Log("AddCommandManager: Calling CreateCommandGroup2 with ID " + CommandGroupId + ", ignorePrevious=" + ignorePreviousVersion);
-                ICommandGroup cmdGroup = iCmdMgr.CreateCommandGroup2(
-                    CommandGroupId,
-                    "ЕСКД",
-                    "Инструменты ЕСКД: Настройки реквизитов, синхронизация материалов и массы",
-                    "",
-                    -1,
-                    ignorePreviousVersion,
-                    ref cmdGroupErr);
-
-                if (cmdGroup != null)
-                {
-                    Log("AddCommandManager: cmdGroup created successfully");
-                    string asmDir = Path.GetDirectoryName(typeof(SwAddin).Assembly.Location) ?? "";
-                    string iconDir = Path.Combine(asmDir, "Icons");
-                    string iconSmall = Path.Combine(iconDir, "icons_small.bmp");
-                    string iconLarge = Path.Combine(iconDir, "icons_large.bmp");
-                    string mainSmall = Path.Combine(iconDir, "main_16.bmp");
-                    string mainLarge = Path.Combine(iconDir, "main_24.bmp");
-
-                    if (File.Exists(iconLarge)) cmdGroup.LargeIconList = iconLarge;
-                    if (File.Exists(iconSmall)) cmdGroup.SmallIconList = iconSmall;
-                    if (File.Exists(mainLarge)) cmdGroup.LargeMainIcon = mainLarge;
-                    if (File.Exists(mainSmall)) cmdGroup.SmallMainIcon = mainSmall;
-
-                    // Dummy command at index 0 to consume command ID 41655 (which SW internal resources map to Routing)
-                    cmdGroup.AddCommandItem2(
-                        "",
-                        -1,
-                        "",
-                        "",
-                        0,
-                        "",
-                        "",
-                        9900,
-                        0);
-
-                    int cmdIndexSettings = cmdGroup.AddCommandItem2(
-                        "Настройки ЕСКД",
-                        -1,
-                        "Открыть настройки реквизитов ЕСКД (фамилии, контора, масса)",
-                        "Настройки ЕСКД",
-                        0,
-                        "ShowSettings",
-                        "EnableCommand",
-                        9901,
-                        (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem));
-
-                    int cmdIndexSync = cmdGroup.AddCommandItem2(
-                        "Синхронизировать",
-                        -1,
-                        "Синхронизировать материал, массу и штамп в активном документе",
-                        "Синхронизировать",
-                        1,
-                        "SyncCurrentDoc",
-                        "EnableCommand",
-                        9902,
-                        (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem));
-
-                    int cmdIndexBch = cmdGroup.AddCommandItem2(
-                        "Деталь БЧ",
-                        -1,
-                        "Пометить/снять признак безчертёжной детали (БЧ) — ГОСТ 2.109: индекс БЧ попадает в спецификацию",
-                        "Деталь БЧ",
-                        2,
-                        "ToggleDrawingless",
-                        "EnablePartCommand",
-                        9903,
-                        (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem));
-
-                    cmdGroup.HasToolbar = true; // Must be true so buttons exist for CommandTabBox
-                    cmdGroup.HasMenu = true;
-                    try
-                    {
-                        cmdGroup.ShowInDocumentType = 0; // Prevent SW from automatically showing toolbar in documents!
-                    }
-                    catch { }
-
-                    Log("AddCommandManager: Activating cmdGroup");
-                    cmdGroup.Activate();
-
-                    try
-                    {
-                        int tbId = cmdGroup.ToolbarId;
-                        Log("AddCommandManager: ToolbarId=" + tbId);
-                        if (tbId > 0)
-                        {
-                            iSwApp.SetToolbarVisibility(tbId, false);
-                            iSwApp.HideToolbar2(iSwCookie, tbId);
-                        }
-                    }
-                    catch { }
-
-                    int cmdIDSettings = cmdGroup.get_CommandID(cmdIndexSettings);
-                    int cmdIDSync = cmdGroup.get_CommandID(cmdIndexSync);
-                    int cmdIDBch = cmdGroup.get_CommandID(cmdIndexBch);
-                    Log("AddCommandManager: cmdIDSettings=" + cmdIDSettings + ", cmdIDSync=" + cmdIDSync + ", cmdIDBch=" + cmdIDBch);
-
-                    int[] docTypes = new int[] {
-                        (int)swDocumentTypes_e.swDocPART,
-                        (int)swDocumentTypes_e.swDocASSEMBLY,
-                        (int)swDocumentTypes_e.swDocDRAWING
-                    };
-
-                    Log("AddCommandManager: Setting up CommandTabs");
-                    foreach (int dt in docTypes)
-                    {
-                        try
-                        {
-                            CommandTab tab = null;
-                            try
-                            {
-                                object tabsObj = iCmdMgr.CommandTabs(dt);
-                                if (tabsObj != null)
-                                {
-                                    foreach (object o in (object[])tabsObj)
-                                    {
-                                        CommandTab t = (CommandTab)o;
-                                        if (t != null && !string.IsNullOrEmpty(t.Name) && t.Name.StartsWith("ЕСКД"))
-                                        {
-                                            if (tab == null)
-                                            {
-                                                tab = t;
-                                                try { tab.Name = "ЕСКД"; } catch { }
-                                                Log("AddCommandManager: Reusing existing CommandTab for dt=" + dt + " (" + t.Name + ")");
-                                            }
-                                            else
-                                            {
-                                                Log("AddCommandManager: Removing duplicate CommandTab for dt=" + dt + " (" + t.Name + ")");
-                                                try { iCmdMgr.RemoveCommandTab(t); } catch { }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            catch { }
-
-                            if (tab == null)
-                            {
-                                tab = iCmdMgr.AddCommandTab(dt, "ЕСКД");
-                                Log("AddCommandManager: Created new CommandTab for dt=" + dt);
-                            }
-
-                            if (tab != null)
-                            {
-                                tab.Visible = true;
-                                CommandTabBox box = null;
-                                object boxesObj = null;
-                                try { boxesObj = tab.CommandTabBoxes(); } catch { }
-
-                                if (boxesObj != null && ((object[])boxesObj).Length > 0)
-                                {
-                                    box = (CommandTabBox)((object[])boxesObj)[0];
-                                }
-                                else
-                                {
-                                    box = tab.AddCommandTabBox();
-                                }
-
-                                if (box != null)
-                                {
-                                    try
-                                    {
-                                        object curCmds;
-                                        object curTextStyles;
-                                        int cmdCount = box.GetCommands(out curCmds, out curTextStyles);
-                                        if (cmdCount > 0 && curCmds != null)
-                                        {
-                                            box.RemoveCommands(curCmds);
-                                        }
-                                    }
-                                    catch { }
-
-                                    // Кнопка «Деталь БЧ» имеет смысл только в контексте детали
-                                    int[] cmdIDs = (dt == (int)swDocumentTypes_e.swDocPART)
-                                        ? new int[] { cmdIDSettings, cmdIDSync, cmdIDBch }
-                                        : new int[] { cmdIDSettings, cmdIDSync };
-                                    int ttBelow = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
-                                    int[] textTypes = (dt == (int)swDocumentTypes_e.swDocPART)
-                                        ? new int[] { ttBelow, ttBelow, ttBelow }
-                                        : new int[] { ttBelow, ttBelow };
-                                    bool addOk = box.AddCommands(cmdIDs, textTypes);
-                                    Log("AddCommandManager: box.AddCommands result for dt=" + dt + ": " + addOk);
-                                }
-                            }
-                        }
-                        catch (Exception exTab)
-                        {
-                            Log("CommandTab setup error for dt=" + dt + ": " + exTab.Message);
-                        }
-                    }
-                    Log("AddCommandManager: Completed successfully");
-                }
-                else
-                {
-                    Log("AddCommandManager: cmdGroup is null! Error code=" + cmdGroupErr);
-                }
+                _commands.RemoveCommandGroup2(CommandGroupId, true);
             }
             catch (Exception ex)
             {
-                Log("AddCommandManager exception: " + ex.ToString());
+                Core.Log.Error("RemoveCommandGroup2", ex);
             }
         }
 
-        public void RemoveCommandManager()
+        private static bool SameIds(int[] a, int[] b)
         {
-            try
-            {
-                if (iCmdMgr != null)
-                {
-                    try { iCmdMgr.RemoveCommandGroup2(CommandGroupId, true); } catch { }
-                }
-            }
-            catch { }
+            if (a == null || b == null || a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++) if (a[i] != b[i]) return false;
+            return true;
         }
 
-        public void HideGroupToolbar()
+        private static void SetIcon(string dir, string name, Action<string> apply)
         {
-            try
-            {
-                if (iCmdMgr != null && iSwApp != null)
-                {
-                    foreach (int gid in new int[] { CommandGroupId, 9995, 9996 })
-                    {
-                        try
-                        {
-                            ICommandGroup cg = iCmdMgr.GetCommandGroup(gid);
-                            if (cg != null)
-                            {
-                                int tbId = cg.ToolbarId;
-                                if (tbId > 0)
-                                {
-                                    iSwApp.SetToolbarVisibility(tbId, false);
-                                    if (iSwCookie > 0) iSwApp.HideToolbar2(iSwCookie, tbId);
-                                }
-                            }
-                        }
-                        catch { }
-                    }
-                }
-            }
-            catch { }
+            string path = Path.Combine(dir, name);
+            if (File.Exists(path)) apply(path);
         }
 
-        public void AddMenuItems()
+        // ------------------------------------------------------------------ команды (вызываются SolidWorks и через COM)
+        public int EnableCommand()
+        {
+            return 1;
+        }
+
+        public int EnablePartCommand()
         {
             try
             {
-                int[] docTypes = new int[] {
-                    (int)swDocumentTypes_e.swDocNONE,
-                    (int)swDocumentTypes_e.swDocPART,
-                    (int)swDocumentTypes_e.swDocASSEMBLY,
-                    (int)swDocumentTypes_e.swDocDRAWING
-                };
-
-                foreach (int dt in docTypes)
-                {
-                    try
-                    {
-                        iSwApp.AddMenuItem3(
-                            dt,
-                            iSwCookie,
-                            "Настройки ЕСКД...@Tools",
-                            -1,
-                            "ShowSettings",
-                            "EnableCommand",
-                            "Настройка реквизитов основной надписи и параметров ЕСКД",
-                            "");
-                        iSwApp.AddMenuItem3(
-                            dt,
-                            iSwCookie,
-                            "Настройки ЕСКД...@Инструменты",
-                            -1,
-                            "ShowSettings",
-                            "EnableCommand",
-                            "Настройка реквизитов основной надписи и параметров ЕСКД",
-                            "");
-
-                        if (dt != (int)swDocumentTypes_e.swDocNONE)
-                        {
-                            iSwApp.AddMenuItem3(
-                                dt,
-                                iSwCookie,
-                                "Синхронизировать ЕСКД@Tools",
-                                -1,
-                                "SyncCurrentDoc",
-                                "EnableCommand",
-                                "Синхронизировать свойства материала, массы и реквизитов активного документа",
-                                "");
-                            iSwApp.AddMenuItem3(
-                                dt,
-                                iSwCookie,
-                                "Синхронизировать ЕСКД@Инструменты",
-                                -1,
-                                "SyncCurrentDoc",
-                                "EnableCommand",
-                                "Синхронизировать свойства материала, массы и реквизитов активного документа",
-                                "");
-                        }
-                    }
-                    catch { }
-                }
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                return doc != null && doc.GetType() == (int)swDocumentTypes_e.swDocPART ? 1 : 0;
             }
-            catch (Exception ex)
+            catch (COMException)
             {
-                Log("AddMenuItems exception: " + ex.Message);
+                // SolidWorks опрашивает состояние кнопки постоянно; занятый COM — просто «недоступна».
+                return 0;
             }
         }
 
@@ -590,442 +222,139 @@ namespace ESKD.MaterialSync
         {
             try
             {
-                using (SettingsForm form = new SettingsForm(iSwApp))
+                using (SettingsForm form = new SettingsForm(_app))
                 {
-                    IntPtr swHwnd = IntPtr.Zero;
+                    IntPtr hwnd = IntPtr.Zero;
                     try
                     {
-                        Frame frame = (Frame)iSwApp.Frame();
-                        if (frame != null) swHwnd = new IntPtr(frame.GetHWnd());
+                        Frame frame = _app.Frame() as Frame;
+                        if (frame != null) hwnd = new IntPtr(frame.GetHWnd());
                     }
-                    catch { }
-
-                    if (swHwnd != IntPtr.Zero)
+                    catch (Exception ex)
                     {
-                        form.ShowDialog(new WindowWrapper(swHwnd));
+                        Core.Log.Error("Frame", ex);
                     }
-                    else
-                    {
-                        form.ShowDialog();
-                    }
+                    if (hwnd != IntPtr.Zero) form.ShowDialog(new WindowWrapper(hwnd));
+                    else form.ShowDialog();
                 }
             }
             catch (Exception ex)
             {
-                Log("ShowSettings error: " + ex.ToString());
+                Core.Log.Error("ShowSettings", ex);
                 MessageBox.Show("Ошибка открытия настроек ЕСКД: " + ex.Message, "ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
-        // =====================================================================================
-        // Безчертёжные детали (БЧ), ГОСТ 2.109: тоггл признака на активной детали.
-        // Метод public — доступен и через COM (GetAddInObject) для автотестов.
-        // =====================================================================================
-        public void ToggleDrawingless()
+        public void SyncCurrentDoc()
         {
+            int changes = SyncActiveDocumentSilent();
             try
             {
-                int result = ToggleDrawinglessSilent();
-                if (result == 0)
-                {
-                    MessageBox.Show("Признак БЧ применяется только к деталям (активный документ — не деталь).",
-                        "ЕСКД: Деталь БЧ", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
-                MessageBox.Show(
-                    result == 1
-                        ? "Деталь оформлена как БЕЗЧЕРТЁЖНАЯ (БЧ) по ГОСТ 2.109-73 п. 3.3:\n\n• Графа «Формат»: БЧ\n• Графа «Наименование»: сортамент заготовки и определяющие размеры (L / BxL)\n• Графа «Примечание»: расчётная масса заготовки\n\nДанные сформированы и будут выведены в спецификацию изделия."
-                        : "Признак БЧ снят: стандартный формат чертежа (А3), исходное наименование и свойства восстановлены.",
-                    "ЕСКД: Деталь БЧ", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                if (changes > 0) StatusText("ЕСКД: обновлено свойств — " + changes);
+                else if (changes == 0) StatusText("ЕСКД: реквизиты актуальны");
             }
             catch (Exception ex)
             {
-                Log("ToggleDrawingless exception: " + ex.Message);
+                Core.Log.Error("SetStatusBarText", ex);
             }
         }
 
-        // Тихий вариант без UI — для автоматизации (COM GetAddInObject) и макросов.
-        // Возвращает 0 — не деталь/нет документа; 1 — БЧ установлен; 2 — БЧ снят.
+        /// <summary>Синхронизация активного документа без интерфейса: число изменённых свойств или -1.</summary>
+        public int SyncActiveDocumentSilent()
+        {
+            try
+            {
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                if (doc == null) return -1;
+                SyncReport report = SyncService.SyncExplicit(_app, doc);
+                return report.Skipped ? -1 : report.Changes;
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("SyncActiveDocumentSilent", ex);
+                return -1;
+            }
+        }
+
+        public void ToggleDrawingless()
+        {
+            int result = ToggleDrawinglessSilent();
+            if (result == BchService.NotPart)
+            {
+                MessageBox.Show("Признак БЧ применяется только к деталям.", "ЕСКД: Деталь БЧ", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            try
+            {
+                StatusText(result == BchService.Enabled
+                    ? "ЕСКД: деталь оформлена как безчертёжная (Формат = БЧ, масса в «Примечании»)"
+                    : "ЕСКД: признак безчертёжной детали снят, прежние «Формат» и «Примечание» восстановлены");
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("SetStatusBarText", ex);
+            }
+        }
+
+        /// <summary>0 — не деталь; 1 — признак БЧ установлен; 2 — снят.</summary>
         public int ToggleDrawinglessSilent()
         {
             try
             {
-                ModelDoc2 doc = (ModelDoc2)iSwApp.ActiveDoc;
-                if (doc == null) return 0;
-                int result = MaterialSyncEngine.MarkDrawinglessPart(doc);
-                if (result != 0)
-                {
-                    Log("ToggleDrawingless: " + (result == 1 ? "установлен" : "снят") + " для " + doc.GetTitle());
-                }
-                return result;
+                return BchService.Toggle(_app, _app.ActiveDoc as ModelDoc2);
             }
             catch (Exception ex)
             {
-                Log("ToggleDrawinglessSilent exception: " + ex.Message);
-                return 0;
+                Core.Log.Error("ToggleDrawinglessSilent", ex);
+                return BchService.NotPart;
             }
         }
 
-        public int EnablePartCommand()
+        /// <summary>Отчёт «что будет записано» для активного документа — без записи.</summary>
+        public string DiagnoseActiveDocument()
         {
             try
             {
-                ModelDoc2 doc = (ModelDoc2)iSwApp.ActiveDoc;
-                if (doc == null) return 0;
-                return doc.GetType() == (int)swDocumentTypes_e.swDocPART ? 1 : 0;
-            }
-            catch { return 0; }
-        }
-
-        public void SyncCurrentDoc()
-        {
-            try
-            {
-                ModelDoc2 doc = (ModelDoc2)iSwApp.ActiveDoc;
-                if (doc != null)
-                {
-                    MaterialSyncEngine.SyncModelProperties(doc, iSwApp, true);
-                    // Zero-Drift: ForceRebuild3 смещает заметки чертежа (до 9 мм) — для
-                    // чертежей принудительный ребилд не выполняется.
-                    if (doc.GetType() != (int)swDocumentTypes_e.swDocDRAWING)
-                    {
-                        doc.ForceRebuild3(true);
-                    }
-                    Log("SyncCurrentDoc successfully completed for: " + doc.GetTitle());
-                }
-                else
-                {
-                    Log("SyncCurrentDoc called with no active doc.");
-                }
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                if (doc == null) return "нет активного документа";
+                if (doc.GetType() == (int)swDocumentTypes_e.swDocDRAWING) doc = SyncService.ReferencedModel((DrawingDoc)doc);
+                SyncReport report = SyncService.SyncModel(_app, doc, new SyncRequest { Reason = "диагностика", DryRun = true });
+                return report + (report.Operations.Count > 0 ? "\n" + string.Join("\n", report.Operations.ToArray()) : "") +
+                       (report.Warnings.Count > 0 ? "\nПредупреждения:\n" + string.Join("\n", report.Warnings.ToArray()) : "");
             }
             catch (Exception ex)
             {
-                Log("SyncCurrentDoc error: " + ex.ToString());
+                Core.Log.Error("DiagnoseActiveDocument", ex);
+                return "ошибка: " + ex.Message;
             }
         }
 
-        public int EnableCommand()
+        private void StatusText(string text)
         {
-            return 1;
+            Frame frame = _app != null ? _app.Frame() as Frame : null;
+            if (frame != null) frame.SetStatusBarText(text);
         }
 
-        #endregion
+        public string GetVersion()
+        {
+            return Version;
+        }
 
-        #region Application & Document Lifecycle Events
-
-        private void AttachAppEvents()
+        public bool ActivateTab(int docType)
         {
             try
             {
-                SldWorks app = (SldWorks)iSwApp;
-                app.FileOpenPostNotify += OnFileOpenPost;
-                app.FileNewNotify2 += OnFileNew2;
-                app.ActiveDocChangeNotify += OnActiveDocChange;
-                app.CommandCloseNotify += OnCommandClose;
+                CommandTab tab = _commands != null ? _commands.GetCommandTab(docType, TabTitle) : null;
+                if (tab == null) return false;
+                tab.Visible = true;
+                tab.Active = true;
+                return true;
             }
             catch (Exception ex)
             {
-                Log("AttachAppEvents exception: " + ex.Message);
+                Core.Log.Error("ActivateTab", ex);
+                return false;
             }
         }
-
-        private void DetachAppEvents()
-        {
-            try
-            {
-                SldWorks app = (SldWorks)iSwApp;
-                if (app != null)
-                {
-                    app.FileOpenPostNotify -= OnFileOpenPost;
-                    app.FileNewNotify2 -= OnFileNew2;
-                    app.ActiveDocChangeNotify -= OnActiveDocChange;
-                    app.CommandCloseNotify -= OnCommandClose;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log("DetachAppEvents exception: " + ex.Message);
-            }
-        }
-
-        private int OnFileOpenPost(string fileName)
-        {
-            try
-            {
-                HideGroupToolbar();
-                ModelDoc2 doc = (ModelDoc2)iSwApp.ActiveDoc;
-                if (doc != null)
-                {
-                    AttachDocEvents(doc);
-                    Log("Attached doc events on FileOpenPost: " + doc.GetTitle());
-                    RunSyncSafe(doc, fileName, false);
-                }
-            }
-            catch { }
-            return 0;
-        }
-
-        private int OnFileNew2(object newDoc, int docType, string templateName)
-        {
-            try
-            {
-                HideGroupToolbar();
-                if (newDoc != null && newDoc is ModelDoc2)
-                {
-                    ModelDoc2 doc = (ModelDoc2)newDoc;
-                    AttachDocEvents(doc);
-                    Log("Attached doc events on FileNew2: " + doc.GetTitle());
-                    RunSyncSafe(doc);
-                }
-            }
-            catch { }
-            return 0;
-        }
-
-        private int OnActiveDocChange()
-        {
-            try
-            {
-                HideGroupToolbar();
-                ModelDoc2 doc = (ModelDoc2)iSwApp.ActiveDoc;
-                if (doc != null)
-                {
-                    AttachDocEvents(doc);
-                    // D-1: при смене активного документа — ТОЛЬКО лёгкая синхронизация самого чертежа.
-                    // Без перестроения и без записи в ссылочную 3D-модель (SyncMode.OnActivate).
-                    RunSyncSafe(doc, null, false, SyncMode.OnActivate);
-                }
-            }
-            catch { }
-            return 0;
-        }
-
-        private int OnCommandClose(int command, int reason)
-        {
-            try
-            {
-                if (command == SwCmdEditMaterial)
-                {
-                    ModelDoc2 doc = (ModelDoc2)iSwApp.ActiveDoc;
-                    if (doc != null && doc.GetType() == (int)swDocumentTypes_e.swDocPART)
-                    {
-                        Log("swCommands_EditMaterial closed. Triggering sync for " + doc.GetTitle());
-                        RunSyncSafe(doc);
-                    }
-                }
-            }
-            catch { }
-            return 0;
-        }
-
-        /// <summary>
-        /// D-3: стабильный ключ хука документа — полный путь, при его отсутствии — заголовок.
-        /// </summary>
-        private static string GetDocHookKey(ModelDoc2 doc)
-        {
-            if (doc == null) return "";
-            try
-            {
-                string path = doc.GetPathName();
-                if (!string.IsNullOrEmpty(path)) return path;
-            }
-            catch { }
-            try
-            {
-                string title = doc.GetTitle();
-                if (!string.IsNullOrEmpty(title)) return title;
-            }
-            catch { }
-            return "";
-        }
-
-        private void AttachDocEvents(ModelDoc2 doc)
-        {
-            if (doc == null) return;
-            try
-            {
-                string key = GetDocHookKey(doc);
-                if (string.IsNullOrEmpty(key)) return;
-
-                // Уже подписаны под этим ключом?
-                if (_docHooks.ContainsKey(key)) return;
-
-                // D-3: если этот же COM-объект документа уже подписан под устаревшим ключом
-                // (например, после SaveAs/переименования) — перепривязываем запись к новому ключу,
-                // не создавая дублирующих подписок.
-                string staleKey = null;
-                foreach (KeyValuePair<string, DocEventHooks> kv in _docHooks)
-                {
-                    if (kv.Value != null && object.ReferenceEquals(kv.Value.Doc, doc))
-                    {
-                        staleKey = kv.Key;
-                        break;
-                    }
-                }
-                if (staleKey != null)
-                {
-                    DocEventHooks staleHooks = _docHooks[staleKey];
-                    staleHooks.Key = key;
-                    _docHooks.Remove(staleKey);
-                    _docHooks[key] = staleHooks;
-                    return;
-                }
-
-                int docType = doc.GetType();
-                DocEventHooks hooks = new DocEventHooks();
-                hooks.Key = key;
-                hooks.Doc = doc;
-                hooks.DocType = docType;
-                ModelDoc2 docRef = doc;
-
-                if (docType == (int)swDocumentTypes_e.swDocPART)
-                {
-                    PartDoc part = (PartDoc)doc;
-                    // Полный путь (включая запись в ссылочную модель чертежа и ForceRebuild3)
-                    // зарезервирован для уведомлений сохранения — SyncMode.OnSave по умолчанию.
-                    hooks.PartFileSave = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
-                    hooks.PartFileSaveAs = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
-                    hooks.PartDestroy = delegate { DetachDocEvents(hooks); return 0; };
-                    part.FileSaveNotify += hooks.PartFileSave;
-                    part.FileSaveAsNotify2 += hooks.PartFileSaveAs;
-                    part.DestroyNotify += hooks.PartDestroy;
-                }
-                else if (docType == (int)swDocumentTypes_e.swDocASSEMBLY)
-                {
-                    AssemblyDoc asm = (AssemblyDoc)doc;
-                    hooks.AsmFileSave = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
-                    hooks.AsmFileSaveAs = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
-                    hooks.AsmDestroy = delegate { DetachDocEvents(hooks); return 0; };
-                    asm.FileSaveNotify += hooks.AsmFileSave;
-                    asm.FileSaveAsNotify2 += hooks.AsmFileSaveAs;
-                    asm.DestroyNotify += hooks.AsmDestroy;
-                }
-                else if (docType == (int)swDocumentTypes_e.swDocDRAWING)
-                {
-                    DrawingDoc drw = (DrawingDoc)doc;
-                    hooks.DrwFileSave = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
-                    hooks.DrwFileSaveAs = delegate(string fn) { RunSyncSafe(docRef, fn, true); return 0; };
-                    hooks.DrwDestroy = delegate { DetachDocEvents(hooks); return 0; };
-                    drw.FileSaveNotify += hooks.DrwFileSave;
-                    drw.FileSaveAsNotify2 += hooks.DrwFileSaveAs;
-                    drw.DestroyNotify += hooks.DrwDestroy;
-                    // drw.RegenNotify intentionally removed: regen should not mutate document properties or trigger rebuilds
-                }
-
-                _docHooks[key] = hooks;
-            }
-            catch (Exception ex)
-            {
-                Log("AttachDocEvents exception: " + ex.Message);
-            }
-        }
-
-        /// <summary>
-        /// D-3: снятие подписок конкретного документа (вызывается из DestroyNotify)
-        /// с явным -= по сохранённым делегатам.
-        /// </summary>
-        private void DetachDocEvents(DocEventHooks hooks)
-        {
-            if (hooks == null) return;
-            try
-            {
-                ModelDoc2 doc = hooks.Doc;
-                if (doc != null)
-                {
-                    if (hooks.DocType == (int)swDocumentTypes_e.swDocPART)
-                    {
-                        try
-                        {
-                            PartDoc part = (PartDoc)doc;
-                            if (hooks.PartFileSave != null) part.FileSaveNotify -= hooks.PartFileSave;
-                            if (hooks.PartFileSaveAs != null) part.FileSaveAsNotify2 -= hooks.PartFileSaveAs;
-                            if (hooks.PartDestroy != null) part.DestroyNotify -= hooks.PartDestroy;
-                        }
-                        catch { }
-                    }
-                    else if (hooks.DocType == (int)swDocumentTypes_e.swDocASSEMBLY)
-                    {
-                        try
-                        {
-                            AssemblyDoc asm = (AssemblyDoc)doc;
-                            if (hooks.AsmFileSave != null) asm.FileSaveNotify -= hooks.AsmFileSave;
-                            if (hooks.AsmFileSaveAs != null) asm.FileSaveAsNotify2 -= hooks.AsmFileSaveAs;
-                            if (hooks.AsmDestroy != null) asm.DestroyNotify -= hooks.AsmDestroy;
-                        }
-                        catch { }
-                    }
-                    else if (hooks.DocType == (int)swDocumentTypes_e.swDocDRAWING)
-                    {
-                        try
-                        {
-                            DrawingDoc drw = (DrawingDoc)doc;
-                            if (hooks.DrwFileSave != null) drw.FileSaveNotify -= hooks.DrwFileSave;
-                            if (hooks.DrwFileSaveAs != null) drw.FileSaveAsNotify2 -= hooks.DrwFileSaveAs;
-                            if (hooks.DrwDestroy != null) drw.DestroyNotify -= hooks.DrwDestroy;
-                        }
-                        catch { }
-                    }
-                }
-            }
-            catch { }
-
-            hooks.Doc = null;
-            hooks.PartFileSave = null;
-            hooks.PartFileSaveAs = null;
-            hooks.PartDestroy = null;
-            hooks.AsmFileSave = null;
-            hooks.AsmFileSaveAs = null;
-            hooks.AsmDestroy = null;
-            hooks.DrwFileSave = null;
-            hooks.DrwFileSaveAs = null;
-            hooks.DrwDestroy = null;
-
-            try
-            {
-                if (!string.IsNullOrEmpty(hooks.Key) && _docHooks.ContainsKey(hooks.Key))
-                {
-                    _docHooks.Remove(hooks.Key);
-                }
-            }
-            catch { }
-        }
-
-        /// <summary>
-        /// D-3: полное снятие всех документных подписок (вызывается из DisconnectFromSW).
-        /// </summary>
-        private void DetachAllDocEvents()
-        {
-            try
-            {
-                List<DocEventHooks> allHooks = new List<DocEventHooks>(_docHooks.Values);
-                foreach (DocEventHooks h in allHooks)
-                {
-                    DetachDocEvents(h);
-                }
-            }
-            catch { }
-            try { _docHooks.Clear(); } catch { }
-        }
-
-        private void RunSyncSafe(ModelDoc2 doc, string targetFileName = null, bool triggerRebuild = true, SyncMode mode = SyncMode.OnSave)
-        {
-            if (_isSyncing || doc == null) return;
-            if (!MaterialSyncEngine.IsServiceEnabled()) return;
-            _isSyncing = true;
-            try
-            {
-                MaterialSyncEngine.SyncModelProperties(doc, iSwApp, false, triggerRebuild, targetFileName, mode);
-            }
-            catch (Exception ex)
-            {
-                Log("RunSyncSafe error: " + ex.Message);
-            }
-            finally
-            {
-                _isSyncing = false;
-            }
-        }
-
-        #endregion
     }
 }

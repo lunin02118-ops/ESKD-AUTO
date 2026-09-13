@@ -152,6 +152,7 @@ namespace ESKD.TestProbe
                 case "seq": result = _core.Seq().ToString(); break;
                 case "attached": result = _core.AttachedCount().ToString(); break;
                 case "detach": result = _core.DetachByTitle(arg).ToString(); break;
+                case "doc_events": _core.DocEvents = arg == "1"; result = Json.Str(_core.DocEvents ? "1" : "0"); break;
                 case "stop": keepRunning = false; break;
                 default: result = Json.Str("unknown op: " + op); break;
             }

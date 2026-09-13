@@ -165,6 +165,35 @@ class SwTestCase(unittest.TestCase):
         self.assertEqual([], [(w["event"], w.get("name"), w.get("cfg")) for w in writes],
                          msg or "документ изменён без действия пользователя")
 
+    def wait_idle(self, seconds=2.5):
+        """Даёт SolidWorks простоять: надстройка выполняет отложенные задачи в OnIdleNotify."""
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            try:
+                self.s.sw.RevisionNumber()
+            except Exception:
+                break
+            time.sleep(0.25)
+
+    def saves(self, mark=None):
+        return [(e["saveType"], Path(e["fileName"]).name) for e in self.s.journal.saves(mark or self._mark)]
+
+    def addin_errors(self):
+        return [ln for ln in self.addin_log.new_lines() if "] ERROR " in ln]
+
+    def open_copy(self, name, *extra):
+        for n in extra:
+            self.copy_fixture(n)
+        path = self.copy_fixture(name)
+        return path, self.s.open(path)
+
+    def memory_equals_disk(self, doc, path):
+        """Состояние в памяти после открытия совпадает с файлом на диске (надстройка ничего не записала)."""
+        memory = oracles.dump_properties(doc)
+        self.s.close(doc)
+        disk = oracles.read_persisted(self.s, path)
+        return memory, disk
+
 
 def manifest():
     return json.loads(paths.FIXTURE_MANIFEST.read_text(encoding="utf-8"))

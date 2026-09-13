@@ -39,7 +39,10 @@ namespace ESKD.MaterialSync
             {
                 swApp = (ISldWorks)Marshal.GetActiveObject("SldWorks.Application");
             }
-            catch { }
+            catch (COMException)
+            {
+                // MK_E_UNAVAILABLE: SolidWorks не запущен — сообщение пользователю ниже.
+            }
 
             if (swApp == null)
             {
@@ -59,7 +62,10 @@ namespace ESKD.MaterialSync
                 {
                     doc = (ModelDoc2)swApp.ActiveDoc;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Core.Log.Error("ESKD_Sync: ActiveDoc", ex);
+                }
 
                 if (doc == null)
                 {
@@ -74,8 +80,8 @@ namespace ESKD.MaterialSync
 
                 try
                 {
-                    MaterialSyncEngine.SyncModelProperties(doc, swApp, true);
-                    string title = doc.GetTitle();
+                    Sw.SyncReport report = Sw.SyncService.SyncExplicit(swApp, doc);
+                    string title = doc.GetTitle() + " — " + report;
 
                     // D-22: NotifyIcon освобождается детерминированно через using;
                     // блокирующий Thread.Sleep удалён.
@@ -92,6 +98,7 @@ namespace ESKD.MaterialSync
                 }
                 catch (Exception ex)
                 {
+                    Core.Log.Error("ESKD_Sync", ex);
                     MessageBox.Show(
                         "Ошибка при синхронизации:\n" + ex.Message,
                         "ЕСКД Синхронизация",
@@ -121,7 +128,11 @@ namespace ESKD.MaterialSync
         {
             if (comObject != null)
             {
-                try { Marshal.ReleaseComObject(comObject); } catch { }
+                try { Marshal.ReleaseComObject(comObject); }
+                catch (ArgumentException)
+                {
+                    // Не COM-объект: освобождать нечего.
+                }
             }
         }
     }

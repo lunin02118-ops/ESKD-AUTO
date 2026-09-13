@@ -1,0 +1,152 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Xml;
+
+namespace ESKD.MaterialSync.Core
+{
+    public sealed class MaterialInfo
+    {
+        public string Name = "";
+        public string Database = "";
+        public string Sortament = "";
+        public string GostSortament = "";
+        public string Grade = "";
+        public string GostMaterial = "";
+        public string GostDesignation = "";
+        public string LineDesignation = "";
+        public double Density;
+    }
+
+    /// <summary>
+    /// Библиотеки материалов .sldmat с кэшем по пути и времени изменения файла (Д-11):
+    /// файл разбирается один раз, а не для каждой конфигурации при каждом сохранении.
+    /// </summary>
+    public static class MaterialCatalog
+    {
+        private sealed class Entry
+        {
+            public DateTime Stamp;
+            public Dictionary<string, MaterialInfo> Materials;
+        }
+
+        private static readonly Dictionary<string, Entry> Cache = new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object Sync = new object();
+
+        public static MaterialInfo Find(IEnumerable<string> databasePaths, string databaseName, string materialName)
+        {
+            if (string.IsNullOrEmpty(materialName) || databasePaths == null) return null;
+            List<string> paths = new List<string>(databasePaths);
+            if (!string.IsNullOrEmpty(databaseName))
+            {
+                foreach (string p in paths)
+                {
+                    if (string.Equals(Path.GetFileNameWithoutExtension(p), databaseName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        MaterialInfo hit = Lookup(p, materialName);
+                        if (hit != null) return hit;
+                    }
+                }
+            }
+            foreach (string p in paths)
+            {
+                MaterialInfo hit = Lookup(p, materialName);
+                if (hit != null) return hit;
+            }
+            return null;
+        }
+
+        public static MaterialInfo Lookup(string databasePath, string materialName)
+        {
+            Dictionary<string, MaterialInfo> all = Load(databasePath);
+            MaterialInfo info;
+            return all != null && all.TryGetValue(materialName, out info) ? info : null;
+        }
+
+        public static Dictionary<string, MaterialInfo> Load(string databasePath)
+        {
+            if (string.IsNullOrEmpty(databasePath) || !File.Exists(databasePath)) return null;
+            DateTime stamp = File.GetLastWriteTimeUtc(databasePath);
+            lock (Sync)
+            {
+                Entry e;
+                if (Cache.TryGetValue(databasePath, out e) && e.Stamp == stamp) return e.Materials;
+            }
+            Dictionary<string, MaterialInfo> parsed = Parse(databasePath);
+            lock (Sync)
+            {
+                Entry fresh = new Entry();
+                fresh.Stamp = stamp;
+                fresh.Materials = parsed;
+                Cache[databasePath] = fresh;
+            }
+            return parsed;
+        }
+
+        public static void ClearCache()
+        {
+            lock (Sync) { Cache.Clear(); }
+        }
+
+        private static Dictionary<string, MaterialInfo> Parse(string databasePath)
+        {
+            Dictionary<string, MaterialInfo> result = new Dictionary<string, MaterialInfo>(StringComparer.Ordinal);
+            try
+            {
+                XmlDocument xml = new XmlDocument();
+                xml.XmlResolver = null;
+                xml.Load(databasePath);
+                string dbName = Path.GetFileNameWithoutExtension(databasePath);
+                // Обход элементов, а не XPath с подстановкой имени: кавычки в имени материала безопасны.
+                foreach (XmlNode node in xml.GetElementsByTagName("material"))
+                {
+                    XmlAttribute nameAttr = node.Attributes != null ? node.Attributes["name"] : null;
+                    if (nameAttr == null || string.IsNullOrEmpty(nameAttr.Value)) continue;
+                    MaterialInfo info = new MaterialInfo();
+                    info.Name = nameAttr.Value;
+                    info.Database = dbName;
+                    foreach (XmlNode child in node.ChildNodes)
+                    {
+                        if (child.Name == "physicalproperties")
+                        {
+                            foreach (XmlNode prop in child.ChildNodes)
+                            {
+                                if (prop.Name == "DENS" && prop.Attributes != null && prop.Attributes["value"] != null)
+                                {
+                                    double d;
+                                    if (double.TryParse(prop.Attributes["value"].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out d))
+                                        info.Density = d;
+                                }
+                            }
+                        }
+                        else if (child.Name == "custom")
+                        {
+                            foreach (XmlNode prop in child.ChildNodes)
+                            {
+                                if (prop.Attributes == null || prop.Attributes["name"] == null || prop.Attributes["value"] == null) continue;
+                                string pn = prop.Attributes["name"].Value;
+                                string pv = prop.Attributes["value"].Value;
+                                switch (pn)
+                                {
+                                    case "Сортамент": info.Sortament = pv; break;
+                                    case "ГОСТ_Сортамент": info.GostSortament = pv; break;
+                                    case "Марка_Материала": info.Grade = pv; break;
+                                    case "ГОСТ_Материал": info.GostMaterial = pv; break;
+                                    case "Обозначение_ГОСТ": info.GostDesignation = pv; break;
+                                    case "Обозначение_Строка": info.LineDesignation = pv; break;
+                                }
+                            }
+                        }
+                    }
+                    if (!result.ContainsKey(info.Name)) result.Add(info.Name, info);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Библиотека материалов не прочитана: " + databasePath + " — " + ex.Message);
+            }
+            return result;
+        }
+    }
+}
