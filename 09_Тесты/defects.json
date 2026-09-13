@@ -24,5 +24,6 @@
   "Д-23": {"status": "open", "title": "Батник, .reg, три копии регистрации"},
   "Д-24": {"status": "open", "title": "Собранные бинарники и отчёты в git"},
   "Д-25": {"status": "fixed", "title": "Иконка БЧ, фиктивный флажок, MProp_Firm"},
-  "Д-26": {"status": "open", "title": "Повторные UnloadAddIn/LoadAddIn роняют SolidWorks в AddCommandManager"}
+  "Д-26": {"status": "open", "title": "Повторные UnloadAddIn/LoadAddIn роняют SolidWorks в AddCommandManager"},
+  "Д-27": {"status": "fixed", "title": "Библиотека материалов: у «Лист 5,0» и «Лист 6,0 / Ст3сп» дробь от листа 4,0 — в графе 3 неверная толщина"}
 }

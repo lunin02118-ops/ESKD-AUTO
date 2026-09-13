@@ -168,6 +168,37 @@ class StaticRepository(StaticTestCase):
                           if re.search(r"\.(Add3|Delete2|Set2)\(", src.read_text(encoding="utf-8"))})
         self.assertEqual(["PropertyWriter.cs"], writers, "свойства пишутся в обход PropertyWriter")
 
+    @tags("smoke")
+    def test_T0_material_library_fields_consistent(self):
+        """T0: в библиотеке материалов дробь «Обозначение_ГОСТ» согласована с «Сортаментом» и «Обозначением_Строкой» (Д-27)."""
+        from eskd_e2e import build
+
+        def plain(markup):
+            text = re.sub(r"<OVER>", " / ", markup, flags=re.I)
+            text = re.sub(r"</?(STACK|FONT)[^>]*>", "", text, flags=re.I)
+            return re.sub(r"\s+", " ", text).strip()
+
+        wrong = {}
+        for name, material in build.material_library().items():
+            custom = material["custom"]
+            fraction = custom.get("Обозначение_ГОСТ") or ""
+            sortament = (custom.get("Сортамент") or "").strip()
+            line = (custom.get("Обозначение_Строка") or "").strip()
+            size = (custom.get("Типоразмер") or "").strip()
+            problems = []
+            m = re.match(r"^(.*?)<STACK[^>]*>(.*?)<OVER>", fraction, flags=re.I)
+            if m and sortament:
+                numerator = (m.group(1).strip() + " " + m.group(2).strip()).strip()
+                if numerator != sortament:
+                    problems.append(f"числитель «{numerator}» ≠ Сортамент «{sortament}»")
+            if fraction and line and plain(fraction) != line:
+                problems.append(f"«{plain(fraction)}» ≠ Обозначение_Строка «{line}»")
+            if size and size not in name:
+                problems.append(f"Типоразмер «{size}» не входит в имя")
+            if problems:
+                wrong[name] = problems
+        self.assertEqual({}, wrong)
+
     def test_T0_dll_built_from_current_sources(self):
         """T0: build_manifest.json — хеши исходников совпадают с текущими файлами (Д-24)."""
         manifest_path = ADDIN / "build_manifest.json"
