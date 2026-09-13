@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Собирает ESKD_Material_Sync_v5.dll, ESKD.exe и ESKD_Sync.exe. Реестр не трогает —
-    регистрацию выполняет build_and_register.ps1 или установщик. Рядом со сборкой пишется
+    регистрацию выполняет модуль Register-EskdAddin.ps1 (register_eskd.ps1, build_and_register.ps1, установщик). Рядом со сборкой пишется
     build_manifest.json: SHA-256 исходников и результатов, чтобы тесты и установщик могли
     проверить, что DLL собрана из текущих исходников.
 

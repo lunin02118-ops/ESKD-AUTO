@@ -142,6 +142,52 @@ class StaticRepository(StaticTestCase):
         self.assertEqual(buttons, small[0] // small[1], "icons_small.bmp")
         self.assertEqual(buttons, large[0] // large[1], "icons_large.bmp")
 
+    def test_T0_single_registration_module(self):
+        """T0: COM-регистрацию надстройки пишет только Register-EskdAddin.ps1; RegAsm и жёстких путей D:\\Work нет (Д-28)."""
+        scripts = [p for p in ROOT.rglob("*") if p.suffix.lower() in (".ps1", ".py", ".cmd", ".bat") and p.is_file()
+                   and not any(part in p.parts for part in ("99_Архив", "08_Результаты_Тестирования", "Drw_System_Automation", "bin", "09_Тесты"))]
+        module = ADDIN / "Register-EskdAddin.ps1"
+        writers, regasm = [], []
+        for script in scripts:
+            text = script.read_bytes().decode("utf-8", errors="replace")
+            if "ESKD_Material_Sync_v5, Version=" in text and script != module:
+                writers.append(str(script.relative_to(ROOT)))
+            if re.search(r"RegAsm\.exe", text, re.I) and "ESKD_Material_Sync" in text:
+                regasm.append(str(script.relative_to(ROOT)))
+        self.assertEqual([], writers, "COM-регистрация надстройки вне модуля")
+        self.assertEqual([], regasm, "RegAsm портит CodeBase с кириллицей (DEP-11)")
+        wrappers = {
+            ADDIN / "register_eskd.ps1": "Register-EskdAddin.ps1",
+            ADDIN / "unregister.ps1": "Register-EskdAddin.ps1",
+            ADDIN / "build_and_register.ps1": "register_eskd.ps1",
+            ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1": "Register-EskdAddin.ps1",
+            ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py": "register_eskd.ps1",
+        }
+        for path, reference in wrappers.items():
+            with self.subTest(script=path.name):
+                text = path.read_bytes().decode("utf-8-sig")
+                self.assertIn(reference, text)
+                if path.parent == ADDIN:
+                    self.assertNotRegex(text, r"(?i)[a-z]:\\+work\\+", "жёсткий путь к репозиторию")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        self.assertNotIn("build_and_register.ps1", setup, "Setup должен собирать build.ps1")
+        cmd = (ADDIN / "Регистрация_ЕСКД_на_этом_компьютере.cmd").read_bytes()
+        self.assertTrue(all(b < 128 for b in cmd), "в .cmd не-ASCII символы")
+
+    def test_T0_registration_module_in_sandbox(self):
+        """T0: модуль регистрации во временном разделе HKCU пишет полную регистрацию с сырым CodeBase и снимает её (Д-28)."""
+        if not paths.ADDIN_DLL.exists():
+            self.skipTest("нет собранной DLL")
+        out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                              str(paths.TESTS / "tools" / "check_registration_module.ps1"),
+                              "-ModulePath", str(ADDIN / "Register-EskdAddin.ps1"), "-DllPath", str(paths.ADDIN_DLL)],
+                             capture_output=True, timeout=120)
+        lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+        self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
+        result = json.loads(lines[-1])
+        self.assertEqual([], result["problems"])
+        self.assertTrue(result["sandboxRemoved"], "временный раздел реестра не удалён")
+
     def test_T0_every_setting_is_used(self):
         """T0: каждое поле Core.Settings влияет на поведение — нет «фиктивных флажков» (Д-25)."""
         settings_cs = ADDIN / "Core" / "Settings.cs"

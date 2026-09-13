@@ -111,11 +111,13 @@ _Инструменты_Конструктора/
 ### 1. Нативная надстройка ESKD Material Sync (C# .NET)
 Каталог: `03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/`
 
-* **Назначение**: Основное ядро автоматизации. Перехватывает события SolidWorks (`FileSaveNotify`, `FileOpenNotify`), обеспечивает расчет и центрирование массы, синхронизирует реквизиты штампа, формирует дроби сортамента материалов.
+* **Назначение**: ядро автоматизации v6. Реквизиты пишутся перед сохранением (`FileSaveNotify`) и после «Сохранить как»; открытие и переключение окон ничего не меняют. Имена свойств — словарь SWPlus, уровни хранения — как у MProp; дробь материала и масса для основной надписи, кнопка «Деталь БЧ».
 * **Ключевые модули**:
-  - `MaterialSyncEngine.cs`: Ядро логики обработки деталей, сборок и чертежей.
-  - `SettingsForm.cs`: Диалоговое окно настроек надстройки (фамилия, организация, точность массы).
-  - `build_and_register.ps1`: Компиляция и COM-регистрация надстройки в 1 клик с помощью `csc.exe` (не требует Visual Studio).
+  - `Core/`: словарь SWPlus, разбор имени файла, разметка граф, библиотека материалов, журнал (без SolidWorks, покрыты юнит-тестами);
+  - `Sw/`: `PropertyWriter` — единственная точка записи свойств, `SyncService`, `EventHub`, `BchService`;
+  - `SettingsForm.cs`: окно настроек надстройки (фамилия, организация, точность массы);
+  - `build.ps1`: сборка DLL и утилит системным `csc.exe` (Visual Studio не нужна) и `build_manifest.json` с хешами;
+  - `Register-EskdAddin.ps1`: единственный модуль регистрации — его используют Setup, `register_eskd.ps1`, `build_and_register.ps1`, `unregister.ps1` и конфигуратор.
 * **Автономные утилиты**:
   - `ESKD.exe` / `ESKD_Sync.exe`: Консольные и оконные утилиты ручной синхронизации активного документа SolidWorks.
 
@@ -235,7 +237,7 @@ python d:\Work\_Инструменты_Конструктора\08_Резуль�
   1. Закройте SolidWorks.
   2. Запустите скрипт перерегистрации:
      ```powershell
-     powershell -ExecutionPolicy Bypass -File "d:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\register_eskd.ps1"
+     powershell -ExecutionPolicy Bypass -File ".\03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\register_eskd.ps1"
      ```
   3. Запустите SolidWorks. Если вкладка все еще скрыта, щелкните правой кнопкой мыши по любой вкладке CommandManager и включите галочку напротив **«ЕСКД»**.
   4. Также **Tier 4** при запущенном SolidWorks проверяет надстройку в живой сессии через COM (`GetAddInObject`) — если надстройка загружена, вкладка создаётся программно при каждом старте, и отсутствие записи в реестре не влияет на её наличие в интерфейсе.
@@ -254,9 +256,9 @@ python d:\Work\_Инструменты_Конструктора\08_Резуль�
 ### 4. Как пересобрать надстройку после изменения исходного кода C#?
 Запустите скрипт компиляции:
 ```powershell
-powershell -ExecutionPolicy Bypass -File "d:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\build_and_register.ps1"
+powershell -ExecutionPolicy Bypass -File ".\03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\build_and_register.ps1"
 ```
-Скрипт автоматически найдет компилятор `csc.exe` (.NET Framework 4.0/4.8), скомпилирует `ESKD_Material_Sync_v5.dll`, `ESKD.exe`, `ESKD_Sync.exe` и зарегистрирует библиотеку в системе.
+Скрипт запускает `build.ps1` (системный `csc.exe` .NET Framework 4: `ESKD_Material_Sync_v5.dll`, `ESKD.exe`, `ESKD_Sync.exe`, `build_manifest.json`) и регистрирует надстройку модулем `Register-EskdAddin.ps1`. Команды выполняются из корня репозитория.
 
 ---
 

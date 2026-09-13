@@ -26,5 +26,5 @@
   "Д-25": {"status": "fixed", "title": "Иконка БЧ, фиктивный флажок, MProp_Firm"},
   "Д-26": {"status": "open", "title": "Повторные UnloadAddIn/LoadAddIn роняют SolidWorks в AddCommandManager"},
   "Д-27": {"status": "fixed", "title": "Библиотека материалов: у «Лист 5,0» и «Лист 6,0 / Ст3сп» дробь от листа 4,0 — в графе 3 неверная толщина"},
-  "Д-28": {"status": "open", "title": "Регистрация надстройки в трёх копиях (Setup, register_eskd, build_and_register) с откатом на жёсткий путь D:/Work"}
+  "Д-28": {"status": "fixed", "title": "Регистрация надстройки в трёх копиях (Setup, register_eskd, build_and_register) с откатом на жёсткий путь D:/Work"}
 }

@@ -229,7 +229,6 @@ if (-not $isAdmin) {
     Write-Host "  - HKLM-регистрация надстройки ЕСКД (выполняется только HKCU-регистрация);"
     Write-Host "  - HKLM-секции .reg-профиля (импорт частичный: HKCU-секция OK, HKLM пропущена);"
     Write-Host "  - запись пути Toolbox в HKLM (выполняется только HKCU);"
-    Write-Host "  - RegAsm-регистрация в HKLM (HKCU COM-записи создаются вручную);"
     Write-Host "  - системная установка шрифтов ГОСТ в C:\Windows\Fonts (выполняется per-user установка"
     Write-Host "    в %LOCALAPPDATA%\Microsoft\Windows\Fonts, требуется Windows 10 1709+);"
     Write-Host "  - удаление HKLM-ключей устаревших надстроек (OnCadTools и др.) и HKLM-веток Classes."
@@ -672,59 +671,32 @@ Write-Host "  [OK] Графический режим переведен в бе�
 
 # 5. Регистрация нативной надстройки ЕСКД v5 (CommandManager, Настройки, Центрирование массы)
 Write-Host "`n[5/6] Регистрация нативной надстройки ЕСКД и панели управления..." -ForegroundColor Gray
-$addinDll = Join-Path $ToolsRoot "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\ESKD_Material_Sync_v5.dll"
-$regasm = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
+$addinDir = Join-Path $ToolsRoot "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin"
+$addinDll = Join-Path $addinDir "ESKD_Material_Sync_v5.dll"
 
-# Автокомпиляция надстройки из исходников, если DLL отсутствует (чистый clone репозитория).
-# Без DLL ниже пропускались бы не только COM-регистрация, но и Избранные материалы,
-# ESKD_Settings и вкладки CommandManager — теперь гарантированно выполняется весь блок.
+# Чистый клон репозитория: DLL собирается из исходников (build.ps1 пишет и build_manifest.json).
 if (-not (Test-Path $addinDll)) {
-    $buildScript = Join-Path $ToolsRoot "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\build_and_register.ps1"
-    if (Test-Path $buildScript) {
-        Write-Host "  [ИНФО] DLL надстройки не найдена — автоматическая сборка из исходников..." -ForegroundColor Yellow
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $buildScript
-        if (Test-Path $addinDll) {
-            Write-Host "  [OK] Надстройка скомпилирована: $addinDll" -ForegroundColor Green
-        } else {
-            Write-Host "  [ОШИБКА] Автокомпиляция не удалась — блок [5/6] будет пропущен." -ForegroundColor Red
-        }
+    Write-Host "  [ИНФО] DLL надстройки не найдена — сборка из исходников (build.ps1)..." -ForegroundColor Yellow
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $addinDir "build.ps1")
+    if (Test-Path $addinDll) {
+        Write-Host "  [OK] Надстройка собрана: $addinDll" -ForegroundColor Green
+    } else {
+        Write-Host "  [ОШИБКА] Сборка не удалась — блок [5/6] будет пропущен." -ForegroundColor Red
     }
 }
 
-if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
-    # DEP-11 (эмпирически 2026-09-12): CLR не активирует сборку по percent-encoded file:///URI
-    # с кириллицей — работает только сырая форма (как пишет RegAsm). Не экранировать!
-    $codebase = "file:///" + $addinDll.Replace('\', '/')
-    # CR#12: проверка кода возврата RegAsm вместо молчаливого пропуска сбоя
-    $regasmProc = Start-Process -FilePath $regasm -ArgumentList "/codebase `"$addinDll`"" -Wait -NoNewWindow -PassThru
-    if ($regasmProc.ExitCode -ne 0) {
-        Write-Host "  [ВНИМАНИЕ] RegAsm завершился с кодом $($regasmProc.ExitCode) — HKLM-регистрация может быть неполной (HKCU-регистрация ниже это компенсирует)." -ForegroundColor Yellow
-    }
-    $guid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
-    $title = "ЕСКД: Синхронизация материалов и реквизитов"
-    $desc = "Панель инструментов ЕСКД: настройки реквизитов (фамилии, контора, масса), автоматическая синхронизация материалов и центрирование штампа по ГОСТ 2.104"
-
-    # HKLM (только с правами администратора; без них работает HKCU-регистрация ниже)
-    if ($isAdmin) {
-        try {
-            $hklmPath = "HKLM:\Software\SolidWorks\AddIns\$guid"
-            if (-not (Test-Path $hklmPath -ErrorAction SilentlyContinue)) { New-Item -Path $hklmPath -Force -ErrorAction SilentlyContinue | Out-Null }
-            Set-ItemProperty -Path $hklmPath -Name "(Default)" -Value 1 -Type DWord -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path $hklmPath -Name "Title" -Value $title -ErrorAction SilentlyContinue
-            Set-ItemProperty -Path $hklmPath -Name "Description" -Value $desc -ErrorAction SilentlyContinue
-            # DEP-11: RegAsm записывает CodeBase в percent-escaped форме ("%D0%98..."),
-            # CLR НЕ активирует сборку по такому URI с кириллицей в пути. Прошиваем сырую
-            # (RAW) форму в HKLM вручную — иначе SolidWorks, запущенный от администратора,
-            # не загрузит надстройку (он активирует COM через HKLM, минуя HKCU).
-            foreach ($hive in @("HKLM:\Software\Classes\CLSID\$guid\InprocServer32",
-                                "HKLM:\Software\Classes\CLSID\$guid\InprocServer32\1.0.0.0")) {
-                if (Test-Path $hive) {
-                    Set-ItemProperty -Path $hive -Name "CodeBase" -Value $codebase -ErrorAction SilentlyContinue
-                }
-            }
-        } catch { }
+if (Test-Path $addinDll) {
+    # WP-4.2: единственный модуль регистрации — тот же, что у register_eskd.ps1 и конфигуратора.
+    . (Join-Path $addinDir "Register-EskdAddin.ps1")
+    $registration = Register-EskdAddin -DllPath $addinDll -SystemWide:$isAdmin
+    if ($registration.UserDllExists -and $registration.UserAddIn -and $registration.UserStartup) {
+        Write-Host "  [OK] Надстройка ЕСКД зарегистрирована: $($registration.UserCodeBase)" -ForegroundColor Green
     } else {
-        Write-Host "  [ИНФО] Без прав администратора: регистрация ЕСКД выполняется только в HKCU." -ForegroundColor DarkGray
+        Write-Host "  [ОШИБКА] Регистрация надстройки ЕСКД неполная:" -ForegroundColor Red
+        $registration | Format-List | Out-String | Write-Host
+    }
+    if (-not $isAdmin) {
+        Write-Host "  [ИНФО] Без прав администратора: регистрация ЕСКД выполнена только для текущего пользователя." -ForegroundColor DarkGray
     }
 
     $propFolders = Join-Path $ToolsRoot "02_Шаблоны_и_Форматки\Шаблоны свойств"
@@ -745,66 +717,21 @@ if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
         Write-Host "  [OK] Библиотека материалов ГОСТ подключена: $matLibDir" -ForegroundColor Green
     }
 
-    # Регистрация COM-сервера в HKCU (для гарантированной работы без прав Администратора)
-    # $codebase (сырая форма) сформирован выше, до вызова RegAsm.
-    $clsidPath = "HKCU:\Software\Classes\CLSID\$guid"
-    if (-not (Test-Path $clsidPath)) { New-Item -Path $clsidPath -Force | Out-Null }
-    Set-ItemProperty -Path $clsidPath -Name "(Default)" -Value "ESKD.MaterialSync.SwAddin"
-
-    $inprocPath = "$clsidPath\InprocServer32"
-    if (-not (Test-Path $inprocPath)) { New-Item -Path $inprocPath -Force | Out-Null }
-    Set-ItemProperty -Path $inprocPath -Name "(Default)" -Value "mscoree.dll"
-    Set-ItemProperty -Path $inprocPath -Name "ThreadingModel" -Value "Both"
-    Set-ItemProperty -Path $inprocPath -Name "Class" -Value "ESKD.MaterialSync.SwAddin"
-    Set-ItemProperty -Path $inprocPath -Name "Assembly" -Value "ESKD_Material_Sync_v5, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
-    Set-ItemProperty -Path $inprocPath -Name "RuntimeVersion" -Value "v4.0.30319"
-    Set-ItemProperty -Path $inprocPath -Name "CodeBase" -Value $codebase
-
-    $inprocVerPath = "$inprocPath\1.0.0.0"
-    if (-not (Test-Path $inprocVerPath)) { New-Item -Path $inprocVerPath -Force | Out-Null }
-    Set-ItemProperty -Path $inprocVerPath -Name "Class" -Value "ESKD.MaterialSync.SwAddin"
-    Set-ItemProperty -Path $inprocVerPath -Name "Assembly" -Value "ESKD_Material_Sync_v5, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
-    Set-ItemProperty -Path $inprocVerPath -Name "RuntimeVersion" -Value "v4.0.30319"
-    Set-ItemProperty -Path $inprocVerPath -Name "CodeBase" -Value $codebase
-
-    $catPath = "$clsidPath\Implemented Categories\{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}"
-    if (-not (Test-Path $catPath)) { New-Item -Path $catPath -Force | Out-Null }
-
-    $progIdPath = "$clsidPath\ProgId"
-    if (-not (Test-Path $progIdPath)) { New-Item -Path $progIdPath -Force | Out-Null }
-    Set-ItemProperty -Path $progIdPath -Name "(Default)" -Value "ESKD.MaterialSync.SwAddin_v5"
-
-    $progIdRoot = "HKCU:\Software\Classes\ESKD.MaterialSync.SwAddin_v5\CLSID"
-    if (-not (Test-Path $progIdRoot)) { New-Item -Path $progIdRoot -Force | Out-Null }
-    Set-ItemProperty -Path $progIdRoot -Name "(Default)" -Value $guid
-
-    $progIdMain = "HKCU:\Software\Classes\ESKD.MaterialSync.SwAddin_v5"
-    if (-not (Test-Path $progIdMain)) { New-Item -Path $progIdMain -Force | Out-Null }
-    Set-ItemProperty -Path $progIdMain -Name "(Default)" -Value "ESKD.MaterialSync.SwAddin"
-
-    # HKCU
-    $keyPath = "HKCU:\Software\SolidWorks\AddIns\$guid"
-    if (-not (Test-Path $keyPath)) { New-Item -Path $keyPath -Force | Out-Null }
-    Set-ItemProperty -Path $keyPath -Name "(Default)" -Value 1 -Type DWord
-    Set-ItemProperty -Path $keyPath -Name "Title" -Value $title
-    Set-ItemProperty -Path $keyPath -Name "Description" -Value $desc
-
-    # AddinsStartup
-    $startupPath = "HKCU:\Software\SolidWorks\AddinsStartup\$guid"
-    if (-not (Test-Path $startupPath)) { New-Item -Path $startupPath -Force | Out-Null }
-    Set-ItemProperty -Path $startupPath -Name "(Default)" -Value 1 -Type DWord
-
-    # Параметры ЕСКД (HKCU\Software\SolidWorks\ESKD_Settings)
+    # Параметры ЕСКД (HKCU\Software\SolidWorks\ESKD_Settings): фамилия и организация — из параметров Setup;
+    # проверяющий и флаги, уже выбранные пользователем в окне настроек, не перезаписываются.
     $eskdSettingsPath = "HKCU:\Software\SolidWorks\ESKD_Settings"
     if (-not (Test-Path $eskdSettingsPath)) { New-Item -Path $eskdSettingsPath -Force | Out-Null }
+    $eskdCurrent = Get-ItemProperty -Path $eskdSettingsPath
     Set-ItemProperty -Path $eskdSettingsPath -Name "Author" -Value $Author
-    Set-ItemProperty -Path $eskdSettingsPath -Name "Checker" -Value ""
     Set-ItemProperty -Path $eskdSettingsPath -Name "Organization" -Value $Firm
-    Set-ItemProperty -Path $eskdSettingsPath -Name "AutoMass" -Value 1 -Type DWord
-    Set-ItemProperty -Path $eskdSettingsPath -Name "MassDecimals" -Value 2 -Type DWord
-    Set-ItemProperty -Path $eskdSettingsPath -Name "AutoCenterMass" -Value 1 -Type DWord
-    Set-ItemProperty -Path $eskdSettingsPath -Name "AutoSplitName" -Value 1 -Type DWord
-    Set-ItemProperty -Path $eskdSettingsPath -Name "AuthorList" -Value $Author
+    foreach ($default in @(@{ Name = "Checker"; Value = ""; Type = "String" }, @{ Name = "AutoMass"; Value = 1; Type = "DWord" },
+                           @{ Name = "MassDecimals"; Value = 2; Type = "DWord" }, @{ Name = "AutoSplitName"; Value = 1; Type = "DWord" },
+                           @{ Name = "AuthorList"; Value = $Author; Type = "String" })) {
+        if (-not $eskdCurrent.PSObject.Properties[$default.Name]) {
+            Set-ItemProperty -Path $eskdSettingsPath -Name $default.Name -Value $default.Value -Type $default.Type
+        }
+    }
+    Remove-ItemProperty -Path $eskdSettingsPath -Name "AutoCenterMass" -ErrorAction SilentlyContinue
 
     # Избранные материалы с дробным слэшем '/'
     # Имена и matid СВЕРЕНЫ с фактическим составом библиотеки (2026-09-12): при
@@ -846,12 +773,7 @@ if ((Test-Path $addinDll) -and (Test-Path $regasm)) {
 
     Write-Host "  [OK] Нативная надстройка ЕСКД v5, панель инструментов и Избранные материалы настроены." -ForegroundColor Green
 } else {
-    if (-not (Test-Path $addinDll)) {
-        Write-Host "  [ПРЕДУПРЕЖДЕНИЕ] Не найдена DLL надстройки ЕСКД: $addinDll" -ForegroundColor Yellow
-    }
-    if (-not (Test-Path $regasm)) {
-        Write-Host "  [ПРЕДУПРЕЖДЕНИЕ] Не найден RegAsm .NET 4: $regasm" -ForegroundColor Yellow
-    }
+    Write-Host "  [ПРЕДУПРЕЖДЕНИЕ] Не найдена DLL надстройки ЕСКД: $addinDll" -ForegroundColor Yellow
 }
 
 # 5.1. Настройка и интеграция модуля автоматизации черчения Drw (CAD Booster Drew)

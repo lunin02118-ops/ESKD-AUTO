@@ -1,82 +1,42 @@
 ﻿<#
 .SYNOPSIS
-    Полное удаление и деактивация надстройки ЕСКД из SolidWorks.
+    Удаление регистрации надстройки ЕСКД из SolidWorks.
+
+.DESCRIPTION
+    Снимает регистрацию текущей и прежних версий через общий модуль Register-EskdAddin.ps1 (с правами
+    администратора — и в HKLM) и удаляет вкладку ЕСКД из сохранённой раскладки CommandManager.
 #>
 [CmdletBinding()]
 param()
 
+$ErrorActionPreference = "Stop"
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+. (Join-Path $PSScriptRoot "Register-EskdAddin.ps1")
 
-# Автодетект установленной версии SolidWorks (унифицировано с Setup_Workstation_SolidWorks.ps1):
-# самая высокая версия в HKCU\Software\SolidWorks\SOLIDWORKS \d{4}, дефолт — SOLIDWORKS 2025.
-function Get-SolidWorksRegistryVersion {
-    $bestName = ""
-    $bestYear = 0
-    if (Test-Path "HKCU:\Software\SolidWorks") {
-        $children = Get-ChildItem "HKCU:\Software\SolidWorks" -ErrorAction SilentlyContinue
-        foreach ($child in $children) {
-            if ($child.PSChildName -match '^SOLIDWORKS (\d{4})$') {
-                $year = [int]$Matches[1]
-                if ($year -gt $bestYear) {
-                    $bestYear = $year
-                    $bestName = $child.PSChildName
+Unregister-EskdAddin -SystemWide:(Test-EskdAdministrator)
+
+$guids = @($script:EskdAddin.Guid) + $script:EskdAddin.ObsoleteGuids
+Get-ChildItem "HKCU:\Software\SolidWorks" -ErrorAction SilentlyContinue |
+    Where-Object { $_.PSChildName -match '^SOLIDWORKS \d{4}$' } |
+    ForEach-Object {
+        foreach ($ctx in @("PartContext", "AssyContext", "DrwContext")) {
+            $ctxPath = Join-Path $_.PSPath "User Interface\CommandManager\$ctx"
+            if (-not (Test-Path -LiteralPath $ctxPath)) { continue }
+            Get-ChildItem -LiteralPath $ctxPath | ForEach-Object {
+                $tab = Get-ItemProperty -LiteralPath $_.PSPath
+                $ref = if ($tab.PSObject.Properties["RefName"]) { $tab.RefName } else { "" }
+                $module = if ($tab.PSObject.Properties["ModuleName"]) { $tab.ModuleName } else { "" }
+                if ($ref -match "ЕСКД" -or ($module -and $guids -contains $module.ToUpper())) {
+                    Remove-Item -LiteralPath $_.PSPath -Recurse -Force
                 }
             }
         }
     }
-    if ($bestName) { return $bestName }
-    return "SOLIDWORKS 2025"
+
+$state = Get-EskdAddinRegistration
+if ($state.UserAddIn -or $state.UserStartup -or $state.UserCodeBase) {
+    Write-Host "[ОШИБКА] Регистрация для текущего пользователя осталась:" -ForegroundColor Red
+    $state | Format-List | Out-String | Write-Host
+    exit 1
 }
-$SwVersion = Get-SolidWorksRegistryVersion
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$regasm = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
-
-$guids = @(
-    "{B64E6875-B101-4D5C-B245-FF8D50772E25}", # v5 (актуальная)
-    "{B64E6875-B101-4D5C-B245-FF8D50772E24}",
-    "{B64E6875-B101-4D5C-B245-FF8D50772E23}",
-    "{B64E6875-B101-4D5C-B245-FF8D50772E21}"
-)
-
-# 1. HKLM RegAsm unregister if admin
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-$candidateDlls = @(
-    (Join-Path $ScriptDir "ESKD_Material_Sync_v5.dll"),
-    (Join-Path $ScriptDir "ESKD_Material_Sync_Addin.dll")
-)
-if ($isAdmin -and (Test-Path $regasm)) {
-    foreach ($d in $candidateDlls) {
-        if (Test-Path $d) {
-            try { & $regasm /u $d 2>$null } catch { }
-        }
-    }
-}
-
-# 2. Cleanup HKCU and HKLM registries
-foreach ($g in $guids) {
-    Remove-Item "HKCU:\Software\Classes\CLSID\$g" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item "HKCU:\Software\SolidWorks\AddIns\$g" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item "HKCU:\Software\SolidWorks\AddinsStartup\$g" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item "HKLM:\SOFTWARE\SolidWorks\AddIns\$g" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item "HKLM:\SOFTWARE\SolidWorks\AddinsStartup\$g" -Recurse -Force -ErrorAction SilentlyContinue
-}
-
-Remove-Item "HKCU:\Software\Classes\ESKD.MaterialSync.SwAddin_v5" -Recurse -Force -ErrorAction SilentlyContinue
-
-# 3. Remove CommandManager tabs
-$contexts = @("PartContext", "AssyContext", "DrwContext")
-foreach ($ctx in $contexts) {
-    $ctxPath = "HKCU:\Software\SolidWorks\$SwVersion\User Interface\CommandManager\$ctx"
-    if (Test-Path $ctxPath) {
-        Get-ChildItem -Path $ctxPath -ErrorAction SilentlyContinue | ForEach-Object {
-            $tPath = $_.PSPath
-            $ref = (Get-ItemProperty -Path $tPath -Name "RefName" -ErrorAction SilentlyContinue).RefName
-            $mod = (Get-ItemProperty -Path $tPath -Name "ModuleName" -ErrorAction SilentlyContinue).ModuleName
-            if (($ref -and ($ref -match "ЕСКД")) -or ($mod -and ($guids -contains $mod.ToUpper()))) {
-                Remove-Item -Path $tPath -Recurse -Force -ErrorAction SilentlyContinue
-            }
-        }
-    }
-}
-
-Write-Host "Надстройка ЕСКД успешно удалена из SolidWorks." -ForegroundColor Green
+Write-Host "Надстройка ЕСКД удалена из SolidWorks." -ForegroundColor Green
