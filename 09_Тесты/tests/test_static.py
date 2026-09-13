@@ -240,9 +240,13 @@ class StaticRepository(StaticTestCase):
 
     @known_defect("Д-20")
     def test_T0_mcp_server_writes_no_legacy_aliases(self):
-        """T0: MCP-сервер не пишет алиасы v5 (Д-20)."""
-        text = (ROOT / "03_Макросы_и_Плагины" / "SolidWorks_MCP_Server" / "server.py").read_text(encoding="utf-8", errors="replace")
-        self.assertEqual([], [a for a in ("DrawnBy", "CheckedBy", "п_Разраб", "Организация_ФБ") if a in text])
+        """T0: MCP-сервер не пишет реквизиты сам — ни алиасов v5, ни граф по именам-литералам; запись через надстройку (Д-20, D-10)."""
+        text = (ROOT / "03_Макросы_и_Плагины" / "SolidWorks_MCP_Server" / "server.py").read_text(encoding="utf-8")
+        aliases = {a.strip('"') for a in LEGACY_ALIASES} | {"Автор", "DrawnDate", "п_Разраб_Дата", "п_Пров_Дата", "ГОСТ_Сортамента"}
+        literals = set(re.findall(r'"([^"\\\r\n]+)"', text))
+        self.assertEqual([], sorted(aliases & literals), "алиасы v5 в коде сервера")
+        self.assertEqual([], re.findall(r'\.(?:Add3|Set2|Delete2)\(\s*"[^"]*"', text), "запись свойств с именами-литералами")
+        self.assertIn('"SyncActiveDocumentSilent"', text, "синхронизация делегирована надстройке")
 
     @known_defect("Д-24")
     def test_T0_no_build_leftovers_and_reports_in_git(self):

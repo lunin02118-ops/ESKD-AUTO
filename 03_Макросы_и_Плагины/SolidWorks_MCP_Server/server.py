@@ -7,33 +7,58 @@ import os
 import sys
 import tempfile
 import json
+from pathlib import Path
+
+import pythoncom
 import win32com.client
 from mcp.server.fastmcp import FastMCP
 
 # Initialize FastMCP Server
 mcp = FastMCP("SolidWorks-Advanced-MCP")
 
-WORKSPACE_ROOT = r"d:\Work\_Инструменты_Конструктора"
+# Корень репозитория — от расположения сервера: 03_Макросы_и_Плагины/SolidWorks_MCP_Server/server.py
+WORKSPACE_ROOT = str(Path(__file__).resolve().parents[2])
 WELDMENT_PROFILES_DIR = os.path.join(WORKSPACE_ROOT, "04_Библиотеки_Материалов_и_Профилей", "Профили сварных деталей")
 TEMPLATES_DIR = os.path.join(WORKSPACE_ROOT, "02_Шаблоны_и_Форматки")
 MATERIALS_DIR = os.path.join(WORKSPACE_ROOT, "04_Библиотеки_Материалов_и_Профилей", "Библиотека материалов")
+ESKD_ADDIN_DLL = os.path.join(WORKSPACE_ROOT, "03_Макросы_и_Плагины", "ESKD_Material_Sync_Addin", "ESKD_Material_Sync_v5.dll")
+ESKD_ADDIN_PROGID = "ESKD.MaterialSync.SwAddin_v5"
+
 
 def get_sw_app():
-    """Connects to active SolidWorks instance or launches background instance."""
+    """Connects to active SolidWorks instance or launches a visible one; loads the ESKD add-in once."""
     try:
         sw = win32com.client.GetActiveObject('SldWorks.Application')
     except Exception:
         sw = win32com.client.Dispatch('SldWorks.Application')
         sw.Visible = True
-        
-    try:
-        addin_dll = os.path.join(WORKSPACE_ROOT, "03_Макросы_и_Плагины", "ESKD_Material_Sync_Addin", "ESKD_Material_Sync_v5.dll")
-        if os.path.exists(addin_dll):
-            sw.LoadAddIn(addin_dll)
-    except Exception:
-        pass
-        
+    eskd_addin(sw)
     return sw
+
+
+def eskd_addin(sw):
+    """Объект надстройки ЕСКД. LoadAddIn — только если она ещё не загружена: повторные загрузки роняют SolidWorks (Д-26)."""
+    addin = sw.GetAddInObject(ESKD_ADDIN_PROGID)
+    if addin is None and os.path.exists(ESKD_ADDIN_DLL):
+        sw.LoadAddIn(ESKD_ADDIN_DLL)
+        addin = sw.GetAddInObject(ESKD_ADDIN_PROGID)
+    return addin
+
+
+def com_method(obj, name, *args):
+    """Вызов метода COM-объекта: позднее связывание pywin32 выполняет метод без аргументов как чтение свойства."""
+    ole = obj._oleobj_
+    return ole.Invoke(ole.GetIDsOfNames(name), 0, pythoncom.DISPATCH_METHOD, True, *args)
+
+
+def model_of(doc):
+    """Деталь или сборка; для чертежа — модель первого вида."""
+    if doc.GetType in (1, 2):
+        return doc
+    if doc.GetType == 3:
+        view = doc.GetFirstView.GetNextView
+        return view.ReferencedDocument if view else None
+    return None
 
 @mcp.tool()
 def sw_get_status() -> dict:
@@ -179,17 +204,17 @@ def sw_set_custom_properties(properties: dict, configuration: str = "") -> dict:
 
 @mcp.tool()
 def sw_weldment_transfer_properties() -> dict:
-    """Transfers cut-list сортамент, наименование, длина, ГОСТ into active part custom properties for 1-body parts."""
+    """Reads cut-list сортамент, наименование, длина, ГОСТ of the active 1-body weldment part (read-only).
+
+    Свойства детали сервер не пишет (решение D-10): запись для спецификации делает sw_eskd_toggle_drawingless —
+    кнопка «Деталь БЧ» надстройки ЕСКД по черт. 40 ГОСТ 2.109-73, словарные имена на уровнях MProp.
+    """
     try:
         sw = get_sw_app()
         model = sw.ActiveDoc
         if not model or model.GetType != 1:
             return {"success": False, "error": "Active document must be a Part (.sldprt)!"}
-            
-        active_cfg = model.GetActiveConfiguration.Name
-        cpm_doc = model.Extension.CustomPropertyManager("")
-        cpm_cfg = model.Extension.CustomPropertyManager(active_cfg)
-        
+
         props_extracted = {}
         feat = model.FirstFeature()
         while feat is not None:
@@ -219,26 +244,38 @@ def sw_weldment_transfer_properties() -> dict:
         blank = props_extracted.get("Заготовка", "")
         length = props_extracted.get("Длина") or props_extracted.get("LENGTH", "")
         
-        to_write = {
-            "Сортамент": sortament,
-            "Description": sortament,
-            "Наименование": name,
-            "Типоразмер": size,
-            "ГОСТ_Сортамента": gost,
-            "Заготовка": blank or name,
-            "Материал": '$PRP:"Material"'
+        cut_list = {
+            "sortament": sortament,
+            "name": name,
+            "size": size,
+            "gost": gost,
+            "blank": blank or name,
+            "length_mm": str(length) if length else "",
         }
-        if length:
-            to_write["Длина"] = str(length)
-            to_write["Габарит"] = f"L={length} мм"
-            
-        for k, v in to_write.items():
-            if v:
-                cpm_doc.Add3(k, 30, v, 1)
-                cpm_cfg.Add3(k, 30, v, 1)
-                
-        model.ForceRebuild3(False)
-        return {"success": True, "transferred": to_write}
+        return {
+            "success": True,
+            "cut_list": cut_list,
+            "written": False,
+            "hint": "Запись для спецификации — sw_eskd_toggle_drawingless (кнопка «Деталь БЧ» надстройки ЕСКД).",
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@mcp.tool()
+def sw_eskd_toggle_drawingless() -> dict:
+    """Toggles «Деталь БЧ» for the active part through the ESKD add-in (Формат = БЧ, масса в «Примечании», запись черт. 40)."""
+    try:
+        sw = get_sw_app()
+        model = sw.ActiveDoc
+        if not model or model.GetType != 1:
+            return {"success": False, "error": "Active document must be a Part (.sldprt)!"}
+        addin = eskd_addin(sw)
+        if addin is None:
+            return {"success": False, "error": "Надстройка ЕСКД не загружена — свойства не записаны."}
+        result = com_method(addin, "ToggleDrawinglessSilent")
+        states = {1: "enabled", 2: "disabled", 0: "not_a_part"}
+        return {"success": result in (1, 2), "state": states.get(result, "error"), "document": model.GetTitle}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
@@ -514,199 +551,33 @@ def sw_set_material(material_name: str, database_name: str = "") -> dict:
 
 @mcp.tool()
 def sw_sync_eskd_materials() -> dict:
-    """Zero-Click Synchronizer: synchronizes physical SolidWorks material with ESKD drawing title block (Материал_ФБ) and BOM properties (Материал, Сортамент, ГОСТ)."""
+    """Synchronizes ESKD properties of the active document (материал, масса, обозначение, подписи) through the ESKD add-in.
+
+    Сервер свойства не пишет: запись выполняет надстройка по словарю SWPlus и уровням MProp (решение D-10),
+    результат совпадает с кнопкой «Синхронизировать ЕСКД». В ответе — план изменений и итоговые значения граф.
+    """
     try:
         sw = get_sw_app()
         model = sw.ActiveDoc
         if not model:
             return {"success": False, "error": "No active document in SolidWorks."}
-            
-        doc_type = model.GetType
-        part = None
-        if doc_type == 1:
-            part = model
-        elif doc_type == 3:
-            v = model.GetFirstView.GetNextView
-            if v:
-                ref_model = v.ReferencedDocument
-                if ref_model and ref_model.GetType == 1:
-                    part = ref_model
-            if not part:
-                return {"success": False, "error": "Drawing does not reference a valid Part document."}
-        else:
-            return {"success": False, "error": "Active document must be a Part or Drawing of a Part."}
-            
-        cfg_name = part.GetActiveConfiguration.Name
-        db_name_var = win32com.client.VARIANT(win32com.client.pythoncom.VT_BYREF | win32com.client.pythoncom.VT_BSTR, "")
-        mat_name = part.GetMaterialPropertyName2(cfg_name, db_name_var)
-        if not mat_name:
-            mat_name = part.GetMaterialPropertyName2("", db_name_var)
-            
-        if not mat_name or not str(mat_name).strip():
-            return {"success": False, "error": "No physical material assigned to the model in SolidWorks."}
-            
-        mat_name = str(mat_name).strip()
-        
-        is_sheet_metal = False
-        thickness_mm = 0.0
-        feat = part.FirstFeature
-        while feat is not None:
-            tname = feat.GetTypeName2
-            if tname in ("SheetMetal", "SMBaseFlange"):
-                is_sheet_metal = True
-                try:
-                    p = part.Parameter("Thickness@" + feat.Name) or part.Parameter("Толщина@" + feat.Name) or part.Parameter("\"D1@" + feat.Name + "\"")
-                    if p and p.SystemValue > 0.00001:
-                        thickness_mm = round(p.SystemValue * 1000.0, 2)
-                except Exception:
-                    pass
-                break
-            elif tname == "CutListFolder":
-                cpm = feat.CustomPropertyManager
-                if cpm:
-                    val = cpm.Get("Sheet Metal Thickness") or cpm.Get("Толщина листового металла")
-                    if val:
-                        try:
-                            thickness_mm = round(float(str(val).replace(",", ".").strip()), 2)
-                            is_sheet_metal = True
-                            break
-                        except Exception:
-                            pass
-            feat = feat.GetNextFeature
-            
-        import re
-        def extract_gost(text):
-            if not text:
-                return ""
-            m = re.search(r'(ГОСТ|ТУ|ОСТ)\s*[\w\.\-]+', text, re.IGNORECASE)
-            return m.group(0) if m else ""
-
-        prokat = ""
-        gost_prokat = ""
-        gost_material = ""
-        material_fb = ""
-        material_sp = ""
-        
-        if is_sheet_metal and thickness_mm > 0.001 and " / " not in mat_name:
-            t_str = f"{thickness_mm:g}".replace(".", ",")
-            prokat = f"Лист Б-ПН-О-{t_str} ГОСТ 19903-2015"
-            gost_prokat = "ГОСТ 19903-2015"
-            gost_material = extract_gost(mat_name)
-            material_fb = f"<STACK size=1>{prokat}<OVER>{mat_name}</STACK>"
-            material_sp = f"{prokat} / {mat_name}"
-        elif " / " in mat_name:
-            parts = mat_name.split(" / ", 1)
-            prokat = parts[0].strip()
-            steel = parts[1].strip()
-            gost_prokat = extract_gost(prokat)
-            gost_material = extract_gost(steel)
-            material_fb = f"<STACK size=1>{prokat}<OVER>{steel}</STACK>"
-            material_sp = mat_name
-        else:
-            prokat = ""
-            gost_prokat = ""
-            gost_material = extract_gost(mat_name)
-            material_fb = mat_name
-            material_sp = mat_name
-            
-        cpm_doc = part.Extension.CustomPropertyManager("")
-        cpm_cfg = part.Extension.CustomPropertyManager(cfg_name)
-        
-        def set_prop(name, val):
-            cpm_doc.Add3(name, 30, str(val), 1)
-            cpm_doc.Set2(name, str(val))
-            if cfg_name:
-                cpm_cfg.Add3(name, 30, str(val), 1)
-                cpm_cfg.Set2(name, str(val))
-                
-        def del_prop(name):
-            try:
-                cpm_doc.Delete2(name)
-                if cfg_name:
-                    cpm_cfg.Delete2(name)
-            except Exception:
-                pass
-                
-        set_prop("Материал_ФБ", material_fb)
-        set_prop("Материал", material_sp)
-        if prokat:
-            set_prop("Сортамент", prokat)
-        else:
-            del_prop("Сортамент")
-            
-        if gost_prokat:
-            set_prop("ГОСТ_Сортамент", gost_prokat)
-        if gost_material:
-            set_prop("ГОСТ_Материал", gost_material)
-
-        # Synchronize User Requisites from HKCU\Software\SolidWorks\ESKD_Settings
-        import datetime
-        import winreg
-        author, checker, org, auto_mass, decimals = "", "", "", 1, 2
-        try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\SolidWorks\ESKD_Settings") as reg_key:
-                try: author, _ = winreg.QueryValueEx(reg_key, "Author")
-                except Exception: pass
-                try: checker, _ = winreg.QueryValueEx(reg_key, "Checker")
-                except Exception: pass
-                try: org, _ = winreg.QueryValueEx(reg_key, "Organization")
-                except Exception: pass
-                try: auto_mass, _ = winreg.QueryValueEx(reg_key, "AutoMass")
-                except Exception: pass
-                try: decimals, _ = winreg.QueryValueEx(reg_key, "MassDecimals")
-                except Exception: pass
-        except Exception:
-            pass
-
-        today_ru = datetime.datetime.now().strftime("%d.%m.%y")
-        today_iso = datetime.datetime.now().strftime("%Y-%m-%d")
-
-        if author:
-            for a_prop in ("Разраб.", "Разработал", "Конструктор", "Автор", "п_Разраб", "DrawnBy"):
-                set_prop(a_prop, author)
-            set_prop("п_Разраб_Дата", today_ru)
-            set_prop("DrawnDate", today_iso)
-        if checker:
-            for c_prop in ("Пров.", "Проверил", "п_Пров", "CheckedBy"):
-                set_prop(c_prop, checker)
-            set_prop("п_Пров_Дата", today_ru)
-        if org:
-            for o_prop in ("Контора", "Организация", "Организация_ФБ", "Компания"):
-                set_prop(o_prop, org)
-
-        if auto_mass:
-            try:
-                mass_prop = part.Extension.CreateMassProperty()
-                if mass_prop:
-                    m_kg = mass_prop.Mass
-                    if m_kg > 0.00001:
-                        m_str = f"{m_kg:.{decimals}f}".replace(".", ",")
-                        set_prop("Масса_ФБ", m_str)
-                        set_prop("Масса", m_str)
-            except Exception:
-                pass
-
-        # Drawing format notes remain strictly in their template positions
-
-        part.ForceRebuild3(False)
-        if doc_type == 3:
-            model.ForceRebuild3(False)
-            
-        return {
-            "success": True,
-            "document": part.GetTitle,
-            "material_name": mat_name,
-            "material_fb": material_fb,
-            "material_sp": material_sp,
-            "sortament": prokat,
-            "gost_material": gost_material,
-            "gost_sortament": gost_prokat,
-            "is_sheet_metal": is_sheet_metal,
-            "thickness_mm": thickness_mm,
-            "mode": "fraction" if "<STACK" in material_fb else "single_line"
-        }
+        addin = eskd_addin(sw)
+        if addin is None:
+            return {"success": False, "error": "Надстройка ЕСКД не загружена — реквизиты не записаны."}
+        plan = com_method(addin, "DiagnoseActiveDocument")
+        changes = com_method(addin, "SyncActiveDocumentSilent")
+        result = {"success": changes >= 0, "document": model.GetTitle, "changes": changes, "plan": plan}
+        if changes < 0:
+            result["error"] = "Надстройка не синхронизировала документ: подробности в %TEMP%\\eskd_material_sync.log"
+            return result
+        target = model_of(model)
+        if target is not None:
+            cpm = target.Extension.CustomPropertyManager(target.GetActiveConfiguration.Name)
+            result["stamp"] = {name: cpm.Get(name) for name in ("Обозначение", "Материал_ФБ", "Масса_ФБ")}
+        return result
     except Exception as e:
         return {"success": False, "error": str(e)}
+
 
 if __name__ == "__main__":
     mcp.run()
