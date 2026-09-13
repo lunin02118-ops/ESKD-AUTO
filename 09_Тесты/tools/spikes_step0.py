@@ -149,13 +149,89 @@ def s2(s):
     result["S-2"] = rec
 
 
+VARIANTS_S2B = {
+    # запись надстройки v6: вид сортамента внутри числителя, размеры «мм» с латинской «х»
+    "V1_надстройка_v6": "Пластина опорная\n<STACK size=1>Лист Б-ПН-НО 4 ГОСТ 19903-2015<OVER>Ст3сп ГОСТ 14637-2024</STACK>\n100х200 мм",
+    # как рисунок 15 проекта ГОСТ Р 2.109: вид сортамента перед дробью, размеры отдельной строкой
+    "V2_как_ГОСТ_рис15": "Пластина опорная\nЛист <STACK size=1>Б-ПН-НО 4 ГОСТ 19903-2015<OVER>Ст3сп ГОСТ 14637-2024</STACK>\n200×100",
+    # дробь на двух строках спецификации: пустая строка-разделитель под числитель
+    "V3_дробь_на_2_строки": "Пластина опорная\nЛист <STACK size=1>Б-ПН-НО 4 ГОСТ 19903-2015<OVER>Ст3сп ГОСТ 14637-2024</STACK>\n\n200×100",
+}
+
+
+def _put(obj, name, args, value):
+    import pythoncom
+    ole = com.dyn(obj)._oleobj_
+    dispid = ole.GetIDsOfNames(name)
+    ole.Invoke(dispid, 0, pythoncom.DISPATCH_PROPERTYPUT, 0, *args, value)
+
+
+def specedit_format(ann, font_mm=3.5):
+    """Оформление строк как FrmSpecEditor: 2721–2743 (Обозначение, Наименование, Примечание — влево, остальное по центру,
+    всё по верху) и 3026–3076 (строка 8 мм; если не помещается — шаг строк 8 мм и высота k × 8 мм)."""
+    rows, cols = int(ann.RowCount), int(ann.ColumnCount)
+    out = []
+    for i in range(1, rows):
+        for j in range(cols):
+            _put(ann, "CellTextHorizontalJustification", (i, j), 1 if j in (3, 4, cols - 1) else 2)  # 1 left, 2 center
+            _put(ann, "CellTextVerticalJustification", (i, j), 0)  # swTextAlignmentTop
+        need = float(ann.SetRowHeight(i, 0.008, 1))
+        if need > 0.008:
+            for j in (3, 4, cols - 1):
+                fmt = com.dyn(ann.GetCellTextFormat(i, j))
+                fmt.CharHeight = font_mm / 1000.0
+                fmt.LineSpacing = (8 - font_mm - 0.1) / 1000.0
+                ann.SetCellTextFormat(i, j, False, fmt._oleobj_ if hasattr(fmt, "_oleobj_") else fmt)
+                _put(ann, "CellTextVerticalJustification", (i, j), 0)
+            need = float(ann.SetRowHeight(i, 0.008, 1))
+            k1 = round(need / 0.0077) - 1
+            ann.SetRowHeight(i, k1 * 0.008 + 0.008, 1)
+        out.append(round(float(ann.GetRowHeight(i)) * 1000, 2))
+    return out
+
+
+def s2b(s):
+    import fitz
+    rec = {}
+    for key, record in VARIANTS_S2B.items():
+        r = rec[key] = {"record": record}
+        sub = f"s2b/{key}"
+        try:
+            for name in (A01, A04, A08):
+                s.workspace_copy(paths.FIXTURES_A / name, subdir=sub)
+            part = s.open(s.ws(sub, A01))
+            build.props(part, {"Наименование": record, "Формат": "БЧ", "Примечание": "0.63 кг"})
+            s.save(part)
+            s.open(s.ws(sub, A08))
+            drw = s.new_doc(paths.DRAWING_TEMPLATE)
+            build.set_sheet_format(drw, build.sheet_format("A3-A-1"), 420, 297)
+            view = build.model_view(drw, s.ws(sub, A08), 80, 80)
+            drw.ActivateView(str(view.GetName2))
+            ann = com.dyn(view.InsertBomTable4(False, 0.2, 0.28, 1, 2, "", str(BOM_TEMPLATE), False, 0, False))
+            r["row_heights_mm"] = specedit_format(ann)
+            drw.ForceRebuild3(False)
+            pdf = RUN / "work" / "pdf" / f"S2b_{key}.pdf"
+            ok, err, warn = s.save_as(drw, pdf)
+            r["pdf"] = [ok, err, warn]
+            if ok:
+                page = fitz.open(str(pdf))[0]
+                k = page.rect.width / 420.0
+                clip = fitz.Rect(195 * k, 5 * k, 418 * k, 90 * k)
+                page.get_pixmap(matrix=fitz.Matrix(220 / 72, 220 / 72), clip=clip).save(str(RUN / f"S2b_{key}.png"))
+            s.close_all()
+        except Exception:
+            r["error"] = traceback.format_exc()
+            s.close_all()
+    result["S-2b"] = rec
+
+
 def main():
     RUN.mkdir(parents=True)
     (RUN / "work" / "pdf").mkdir(parents=True)
     s = SwSession(RUN / "work", load_eskd=False)
     try:
         s.start()
-        chosen = [f for f in (s8, s6, s2) if not sys.argv[1:] or f.__name__ in sys.argv[1:]]
+        chosen = [f for f in (s8, s6, s2, s2b) if not sys.argv[1:] or f.__name__ in sys.argv[1:]]
         for fn in chosen:
             log("спайк", fn.__name__)
             fn(s)
