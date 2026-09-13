@@ -196,6 +196,40 @@ function Backup-SolidWorksRegistryKeys {
     return $backupDir
 }
 
+# WP-3.4: файлы SWPlus лежат в git. Они записываются, только если содержимое действительно меняется,
+# а справочники фамилий и организаций только дополняются в конце — порядок и индексы записей коллег сохраняются.
+function Write-SwPlusLines {
+    param([Parameter(Mandatory = $true)][string]$Path, [string[]]$Lines = @())
+    $encoding = [System.Text.Encoding]::GetEncoding(1251)
+    $text = if ($Lines.Count) { ($Lines -join "`r`n") + "`r`n" } else { "" }
+    if ((Test-Path -LiteralPath $Path) -and ([System.IO.File]::ReadAllText($Path, $encoding) -ceq $text)) { return $false }
+    [System.IO.File]::WriteAllText($Path, $text, $encoding)
+    return $true
+}
+
+function Add-SwPlusFamily {
+    # MProp_Fam.txt: фамилия на строке; новая — в конец.
+    param([Parameter(Mandatory = $true)][string]$Path, [string]$Name)
+    if (-not $Name -or -not $Name.Trim()) { return $false }
+    $lines = @()
+    if (Test-Path -LiteralPath $Path) { $lines = @([System.IO.File]::ReadAllLines($Path, [System.Text.Encoding]::GetEncoding(1251))) }
+    if (@($lines | Where-Object { $_.Trim() -eq $Name.Trim() }).Count) { return $false }
+    return Write-SwPlusLines -Path $Path -Lines (@($lines | Where-Object { $_.Trim() -ne "" }) + @($Name.Trim()))
+}
+
+function Add-SwPlusFirm {
+    # MProp_Firm.txt: пары строк «организация / код»; новая пара — в конец.
+    param([Parameter(Mandatory = $true)][string]$Path, [string]$Name)
+    if (-not $Name -or -not $Name.Trim()) { return $false }
+    $lines = @()
+    if (Test-Path -LiteralPath $Path) { $lines = @([System.IO.File]::ReadAllLines($Path, [System.Text.Encoding]::GetEncoding(1251))) }
+    for ($i = 0; $i -lt $lines.Count; $i += 2) {
+        if ($lines[$i].Trim() -eq $Name.Trim()) { return $false }
+    }
+    if ($lines.Count % 2 -eq 1) { $lines += "" }
+    return Write-SwPlusLines -Path $Path -Lines ($lines + @($Name.Trim(), ""))
+}
+
 #endregion
 
 if (-not $ToolsRoot) {
@@ -418,68 +452,39 @@ foreach ($spRoot in $swplusRoots) {
             $lines = [System.IO.File]::ReadAllLines($masterIni, [System.Text.Encoding]::GetEncoding(1251))
             if ($lines.Count -ge 4) {
                 $lines[3] = $sheetFormats.TrimEnd('\') + '\'
-                [System.IO.File]::WriteAllLines($masterIni, $lines, [System.Text.Encoding]::GetEncoding(1251))
+                if (Write-SwPlusLines -Path $masterIni -Lines $lines) {
+                    Write-Host "  [OK] Master.ini: путь к основным надписям — $($lines[3])" -ForegroundColor Green
+                }
             }
         }
 
         $mpropDir = Join-Path $spRoot "MProp"
         if (Test-Path $mpropDir) {
-            # Синхронизация списка фамилий (накопительно, не затирая коллег по отделу)
-            $famFile = Join-Path $mpropDir "MProp_Fam.txt"
-            $famList = @()
-            if (Test-Path $famFile) {
-                $famList = [System.IO.File]::ReadAllLines($famFile, [System.Text.Encoding]::GetEncoding(1251)) | Where-Object { $_.Trim() -ne "" }
+            if (Add-SwPlusFamily -Path (Join-Path $mpropDir "MProp_Fam.txt") -Name $Author) {
+                Write-Host "  [OK] В список фамилий MProp добавлен: $Author" -ForegroundColor Green
             }
-            if ($Author -and ($famList -notcontains $Author)) {
-                $famList = @($Author) + $famList
-            }
-            if ($famList.Count -gt 0) {
-                [System.IO.File]::WriteAllLines($famFile, $famList, [System.Text.Encoding]::GetEncoding(1251))
-            }
-
-            # Синхронизация списка организаций (формат MProp: четная/нечетная строка)
-            $firmFile = Join-Path $mpropDir "MProp_Firm.txt"
-            $firmPairs = @()
-            $existingFirmNames = @()
-            if (Test-Path $firmFile) {
-                $rawFirms = [System.IO.File]::ReadAllLines($firmFile, [System.Text.Encoding]::GetEncoding(1251))
-                for ($i = 0; $i -lt $rawFirms.Count; $i += 2) {
-                    $fName = $rawFirms[$i].Trim()
-                    $fCode = if ($i + 1 -lt $rawFirms.Count) { $rawFirms[$i + 1].Trim() } else { "" }
-                    if ($fName) {
-                        $firmPairs += ,@($fName, $fCode)
-                        $existingFirmNames += $fName
-                    }
-                }
-            }
-            if ($Firm -and ($existingFirmNames -notcontains $Firm)) {
-                $firmPairs = ,@($Firm, "") + $firmPairs
-            }
-            $outLines = @()
-            foreach ($pair in $firmPairs) {
-                $outLines += $pair[0]
-                $outLines += $pair[1]
-            }
-            if ($outLines.Count -gt 0) {
-                [System.IO.File]::WriteAllLines($firmFile, $outLines, [System.Text.Encoding]::GetEncoding(1251))
+            if (Add-SwPlusFirm -Path (Join-Path $mpropDir "MProp_Firm.txt") -Name $Firm) {
+                Write-Host "  [OK] В список организаций MProp добавлена: $Firm" -ForegroundColor Green
             }
         }
     }
 }
-Write-Host "  [OK] Master.ini и MProp ($Author / $Firm) синхронизированы в SWPlus SP0.1 и SP0.0." -ForegroundColor Green
+Write-Host "  [OK] Master.ini и справочники MProp проверены ($Author / $Firm)." -ForegroundColor Green
 
-# Очистка базы ТТ от пустых строк
+# Очистка базы ТТ от пустых строк — запись только при наличии пустых строк
 $ttFiles = @(
     (Join-Path $ToolsRoot "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\ТТ\TT_Prof.txt"),
     (Join-Path $ToolsRoot "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\ТТ\TT.TXT")
 )
 foreach ($ttf in $ttFiles) {
     if (Test-Path $ttf) {
-        $nonEmpty = [System.IO.File]::ReadAllLines($ttf, [System.Text.Encoding]::GetEncoding(1251)) | Where-Object { $_.Trim() -ne "" }
-        [System.IO.File]::WriteAllLines($ttf, $nonEmpty, [System.Text.Encoding]::GetEncoding(1251))
+        $nonEmpty = @([System.IO.File]::ReadAllLines($ttf, [System.Text.Encoding]::GetEncoding(1251)) | Where-Object { $_.Trim() -ne "" })
+        if (Write-SwPlusLines -Path $ttf -Lines $nonEmpty) {
+            Write-Host "  [OK] Из $([System.IO.Path]::GetFileName($ttf)) удалены пустые строки." -ForegroundColor Green
+        }
     }
 }
-Write-Host "  [OK] База технических требований (ТТ) проверена и очищена от пустых строк." -ForegroundColor Green
+Write-Host "  [OK] База технических требований (ТТ) проверена." -ForegroundColor Green
 
 # 4. Импорт полного корпоративного реестрового профиля с адаптацией путей
 Write-Host "`n[4/6] Импорт полного реестрового профиля $SwVersion..." -ForegroundColor Gray

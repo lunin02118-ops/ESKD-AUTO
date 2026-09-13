@@ -975,7 +975,8 @@ namespace ESKD.MaterialSync
                 // Also sync back to SWPlus text files so MProp/DProp see the exact same values
                 SyncFullListToSwPlus(GetSwPlusFamPaths(), author, checker, cmbAuthor.Items);
                 SyncFirmsToSwPlus(GetSwPlusFirmPaths(), org, cmbOrg.Items);
-                SyncToMPropIni(author);
+                // MProp.ini не трогаем: его первая строка — флаг MProp «Очистка свойств» (MIni1), а не индекс фамилии (Д-29).
+                // Фамилию MProp берёт из свойств модели и списка MProp_Fam.txt.
             }
             catch (Exception ex)
             {
@@ -1055,51 +1056,6 @@ namespace ESKD.MaterialSync
                 {
                     Core.Log.Error("MProp_Firm.txt", ex);
                 }
-            }
-        }
-
-        private void SyncToMPropIni(string author)
-        {
-            try
-            {
-                string[] iniPaths = FindCandidatePaths(@"Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp\MProp.ini");
-                foreach (string iniPath in iniPaths)
-                {
-                    if (!File.Exists(iniPath)) continue;
-
-                    // D-7: индекс выбранной в GUI фамилии — позиция в MProp_Fam.txt
-                    // (раньше всегда писался 0, и выбранная фамилия не попадала в MProp).
-                    int authorIndex = 0;
-                    if (!string.IsNullOrEmpty(author))
-                    {
-                        string famPath = Path.Combine(Path.GetDirectoryName(iniPath), "MProp_Fam.txt");
-                        if (File.Exists(famPath))
-                        {
-                            string[] fams = File.ReadAllLines(famPath, Encoding.GetEncoding(1251));
-                            for (int i = 0; i < fams.Length; i++)
-                            {
-                                if (string.Equals(fams[i].Trim(), author.Trim(), StringComparison.OrdinalIgnoreCase))
-                                {
-                                    authorIndex = i;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-
-                    List<string> lines = new List<string>(File.ReadAllLines(iniPath, Encoding.GetEncoding(1251)));
-                    while (lines.Count < 5) lines.Add("0");
-                    if (lines[0] == authorIndex.ToString()) continue;
-                    lines[0] = authorIndex.ToString();
-                    // Note: Line 6 (index 5) is MIni3 which is the Material Database name (.sldmat), NOT organization!
-                    // We preserve line 6 intact so MProp never warns about missing material database.
-                    File.WriteAllLines(iniPath, lines.ToArray(), Encoding.GetEncoding(1251));
-                }
-            }
-            catch (Exception ex)
-            {
-                Core.Log.Error("MProp.ini", ex);
-                MessageBox.Show("Фамилия не записана в MProp.ini: " + ex.Message, "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 

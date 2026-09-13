@@ -188,6 +188,32 @@ class StaticRepository(StaticTestCase):
         self.assertEqual([], result["problems"])
         self.assertTrue(result["sandboxRemoved"], "временный раздел реестра не удалён")
 
+    def test_T0_setup_writes_swplus_files_only_when_changed(self):
+        """T0: установщик переписывает файлы SWPlus только при отличии, фамилии и организации дописывает в конец (WP-3.4)."""
+        out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                              str(paths.TESTS / "tools" / "check_setup_swplus_files.ps1"),
+                              "-SetupPath", str(ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1"),
+                              "-SwPlusRoot", str(paths.SWPLUS)], capture_output=True, timeout=120)
+        lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+        self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
+        self.assertEqual([], json.loads(lines[-1])["problems"])
+        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        self.assertNotIn("WriteAllLines", setup, "файлы SWPlus пишутся только через Write-SwPlusLines")
+
+    def test_T0_mprop_ini_cleanup_flag_untouched(self):
+        """T0: надстройка не пишет MProp.ini — первая строка там флаг MProp «Очистка свойств», в репозитории он выключен (Д-29)."""
+        uses = {}
+        for src in addin_sources():
+            code = [ln.split("//")[0] for ln in src.read_text(encoding="utf-8").splitlines() if not ln.strip().startswith(("///", "//", "*"))]
+            n = sum(1 for ln in code if "MProp.ini" in ln)
+            if n:
+                uses[src.name] = n
+        self.assertEqual({"SettingsForm.cs": 1}, uses, "MProp.ini упоминается в коде только как маркёр каталога SWPlus")
+        form = (ADDIN / "SettingsForm.cs").read_text(encoding="utf-8")
+        self.assertRegex(form, r'File\.Exists\(markerIni\)', "маркёр только проверяется на существование")
+        first_line = (paths.SWPLUS / "MProp" / "MProp.ini").read_bytes().decode("cp1251").split("\r\n")[0]
+        self.assertEqual("0", first_line, "MProp.ini: флаг «Очистка свойств» (MIni1) включён")
+
     def test_T0_every_setting_is_used(self):
         """T0: каждое поле Core.Settings влияет на поведение — нет «фиктивных флажков» (Д-25)."""
         settings_cs = ADDIN / "Core" / "Settings.cs"
