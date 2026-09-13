@@ -74,7 +74,7 @@ class FixtureMaterials(SwTestCase):
         manifest = testing.manifest()
         expected = {}
         for fid, item in manifest["fixtures"].items():
-            if item.get("kind") in ("part", "weldment"):
+            if item.get("kind") in ("part", "weldment", "bch"):
                 expected[(fid, paths.FIXTURES_A / item["file"])] = {None: item["material"]}
             elif item.get("kind") in ("standard", "purchased"):
                 expected[(fid, paths.FIXTURES_A / item["file"])] = {None: item.get("material_sw") or ""}

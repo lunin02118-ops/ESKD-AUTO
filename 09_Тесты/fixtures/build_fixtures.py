@@ -8,6 +8,7 @@
 
 Запуск (SolidWorks должен быть закрыт):  python 09_Тесты/fixtures/build_fixtures.py
 Исправление материалов болта и двигателя без пересборки корпуса:  python 09_Тесты/fixtures/build_fixtures.py --fix-materials
+Добавление корпуса ред. 4 (A-15…A-20) без пересборки:  python 09_Тесты/fixtures/build_fixtures.py --add-corpus-r4
 """
 import hashlib
 import json
@@ -214,6 +215,7 @@ def build_all(session, manifest):
                      "signatures": {"Конструктор": "Петров П.П.", "Контора": "ООО «Вектор»", "Проверил": "Сидоров С.С."}}
     save_new(session, doc, A13)
     session.close(doc)
+    build_corpus_r4(session, items)
 
 
 def check_masses(manifest):
@@ -306,9 +308,119 @@ def fix_materials():
     print("исправлены и пересохранены:", changed)
 
 
+A15 = "ПРТИ.468211.111 Стойка трубная.sldprt"
+A16 = "ПРТИ.468211.112 Панель монтажная.sldprt"
+A17 = "ПРТИ.468211.113 Прокладка.sldprt"
+A18 = "ПРТИ.468211.114 Планка регулировочная.sldprt"
+A19 = "ПРТИ.468211.115 Кронштейн крепления направляющей рамы сварочного кондуктора.sldprt"
+A20 = "ПРТИ.468211.116-01 Упор.sldprt"
+CORPUS_R4 = ("A-15", "A-16", "A-17", "A-18", "A-19", "A-20")
+
+
+def build_corpus_r4(session, items):
+    """Корпус ред. 4 плана согласования с SWPlus (WP-6): случаи, которых нет в A-01…A-14."""
+    note = "добавлена 13.09.2026 (план согласования с SWPlus, WP-6) в сессии без надстройки"
+
+    # A-15 — кандидат в БЧ: труба из библиотеки; оформление БЧ (надстройкой или MProp) делает сам тест
+    doc, _ = build.square_tube(session, 40, 2, 500, TUBE40)
+    items["A-15"] = {"file": A15, "kind": "bch", "material": TUBE40, "designation": "ПРТИ.468211.111",
+                     "title": "Стойка трубная", "configs": ["00"], "length_mm": 500, "provenance": note,
+                     "mass_kg": round(build.analytic_mass_square_tube(40, 2, 500, TUBE40), 4),
+                     "sw_mass_kg": round(build.mass_kg(doc), 4)}
+    save_new(session, doc, A15)
+    session.close(doc)
+
+    # A-16 — деталь раздела «ЭМ-Детали» (раздел в конфигурации, как пишет MProp)
+    doc, _ = build.plate(session, 300, 200, 3, SHEET3)
+    cfg = str(doc.GetActiveConfiguration.Name)
+    build.props(doc, {"Раздел": "ЭМ-Детали"}, config=cfg)
+    items["A-16"] = {"file": A16, "kind": "part", "section": "ЭМ-Детали", "material": SHEET3,
+                     "designation": "ПРТИ.468211.112", "title": "Панель монтажная", "configs": [cfg], "provenance": note,
+                     "mass_kg": round(build.analytic_mass_plate(300, 200, 3, SHEET3), 4),
+                     "sw_mass_kg": round(build.mass_kg(doc), 4)}
+    save_new(session, doc, A16)
+    session.close(doc)
+
+    # A-17 — деталь легче 100 г: масса в граммах по правилу MProp
+    doc, _ = build.plate(session, 30, 20, 4, SHEET4)
+    items["A-17"] = {"file": A17, "kind": "part", "material": SHEET4, "designation": "ПРТИ.468211.113",
+                     "title": "Прокладка", "configs": ["00"], "light": True, "provenance": note,
+                     "mass_kg": round(build.analytic_mass_plate(30, 20, 4, SHEET4), 4),
+                     "sw_mass_kg": round(build.mass_kg(doc), 4)}
+    save_new(session, doc, A17)
+    session.close(doc)
+
+    # A-18 — исполнения по обе стороны порога 100 г: «00» 40 мм (≈ 50 г), «01» 140 мм (≈ 176 г)
+    doc, _ = build.plate(session, 40, 40, 4, SHEET4)
+    base_cfg = str(doc.GetActiveConfiguration.Name)
+    build.sketch_rectangles(doc, [(0.02, -0.02, 0.12, 0.02)])
+    ext = build.extrude(doc, 0.004)
+    build.add_configuration(doc, "01")
+    if not ext.SetSuppression2(0, 3, com.str_array([base_cfg])):
+        raise RuntimeError("A-18: гашение по конфигурации не выполнено")
+    lengths = {base_cfg: 40, "01": 140}
+    masses = {}
+    for c in lengths:
+        build.show_configuration(doc, c)
+        doc.ForceRebuild3(False)
+        masses[c] = round(build.mass_kg(doc), 4)
+    build.show_configuration(doc, base_cfg)
+    items["A-18"] = {"file": A18, "kind": "part", "material": SHEET4, "designation": "ПРТИ.468211.114",
+                     "title": "Планка регулировочная", "configs": list(lengths), "mass_threshold_kg": 0.1,
+                     "execution_designations": {base_cfg: "ПРТИ.468211.114", "01": "ПРТИ.468211.114-01"},
+                     "provenance": note,
+                     "mass_kg": {c: round(build.analytic_mass_plate(l, 40, 4, SHEET4), 4) for c, l in lengths.items()},
+                     "sw_mass_kg": masses}
+    save_new(session, doc, A18)
+    session.close(doc)
+
+    # A-19 — длинное наименование: в графе 1 не помещается в одну строку и в две строки по 22 знака
+    doc, _ = build.plate(session, 180, 90, 6, SHEET6)
+    items["A-19"] = {"file": A19, "kind": "part", "material": SHEET6, "designation": "ПРТИ.468211.115",
+                     "title": "Кронштейн крепления направляющей рамы сварочного кондуктора", "configs": ["00"],
+                     "provenance": note,
+                     "mass_kg": round(build.analytic_mass_plate(180, 90, 6, SHEET6), 4),
+                     "sw_mass_kg": round(build.mass_kg(doc), 4)}
+    save_new(session, doc, A19)
+    session.close(doc)
+
+    # A-20 — исполнение в имени файла
+    doc, _ = build.plate(session, 60, 40, 4, SHEET4)
+    items["A-20"] = {"file": A20, "kind": "part", "material": SHEET4, "designation": "ПРТИ.468211.116-01",
+                     "base_designation": "ПРТИ.468211.116", "title": "Упор", "configs": ["00"], "provenance": note,
+                     "mass_kg": round(build.analytic_mass_plate(60, 40, 4, SHEET4), 4),
+                     "sw_mass_kg": round(build.mass_kg(doc), 4)}
+    save_new(session, doc, A20)
+    session.close(doc)
+
+
+def add_corpus_r4():
+    """Добавление корпуса ред. 4 к существующему корпусу А без пересборки A-01…A-14 (хеши прежних файлов не меняются)."""
+    run_dir = paths.RUNS / ("fixtures_r4_" + time.strftime("%Y%m%d_%H%M%S"))
+    manifest = json.loads(paths.FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+    items = {}
+    with SwSession(run_dir, load_eskd=False) as session:
+        build_corpus_r4(session, items)
+        check_masses({"fixtures": items})
+        unexpected = session.watchdog.pop_unexpected()
+        if unexpected:
+            raise RuntimeError(f"Неожиданные диалоги при сборке фикстур: {unexpected}")
+        if session.violations():
+            raise RuntimeError("Зонд зафиксировал сохранение вне каталога прогона")
+    for fid, item in items.items():
+        dst = paths.FIXTURES_A / item["file"]
+        shutil.copy2(run_dir / item["file"], dst)
+        item["sha256"] = sha256(dst)
+        manifest["fixtures"][fid] = item
+    paths.FIXTURE_MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps(items, ensure_ascii=False, indent=2))
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     if "--fix-materials" in sys.argv:
         fix_materials()
+    elif "--add-corpus-r4" in sys.argv:
+        add_corpus_r4()
     else:
         main()
