@@ -232,7 +232,8 @@ def pdf_rows(pdf_path, sheet_width_mm, cell_mm, page_index=0):
     clip = fitz.Rect(x1 * k, page.rect.height - y2 * k, x2 * k, page.rect.height - y1 * k)
     rows = {}
     for wx1, wy1, wx2, wy2, word, *_ in page.get_text("words"):
-        if not fitz.Rect(wx1, wy1, wx2, wy2).intersects(clip):
+        # слово относится к графе по центру: у «GOST 2.304 type A» габарит надписи «Копировал» под рамкой задевает графу 3
+        if not clip.contains(fitz.Point((wx1 + wx2) / 2, (wy1 + wy2) / 2)):
             continue
         try:
             word = word.encode("latin-1").decode("cp1251")
