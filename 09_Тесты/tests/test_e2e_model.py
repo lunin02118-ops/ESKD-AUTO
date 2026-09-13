@@ -2,7 +2,7 @@
 """E2E, группа M — модель свойств: имена, уровни хранения, владение значениями (план, §3.2)."""
 import unittest
 
-from eskd_e2e import build, oracles
+from eskd_e2e import build, com, oracles
 from eskd_e2e.testing import SwTestCase, known_defect, tags
 
 V = oracles.value
@@ -157,6 +157,24 @@ class ModelNames(SwTestCase):
         self.s.save(doc)
         self.s.close(doc)
         self.assertEqual("Простая углеродистая сталь", V(self.persisted(path), "Материал_ФБ", "00"))
+        self.assertEqual([], self.addin_errors())
+
+    @known_defect("Д-32")
+    def test_M12_mprop_sortament_fraction_is_not_overwritten(self):
+        """M12: дробь сортамента, записанная MProp, переживает сохранение, хотя материал SolidWorks другой; в журнале — предупреждение."""
+        path, doc = self.open_copy(A01)
+        fraction = "<FONT size=1.8> <FONT size=3.5>Лист <STACK size=1>Б-ПН-НО-5,0 ГОСТ 19903-2015<OVER>09Г2С-12 ГОСТ 19281-2014</STACK>"
+        table = "Лист <STACK size=1>Б-ПН-НО-5,0 ГОСТ 19903-2015<OVER>09Г2С-12 ГОСТ 19281-2014</STACK>"
+        cpm = doc.Extension.CustomPropertyManager("00")
+        self.assertEqual(0, com.prop_set(cpm, "Материал_ФБ", fraction))
+        self.assertEqual(0, com.prop_set(cpm, "Материал_Таблица", table))
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual(fraction, V(disk, "Материал_ФБ", "00"), "дробь MProp в графе 3")
+        self.assertEqual(table, V(disk, "Материал_Таблица", "00"), "дробь MProp для таблиц")
+        warnings = [ln for ln in self.addin_log.new_lines() if "введён вручную" in ln and "Материал_ФБ" in ln]
+        self.assertTrue(warnings, "расхождение с материалом SolidWorks не записано в журнал")
         self.assertEqual([], self.addin_errors())
 
     @known_defect("Д-09")

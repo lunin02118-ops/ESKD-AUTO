@@ -83,6 +83,9 @@ namespace ESKD.MaterialSync.Core
             return Regex.IsMatch(raw.Trim(), @"^(<FONT size=[0-9.,]+>\s*)*\d+(,\d+)?$", RegexOptions.IgnoreCase);
         }
 
+        /// <summary>Начало дроби материала, которую пишет надстройка (так же писала v5); MProp пишет «&lt;FONT size=1.8&gt; &lt;FONT size=3.5&gt;» с пробелом.</summary>
+        public const string GeneratedMaterialMarkup = "<FONT size=1.8><FONT size=3.5><STACK size=1>";
+
         /// <summary>Дробь «сортамент / марка» для графы 3 из двух частей.</summary>
         public static string MaterialFraction(string top, string bottom)
         {
@@ -90,7 +93,42 @@ namespace ESKD.MaterialSync.Core
             {
                 return ((top ?? "") + (bottom ?? "")).Trim();
             }
-            return string.Format(" <FONT size=1.8><FONT size=3.5><STACK size=1>{0}<OVER>{1}</STACK>", top.Trim(), bottom.Trim());
+            return string.Format(" " + GeneratedMaterialMarkup + "{0}<OVER>{1}</STACK>", top.Trim(), bottom.Trim());
+        }
+
+        /// <summary>
+        /// «Материал_ФБ» или «Материал_Таблица», которые надстройка вправе переписать: пусто, выражение шаблона ($PRP),
+        /// дробь в разметке надстройки или строка без разметки (так надстройка пишет материал вне библиотеки).
+        /// Выражение SW-Material, «-», «См. таблицу», дробь или текст MProp и любая другая разметка — значения
+        /// пользователя (Д-32): MProp выбирает сортамент и марку независимо от материала SolidWorks.
+        /// </summary>
+        public static bool IsDerivedMaterial(string raw)
+        {
+            if (raw == null) return true;
+            string t = raw.Trim();
+            if (t.Length == 0) return true;
+            if (t.IndexOf("SW-Material", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            if (t.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (t == "-" || t.IndexOf("См.", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            if (t.StartsWith(GeneratedMaterialMarkup, StringComparison.Ordinal)) return true;
+            return !HasMarkup(t);
+        }
+
+        /// <summary>Материал, введённый пользователем текстом или дробью (не выражение, не «-» и не «См. таблицу»).</summary>
+        public static bool IsManualMaterialText(string raw)
+        {
+            if (IsDerivedMaterial(raw)) return false;
+            string t = raw.Trim();
+            return t.IndexOf("SW-Material", StringComparison.OrdinalIgnoreCase) < 0 && !PlainText(t).Equals("-") &&
+                   t.IndexOf("См.", StringComparison.OrdinalIgnoreCase) < 0;
+        }
+
+        /// <summary>Текст значения без разметки SolidWorks и косой черты дроби — для сравнения материалов.</summary>
+        public static string PlainText(string value)
+        {
+            if (string.IsNullOrEmpty(value)) return "";
+            string s = Regex.Replace(value, "<[^>]*>", " ").Replace("/", " ");
+            return Regex.Replace(s, @"\s+", " ").Trim();
         }
 
         public static string MaterialForStamp(string gostDesignation, string sortament, string gradeLine)

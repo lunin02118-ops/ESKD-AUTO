@@ -376,21 +376,18 @@ namespace ESKD.MaterialSync.Sw
                     stamp = SwPlusMarkup.MaterialFraction(material.Substring(0, material.IndexOf('/')), material.Substring(material.IndexOf('/') + 1));
                 else
                     stamp = material;
-                if (OwnedByUser(w.Raw(cfg, fbName))) continue;
+                string current = w.Raw(cfg, fbName);
+                if (!SwPlusMarkup.IsDerivedMaterial(current))
+                {
+                    // Значение MProp или пользователя остаётся (Д-32); расхождение с материалом SolidWorks — в журнал.
+                    if (SwPlusMarkup.IsManualMaterialText(current) && SwPlusMarkup.PlainText(current) != SwPlusMarkup.PlainText(stamp))
+                        report.Warnings.Add(string.Format("Конфигурация «{0}»: «{1}» = «{2}» введён вручную и не совпадает с материалом SolidWorks «{3}» — значение не изменено",
+                            cfg, fbName, SwPlusMarkup.PlainText(current), material));
+                    continue;
+                }
                 w.Set(cfg, fbName, stamp);
-                if (!OwnedByUser(w.Raw(cfg, tableName))) w.Set(cfg, tableName, stamp);
+                if (SwPlusMarkup.IsDerivedMaterial(w.Raw(cfg, tableName))) w.Set(cfg, tableName, stamp);
             }
-        }
-
-        /// <summary>Значение, которое записал MProp или человек: живое выражение материала или ручной текст.</summary>
-        private static bool OwnedByUser(string raw)
-        {
-            if (raw == null) return false;
-            string t = raw.Trim();
-            if (t.Length == 0) return false;
-            if (t.IndexOf("SW-Material", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (t.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0) return false;
-            return t == "-" || t.IndexOf("См.", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static string MaterialName(PartDoc part, ModelDoc2 model, string cfg, string active, out string db)

@@ -179,6 +179,29 @@ namespace ESKD.Tests
             Assert.IsFalse(SwPlusMarkup.IsGeneratedMass("-"), "прочерк");
         }
 
+        public static void Test_material_ownership_classification()
+        {
+            Assert.IsTrue(SwPlusMarkup.IsDerivedMaterial(null), "нет свойства");
+            Assert.IsTrue(SwPlusMarkup.IsDerivedMaterial("  "), "пусто");
+            Assert.IsTrue(SwPlusMarkup.IsDerivedMaterial("$PRP:\"Материал\""), "выражение шаблона");
+            string generated = SwPlusMarkup.MaterialFraction("Лист Б-ПН-НО-4,0 ГОСТ 19903-2015", "Ст3сп ГОСТ 14637-89");
+            Assert.IsTrue(SwPlusMarkup.IsDerivedMaterial(generated), "дробь надстройки");
+            Assert.IsTrue(SwPlusMarkup.IsDerivedMaterial("Простая углеродистая сталь"), "строка материала без разметки (M10)");
+            string mpropSortament = "<FONT size=1.8> <FONT size=3.5>Труба <STACK size=1>80х80х4 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>";
+            Assert.IsFalse(SwPlusMarkup.IsDerivedMaterial(mpropSortament), "сортамент MProp (Д-32)");
+            Assert.IsTrue(SwPlusMarkup.IsManualMaterialText(mpropSortament), "сортамент MProp — ручной ввод");
+            Assert.IsFalse(SwPlusMarkup.IsDerivedMaterial("<STACK size=1>Труба 80х80х4 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>"), "дробь без шрифта (корпус Б, B-01)");
+            Assert.IsFalse(SwPlusMarkup.IsDerivedMaterial("<FONT size=1.8> \n<FONT size=3.5>Сталь 20 ГОСТ 1050-2013"), "материал пользователя MProp");
+            string live = "<FONT size=1.8> \n<FONT size=3.5>\"SW-Material@@00@ПРТИ.468211.101.SLDPRT\"";
+            Assert.IsFalse(SwPlusMarkup.IsDerivedMaterial(live), "выражение MProp");
+            Assert.IsFalse(SwPlusMarkup.IsManualMaterialText(live), "выражение — не ручной текст");
+            Assert.IsFalse(SwPlusMarkup.IsDerivedMaterial("<FONT size=1.8> \n<FONT size=3.5>См. таблицу"), "см. таблицу");
+            Assert.IsFalse(SwPlusMarkup.IsManualMaterialText("<FONT size=1> \n<FONT size=3.5>-"), "прочерк MProp");
+            Assert.AreEqual("Труба 80х80х4 ГОСТ 8639-82 В 10 ГОСТ 13663-86", SwPlusMarkup.PlainText(mpropSortament), "текст без разметки");
+            Assert.AreEqual(SwPlusMarkup.PlainText("Труба 80х80х4 ГОСТ 8639-82 / В 10 ГОСТ 13663-86"),
+                SwPlusMarkup.PlainText(SwPlusMarkup.MaterialFraction("Труба 80х80х4 ГОСТ 8639-82", "В 10 ГОСТ 13663-86")), "дробь и строка с косой чертой равны");
+        }
+
         public static void Test_MaterialForStamp_from_library_designation()
         {
             string expected = " <FONT size=1.8><FONT size=3.5><STACK size=1>Труба 80х80х4,0 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>";
