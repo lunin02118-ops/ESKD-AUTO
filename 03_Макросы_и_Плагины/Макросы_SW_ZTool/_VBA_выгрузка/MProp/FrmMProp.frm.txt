@@ -1520,7 +1520,7 @@ ChkConf_Click
         End If
 
         ' Проверяем наличие ручного ввода Обозначения
-        m = 0 ' Метка заданного Наименования (=1)
+        m = 0: SwpBchState SwpBchRecord("") ' Метка заданного Наименования (=1); ЕСКД WP-3.2: запись БЧ
         strTemp = "$PRP:" & Chr$(34) & "SW-File Name" & Chr$(34)
         If prpFileName = 0 Then ' Разделитель не используем
             If swModel.CustomInfo(prpNumber) = strTemp Or swModel.CustomInfo(prpNumber) = "" Then
@@ -1549,11 +1549,11 @@ ChkConf_Click
         Else ' Разделитель используем
             varTemp = InStr(sNumberTitle, prpNameSep)
             If varTemp > 0 Then ' Разделитель найден
-                strTemp1 = swModel.CustomInfo(prpNumber) & prpNameSep & swModel.CustomInfo(prpDescription)
-                If sNumberTitle = strTemp1 Or swModel.CustomInfo(prpNumber) = "" Or swModel.CustomInfo(prpNumber) = strTemp Then
+                strTemp1 = SwpDescriptionForName() ' ЕСКД WP-3.2, 3.3, 3.6: имя файла разбирается как в надстройке
+                If (swModel.CustomInfo(prpNumber) = SwpNum(sNumberTitle) And strTemp1 = SwpName(sNumberTitle)) Or swModel.CustomInfo(prpNumber) = "" Or swModel.CustomInfo(prpNumber) = strTemp Then
                     ChkManual.Value = False
-                    TxtNumber.Value = Left$(sNumberTitle, varTemp - 1)
-                    Наименование.Value = Right$(sNumberTitle, Len(sNumberTitle) - varTemp - Len(prpNameSep) + 1)
+                    TxtNumber.Value = SwpNum(sNumberTitle)
+                    Наименование.Value = SwpName(sNumberTitle)
                     m = 1
                 Else
                     If swModel.CustomInfo2("", "RenameSWP") = "0" Then  ' Файл был переименован
@@ -1561,8 +1561,8 @@ ChkConf_Click
                         lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
                         If lRetval = swMbHitYes Then
                             ChkManual.Value = False
-                            TxtNumber.Value = Left$(sNumberTitle, varTemp - 1)
-                            Наименование.Value = Right$(sNumberTitle, Len(sNumberTitle) - varTemp - Len(prpNameSep) + 1)
+                            TxtNumber.Value = SwpNum(sNumberTitle) ' ЕСКД WP-3.3, 3.6
+                            Наименование.Value = SwpName(sNumberTitle)
                             m = 1
                         Else
                             ChkManual.Value = True
@@ -1675,18 +1675,18 @@ If m = 0 Then
     If strTemp = "" Then ' Если строчка пустая
         strTemp = swModel.CustomInfo2("", prpDescription)
         If strTemp = "" Then ' Если строчка пустая
-            Наименование.Value = swModel.SummaryInfo(0)
+            Наименование.Value = SwpFormValue(swModel.SummaryInfo(0)) ' ЕСКД WP-3.2
         Else
-            Наименование.Value = strTemp
+            Наименование.Value = SwpFormValue(strTemp) ' ЕСКД WP-3.2
         End If
     Else
-        Наименование.Value = strTemp
+        Наименование.Value = SwpFormValue(strTemp) ' ЕСКД WP-3.2: у детали БЧ в поле — запись, а не текст графы 1
     End If
 Else
     ChkFont.Value = False
     ChkFont_Click
     ChkEnter.Enabled = False
-    ChkEnter.Value = False
+    ChkEnter.Value = False: Наименование.Value = SwpFormValue(Наименование.Value) ' ЕСКД WP-3.2
 End If
 If prpFontSize = 0 Then ' Управление шрифтом
     ChkFont.Enabled = False
@@ -2199,7 +2199,7 @@ Else ' Открыта модель
             If m1 = 0 Then
                 Set swView = swDraw.GetFirstView
                 Set swView = swView.GetNextView
-                swApp.SendMsgToUser ("Не удалось определить вид из свойств листа. Используется первый вид.")
+                ' ЕСКД WP-3.5 (S-8): вид пуст или не найден — первый вид листа, без окна
             End If
         End If
         If swView Is Nothing Then
@@ -2634,26 +2634,26 @@ End If
 ok = swModel.AddCustomInfo2("Description", 30, strDescription)
 swModel.CustomInfo2("", "Description") = strDescription
 If prpFontSize = 1 Then ' Проверка количества строк
-    varTemp = InStr(Наименование.Value, Chr$(10))
+    varTemp = InStr(SwpStampText(), Chr$(10))
     If varTemp > 0 Then
-        If InStr(varTemp + 1, Наименование.Value, Chr$(10)) > 0 Then ' Три строки
-            strTemp = "<FONT size=3.5>" & Наименование.Value
+        If InStr(varTemp + 1, SwpStampText(), Chr$(10)) > 0 Then ' Три строки
+            strTemp = "<FONT size=3.5>" & SwpStampText()
         Else ' Две строки
             If ChkFont.Value = True Then
-                strTemp = "<FONT size=2> " & Chr$(13) & Chr$(10) & "<FONT size=3.5>" & Наименование.Value
+                strTemp = "<FONT size=2> " & Chr$(13) & Chr$(10) & "<FONT size=3.5>" & SwpStampText()
             Else
-                strTemp = "<FONT size=2> " & Chr$(13) & Chr$(10) & "<FONT size=5>" & Наименование.Value
+                strTemp = "<FONT size=2> " & Chr$(13) & Chr$(10) & "<FONT size=5>" & SwpStampText()
             End If
         End If
     Else ' Одна строка
         If ChkFont.Value = True Then
-            strTemp = "<FONT size=4> " & Chr$(10) & "<FONT size=3.5>" & Наименование.Value
+            strTemp = "<FONT size=4> " & Chr$(10) & "<FONT size=3.5>" & SwpStampText()
         Else
-            strTemp = "<FONT size=4> " & Chr$(10) & "<FONT size=5>" & Наименование.Value
+            strTemp = "<FONT size=4> " & Chr$(10) & "<FONT size=5>" & SwpStampText()
         End If
     End If
 Else
-    strTemp = Наименование.Value
+    strTemp = SwpStampText()
 End If
 ok = swModel.AddCustomInfo2(prpDescriptionMulti, 30, "")
 swModel.CustomInfo2("", prpDescriptionMulti) = strTemp
@@ -2669,7 +2669,7 @@ If Исполнение.Value = True And LTrim(TxtConf.Value) <> "" Then ' Ис�
         swModel.CustomInfo2(sConfigName, prpDescriptionMulti) = strTemp & " " & TxtCode.Value
     End If
 Else
-    ok = swModel.DeleteCustomInfo2(sConfigName, prpDescription)
+    If SwpBchRecord(sConfigName) = "" Then ok = swModel.DeleteCustomInfo2(sConfigName, prpDescription) ' ЕСКД WP-3.2
     ok = swModel.DeleteCustomInfo2(sConfigName, prpDescriptionMulti)
 End If
 
@@ -2699,7 +2699,7 @@ For i = 0 To ConfNumb - 1
     Else
         ok = swModel.AddCustomInfo3(vConfNameArr(i), prpNumber, 30, "")
         swModel.CustomInfo2(vConfNameArr(i), prpNumber) = sNumber
-        ok = swModel.DeleteCustomInfo2(vConfNameArr(i), prpDescription)
+        If SwpBchRecord(vConfNameArr(i)) = "" Then ok = swModel.DeleteCustomInfo2(vConfNameArr(i), prpDescription) ' ЕСКД WP-3.2
         ok = swModel.DeleteCustomInfo2(vConfNameArr(i), prpDescriptionMulti)
     End If
 Next i
@@ -3213,12 +3213,12 @@ Else
         varTemp = InStr(sNumberTitle, prpNameSep)
         If varTemp > 0 Then ' Разделитель найден
             Наименование.Enabled = False
-            TxtNumber.Value = Left$(sNumberTitle, varTemp - 1)
-            Наименование.Value = Right$(sNumberTitle, Len(sNumberTitle) - varTemp - Len(prpNameSep) + 1)
+            TxtNumber.Value = SwpNum(sNumberTitle) ' ЕСКД WP-3.3, 3.6
+            Наименование.Value = SwpName(sNumberTitle)
             ChkFont.Value = False
             ChkFont_Click
             ChkEnter.Enabled = False
-            ChkEnter.Value = False
+            ChkEnter.Value = False: Наименование.Value = SwpFormValue(Наименование.Value) ' ЕСКД WP-3.2
         Else
             TxtNumber.Value = sNumberTitle
         End If
@@ -3904,3 +3904,158 @@ boolstatus = Part.Extension.CreateMassProperty.SetAssignedMassProp(1.60069963849
 
 End Sub
 
+' ===== Правки ЕСКД: план согласования надстройки ЕСКД с SWPlus, шаг 4 =====
+
+' Разбор имени файла «Обозначение [код документа] Наименование», как DesignationParser надстройки (WP-3.3, WP-3.6):
+' код документа отбрасывается; если в первом слове нет цифр, обозначения нет и всё имя — наименование.
+Private Sub SwpSplitName(ByVal sTitle As String, ByRef sNum As String, ByRef sName As String)
+    Dim p As Long
+    Dim sWord As String
+    sNum = ""
+    sName = ""
+    p = InStr(sTitle, prpNameSep)
+    If p = 0 Then
+        If SwpHasDigit(sTitle) Then sNum = sTitle Else sName = sTitle
+        Exit Sub
+    End If
+    If Not SwpHasDigit(Left$(sTitle, p - 1)) Then
+        sName = sTitle
+        Exit Sub
+    End If
+    sNum = Trim$(Left$(sTitle, p - 1))
+    sName = Trim$(Mid$(sTitle, p + Len(prpNameSep)))
+    p = InStr(sName, " ")
+    If p > 0 Then sWord = Left$(sName, p - 1) Else sWord = sName
+    If SwpIsDocCode(sWord) Then sName = Trim$(Mid$(sName, Len(sWord) + 1))
+    If Len(sNum) > 2 Then
+        If SwpIsDocCode(Right$(sNum, 2)) And Mid$(sNum, Len(sNum) - 2, 1) Like "#" Then sNum = Left$(sNum, Len(sNum) - 2)
+    End If
+End Sub
+
+Private Function SwpHasDigit(ByVal s As String) As Boolean
+    SwpHasDigit = s Like "*#*"
+End Function
+
+Private Function SwpIsDocCode(ByVal s As String) As Boolean
+    Select Case UCase$(s)
+        Case "СБ", "ГЧ", "МЧ", "ВО", "ТУ", "ТБ", "ПЭ", "СХ", "СЭ", "ВП", "СП"
+            SwpIsDocCode = True
+        Case Else
+            SwpIsDocCode = UCase$(s) Like "Э#"
+    End Select
+End Function
+
+Private Function SwpNum(ByVal sTitle As String) As String
+    Dim sNum As String
+    Dim sName As String
+    SwpSplitName sTitle, sNum, sName
+    SwpNum = sNum
+End Function
+
+Private Function SwpName(ByVal sTitle As String) As String
+    Dim sNum As String
+    Dim sName As String
+    SwpSplitName sTitle, sNum, sName
+    SwpName = sName
+End Function
+
+' Запись БЧ документа, прочитанная при загрузке формы (WP-3.2); с аргументом — запомнить.
+Private Function SwpBchState(Optional ByVal sSet As Variant) As String
+    Static sRecord As String
+    If Not IsMissing(sSet) Then sRecord = sSet
+    SwpBchState = sRecord
+End Function
+
+' «Наименование» для сравнения с именем файла: у детали БЧ — первая строка записи (WP-3.2).
+Private Function SwpDescriptionForName() As String
+    If SwpBchState() <> "" Then
+        SwpDescriptionForName = SwpFirstLine(SwpBchState())
+    Else
+        SwpDescriptionForName = swModel.CustomInfo(prpDescription)
+    End If
+End Function
+
+' Значение поля «Наименование»: у детали БЧ — запись целиком, многострочный ввод (WP-3.2).
+Private Function SwpFormValue(ByVal sValue As String) As String
+    If SwpBchState() <> "" Then
+        ChkEnter.Value = True
+        SwpFormValue = SwpBchState()
+    Else
+        SwpFormValue = sValue
+    End If
+End Function
+
+' Текст графы 1: у записи БЧ — первая строка; одна строка шрифтом 5 мм переносится по словам (WP-3.1, WP-3.2).
+Private Function SwpStampText() As String
+    Dim t As String
+    t = Наименование.Value
+    If SwpBchState() <> "" And ChkEnter.Value = True Then t = SwpFirstLine(t)
+    If InStr(t, Chr$(10)) = 0 And ChkFont.Value = False Then t = SwpWrapTitle(t)
+    SwpStampText = t
+End Function
+
+' Запись детали БЧ в «Наименовании» уровня sConf (WP-3.2): «Формат» = «БЧ» и запись в несколько строк; иначе пусто.
+Private Function SwpBchRecord(ByVal sConf As String) As String
+    Dim sFormat As String
+    Dim sDesc As String
+    sFormat = swModel.CustomInfo2(sConf, prpFormat)
+    If sFormat = "" Then sFormat = swModel.CustomInfo2("", prpFormat)
+    If sFormat = "" Then sFormat = swModel.CustomInfo2(sConfigName, prpFormat)
+    sDesc = swModel.CustomInfo2(sConf, prpDescription)
+    If Trim$(sFormat) = "БЧ" And InStr(sDesc, Chr$(10)) > 0 Then SwpBchRecord = sDesc
+End Function
+
+Private Function SwpFirstLine(ByVal s As String) As String
+    Dim p As Long
+    p = InStr(s, Chr$(10))
+    If p > 0 Then s = Left$(s, p - 1)
+    SwpFirstLine = Trim$(Replace(s, Chr$(13), ""))
+End Function
+
+' Перенос наименования графы 1 по словам, как SwPlusFormat.WrapTitle надстройки (WP-3.1, спайк S-4): до 22 знаков — одна
+' строка 5 мм; до двух строк по 22 знака — две строки; иначе три строки по 31 знаку.
+Private Function SwpWrapTitle(ByVal sText As String) As String
+    Dim t As String
+    Dim n As Integer
+    Dim sLines As String
+    t = Trim$(Replace(Replace(sText, Chr$(13), " "), Chr$(10), " "))
+    If Len(t) <= 22 Then
+        SwpWrapTitle = t
+        Exit Function
+    End If
+    sLines = SwpWrapLines(t, 22, n)
+    If n <= 2 Then
+        SwpWrapTitle = sLines
+    Else
+        SwpWrapTitle = SwpWrapLines(t, 31, n)
+    End If
+End Function
+
+Private Function SwpWrapLines(ByVal t As String, ByVal iLimit As Integer, ByRef n As Integer) As String
+    Dim vWords As Variant
+    Dim k As Long
+    Dim sLine As String
+    Dim sOut As String
+    vWords = Split(Replace(Replace(t, Chr$(9), " "), ChrW$(160), " "), " ")
+    n = 0
+    For k = LBound(vWords) To UBound(vWords)
+        If vWords(k) <> "" Then
+            If sLine = "" Then
+                sLine = vWords(k)
+            ElseIf Len(sLine) + 1 + Len(vWords(k)) <= iLimit Then
+                sLine = sLine & " " & vWords(k)
+            Else
+                If n > 0 Then sOut = sOut & Chr$(10)
+                sOut = sOut & sLine
+                n = n + 1
+                sLine = vWords(k)
+            End If
+        End If
+    Next k
+    If sLine <> "" Then
+        If n > 0 Then sOut = sOut & Chr$(10)
+        sOut = sOut & sLine
+        n = n + 1
+    End If
+    SwpWrapLines = sOut
+End Function

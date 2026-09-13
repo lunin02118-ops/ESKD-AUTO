@@ -182,6 +182,18 @@ namespace ESKD.MaterialSync.Sw
                     current, now.BaseName));
             }
 
+            // Имя без обозначения («Кронштейн сварной»): обозначение пустое, как у MProp после правки WP-3.6 — выражение шаблона
+            // «SW-File Name» вывело бы в графу 2 всё имя файла (Р-11, Н-30); введённое вручную обозначение остаётся.
+            if (!now.HasDesignation && !manual && PropertyWriter.IsEmptyOrTemplate(current))
+            {
+                w.Set("", number, "");
+                foreach (string cfg in w.ConfigurationNames())
+                {
+                    if (PropertyWriter.IsEmptyOrTemplate(w.Raw(cfg, number))) w.Set(cfg, number, "");
+                    if (string.IsNullOrWhiteSpace(w.Raw(cfg, "Исполнение"))) w.Set(cfg, "Исполнение", "0");
+                }
+            }
+
             // Обозначения конфигураций (исполнения по ГОСТ 2.113)
             if (designationDerived && now.HasDesignation)
             {

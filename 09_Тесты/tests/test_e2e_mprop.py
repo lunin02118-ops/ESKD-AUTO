@@ -104,6 +104,48 @@ class MPropCompatibility(SwTestCase):
         found = self._mprop_round_trip(doc)
         self.assertEqual([], found, "MProp «Применить без правок» изменил новую деталь без материала")
 
+    def test_M04_mprop_apply_changes_nothing_name_without_designation(self):
+        """M04 (К-1): деталь «Кронштейн сварной» без обозначения в имени файла — всё имя идёт в наименование,
+        обозначение пустое, как в надстройке; MProp ничего не меняет и не спрашивает (WP-3.6, Р-11, Н-30)."""
+        path = self.s.workspace_copy(paths.FIXTURES_A / A01, name="Кронштейн сварной.sldprt", subdir=self._case_name())
+        doc = self.s.open(path)
+        found = self._mprop_round_trip(doc)
+        self.assertEqual([], found, "MProp «Применить без правок» изменил деталь без обозначения")
+        from eskd_e2e import oracles
+        self.assertEqual("Кронштейн сварной", oracles.value(oracles.dump_properties(doc), "Наименование"), "наименование — всё имя файла")
+
+    def test_M04_mprop_from_drawing_with_empty_sheet_view_asks_nothing(self):
+        """M04: MProp из чертежа, у первого листа которого пустой или чужой «Вид для свойств» (у чертежей владельца — пустой), берёт
+        первый вид без окна «Не удалось определить вид» (WP-3.5, S-8, Н-29)."""
+        model = self.copy_fixture(A01)
+        doc = self.s.open(model)
+        self.s.save(doc)
+        self.s.close(doc)
+        drawing_path = self.copy_fixture("ПРТИ.468211.101 Пластина опорная.slddrw")
+        drawing = self.s.open(drawing_path)
+        from eskd_e2e import com
+        sheet = com.dyn(drawing.GetCurrentSheet)
+        p = list(sheet.GetProperties2)
+        # «Вид для свойств» задаётся только параметрами листа (SetupSheet5, аргумент propertyViewName)
+        self.assertTrue(drawing.SetupSheet5(str(sheet.GetName), int(p[0]), int(p[1]), p[2], p[3], bool(p[4]),
+                                            str(sheet.GetTemplateName), p[5], p[6], "", True), "параметры листа")
+        sheet = com.dyn(drawing.GetCurrentSheet)
+        self.assertEqual("", str(sheet.CustomPropertyView), "вид для свойств листа пуст")
+        run = mprop.apply_without_edits(self.s, drawing)
+        dialogs = self.s.watchdog.pop_unexpected()
+        self.assertEqual([], dialogs, "окна MProp")
+        self.assertTrue(run.get("ok"), f"MProp не выполнен: {run}")
+
+    def test_M04_dprop_loads_after_edit(self):
+        """M04: правленый DProp.swp (без кэша P-code, WP-3.5) загружается и исполняется SolidWorks — служебная процедура
+        DProp_top.HWNDActiveWindow без окон (порядок правки макросов, спайк S-9)."""
+        from eskd_e2e import com
+        macro = mprop.swplus_copy(self.s.run_dir).parent.parent / "DProp" / "DProp.swp"
+        err = com.ref_int()
+        ok = bool(self.s.sw.RunMacro2(str(macro), "DProp_top", "HWNDActiveWindow", 1, err))
+        self.assertEqual([], self.s.watchdog.pop_unexpected(), "окна DProp")
+        self.assertTrue(ok, f"DProp не выполнен: err={int(err.value)}")
+
     @known_defect("Д-50")
     def test_M03_save_after_mprop_writes_nothing(self):
         """M03 (К-2): после «Применить» MProp сохранение ничего не пишет — надстройка не возвращает свои форматы (Н-04)."""

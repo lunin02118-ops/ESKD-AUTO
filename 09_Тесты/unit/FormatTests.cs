@@ -129,9 +129,9 @@ namespace ESKD.Tests
         public static void Test_title_stamp_matches_mprop_by_line_count()
         {
             string one = "Пластина опорная", two = "Кронштейн направляющий\nудлинённый", three = "Стойка\nсварная\nопорная";
-            Assert.AreEqual(Vba(2652, Vars("Наименование.Value", one), "size=5"), SwPlusFormat.TitleStamp(one, true), "одна строка");
-            Assert.AreEqual(Vba(2645, Vars("Наименование.Value", two), "size=5"), SwPlusFormat.TitleStamp(two, true), "две строки");
-            Assert.AreEqual(Vba(2640, Vars("Наименование.Value", three), "size=3.5"), SwPlusFormat.TitleStamp(three, true), "три строки");
+            Assert.AreEqual(Vba(2652, Vars("SwpStampText()", one), "size=5"), SwPlusFormat.TitleStamp(one, true), "одна строка");
+            Assert.AreEqual(Vba(2645, Vars("SwpStampText()", two), "size=5"), SwPlusFormat.TitleStamp(two, true), "две строки");
+            Assert.AreEqual(Vba(2640, Vars("SwpStampText()", three), "size=3.5"), SwPlusFormat.TitleStamp(three, true), "три строки");
             Assert.AreEqual(one, SwPlusFormat.TitleStamp(one, false), "prpFontSize = 0 (2656)");
         }
 

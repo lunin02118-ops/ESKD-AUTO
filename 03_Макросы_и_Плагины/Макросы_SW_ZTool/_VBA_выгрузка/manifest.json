@@ -1,13 +1,12 @@
 {
  "MProp/MProp.swp": {
-  "sha256": "86d9871b0ed55f83167651b8d5845f9bc5773107ca515a97a19a4560e8129126",
+  "sha256": "03508fad7974e7330f448e847e326a5308ee0aca586c5e045f1cd37ce4f8191c",
   "modules": {
-   "FrmMProp.frm.txt": 3907,
+   "FrmMProp.frm.txt": 4062,
    "FrmMProp_Pref.frm.txt": 145,
    "MProp_run.bas.txt": 212,
    "MProp_top.bas.txt": 61,
-   "ThisLibrary.cls.txt": 9,
-   "VBA_P-code.txt.txt": 18719
+   "ThisLibrary.cls.txt": 9
   }
  },
  "SProp/SProp.swp": {
@@ -33,14 +32,13 @@
   }
  },
  "DProp/DProp.swp": {
-  "sha256": "fbb27065778e9e8495737ee9f393dc3b394afe423a1e1b992372c713b964824f",
+  "sha256": "55c601da26a22e84e4ffaac8a84f023f7c2214910388e1ec8f02bf4079b326db",
   "modules": {
    "DProp_run.bas.txt": 120,
    "DProp_top.bas.txt": 63,
    "FrmDProp.frm.txt": 1713,
    "FrmDProp_Pref.frm.txt": 99,
-   "ThisLibrary.cls.txt": 9,
-   "VBA_P-code.txt.txt": 8033
+   "ThisLibrary.cls.txt": 9
   }
  },
  "Master/Master.swp": {

@@ -283,7 +283,7 @@ Else
     If m = 0 Then
         Set swView = swDraw.GetFirstView
         Set swView = swView.GetNextView
-        swApp.SendMsgToUser ("Не удалось определить вид из свойств листа. Используется первый вид.")
+        ' ЕСКД WP-3.5 (S-8): вид пуст или не найден — первый вид листа, без окна
     End If
 End If
 If swView Is Nothing Then
