@@ -71,6 +71,10 @@ class SwSession:
             raw = win32com.client.Dispatch("SldWorks.Application")
             self.sw = com.flag_methods(com.dyn(raw), com.APP_METHODS)
             self.sw.Visible = self.visible
+            # Экземпляр, запущенный автоматизацией, завершается, когда другой процесс (ESKD_Sync.exe) закрывает
+            # последний документ. Под управлением «пользователя» сессия ведёт себя как на рабочем месте;
+            # закрывает её stop() через ExitApp.
+            self.sw.UserControl = True
             procs = solidworks_processes()
             self.pid = procs[0].pid if procs else None
             self._wait_startup()

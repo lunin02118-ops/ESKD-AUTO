@@ -25,7 +25,18 @@ namespace ESKD.MaterialSync.Core
 
         public static void Error(string where, Exception ex)
         {
-            Write("ERROR", where + ": " + (ex == null ? "" : ex.GetType().Name + ": " + ex.Message));
+            Write("ERROR", where + ": " + (ex == null ? "" : ex.GetType().Name + ": " + ex.Message + TopFrames(ex)));
+        }
+
+        /// <summary>Первые кадры стека — место ошибки без полного дампа.</summary>
+        private static string TopFrames(Exception ex)
+        {
+            if (string.IsNullOrEmpty(ex.StackTrace)) return "";
+            string[] frames = ex.StackTrace.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            int count = Math.Min(3, frames.Length);
+            string[] top = new string[count];
+            for (int i = 0; i < count; i++) top[i] = frames[i].Trim();
+            return " @ " + string.Join(" ← ", top);
         }
 
         public static void Write(string level, string message)

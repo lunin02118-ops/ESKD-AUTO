@@ -310,6 +310,9 @@ namespace ESKD.MaterialSync
             }
         }
 
+        // Пакетная очистка файлов v5 — отдельной утилитой ESKD_Sync.exe /clean (Sw.MigrationService), а не методом надстройки:
+        // пакет открывает и закрывает десятки документов, этому не место внутри COM-вызова, пришедшего из другого процесса.
+
         /// <summary>Отчёт «что будет записано» для активного документа — без записи.</summary>
         public string DiagnoseActiveDocument()
         {

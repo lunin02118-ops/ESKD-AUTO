@@ -95,6 +95,12 @@ namespace ESKD.MaterialSync.Sw
             return Names(cfg).Contains(name);
         }
 
+        /// <summary>Имена пользовательских свойств уровня (копия списка).</summary>
+        public List<string> NamesAt(string cfg)
+        {
+            return new List<string>(Names(cfg));
+        }
+
         /// <summary>Сырое значение (выражение, как записано) или null, если свойства нет.</summary>
         public string Raw(string cfg, string name)
         {

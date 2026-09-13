@@ -95,6 +95,19 @@ namespace ESKD.Tests
             p = DesignationParser.Parse("ПРТИ.1_Стойка", "_");
             Assert.AreEqual("ПРТИ.1", p.Root, "разделитель словаря");
             Assert.AreEqual("Стойка", p.Title, "наименование после разделителя");
+            // случаи прежнего Tier 2
+            p = DesignationParser.Parse("ПРТИ.468211.010 СБ Рама сварная", " ");
+            Assert.AreEqual("ПРТИ.468211.010", p.Root, "Tier 2: корень при коде СБ");
+            Assert.AreEqual("СБ", p.DocCode, "Tier 2: код СБ");
+            Assert.AreEqual("Рама сварная", p.Title, "Tier 2: наименование после кода");
+            Assert.IsTrue(DesignationParser.Parse("Сборка2", " ").IsTemplateName, "Tier 2: имя шаблона сборки");
+        }
+
+        public static void Test_TitleForStamp_very_long_name_stays_two_lines()
+        {
+            string wrapped = SwPlusMarkup.TitleForStamp("Кондуктор для сварки продольных рёбер жёсткости корпуса");
+            Assert.AreEqual(2, wrapped.Split('\n').Length, "Tier 2: не больше двух строк");
+            Assert.IsTrue(wrapped.Split('\n')[0].Length <= SwPlusMarkup.TitleLineLimit, "Tier 2: первая строка в пределах графы");
         }
     }
 
@@ -223,6 +236,116 @@ namespace ESKD.Tests
             Assert.IsTrue(BchRecord.IsMassNote("2,86 кг"), "распознаёт свою запись");
             Assert.IsTrue(BchRecord.IsMassNote("3.5 кг"), "распознаёт ошибочную запись v5 для исправления");
             Assert.IsFalse(BchRecord.IsMassNote("Покупное"), "чужой текст");
+        }
+    }
+
+    public static class MigrationTests
+    {
+        private static readonly PropertyDictionary Dict = PropertyDictionary.Default();
+
+        /// <summary>Деталь после сохранения надстройкой v5 — по слепку baseline/v5/A01_open_save.json.</summary>
+        private static PropertyLevels V5Part()
+        {
+            PropertyLevels p = new PropertyLevels();
+            p.AddConfiguration("00");
+            string[] both = { "CheckedBy", "Проверкин П.П.", "DrawnBy", "Тестов Т.Т.", "DrawnDate", "2026-09-12", "Firm", "ООО «Испытание»",
+                "Organization", "ООО «Испытание»", "PartNo", "ПРТИ.468211.101", "Автор", "Тестов Т.Т.", "ГОСТ_Материал", "ГОСТ 14637-89",
+                "ГОСТ_Сортамент", "ГОСТ 19903-2015", "Компания", "ООО «Испытание»", "Конструктор", "Тестов Т.Т.", "Контора", "ООО «Испытание»",
+                "Масса", "<FONT size=3.5>0,63", "Масса_ФБ", "<FONT size=3.5>0,63", "Материал", "Лист 4,0 / Ст3сп",
+                "Материал_ФБ", " <FONT size=1.8><FONT size=3.5><STACK size=1>Лист<OVER>Ст3сп</STACK>", "Материал_Таблица", "Лист",
+                "Наименование", "Пластина опорная", "Наименование_ФБ", "Пластина опорная", "Обозначение", "ПРТИ.468211.101",
+                "Организация", "ООО «Испытание»", "Организация_ФБ", "ООО «Испытание»", "Пров.", "Проверкин П.П.", "Проверил", "Проверкин П.П.",
+                "Разраб.", "Тестов Т.Т.", "Разработал", "Тестов Т.Т.", "Сортамент", "Б-ПН-НО-4,0", "п_Пров", "Проверкин П.П.",
+                "п_Пров_Дата", "12.09.26", "п_Разраб", "Тестов Т.Т.", "п_Разраб_Дата", "12.09.26" };
+            for (int i = 0; i < both.Length; i += 2)
+            {
+                p.Set("", both[i], both[i + 1]);
+                p.Set("00", both[i], both[i + 1]);
+            }
+            p.Set("", "Формат", "A3");
+            p.Set("", "Литера", "01");
+            p.Set("00", "Исполнение", "0");
+            return p;
+        }
+
+        public static void Test_v5_part_plan_follows_mprop_levels_and_is_idempotent()
+        {
+            PropertyLevels before = V5Part();
+            var ops = LegacyMigration.Plan(before, Dict, false, false);
+            PropertyLevels after = LegacyMigration.Apply(before, ops);
+            foreach (string level in after.Levels)
+            {
+                foreach (string name in PropertyDictionary.LegacyExtraNames)
+                    Assert.IsNull(after.Get(level, name), "лишнее имя " + name + " [" + level + "]");
+            }
+            Assert.AreEqual("Тестов Т.Т.", after.Get("", "Конструктор"), "конструктор в общих");
+            Assert.IsNull(after.Get("00", "Конструктор"), "копия конструктора в конфигурации удалена");
+            Assert.AreEqual("Проверкин П.П.", after.Get("00", "Проверил"), "проверил в конфигурации");
+            Assert.IsNull(after.Get("", "Проверил"), "общая копия «Проверил» удалена");
+            Assert.AreEqual("ООО «Испытание»", after.Get("00", "Контора"), "контора в конфигурации");
+            Assert.IsNull(after.Get("", "Контора"), "общая копия «Контора» удалена");
+            Assert.IsNull(after.Get("", "Масса_ФБ"), "общая копия массы удалена");
+            Assert.IsNull(after.Get("", "Материал_ФБ"), "общая копия материала удалена");
+            Assert.AreEqual("<FONT size=3.5>0,63", after.Get("00", "Масса_ФБ"), "масса в конфигурации сохранена");
+            Assert.IsNull(after.Get("00", "Наименование"), "копия наименования в конфигурации удалена");
+            Assert.AreEqual("Пластина опорная", after.Get("", "Наименование"), "наименование в общих");
+            Assert.AreEqual(LegacyMigration.LiveMass, after.Get("", "Масса"), "живая масса");
+            Assert.AreEqual(LegacyMigration.LiveMaterial, after.Get("", "Материал"), "живой материал");
+            Assert.IsNull(after.Get("00", "Масса"), "статичная копия массы удалена");
+            Assert.AreEqual("А3", after.Get("", "Формат"), "формат кириллицей");
+            Assert.AreEqual("01", after.Get("", "Литера"), "чужие имена вне класса «лишние» не трогаются");
+            Assert.AreEqual("ПРТИ.468211.101", after.Get("00", "Обозначение"), "обозначение в конфигурации сохранено");
+            Assert.AreEqual(0, LegacyMigration.Plan(after, Dict, false, false).Count, "повторный план пуст");
+        }
+
+        public static void Test_alias_values_fill_only_empty_dictionary_names()
+        {
+            PropertyLevels p = new PropertyLevels();
+            p.AddConfiguration("00");
+            p.AddConfiguration("01");
+            p.Set("", "Разраб.", "Петров П.П.");
+            p.Set("", "Организация", "ООО «Вектор»");
+            p.Set("00", "Пров.", "Сидоров С.С.");
+            p.Set("01", "Проверил", "Кузнецов К.К.");
+            p.Set("01", "п_Пров", "Сидоров С.С.");
+            PropertyLevels after = LegacyMigration.Apply(p, LegacyMigration.Plan(p, Dict, false, false));
+            Assert.AreEqual("Петров П.П.", after.Get("", "Конструктор"), "конструктор из «Разраб.»");
+            Assert.AreEqual("Сидоров С.С.", after.Get("00", "Проверил"), "проверил из алиаса конфигурации");
+            Assert.AreEqual("Кузнецов К.К.", after.Get("01", "Проверил"), "ручное значение не перезаписано");
+            Assert.AreEqual("ООО «Вектор»", after.Get("00", "Контора"), "контора из общего алиаса");
+            Assert.AreEqual("ООО «Вектор»", after.Get("01", "Контора"), "контора во всех конфигурациях");
+
+            PropertyLevels manual = new PropertyLevels();
+            manual.AddConfiguration("00");
+            manual.Set("", "Конструктор", "Иванов И.И.");
+            manual.Set("", "Разраб.", "Петров П.П.");
+            PropertyLevels kept = LegacyMigration.Apply(manual, LegacyMigration.Plan(manual, Dict, false, false));
+            Assert.AreEqual("Иванов И.И.", kept.Get("", "Конструктор"), "заполненный конструктор не меняется");
+            Assert.IsNull(kept.Get("", "Разраб."), "алиас удалён");
+        }
+
+        public static void Test_drawing_protected_part_and_assembly_code()
+        {
+            PropertyLevels drawing = new PropertyLevels();
+            drawing.Set("", "Разраб.", "Лунин В.И.");
+            drawing.Set("", "Конструктор", "Лунин В.И.");
+            drawing.Set("", "SWFormatSize", "297мм*420мм");
+            var drawingOps = LegacyMigration.Plan(drawing, Dict, true, false);
+            Assert.AreEqual(1, drawingOps.Count, "в чертеже удаляются только лишние имена");
+            Assert.AreEqual("Разраб.", drawingOps[0].Name, "удалён алиас");
+
+            PropertyLevels bolt = new PropertyLevels();
+            bolt.AddConfiguration("00");
+            bolt.Set("", "DrawnBy", "Тестов Т.Т.");
+            var boltOps = LegacyMigration.Plan(bolt, Dict, false, false, false);
+            Assert.IsTrue(boltOps.TrueForAll(o => o.Action == MigrationAction.Delete), "стандартное изделие: подписи не переносятся");
+
+            PropertyLevels assembly = new PropertyLevels();
+            assembly.AddConfiguration("00");
+            assembly.Set("00", "Сборка1_ФБ", " СБ");
+            Assert.AreEqual(0, LegacyMigration.Plan(assembly, Dict, false, false).Count, "« СБ» остаётся, пока действует LegacyAssemblyCodeSpace");
+            PropertyLevels normalized = LegacyMigration.Apply(assembly, LegacyMigration.Plan(assembly, Dict, false, true));
+            Assert.AreEqual("СБ", normalized.Get("00", "Сборка1_ФБ"), "код без пробела по D-8");
         }
     }
 
