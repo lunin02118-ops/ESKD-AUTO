@@ -1,0 +1,102 @@
+{
+ "run": "D:\\Work\\_Инструменты_Конструктора\\08_Результаты_Тестирования\\runs\\spikes_step0_20260913_223550",
+ "S-8": {
+  "owner_bolt": {
+   "Sheet1": {
+    "CustomPropertyView": "",
+    "template": "\\\\Home-pc\\инструменты_конструктора\\03_Макросы_и_Плагины\\Макросы_SW_ZTool\\SWPlusMacro_v_2018_SP0.0\\Основные надписи\\A3-A-1.slddrt",
+    "views": [
+     "Чертежный вид1",
+     "Чертежный вид2",
+     "Чертежный вид3"
+    ]
+   }
+  },
+  "A-10": {
+   "Лист1": {
+    "CustomPropertyView": "По умолчанию",
+    "template": "D:\\Work\\_Инструменты_Конструктора\\03_Макросы_и_Плагины\\Макросы_SW_ZTool\\SWPlusMacro_v_2018_SP0.0\\Основные надписи\\A3-A-1.slddrt",
+    "views": [
+     "Чертежный вид1"
+    ]
+   },
+   "Лист2": {
+    "CustomPropertyView": "",
+    "template": "D:\\Work\\_Инструменты_Конструктора\\03_Макросы_и_Плагины\\Макросы_SW_ZTool\\SWPlusMacro_v_2018_SP0.0\\Основные надписи\\A4-P-2.slddrt",
+    "views": [
+     "Чертежный вид2"
+    ]
+   }
+  },
+  "A-11": {
+   "Лист1": {
+    "CustomPropertyView": "По умолчанию",
+    "template": "D:\\Work\\_Инструменты_Конструктора\\03_Макросы_и_Плагины\\Макросы_SW_ZTool\\SWPlusMacro_v_2018_SP0.0\\Основные надписи\\A2-A-1.slddrt",
+    "views": [
+     "Чертежный вид1"
+    ]
+   }
+  },
+  "new_from_template": {
+   "Лист1": {
+    "CustomPropertyView": "По умолчанию",
+    "template": "D:\\Work\\_Инструменты_Конструктора\\03_Макросы_и_Плагины\\Макросы_SW_ZTool\\SWPlusMacro_v_2018_SP0.0\\Основные надписи\\A3-A-1.slddrt",
+    "views": []
+   }
+  },
+  "after_SetupSheet5_По_умолчанию": {
+   "Лист1": {
+    "CustomPropertyView": "По умолчанию",
+    "template": "D:\\Work\\_Инструменты_Конструктора\\03_Макросы_и_Плагины\\Макросы_SW_ZTool\\SWPlusMacro_v_2018_SP0.0\\Основные надписи\\A3-A-1.slddrt",
+    "views": []
+   }
+  }
+ },
+ "S-6": {
+  "template_general": [
+   "SWFormatSize"
+  ],
+  "after_setup_A3": [
+   "SWFormatSize"
+  ],
+  "after_new_sheet_A4": [
+   "SWFormatSize",
+   "Разработал",
+   "DrawnBy",
+   "DrawnDate",
+   "Разраб.",
+   "Конструктор",
+   "Автор",
+   "п_Разраб",
+   "п_Разраб_Дата",
+   "Контора",
+   "Организация",
+   "Организация_ФБ",
+   "Компания",
+   "Firm",
+   "Organization"
+  ],
+  "after_replace_A2": [
+   "SWFormatSize",
+   "Разработал",
+   "DrawnBy",
+   "DrawnDate",
+   "Разраб.",
+   "Конструктор",
+   "Автор",
+   "п_Разраб",
+   "п_Разраб_Дата",
+   "Контора",
+   "Организация",
+   "Организация_ФБ",
+   "Компания",
+   "Firm",
+   "Organization"
+  ]
+ },
+ "S-2": {
+  "bom_inserted": true,
+  "error": "Traceback (most recent call last):\n  File \"D:\\Work\\_Инструменты_Конструктора\\09_Тесты\\tools\\spikes_step0.py\", line 124, in s2\n    ann = com.dyn(com.as_list(com.dyn(bom).GetTableAnnotations)[0])\n                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Work\\_Инструменты_Конструктора\\09_Тесты\\eskd_e2e\\com.py\", line 97, in __getattr__\n    return _wrap(_retry(lambda: getattr(obj, name)))\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"D:\\Work\\_Инструменты_Конструктора\\09_Тесты\\eskd_e2e\\com.py\", line 51, in _retry\n    return fn()\n           ^^^^\n  File \"D:\\Work\\_Инструменты_Конструктора\\09_Тесты\\eskd_e2e\\com.py\", line 97, in <lambda>\n    return _wrap(_retry(lambda: getattr(obj, name)))\n                                ^^^^^^^^^^^^^^^^^^\n  File \"C:\\Program Files\\Python312\\Lib\\site-packages\\win32com\\client\\dynamic.py\", line 631, in __getattr__\n    raise AttributeError(f\"{self._username_}.{attr}\")\nAttributeError: <unknown>.GetTableAnnotations\n"
+ },
+ "unexpected_dialogs": []
+}
