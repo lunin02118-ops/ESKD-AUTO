@@ -260,7 +260,7 @@ namespace ESKD.MaterialSync
 
             Label lblHeaderSub = new Label()
             {
-                Text = "Синхронизация реквизитов ГОСТ 2.104, свойств материалов и центрирование массы",
+                Text = "Реквизиты основной надписи ГОСТ 2.104, дробь материала и масса — запись при сохранении",
                 Font = new Font("Segoe UI", 8.5F, FontStyle.Regular),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,
@@ -439,10 +439,11 @@ namespace ESKD.MaterialSync
 
             Label lblServiceNote = new Label()
             {
-                Text = "Когда флажок установлен: служба автоматически заполняет свойства ЕСКД (материалы, массу, обозначение и наименование) и центрирует реквизиты в штампе при сохранении, открытии и перестроении моделей.\nЕсли флажок снять: фоновые триггеры полностью отключаются (ручная синхронизация по кнопке «Синхронизировать ЕСКД» или «Применить сейчас» доступна в любой момент).",
+                Text = "Когда флажок установлен: при сохранении детали или сборки служба заполняет обозначение и наименование по имени файла, пустые подписи, дробь материала и массу; после выбора материала сразу обновляет дробь. Открытие документов и переключение окон ничего не меняют.\nЕсли флажок снять: автоматическая запись отключается (кнопки «Синхронизировать», «Деталь БЧ» и «Применить сейчас» работают в любой момент).",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,
+                MaximumSize = new Size(560, 0),
                 Margin = new Padding(0, 2, 0, 4)
             };
 
@@ -494,10 +495,11 @@ namespace ESKD.MaterialSync
 
             Label lblPropsSub = new Label()
             {
-                Text = "Синхронизировано с базой фамилий и организаций SWPlus (MProp / DProp)",
+                Text = "Пишутся только в пустые поля; новые фамилии и организации дописываются в справочники MProp",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,
+                MaximumSize = new Size(560, 0),
                 Margin = new Padding(0, 0, 0, 14)
             };
 
@@ -589,10 +591,11 @@ namespace ESKD.MaterialSync
 
             Label lblAutoSplitNameNote = new Label()
             {
-                Text = "При сохранении имя файла делится по первому пробелу: Обозначение (до пробела) и Наименование (после пробела)",
+                Text = "При сохранении имя файла делится по первому пробелу: Обозначение (до пробела) и Наименование (после пробела); у сборки — «Обозначение СБ Наименование». Значения, введённые вручную, не переписываются",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,
+                MaximumSize = new Size(536, 0),
                 Margin = new Padding(24, 0, 0, 4)
             };
 
@@ -620,7 +623,7 @@ namespace ESKD.MaterialSync
 
             Label lblMassTitle = new Label()
             {
-                Text = "2. ПАРАМЕТРЫ РАСЧЕТА МАССЫ И ЧЕРТЕЖА",
+                Text = "2. ПАРАМЕТРЫ РАСЧЕТА МАССЫ",
                 Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(37, 99, 235),
                 AutoSize = true,
@@ -629,10 +632,11 @@ namespace ESKD.MaterialSync
 
             Label lblMassSub = new Label()
             {
-                Text = "Автоматический пересчет массы и центрирование в ячейке штампа ГОСТ 2.104",
+                Text = "Масса для графы 5 основной надписи ГОСТ 2.104 пересчитывается при каждом сохранении",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,
+                MaximumSize = new Size(560, 0),
                 Margin = new Padding(0, 0, 0, 14)
             };
 
@@ -648,10 +652,11 @@ namespace ESKD.MaterialSync
 
             Label lblAutoMassNote = new Label()
             {
-                Text = "Обновляет свойства «Масса_ФБ» и «Масса» при каждом сохранении и перестроении",
+                Text = "Пишет «Масса_ФБ» активной конфигурации; выражение MProp и ручной текст («-», «См. таблицу») не переписываются, «Масса» шаблона остаётся выражением SW-Mass",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,
+                MaximumSize = new Size(536, 0),
                 Margin = new Padding(24, 0, 0, 12)
             };
 
@@ -723,7 +728,7 @@ namespace ESKD.MaterialSync
 
             Label lblMatTitle = new Label()
             {
-                Text = "3. СИНХРОНИЗАЦИЯ МАТЕРИАЛОВ И СПЕЦИФИКАЦИЙ (ПО ТРИГГЕРУ)",
+                Text = "3. СИНХРОНИЗАЦИЯ МАТЕРИАЛОВ",
                 Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(37, 99, 235),
                 AutoSize = true,
@@ -736,15 +741,17 @@ namespace ESKD.MaterialSync
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(100, 116, 139),
                 AutoSize = true,
+                MaximumSize = new Size(560, 0),
                 Margin = new Padding(0, 0, 0, 10)
             };
 
             Label lblMatRule1 = new Label()
             {
-                Text = "✔ Для штампа чертежа: свойство «Материал_ФБ» (дробь ГОСТ или одна строка с авто-центрированием в ячейке)",
+                Text = "✔ Для графы 3 основной надписи: «Материал_ФБ» — дробь «сортамент / марка» из библиотеки материалов ГОСТ или одна строка",
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(51, 65, 85),
                 AutoSize = true,
+                MaximumSize = new Size(560, 0),
                 Margin = new Padding(0, 0, 0, 4)
             };
 
@@ -754,6 +761,7 @@ namespace ESKD.MaterialSync
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(51, 65, 85),
                 AutoSize = true,
+                MaximumSize = new Size(560, 0),
                 Margin = new Padding(0, 0, 0, 4)
             };
 
@@ -763,12 +771,13 @@ namespace ESKD.MaterialSync
                 Font = new Font("Segoe UI", 8.5F),
                 ForeColor = Color.FromArgb(51, 65, 85),
                 AutoSize = true,
+                MaximumSize = new Size(560, 0),
                 Margin = new Padding(0, 0, 0, 4)
             };
 
             chkAutoSyncMaterials = new CheckBox()
             {
-                Text = "Автоматически синхронизировать материалы при сохранении детали",
+                Text = "Автоматически синхронизировать материалы при выборе материала и сохранении детали",
                 Font = new Font("Segoe UI", 9.5F, FontStyle.Regular),
                 ForeColor = Color.FromArgb(15, 23, 42),
                 AutoSize = true,
@@ -1089,7 +1098,7 @@ namespace ESKD.MaterialSync
             }
             string statusMsg = chkServiceEnabled.Checked
                 ? "Настройки ЕСКД успешно сохранены и синхронизированы с макросами SWPlus!\n\nФоновая служба ЕСКД: ВКЛЮЧЕНА (автоматическое оформление активно)."
-                : "Настройки ЕСКД успешно сохранены и синхронизированы с макросами SWPlus!\n\nФоновая служба ЕСКД: ОТКЛЮЧЕНА (автоматические фоновые триггеры неактивны, доступен ручной запуск по кнопке «Синхронизировать ЕСКД»).";
+                : "Настройки ЕСКД успешно сохранены и синхронизированы с макросами SWPlus!\n\nФоновая служба ЕСКД: ОТКЛЮЧЕНА (автоматические фоновые триггеры неактивны, доступен ручной запуск по кнопке «Синхронизировать»).";
             MessageBox.Show(statusMsg, "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Information);
             this.Close();
         }
@@ -1105,7 +1114,7 @@ namespace ESKD.MaterialSync
                     if (doc != null)
                     {
                         Sw.SyncReport report = Sw.SyncService.SyncExplicit(_swApp, doc);
-                        string docTypeTitle = doc.GetType() == (int)swDocumentTypes_e.swDocDRAWING ? "чертежа (штамп и ссылочная модель)" : "модели";
+                        string docTypeTitle = doc.GetType() == (int)swDocumentTypes_e.swDocDRAWING ? "модели первого вида чертежа — сохраните модель, чтобы изменения попали в файл" : "модели";
                         MessageBox.Show(string.Format("Настройки ЕСКД применены к активному документу ({0}).\n\n{1}\n\nФамилии и организация записываются только в пустые поля.", docTypeTitle, report),
                             "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         this.Close();
@@ -1113,7 +1122,7 @@ namespace ESKD.MaterialSync
                     }
                     else
                     {
-                        MessageBox.Show("Настройки сохранены в реестр и файлы SWPlus!\n\n(В данный момент нет открытых документов в SolidWorks. Настройки применятся автоматически при открытии моделей или чертежей).",
+                        MessageBox.Show("Настройки сохранены в реестр и файлы SWPlus!\n\n(В данный момент нет открытых документов в SolidWorks. Настройки применятся при сохранении деталей и сборок).",
                             "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         this.Close();
                         return;

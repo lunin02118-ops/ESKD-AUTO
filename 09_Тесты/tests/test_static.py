@@ -447,6 +447,46 @@ class StaticRepository(StaticTestCase):
                 pass
             backup.unlink(missing_ok=True)
 
+    def test_T0_documentation_matches_code(self):
+        """T0: руководство описывает все параметры ESKD_Settings и кнопки вкладки и ссылается только на существующие тесты;
+        README, руководство и окно настроек не повторяют утверждений v5; устаревшие документы помечены (WP-5.1)."""
+        guide_path = ROOT / "06_Документация" / "РУКОВОДСТВО_ПОЛЬЗОВАТЕЛЯ_И_АДМИНИСТРАТОРА.md"
+        guide = guide_path.read_text(encoding="utf-8")
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        form = (ADDIN / "SettingsForm.cs").read_text(encoding="utf-8")
+
+        settings = set(re.findall(r'(?:Int|Str)\(key, "(\w+)"', (ADDIN / "Core" / "Settings.cs").read_text(encoding="utf-8")))
+        self.assertGreater(len(settings), 10, "параметры реестра в Settings.cs не найдены")
+        self.assertEqual([], sorted(n for n in settings if f"`{n}`" not in guide), "параметры ESKD_Settings без описания в руководстве")
+        buttons = [b for b in re.findall(r'AddCommandItem2\("([^"]*)"', (ADDIN / "SwAddin.cs").read_text(encoding="utf-8")) if b]
+        self.assertEqual(3, len(buttons), buttons)
+        self.assertEqual([], [b for b in buttons if f"**{b}**" not in guide], "кнопки вкладки ЕСКД без описания в руководстве")
+
+        existing = set()
+        for src in (paths.TESTS / "tests").glob("test_*.py"):
+            existing |= set(re.findall(r"def test_([A-Z]\d{2})_", src.read_text(encoding="utf-8")))
+        ids = r"[PMBDSRIC]\d{2}(?:,\s*[PMBDSRIC]\d{2})*"
+        cited = set()
+        for text in (guide, readme):
+            for group in re.findall(r"\((%s)\)|\|\s*(%s)\s*\||тест[а-я]*\s+(%s)" % (ids, ids, ids), text):
+                cited |= set(re.findall(r"[A-Z]\d{2}", " ".join(group)))
+        self.assertGreater(len(cited), 20, "ссылки на тесты в документации не найдены")
+        self.assertEqual([], sorted(cited - existing), "документация ссылается на несуществующие тесты")
+
+        v5_claims = [r'\$PRPSHEET:"(?:Разраб\.|Пров\.|Организация)"', r"MaterialSyncEngine", r"SyncAssembly",
+                     r"IsStandardOrPurchasedPart", r"центрир", r"перестроени", r"Синхронизировать ЕСКД", r"Синхронизация ТТ"]
+        stale = {name: [p for p in v5_claims if re.search(p, text, flags=re.I)]
+                 for name, text in (("README.md", readme), (guide_path.name, guide), ("SettingsForm.cs", form))}
+        self.assertEqual({}, {k: v for k, v in stale.items() if v}, "утверждения надстройки v5 в действующих документах")
+
+        markers = re.compile(r'MaterialSyncEngine|home-pc|База шаблонов|Деталь ГОСТ\.prtdot|A4-A-1|Синхронизировать ЕСКД|\$PRPSHEET:"Разраб\."')
+        unmarked = []
+        for doc in sorted((ROOT / "06_Документация").glob("*.md")):
+            text = doc.read_text(encoding="utf-8")
+            if doc != guide_path and markers.search(text) and "**Исторический документ**" not in "\n".join(text.splitlines()[:8]):
+                unmarked.append(doc.name)
+        self.assertEqual([], unmarked, "документы с утверждениями v5 без пометки «Исторический документ»")
+
 
 if __name__ == "__main__":
     unittest.main()

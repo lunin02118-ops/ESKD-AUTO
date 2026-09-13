@@ -3,7 +3,7 @@
     Автоматическая настройка рабочего места SolidWorks (Корпоративный стандарт ЕСКД)
 .DESCRIPTION
     Импортирует полный корпоративный профиль (Сборки, Чертежи, Оформление, Цвета, Панели инструментов, Макросы SWPlus),
-    настраивает нативную надстройку ЕСКД v5 (реквизиты, масса, центрирование штампа),
+    собирает из исходников и регистрирует надстройку ЕСКД v6 (реквизиты, материал, масса, «Деталь БЧ»),
     настраивает пути к библиотекам и шаблонам, Master.ini, MProp, шрифты ГОСТ и аппаратный RealView.
     Версия SolidWorks определяется автоматически (поддержка 2018-2025) либо задаётся параметром -SwVersion.
     Перед импортом .reg-профиля создаётся резервная копия веток реестра SolidWorks.
@@ -674,7 +674,7 @@ if ($toolboxPath) {
 Set-ItemProperty -Path "$swRegRoot\Performance" -Name "Use Performance Pipeline 2020" -Value 0 -ErrorAction SilentlyContinue
 Write-Host "  [OK] Графический режим переведен в безопасный режим (черный экран устранен)." -ForegroundColor Green
 
-# 5. Регистрация нативной надстройки ЕСКД v5 (CommandManager, Настройки, Центрирование массы)
+# 5. Сборка и регистрация надстройки ЕСКД v6 (вкладка ЕСКД, параметры, избранные материалы)
 Write-Host "`n[5/6] Регистрация нативной надстройки ЕСКД и панели управления..." -ForegroundColor Gray
 $addinDir = Join-Path $ToolsRoot "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin"
 $addinDll = Join-Path $addinDir "ESKD_Material_Sync_v5.dll"
@@ -777,7 +777,7 @@ if (Test-Path $addinDll) {
         }
     }
 
-    Write-Host "  [OK] Нативная надстройка ЕСКД v5, панель инструментов и Избранные материалы настроены." -ForegroundColor Green
+    Write-Host "  [OK] Надстройка ЕСКД v6, вкладка ЕСКД и избранные материалы настроены." -ForegroundColor Green
 } else {
     Write-Host "  [ПРЕДУПРЕЖДЕНИЕ] Не найдена DLL надстройки ЕСКД: $addinDll" -ForegroundColor Yellow
 }
