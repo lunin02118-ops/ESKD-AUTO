@@ -71,22 +71,43 @@ class ProbeClient:
         cid = f"{self._n:06d}"
         tmp = self.control / f"tmp_{cid}.json"
         tmp.write_text(json.dumps({"op": op, "arg": str(arg)}, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(self.control / f"cmd_{cid}.json")
+        for attempt in range(50):
+            try:
+                tmp.replace(self.control / f"cmd_{cid}.json")
+                break
+            except PermissionError:
+                if attempt == 49:
+                    raise
+                time.sleep(0.02)
         ack = self.control / f"ack_{cid}.json"
         deadline = time.time() + timeout
         while time.time() < deadline:
             if ack.exists():
                 try:
                     data = json.loads(ack.read_text(encoding="utf-8"))
-                except ValueError:
+                except (ValueError, PermissionError):
+                    # Ответ только что переименован зондом и ещё занят (переименование, проверка антивирусом):
+                    # PermissionError в setUp однажды уронил тест P09 при полном прогоне.
                     time.sleep(0.02)
                     continue
-                ack.unlink()
+                self._remove(ack)
                 return data.get("result")
             if self.proc is not None and self.proc.poll() is not None:
                 raise RuntimeError(f"Зонд завершился, команда {op} не выполнена")
             time.sleep(0.02)
         raise TimeoutError(f"Зонд не ответил на команду {op}")
+
+    @staticmethod
+    def _remove(path, attempts=50):
+        """Удаление прочитанного ответа; занятый файл не мешает следующим командам — у них другие номера."""
+        for _ in range(attempts):
+            try:
+                path.unlink()
+                return
+            except FileNotFoundError:
+                return
+            except PermissionError:
+                time.sleep(0.02)
 
     def stop(self):
         if self.proc is None:
