@@ -11,6 +11,8 @@ namespace ESKD.MaterialSync
     /// ESKD.exe — окно настроек; ESKD_Sync.exe (или /sync) — синхронизация активного документа;
     /// ESKD_Sync.exe /clean &lt;файлы и каталоги&gt; [/apply] [/report отчёт.csv] — очистка файлов надстройки v5 (WP-3.3):
     /// без /apply только отчёт, с /apply — резервные копии и сохранение. Нужен запущенный SolidWorks.
+    /// ESKD_Sync.exe /reloadformats &lt;чертежи и каталоги&gt; [/apply] [/report отчёт.csv] — перезагрузка форматок
+    /// листов по эталону основной надписи (WP-4.7): без /apply только отчёт о версии встроенных форматок.
     /// </summary>
     static class Program
     {
@@ -20,7 +22,7 @@ namespace ESKD.MaterialSync
         [STAThread]
         static void Main(string[] args)
         {
-            if (Array.Exists(args, a => IsSwitch(a, "clean")))
+            if (Array.Exists(args, a => IsSwitch(a, "clean") || IsSwitch(a, "reloadformats")))
             {
                 System.Environment.ExitCode = RunClean(args);
                 return;
@@ -155,7 +157,7 @@ namespace ESKD.MaterialSync
             List<string> inputs = new List<string>();
             for (int i = 0; i < args.Length; i++)
             {
-                if (IsSwitch(args[i], "clean") || IsSwitch(args[i], "sync")) continue;
+                if (IsSwitch(args[i], "clean") || IsSwitch(args[i], "sync") || IsSwitch(args[i], "reloadformats")) continue;
                 if (IsSwitch(args[i], "apply")) { apply = true; continue; }
                 if (IsSwitch(args[i], "report") && i + 1 < args.Length) { report = args[++i]; continue; }
                 inputs.Add(args[i]);
@@ -164,6 +166,7 @@ namespace ESKD.MaterialSync
             if (inputs.Count == 0 || missing.Count > 0)
             {
                 Console.Error.WriteLine("Использование: ESKD_Sync.exe /clean <файлы и каталоги> [/apply] [/report отчёт.csv]");
+                Console.Error.WriteLine("            или ESKD_Sync.exe /reloadformats <чертежи и каталоги> [/apply] [/report отчёт.csv]");
                 foreach (string m in missing) Console.Error.WriteLine("Не найден путь: " + m);
                 return 2;
             }
@@ -181,6 +184,29 @@ namespace ESKD.MaterialSync
             {
                 Console.Error.WriteLine("SolidWorks не запущен: очистка открывает файлы в запущенном SolidWorks.");
                 return 2;
+            }
+            if (Array.Exists(args, a => IsSwitch(a, "reloadformats")))
+            {
+                try
+                {
+                    string swplus = Sw.FormatReloadService.LocateFormats(AppDomain.CurrentDomain.BaseDirectory);
+                    Sw.FormatReloadService.Summary formats = Sw.FormatReloadService.ReloadFiles(swApp, inputs, apply, report, swplus);
+                    Console.WriteLine((apply ? "Перезагрузка форматок выполнена: " : "Пробный прогон перезагрузки форматок (без изменений): ") + formats);
+                    Console.WriteLine("Отчёт: " + formats.ReportPath);
+                    if (formats.BackupDirectory != null && Directory.Exists(formats.BackupDirectory))
+                        Console.WriteLine("Резервные копии: " + formats.BackupDirectory);
+                    return formats.Failures > 0 ? 3 : 0;
+                }
+                catch (Exception ex)
+                {
+                    Core.Log.Error("ESKD_Sync /reloadformats", ex);
+                    Console.Error.WriteLine("Ошибка перезагрузки форматок: " + ex.Message);
+                    return 3;
+                }
+                finally
+                {
+                    ReleaseComObject(swApp);
+                }
             }
             try
             {

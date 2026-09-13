@@ -109,6 +109,46 @@ class Migration(SwTestCase):
                          f"повторный прогон нашёл изменения: {again}")
 
 
+class FormatReload(SwTestCase):
+    A10 = "ПРТИ.468211.101 Пластина опорная.slddrw"
+
+    def _reload(self, apply, report):
+        args = [str(paths.ESKD_SYNC_EXE), "/reloadformats", str(self.case_dir), "/report", str(report)] + (["/apply"] if apply else [])
+        self.s.probe.call("doc_events", "0")
+        try:
+            proc = subprocess.run(args, capture_output=True, timeout=600)
+        finally:
+            self.s.probe.call("doc_events", "1")
+        output = (proc.stdout + proc.stderr).decode("utf-8", errors="replace")
+        self.assertEqual(0, proc.returncode, f"ESKD_Sync.exe /reloadformats завершился с кодом {proc.returncode}: {output}")
+        with open(report, encoding="utf-8-sig", newline="") as f:
+            return output, list(csv.DictReader(f, delimiter=";"))
+
+    def test_R05_reload_formats_to_stamp_etalon(self):
+        """R05 (WP-4.7): пробный прогон перезагрузки форматок находит у чертежа A-10 встроенную форматку прежней версии и не
+        меняет файл; применение — резервная копия, надписи формы 1 на местах эталона Р-12; повторный прогон — «эталон»."""
+        self.copy_fixture(A01)
+        drawing = self.copy_fixture(self.A10)
+        digest = sha256(drawing)
+        _, rows = self._reload(False, self.path("formats_dry.csv"))
+        first = [r for r in rows if r["Файл"] == str(drawing)]
+        self.assertTrue(any(r["Состояние"] == "устарела" for r in first), f"отчёт: {first}")
+        self.assertEqual(digest, sha256(drawing), "пробный прогон изменил чертёж")
+        output, rows = self._reload(True, self.path("formats_apply.csv"))
+        self.assertTrue(any(r["Действие"] == "перезагружена" for r in rows), f"{output} {rows}")
+        backups = list(self.case_dir.glob("_ESKD_backup_*"))
+        self.assertTrue(backups and (backups[0] / drawing.name).exists(), "резервная копия чертежа")
+        self.assertEqual(digest, sha256(backups[0] / drawing.name), "резервная копия совпадает с исходником")
+        drw = self.s.open(drawing, readonly=True)
+        notes = next(iter(oracles.stamp(drw).values()))
+        self.s.close(drw)
+        for name, y in (("MYPRP4", 44.5), ("MYPRP3", 26.0), ("MYPRP15", 38.0)):
+            self.assertAlmostEqual(y, notes[name]["position_mm"][1], delta=0.05, msg=f"{name} на месте эталона")
+        _, again = self._reload(False, self.path("formats_again.csv"))
+        self.assertFalse([r for r in again if r["Файл"] == str(drawing) and r["Состояние"] == "устарела"],
+                         "после перезагрузки форматка всё ещё устаревшая")
+
+
 class GoldenMaster(SwTestCase):
 
     def test_R01_behaviour_differs_from_v5_only_by_explained_changes(self):
