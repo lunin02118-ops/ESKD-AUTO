@@ -134,7 +134,8 @@
           297
         ]
       ],
-      "sha256": "1f0610a089d2794d4552d474b7f61b04d824b1d85b9add8818a7e75441b34105"
+      "sha256": "8e23b9f7c3d5056dd9128e9853fcb6256f2d60e1d74ce481b748bf306bc0396a",
+      "formats_reloaded": "14.09.2026: эталон основной надписи Р-12, шрифт GOST 2.304 type A (tools/reload_fixture_formats.py)"
     },
     "A-11": {
       "file": "ПРТИ.468211.100 СБ Кондуктор сварочный.slddrw",
@@ -147,7 +148,8 @@
           420
         ]
       ],
-      "sha256": "fcbdc5b1c2197f9c3ecf0a40aaca47bee54eb181b0d3af193c84352b453d95d4"
+      "sha256": "2409def0fdc3aae7e0d586444c4dcffcf692d02b1a0fd7d82e001568692d69ba",
+      "formats_reloaded": "14.09.2026: эталон основной надписи Р-12, шрифт GOST 2.304 type A (tools/reload_fixture_formats.py)"
     },
     "A-13": {
       "file": "ПРТИ.468211.106 Крышка.sldprt",
@@ -297,7 +299,8 @@
       "note": "тело есть только у конфигурации «Труба 80х80х4»; остальные конфигурации — таблица профилей без тел",
       "sha256": "18c725152312163238dcdbb10fd80d00a66fec781e652654f49cc3d7a21db0cf",
       "drawing": "ПРТИ.468211.010.SLDDRW",
-      "drawing_sha256": "0cdde521821231a178ec0f922668cac03fe24a09fb343e82ea96c48b21c1a926"
+      "drawing_sha256": "62a5daae7fc8c4d568f520f59ecfc139e0db3f2064c0f88c5f19d2b6e0689712",
+      "formats_reloaded": "14.09.2026: эталон основной надписи Р-12, шрифт GOST 2.304 type A"
     }
   }
 }

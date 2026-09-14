@@ -125,10 +125,12 @@ class FormatReload(SwTestCase):
             return output, list(csv.DictReader(f, delimiter=";"))
 
     def test_R05_reload_formats_to_stamp_etalon(self):
-        """R05 (WP-4.7): пробный прогон перезагрузки форматок находит у чертежа A-10 встроенную форматку прежней версии и не
-        меняет файл; применение — резервная копия, надписи формы 1 на местах эталона Р-12; повторный прогон — «эталон»."""
-        self.copy_fixture(A01)
-        drawing = self.copy_fixture(self.A10)
+        """R05 (WP-4.7): пробный прогон перезагрузки форматок находит у копии архивного чертежа B-01 встроенную форматку
+        прежней версии и не меняет файл; применение — резервная копия, надписи формы 1 на местах эталона Р-12; повторный
+        прогон — «эталон». (Фикстуры A-10, A-11 перезагружены 14.09.2026 — в них форматка уже по эталону.)"""
+        part_src, drawing_src = paths.CORPUS_B["B-01"]
+        self.s.workspace_copy(part_src, subdir=self._case_name())
+        drawing = self.s.workspace_copy(drawing_src, subdir=self._case_name())
         digest = sha256(drawing)
         _, rows = self._reload(False, self.path("formats_dry.csv"))
         first = [r for r in rows if r["Файл"] == str(drawing)]
