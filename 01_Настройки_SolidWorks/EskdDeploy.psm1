@@ -13,9 +13,8 @@ $script:Rel = @{
     Templates     = "02_Шаблоны_и_Форматки"
     Addin         = "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin"
     SwPlus        = "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0"
-    SheetFormats  = "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\Основные надписи"
+    SheetFormats  = "02_Шаблоны_и_Форматки\Основные надписи"
     Libraries     = "04_Библиотеки_Материалов_и_Профилей"
-    MaterialLib   = "04_Библиотеки_Материалов_и_Профилей\Библиотека материалов\Библиотека_Материалов_ГОСТ.sldmat"
     Fonts         = "05_Шрифты"
     Setup         = "01_Настройки_SolidWorks"
 }
@@ -68,12 +67,10 @@ function Get-EskdLayout {
         SourceAddin      = Join-Path $SourceRoot $r.Addin
         SourceSwPlus     = Join-Path $SourceRoot $r.SwPlus
         SheetFormats     = Join-Path $SourceRoot $r.SheetFormats
-        SourceMaterial   = Join-Path $SourceRoot $r.MaterialLib
         Fonts            = Join-Path $SourceRoot $r.Fonts
         LocalAddin       = Join-Path $LocalRoot $r.Addin
         LocalAddinDll    = Join-Path (Join-Path $LocalRoot $r.Addin) "ESKD_Material_Sync_v5.dll"
         LocalSwPlus      = Join-Path $LocalRoot $r.SwPlus
-        LocalMaterial    = Join-Path $LocalRoot $r.MaterialLib
         PropertyTemplates = Join-Path $SourceRoot "$($r.Templates)\Шаблоны свойств"
         MaterialFolder   = Join-Path $SourceRoot "$($r.Libraries)\Библиотека материалов"
         RegProfile       = Join-Path $SourceRoot "$($r.Setup)\Реестровые_Профили\01_SW2025_Корпоративный_Стандарт_ЕСКД.reg"
@@ -83,14 +80,13 @@ function Get-EskdLayout {
 
 function Resolve-EskdProfilePath {
     # Класс пути профиля по подпути после корня инструментария: макросы SWPlus и надстройка — локальная копия,
-    # основные надписи и всё остальное — источник.
+    # всё остальное (шаблоны и основные надписи в 02, библиотеки в 04) — источник.
     param([Parameter(Mandatory = $true)][string]$Relative, [Parameter(Mandatory = $true)][string]$SourceRoot,
           [Parameter(Mandatory = $true)][string]$LocalRoot)
     $rel = $Relative.TrimStart('\')
     $low = $rel.ToLowerInvariant()
     $isUnder = { param($prefix) $p = $prefix.ToLowerInvariant(); $low -eq $p -or $low.StartsWith($p + "\") }
-    if (& $isUnder $script:Rel.SheetFormats) { $base = $SourceRoot }
-    elseif ((& $isUnder $script:Rel.SwPlus) -or (& $isUnder $script:Rel.Addin)) { $base = $LocalRoot }
+    if ((& $isUnder $script:Rel.SwPlus) -or (& $isUnder $script:Rel.Addin)) { $base = $LocalRoot }
     else { $base = $SourceRoot }
     if (-not $rel) { return $base }
     return (Join-Path $base $rel)
@@ -156,8 +152,8 @@ function Copy-EskdFile {
 
 function Copy-EskdLocalInstance {
     <#
-    Локальная копия: надстройка (файлы $AddinFiles и Icons), вся папка SWPlus кроме «Основные надписи», служебная копия
-    библиотеки материалов (запасной путь надстройки, MaterialCatalog.LocateCorporateLibrary). Файлы выпуска заменяются
+    Локальная копия: надстройка (файлы $AddinFiles и Icons) и вся папка SWPlus. Основные надписи (02) и библиотека
+    материалов не копируется: SolidWorks и надстройка берут её только из общей папки (решение владельца 14.09.2026). Файлы выпуска заменяются
     версией источника; файлы настроек макросов ($SwPlusStateFiles), уже существующие локально, не трогаются.
     Возвращает сводку: Copied, Kept, Skipped.
     #>
@@ -179,14 +175,11 @@ function Copy-EskdLocalInstance {
     if (Test-Path -LiteralPath $icons) {
         foreach ($f in Get-ChildItem -LiteralPath $icons -File) { $pairs.Add(@($f.FullName, (Join-Path $Layout.LocalAddin "Icons\$($f.Name)"), $false)) }
     }
-    $formatsLow = $Layout.SheetFormats.TrimEnd('\').ToLowerInvariant() + "\"
     $stateLow = @($script:SwPlusStateFiles | ForEach-Object { $_.ToLowerInvariant() })
     foreach ($f in Get-ChildItem -LiteralPath $Layout.SourceSwPlus -File -Recurse) {
-        if ($f.FullName.ToLowerInvariant().StartsWith($formatsLow)) { continue }
         $rel = $f.FullName.Substring($Layout.SourceSwPlus.TrimEnd('\').Length + 1)
         $pairs.Add(@($f.FullName, (Join-Path $Layout.LocalSwPlus $rel), ($stateLow -contains $rel.ToLowerInvariant())))
     }
-    if (Test-Path -LiteralPath $Layout.SourceMaterial) { $pairs.Add(@($Layout.SourceMaterial, $Layout.LocalMaterial, $false)) }
 
     foreach ($p in $pairs) {
         $src, $dst, $isState = $p

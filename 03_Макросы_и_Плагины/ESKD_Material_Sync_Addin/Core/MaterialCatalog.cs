@@ -129,64 +129,27 @@ namespace ESKD.MaterialSync.Core
             return false;
         }
 
-        /// <summary>Корпоративная библиотека рядом с надстройкой: …/04_Библиотеки_Материалов_и_Профилей/Библиотека материалов.</summary>
+        /// <summary>
+        /// Корпоративная библиотека ЕСКД. Надстройка берёт материалы только из баз, подключённых в SolidWorks
+        /// («Параметры → Месторасположение файлов → Базы данных материалов»); запасной копии нет: неподключённая
+        /// библиотека — ошибка настройки рабочего места, о ней сообщает предупреждение (решение владельца 14.09.2026).
+        /// </summary>
         public const string CorporateLibraryFile = "Библиотека_Материалов_ГОСТ.sldmat";
 
-        public static string LocateCorporateLibrary(string addinDirectory)
+        /// <summary>Материал детали из корпоративной библиотеки, а среди подключённых баз SolidWorks её нет.</summary>
+        public static bool IsCorporateLibraryMissing(IEnumerable<string> databasePaths, string databaseName)
         {
-            string relative = Path.Combine("04_Библиотеки_Материалов_и_Профилей", "Библиотека материалов", CorporateLibraryFile);
-            string cur = addinDirectory;
-            for (int i = 0; i < 6 && !string.IsNullOrEmpty(cur); i++)
-            {
-                string candidate = Path.Combine(cur, relative);
-                if (File.Exists(candidate)) return candidate;
-                DirectoryInfo parent = Directory.GetParent(cur);
-                cur = parent != null ? parent.FullName : null;
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// Базы SolidWorks и после них корпоративная библиотека из поставки (Д-39): дробь, записанная по библиотеке,
-        /// узнаётся и заменяется при смене материала, даже если в списке баз SolidWorks этой библиотеки нет.
-        /// </summary>
-        public static List<string> WithCorporateLibrary(IEnumerable<string> databasePaths, string corporateLibrary)
-        {
-            List<string> result = new List<string>();
+            string corporate = Path.GetFileNameWithoutExtension(CorporateLibraryFile);
+            if (!string.Equals((databaseName ?? "").Trim(), corporate, StringComparison.OrdinalIgnoreCase)) return false;
             if (databasePaths != null)
             {
                 foreach (string p in databasePaths)
                 {
-                    if (!string.IsNullOrEmpty(p)) result.Add(p);
+                    if (!string.IsNullOrEmpty(p) && string.Equals(Path.GetFileNameWithoutExtension(p), corporate, StringComparison.OrdinalIgnoreCase) && File.Exists(p))
+                        return false;
                 }
             }
-            if (string.IsNullOrEmpty(corporateLibrary)) return result;
-            foreach (string p in result)
-            {
-                if (string.Equals(FullPath(p), FullPath(corporateLibrary), StringComparison.OrdinalIgnoreCase)) return result;
-            }
-            result.Add(corporateLibrary);
-            return result;
-        }
-
-        private static string FullPath(string path)
-        {
-            try
-            {
-                return Path.GetFullPath(path);
-            }
-            catch (ArgumentException)
-            {
-                return path;
-            }
-            catch (NotSupportedException)
-            {
-                return path;
-            }
-            catch (PathTooLongException)
-            {
-                return path;
-            }
+            return true;
         }
 
         private static Dictionary<string, MaterialInfo> Parse(string databasePath)

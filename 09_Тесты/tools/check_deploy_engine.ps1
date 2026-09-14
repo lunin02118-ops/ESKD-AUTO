@@ -78,11 +78,11 @@ try {
     Expect "профиль: разделы вне тестового корня" ([regex]::Matches($adapted, "(?m)^\[-?HKEY_CURRENT_USER\\Software\\(?!$registryName\\)").Count) 0
     Expect "профиль: следы d:\Work" ([regex]::Matches($adapted, '(?i)[a-z]:\\\\+work\\\\+').Count) 0
     Expect "профиль: Toolbox" ([regex]::Matches($adapted, '"Toolbox Data Location"').Count) 0
-    Expect "класс: основные надписи" (Resolve-EskdProfilePath -Relative "$swplusRel\Основные надписи" -SourceRoot "S" -LocalRoot "L") "S\$swplusRel\Основные надписи"
+    Expect "класс: основные надписи" (Resolve-EskdProfilePath -Relative "02_Шаблоны_и_Форматки\Основные надписи" -SourceRoot "S" -LocalRoot "L") "S\02_Шаблоны_и_Форматки\Основные надписи"
     Expect "класс: макрос" (Resolve-EskdProfilePath -Relative "$swplusRel\MProp\MProp.swp" -SourceRoot "S" -LocalRoot "L") "L\$swplusRel\MProp\MProp.swp"
     Expect "класс: надстройка" (Resolve-EskdProfilePath -Relative "$addinRel\x.dll" -SourceRoot "S" -LocalRoot "L") "L\$addinRel\x.dll"
     Expect "класс: шаблоны" (Resolve-EskdProfilePath -Relative "02_Шаблоны_и_Форматки\Шаблоны документов" -SourceRoot "S" -LocalRoot "L") "S\02_Шаблоны_и_Форматки\Шаблоны документов"
-    Expect "класс: папка «Основные надписи 2» не путается с «Основные надписи»" (Resolve-EskdProfilePath -Relative "$swplusRel\Основные надписи 2" -SourceRoot "S" -LocalRoot "L") "L\$swplusRel\Основные надписи 2"
+    Expect "класс: папка «SWPlusMacro_v_2018_SP0.0 2» не путается с папкой SWPlus" (Resolve-EskdProfilePath -Relative "${swplusRel} 2\x.swp" -SourceRoot "S" -LocalRoot "L") "S\${swplusRel} 2\x.swp"
 
     $setup = Join-Path $source "01_Настройки_SolidWorks\Setup_Workstation_SolidWorks.ps1"
     $setupArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $setup, "-Author", "Тестов Т.Т.", "-Firm", "ООО «Проверка»",
@@ -100,7 +100,7 @@ try {
     $code, $output = & $run
     Expect "код выхода установки" $code 0
 
-    $sheetFormats = Join-Path $source "$swplusRel\Основные надписи"
+    $sheetFormats = Join-Path $source "02_Шаблоны_и_Форматки\Основные надписи"
     $localSwPlus = Join-Path $local $swplusRel
     $ext = "$swKey\ExtReferences"
     Expect "шаблоны документов — источник" (Read-Value $ext "Document Template Folders") (Join-Path $source "02_Шаблоны_и_Форматки\Шаблоны документов")
@@ -130,8 +130,8 @@ try {
     Expect "DLL в локальной копии" (Test-Path -LiteralPath $dll) $true
     Expect "иконки надстройки" (Test-Path -LiteralPath (Join-Path $local "$addinRel\Icons\icons_small.bmp")) $true
     Expect "MProp в локальной копии" (Test-Path -LiteralPath (Join-Path $localSwPlus "MProp\MProp.swp")) $true
-    Expect "основных надписей в локальной копии нет" (Test-Path -LiteralPath (Join-Path $localSwPlus "Основные надписи")) $false
-    Expect "служебная копия библиотеки" (Test-Path -LiteralPath (Join-Path $local "04_Библиотеки_Материалов_и_Профилей\Библиотека материалов\Библиотека_Материалов_ГОСТ.sldmat")) $true
+    Expect "основных надписей в локальной копии нет" (@(Get-ChildItem -LiteralPath $local -Recurse -Filter *.slddrt | Where-Object { $_.DirectoryName -notlike "*\SpecEditor" }).Count) 0
+    Expect "библиотеки материалов в локальной копии нет — только общая папка" (Test-Path -LiteralPath (Join-Path $local "04_Библиотеки_Материалов_и_Профилей")) $false
     Expect "локальные файлы без «только чтение»" (@(Get-ChildItem -LiteralPath $local -File -Recurse | Where-Object IsReadOnly).Count) 0
     $master = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "Master\Master.ini"), $cp1251))
     Expect "Master.ini: основные надписи источника" $master[3] ($sheetFormats + "\")

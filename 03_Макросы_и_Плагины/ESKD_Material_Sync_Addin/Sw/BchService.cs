@@ -251,7 +251,13 @@ namespace ESKD.MaterialSync.Sw
                 string db;
                 materialName = SyncService.MaterialName(part, (ModelDoc2)part, cfg, out db) ?? "";
                 if (materialName.Length == 0) return null;
-                return MaterialCatalog.Find(SyncService.MaterialDatabases(app), db, materialName);
+                List<string> databases = SyncService.MaterialDatabases(app);
+                if (MaterialCatalog.IsCorporateLibraryMissing(databases, db))
+                {
+                    Log.Warn(SyncService.MissingLibraryWarning(cfg, db));
+                    return null;
+                }
+                return MaterialCatalog.Find(databases, db, materialName);
             }
             catch (Exception ex)
             {

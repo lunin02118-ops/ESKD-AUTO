@@ -547,7 +547,10 @@ class StaticRepository(StaticTestCase):
         self.assertNotIn("База шаблонов", configurator)
         sheet_formats = set(re.findall(r'^"Sheet Format Folders"="([^"]*)"', reg, flags=re.M))
         self.assertTrue(sheet_formats, "в профиле нет Sheet Format Folders")
-        self.assertTrue(all(v.endswith("SWPlusMacro_v_2018_SP0.0\\\\Основные надписи") for v in sheet_formats), sheet_formats)
+        self.assertTrue(all(v.endswith("02_Шаблоны_и_Форматки\\\\Основные надписи") for v in sheet_formats), sheet_formats)
+        self.assertFalse((paths.SWPLUS / "Основные надписи").exists(), "основные надписи — в 02 рядом с шаблонами, не в папке макросов")
+        master_ini = (paths.SWPLUS / "Master" / "Master.ini").read_bytes().decode("cp1251").split("\r\n")
+        self.assertTrue(master_ini[3].endswith("02_Шаблоны_и_Форматки\\Основные надписи\\"), f"Master.ini строка 4: {master_ini[3]}")
         self.assertEqual(18, len(list(paths.SHEET_FORMATS.glob("*.slddrt"))), "комплект основных надписей SWPlus (A4-A-1 в архиве, Д-30)")
 
     @known_defect("Д-20")

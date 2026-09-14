@@ -415,6 +415,11 @@ namespace ESKD.MaterialSync.Sw
                 MaterialRecord record = null;
                 if (material != null)
                 {
+                    if (MaterialCatalog.IsCorporateLibraryMissing(databases, db))
+                    {
+                        report.Warnings.Add(MissingLibraryWarning(cfg, db));
+                        continue;
+                    }
                     MaterialInfo info = MaterialCatalog.Find(databases, db, material);
                     record = info != null ? MaterialRecord.FromLibrary(info, dict.SmallFontMarkup) : MaterialRecord.FromName(material, dict.SmallFontMarkup);
                 }
@@ -453,20 +458,27 @@ namespace ESKD.MaterialSync.Sw
             return record != null ? record.Line : "";
         }
 
-        /// <summary>Базы материалов SolidWorks и после них корпоративная библиотека из поставки надстройки (Д-39).</summary>
+        /// <summary>Базы материалов, подключённые в SolidWorks. Запасной копии библиотеки нет (решение владельца 14.09.2026).</summary>
         internal static List<string> MaterialDatabases(ISldWorks app)
         {
-            string[] dbs = null;
+            List<string> result = new List<string>();
             try
             {
-                dbs = app.GetMaterialDatabases() as string[];
+                string[] dbs = app.GetMaterialDatabases() as string[];
+                if (dbs != null) result.AddRange(dbs);
             }
             catch (Exception ex)
             {
                 Log.Error("GetMaterialDatabases", ex);
             }
-            string addinDir = Path.GetDirectoryName(typeof(SyncService).Assembly.Location) ?? "";
-            return MaterialCatalog.WithCorporateLibrary(dbs, MaterialCatalog.LocateCorporateLibrary(addinDir));
+            return result;
+        }
+
+        internal static string MissingLibraryWarning(string cfg, string database)
+        {
+            return string.Format("Конфигурация «{0}»: материал из библиотеки «{1}», но она не подключена в SolidWorks " +
+                "(Параметры → Месторасположение файлов → Базы данных материалов) — дробь материала не записана. " +
+                "Запустите настройку рабочего места.", cfg, database);
         }
 
         /// <summary>Материал SolidWorks этой конфигурации (производная — родительской) или null; общий для сохранения и «Детали БЧ» (Д-41).</summary>

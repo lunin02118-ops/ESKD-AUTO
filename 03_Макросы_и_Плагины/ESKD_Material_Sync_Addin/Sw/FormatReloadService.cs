@@ -51,7 +51,7 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
-        /// <summary>Каталог форматок поставки: «Основные надписи» рядом с SWPlus, найденный вверх от каталога надстройки.</summary>
+        /// <summary>Каталог SWPlus поставки, найденный вверх от каталога надстройки; основные надписи — в 02 рядом (FindSource).</summary>
         public static string LocateFormats(string addinDirectory)
         {
             string relative = Path.Combine("03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0");
@@ -187,12 +187,18 @@ namespace ESKD.MaterialSync.Sw
             return drw.SetupSheet4(name, (int)p[0], (int)p[1], p[2], p[3], p[4] != 0, source, p[5], p[6], view);
         }
 
+        /// <summary>Основные надписи — 02_Шаблоны_и_Форматки\Основные надписи папки инструментария; формы спецификации — SpecEditor.</summary>
         private static string FindSource(string swplus, string formatFile)
         {
             if (string.IsNullOrEmpty(swplus) || string.IsNullOrEmpty(formatFile)) return null;
-            foreach (string folder in new[] { "Основные надписи", "SpecEditor" })
+            List<string> folders = new List<string>();
+            DirectoryInfo root = Directory.GetParent(swplus.TrimEnd('\\'));
+            for (int i = 0; i < 2 && root != null; i++) root = root.Parent;
+            if (root != null) folders.Add(Path.Combine(Path.Combine(root.FullName, "02_Шаблоны_и_Форматки"), "Основные надписи"));
+            folders.Add(Path.Combine(swplus, "SpecEditor"));
+            foreach (string folder in folders)
             {
-                string candidate = Path.Combine(Path.Combine(swplus, folder), formatFile);
+                string candidate = Path.Combine(folder, formatFile);
                 if (File.Exists(candidate)) return candidate;
             }
             return null;

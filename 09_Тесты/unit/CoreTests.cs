@@ -371,15 +371,18 @@ namespace ESKD.Tests
             Assert.AreEqual("\"SW-Mass@@00@П.SLDPRT\"", SwPlusFormat.MassStamp("00", "П", false, false, false), "масса без тега FONT");
         }
 
-        public static void Test_corporate_library_next_to_addin_is_used_without_solidworks_list()
+        public static void Test_corporate_library_only_from_solidworks_list()
         {
-            string located = MaterialCatalog.LocateCorporateLibrary(AppDomain.CurrentDomain.BaseDirectory);
-            Assert.NotNull(located, "библиотека найдена от каталога сборки вверх");
-            Assert.AreEqual(Path.GetFullPath(CorporateLibrary()), Path.GetFullPath(located), "та самая библиотека репозитория");
-            System.Collections.Generic.List<string> dbs = MaterialCatalog.WithCorporateLibrary(new string[0], located);
-            Assert.AreEqual(1, dbs.Count, "список баз SolidWorks пуст — остаётся библиотека поставки (Д-39)");
-            Assert.AreEqual(2, MaterialCatalog.WithCorporateLibrary(new[] { @"C:\SW\solidworks materials.sldmat", located }, located).Count, "уже подключённая библиотека не дублируется");
-            Assert.AreEqual(@"C:\SW\solidworks materials.sldmat", MaterialCatalog.WithCorporateLibrary(new[] { @"C:\SW\solidworks materials.sldmat" }, located)[0], "базы SolidWorks — первыми");
+            string located = CorporateLibrary();
+            System.Collections.Generic.List<string> dbs = new System.Collections.Generic.List<string> { located };
+            Assert.IsFalse(MaterialCatalog.IsCorporateLibraryMissing(dbs, "Библиотека_Материалов_ГОСТ"), "библиотека подключена в SolidWorks");
+            Assert.IsTrue(MaterialCatalog.IsCorporateLibraryMissing(new string[0], "Библиотека_Материалов_ГОСТ"),
+                "библиотеки нет в списке SolidWorks — это ошибка настройки, запасной копии нет (решение 14.09.2026)");
+            Assert.IsTrue(MaterialCatalog.IsCorporateLibraryMissing(new[] { @"C:\нет\Библиотека_Материалов_ГОСТ.sldmat" }, "Библиотека_Материалов_ГОСТ"),
+                "путь в списке есть, а файла нет — тоже не подключена");
+            Assert.IsFalse(MaterialCatalog.IsCorporateLibraryMissing(new string[0], "solidworks materials"), "материал другой базы — не предупреждение");
+            Assert.IsNull(MaterialCatalog.Find(new string[0], "Библиотека_Материалов_ГОСТ", "Труба 80х80х4,0 ГОСТ 8639-82 / В 10 ГОСТ 13663-86"),
+                "без подключённой библиотеки материал не находится в запасной копии");
             MaterialCatalog.ClearCache();
             MaterialInfo tube = MaterialCatalog.Find(dbs, "Библиотека_Материалов_ГОСТ", "Труба 80х80х4,0 ГОСТ 8639-82 / В 10 ГОСТ 13663-86");
             Assert.NotNull(tube, "материал детали находится в библиотеке поставки");

@@ -14,7 +14,7 @@ ADDIN_LOG = Path(os.environ.get("TEMP", r"C:\Temp")) / "eskd_material_sync.log"
 
 SWPLUS = ROOT / "03_Макросы_и_Плагины" / "Макросы_SW_ZTool" / "SWPlusMacro_v_2018_SP0.0"
 SWPLUS_DICTIONARY = SWPLUS / "SpecEditor" / "MyProperties_1.ini"
-SHEET_FORMATS = SWPLUS / "Основные надписи"
+SHEET_FORMATS = ROOT / "02_Шаблоны_и_Форматки" / "Основные надписи"
 SPEC_FORMATS = SWPLUS / "SpecEditor"
 
 TEMPLATES = ROOT / "02_Шаблоны_и_Форматки" / "Шаблоны документов"

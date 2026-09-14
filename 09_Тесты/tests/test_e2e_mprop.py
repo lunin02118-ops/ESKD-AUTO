@@ -8,6 +8,7 @@
 """
 import json
 import unittest
+from pathlib import Path
 
 from eskd_e2e import build, mprop, paths
 from eskd_e2e.testing import SwTestCase, known_defect
@@ -126,9 +127,12 @@ class MPropCompatibility(SwTestCase):
         from eskd_e2e import com
         sheet = com.dyn(drawing.GetCurrentSheet)
         p = list(sheet.GetProperties2)
-        # «Вид для свойств» задаётся только параметрами листа (SetupSheet5, аргумент propertyViewName)
+        # «Вид для свойств» задаётся только параметрами листа (SetupSheet5, аргумент propertyViewName); чертёж помнит путь
+        # форматки на момент её загрузки — форматка берётся по имени из каталога поставки (02_Шаблоны_и_Форматки)
+        template = paths.SHEET_FORMATS / Path(str(sheet.GetTemplateName)).name
+        self.assertTrue(template.exists(), f"форматка поставки {template}")
         self.assertTrue(drawing.SetupSheet5(str(sheet.GetName), int(p[0]), int(p[1]), p[2], p[3], bool(p[4]),
-                                            str(sheet.GetTemplateName), p[5], p[6], "", True), "параметры листа")
+                                            str(template), p[5], p[6], "", True), "параметры листа")
         sheet = com.dyn(drawing.GetCurrentSheet)
         self.assertEqual("", str(sheet.CustomPropertyView), "вид для свойств листа пуст")
         run = mprop.apply_without_edits(self.s, drawing)
