@@ -193,6 +193,33 @@ class PersistenceSave(SwTestCase):
         self.assertEqual([], self.addin_errors())
 
 
+    def test_P08_save_as_copy_and_open_fixes_opened_copy(self):
+        """P08: «Сохранить как копию и открыть» — открытая копия получает реквизиты по своему имени и сохраняется;
+        исходный документ и его файл прежние (FileSavePostNotify(4), EventHub)."""
+        path, doc = self.open_copy(A01)
+        self.s.save(doc)
+        copy = self.path("ПРТИ.468211.153 Копия открытая.sldprt")
+        ok, err, _ = self.s.save_as(doc, copy, options=com.SAVE_SILENT | com.SAVE_COPY_AND_OPEN)
+        self.assertTrue(ok, f"копия не сохранена: {err}")
+        self.wait_idle(4.0)
+        opened = self.s.sw.GetOpenDocumentByName(str(copy))
+        self.assertIsNotNone(opened, "копия не открыта")
+        opened = com.dyn(opened)
+        self.assertFalse(bool(opened.GetSaveFlag), "открытая копия осталась несохранённой")
+        # после «копии с открытием» прежняя ссылка на документ SolidWorks указывает на открытую копию — исходный ищется по пути
+        original = self.s.sw.GetOpenDocumentByName(str(path))
+        if original is not None:
+            original = com.dyn(original)
+            self.assertEqual("ПРТИ.468211.101", V(oracles.dump_properties(original), "Обозначение"), "реквизиты исходного документа изменены")
+        self.s.close_all()
+        new = self.persisted(copy)
+        self.assertEqual("ПРТИ.468211.153", V(new, "Обозначение"))
+        self.assertEqual("ПРТИ.468211.153", V(new, "Обозначение", "00"))
+        self.assertEqual("Копия открытая", V(new, "Наименование"))
+        self.assertEqual("ПРТИ.468211.101", V(self.persisted(path), "Обозначение"), "исходный файл изменён")
+        self.assertEqual([], self.addin_errors())
+
+
 class PersistenceOpen(SwTestCase):
 
     def _assert_open_is_read_only(self, path, doc):
