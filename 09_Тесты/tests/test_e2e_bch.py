@@ -2,7 +2,7 @@
 """E2E, группа B — безчертёжные детали (ГОСТ Р 2.106-2019, ГОСТ Р 2.109-2023)."""
 import unittest
 
-from eskd_e2e import build, com, oracles
+from eskd_e2e import build, com, oracles, paths
 from eskd_e2e.testing import SwTestCase, known_defect, tags
 
 V = oracles.value
@@ -99,6 +99,65 @@ class Bch(SwTestCase):
         self.assertIn("ГОСТ 19903-2015", record, "дробь из библиотеки")
         manual = "Пластина опорная\n<STACK size=1>Лист 4,0<OVER>Ст3сп</STACK>\n100\u00d7200±1 мм"
         self.assertEqual(manual, self._set_and_resave(path, manual), "ручная запись остаётся")
+
+    def _set_type(self, doc, bch):
+        self.s.activate(doc)
+        return int(com.call(self.s.eskd(), "SetDrawinglessSilent", 1 if bch else 0))
+
+    def test_B08_switch_drawing_part_to_bch_and_back(self):
+        """B08 (замечание владельца 14.09): деталь, уже оформленная чертёжной (Формат А3), переключается в БЧ и обратно
+        сколько угодно раз; повторная команда того же типа ничего не меняет (двойное нажатие не отменяет переключение);
+        запись БЧ, от которой осталась одна строка (однострочное поле вкладки свойств), при сохранении восстанавливается."""
+        path = self.copy_fixture(A02)
+        with self.s.eskd_muted():
+            doc = self.s.open(path)
+            build.props(doc, {"Формат": "А3"}, "")
+            build.props(doc, {"Формат": "А3"}, "00")
+            self.s.save(doc)
+            self.s.close(doc)
+        for round_no in (1, 2):
+            with self.subTest(round=round_no):
+                doc = self.s.open(path)
+                self.assertEqual(1, self._set_type(doc, True), "стала БЧ")
+                self.assertEqual(1, self._set_type(doc, True), "повторная команда «БЧ» — без изменений")
+                self.s.save(doc)
+                self.s.close(doc)
+                disk = self.persisted(path)
+                self.assertEqual("БЧ", V(disk, "Формат", "00"))
+                self.assertEqual(TUBE_RECORD, (V(disk, "Наименование") or "").replace("\r\n", "\n"), "запись БЧ после сохранения")
+                doc = self.s.open(path)
+                self.assertEqual(2, self._set_type(doc, False), "стала чертёжной")
+                self.assertEqual(2, self._set_type(doc, False), "повторная команда «чертёжная» — без изменений")
+                self.s.save(doc)
+                self.s.close(doc)
+                disk = self.persisted(path)
+                self.assertEqual("А3", V(disk, "Формат"), "прежний формат вернулся")
+                self.assertEqual("А3", V(disk, "Формат", "00"), "прежний формат в конфигурации")
+                self.assertEqual("Стойка", V(disk, "Наименование"))
+                self.assertIsNone(V(disk, "Примечание", "00"), "масса убрана из «Примечания»")
+        doc = self.s.open(path)
+        self.assertEqual(1, self._set_type(doc, True))
+        self.s.save(doc)
+        with self.s.eskd_muted():
+            build.props(doc, {"Наименование": "Стойка"}, "")  # поле вкладки свойств оставило первую строку
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual(TUBE_RECORD, (V(disk, "Наименование") or "").replace("\r\n", "\n"), "запись БЧ восстановлена")
+        self.assertEqual("БЧ", V(disk, "Формат", "00"))
+
+    def test_B09_bch_in_file_name_keeps_record_on_save(self):
+        """B09 (замечание владельца 14.09): у файла «… Стойка БЧ» сохранение не заменяет запись БЧ именем файла."""
+        path = self.s.workspace_copy(paths.FIXTURES_A / A02, subdir=self._case_name(), name="ПРТИ.468211.102 Стойка БЧ.sldprt")
+        doc = self.s.open(path)
+        self.assertEqual(1, self._set_type(doc, True))
+        self.s.save(doc)
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        record = (V(disk, "Наименование") or "").replace("\r\n", "\n")
+        self.assertTrue(record.startswith("Стойка\n<STACK size=1>Труба"), f"запись БЧ: {record!r}")
+        self.assertEqual("<FONT size=4> \n<FONT size=5>Стойка", (V(disk, "Наименование_ФБ") or "").replace("\r\n", "\n"))
 
     @known_defect("Д-41")
     def test_B06_bch_takes_material_of_its_own_configuration(self):

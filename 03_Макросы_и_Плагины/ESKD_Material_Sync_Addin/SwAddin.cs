@@ -132,7 +132,7 @@ namespace ESKD.MaterialSync
             int sync = group.AddCommandItem2("Синхронизировать", -1, "Обновить реквизиты, материал и массу активного документа",
                 "Синхронизировать", 1, "SyncCurrentDoc", "EnableCommand", CommandUserIds[2], buttons);
             int bch = group.AddCommandItem2("Деталь БЧ", -1, "Установить или снять признак безчертёжной детали (ГОСТ Р 2.109-2023)",
-                "Деталь БЧ", 2, "ToggleDrawingless", "EnablePartCommand", CommandUserIds[3], buttons);
+                "Деталь БЧ", 2, "ToggleDrawingless", "EnableBchCommand", CommandUserIds[3], buttons);
             group.HasToolbar = true;
             group.HasMenu = true;
             group.Activate();
@@ -202,20 +202,6 @@ namespace ESKD.MaterialSync
         public int EnableCommand()
         {
             return 1;
-        }
-
-        public int EnablePartCommand()
-        {
-            try
-            {
-                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
-                return doc != null && doc.GetType() == (int)swDocumentTypes_e.swDocPART ? 1 : 0;
-            }
-            catch (COMException)
-            {
-                // SolidWorks опрашивает состояние кнопки постоянно; занятый COM — просто «недоступна».
-                return 0;
-            }
         }
 
         public void ShowSettings()
@@ -290,23 +276,115 @@ namespace ESKD.MaterialSync
             return _hub != null ? _hub.LastWarnings : "";
         }
 
+        /// <summary>Кнопка «Деталь БЧ» нажата (вдавлена) у безчертёжной детали — тип детали виден без открытия свойств.</summary>
+        public int EnableBchCommand()
+        {
+            try
+            {
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocPART) return 0;
+                if (_formatProperty == null) _formatProperty = SyncService.Dictionary(Settings.Read())[Role.Format];
+                string cfg = doc.ConfigurationManager.ActiveConfiguration != null ? doc.ConfigurationManager.ActiveConfiguration.Name : "";
+                string value = FormatValue(doc, cfg) ?? FormatValue(doc, "");
+                return (value ?? "").Trim() == BchRecord.FormatValue ? 3 : 1;
+            }
+            catch (COMException)
+            {
+                // SolidWorks опрашивает состояние кнопки постоянно; занятый COM — просто «доступна, не нажата».
+                return 1;
+            }
+        }
+
+        private string _formatProperty;
+        private DateTime _bchDialogClosed = DateTime.MinValue;
+
+        private string FormatValue(ModelDoc2 doc, string cfg)
+        {
+            CustomPropertyManager m = doc.Extension.get_CustomPropertyManager(cfg);
+            if (m == null) return null;
+            object names = m.GetNames();
+            if (!(names is string[]) || Array.IndexOf((string[])names, _formatProperty) < 0) return null;
+            string raw, resolved;
+            bool wasResolved;
+            m.Get5(_formatProperty, false, out raw, out resolved, out wasResolved);
+            return raw;
+        }
+
+        /// <summary>
+        /// Переключение чертёжная ⇄ безчертёжная: окно называет текущий тип и спрашивает, сменить ли его. Щелчок, пришедший
+        /// сразу после закрытия окна (второй щелчок двойного нажатия), не открывает окно снова.
+        /// </summary>
         public void ToggleDrawingless()
         {
-            int result = ToggleDrawinglessSilent();
-            if (result == BchService.NotPart)
+            if ((DateTime.Now - _bchDialogClosed).TotalMilliseconds < 800) return;
+            ModelDoc2 doc = null;
+            string format;
+            bool isBch;
+            try
+            {
+                doc = _app.ActiveDoc as ModelDoc2;
+                isBch = BchService.State(doc, out format);
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("Деталь БЧ: состояние", ex);
+                return;
+            }
+            if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocPART)
             {
                 MessageBox.Show("Признак БЧ применяется только к деталям.", "ЕСКД: Деталь БЧ", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            string title = DocInfo.TitleOf(doc);
+            string question = isBch
+                ? string.Format("Деталь «{0}» сейчас БЕЗЧЕРТЁЖНАЯ (Формат = БЧ).\n\nСделать её ЧЕРТЁЖНОЙ?\n\n" +
+                    "Вернутся прежние «Формат» и «Примечание», наименование — из имени файла.", title)
+                : string.Format("Деталь «{0}» сейчас ЧЕРТЁЖНАЯ{1}.\n\nСделать её БЕЗЧЕРТЁЖНОЙ (БЧ)?\n\n" +
+                    "«Формат» = БЧ, масса в «Примечании», в «Наименовании» — запись для спецификации. Прежние значения " +
+                    "сохраняются и вернутся при обратном переключении.", title, format.Length > 0 ? " (Формат = " + format + ")" : "");
+            DialogResult answer;
+            try
+            {
+                answer = MessageBox.Show(question, "ЕСКД: чертёжная или безчертёжная деталь", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            }
+            finally
+            {
+                _bchDialogClosed = DateTime.Now;
+            }
+            if (answer != DialogResult.Yes) return;
+            int result;
+            try
+            {
+                result = BchService.Set(_app, doc, !isBch);
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("ToggleDrawingless", ex);
                 return;
             }
             try
             {
                 StatusText(result == BchService.Enabled
-                    ? "ЕСКД: деталь оформлена как безчертёжная (Формат = БЧ, масса в «Примечании»)"
-                    : "ЕСКД: признак безчертёжной детали снят, прежние «Формат» и «Примечание» восстановлены");
+                    ? "ЕСКД: деталь безчертёжная (Формат = БЧ, масса в «Примечании») — сохраните деталь"
+                    : "ЕСКД: деталь чертёжная, прежние «Формат» и «Примечание» восстановлены — сохраните деталь");
             }
             catch (Exception ex)
             {
                 Core.Log.Error("SetStatusBarText", ex);
+            }
+        }
+
+        /// <summary>Установить тип детали без окна: wanted 1 — безчертёжная, 0 — чертёжная. Итог: 0 — не деталь; 1 — БЧ; 2 — чертёжная.</summary>
+        public int SetDrawinglessSilent(int wanted)
+        {
+            try
+            {
+                return BchService.Set(_app, _app.ActiveDoc as ModelDoc2, wanted != 0);
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("SetDrawinglessSilent", ex);
+                return BchService.NotPart;
             }
         }
 

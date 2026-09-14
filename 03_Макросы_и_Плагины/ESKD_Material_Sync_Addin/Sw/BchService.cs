@@ -26,7 +26,28 @@ namespace ESKD.MaterialSync.Sw
             return (value ?? "").Trim() == BchRecord.FormatValue;
         }
 
+        /// <summary>Текущий тип детали для окна переключения: БЧ или чертёжная и её «Формат» («А3», пусто — не задан).</summary>
+        public static bool State(ModelDoc2 doc, out string format)
+        {
+            format = "";
+            if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocPART) return false;
+            PropertyDictionary dict = SyncService.Dictionary(Settings.Read());
+            PropertyWriter w = new PropertyWriter(doc, true);
+            string name = dict[Role.Format];
+            format = (w.Raw(w.ActiveConfigurationName(), name) ?? w.Raw("", name) ?? "").Trim();
+            return IsBch(w, dict);
+        }
+
         public static int Toggle(ISldWorks app, ModelDoc2 doc)
+        {
+            return Set(app, doc, null);
+        }
+
+        /// <summary>
+        /// Переключение чертёжная ⇄ безчертёжная. wanted = true — сделать БЧ, false — чертёжной, null — сменить на обратный.
+        /// Деталь уже нужного типа не меняется: повторное нажатие не отменяет переключение.
+        /// </summary>
+        public static int Set(ISldWorks app, ModelDoc2 doc, bool? wanted)
         {
             if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocPART) return NotPart;
             Settings settings = Settings.Read();
@@ -35,7 +56,10 @@ namespace ESKD.MaterialSync.Sw
             int result;
             try
             {
-                result = IsBch(w, dict) ? Disable(w, doc, dict, settings) : Enable(w, app, doc, dict, settings);
+                bool now = IsBch(w, dict);
+                bool target = wanted ?? !now;
+                if (target == now) return now ? Enabled : Disabled;
+                result = now ? Disable(w, doc, dict, settings) : Enable(w, app, doc, dict, settings);
             }
             catch (Exception ex)
             {
@@ -160,8 +184,15 @@ namespace ESKD.MaterialSync.Sw
             string title = dict[Role.Description];
             string level = RecordLevel(w);
             string current = w.Raw(level, title);
-            if (!BchRecord.IsOwnRecord(current)) return;
-            string wanted = BuildRecord(app, doc, w.ActiveConfigurationName(), BchRecord.ShortTitle(current));
+            // Запись, от которой осталась одна строка (однострочное поле вкладки свойств, шаблонное «Деталь») или имя
+            // файла, восстанавливается: у детали БЧ в «Наименовании» всегда запись для спецификации.
+            string fileTitle = DesignationParser.Parse(SafePath(doc), dict.NameSeparator).Title ?? "";
+            string plain = (current ?? "").Trim();
+            bool lost = !BchRecord.IsRecord(current) && (PropertyWriter.IsEmptyOrTemplate(current) ||
+                DesignationParser.IsTemplateName(plain) || plain == fileTitle.Trim() || plain == BchRecord.ShortTitle(fileTitle));
+            if (!lost && !BchRecord.IsOwnRecord(current)) return;
+            string head = lost ? BchRecord.ShortTitle(fileTitle.Length > 0 ? fileTitle : current) : BchRecord.ShortTitle(current);
+            string wanted = BuildRecord(app, doc, w.ActiveConfigurationName(), head);
             if (MaterialRecord.Normalize(current) != wanted) w.Set(level, title, wanted);
         }
 

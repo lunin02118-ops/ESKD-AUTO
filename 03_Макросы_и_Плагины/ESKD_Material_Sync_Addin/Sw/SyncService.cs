@@ -253,6 +253,9 @@ namespace ESKD.MaterialSync.Sw
             if (string.IsNullOrEmpty(now.Title)) return;
             string currentTitle = w.Raw("", title);
             Provenance titleState = ProvenanceRule.Classify(currentTitle, now.Title, before != null ? before.Title : null, false);
+            // У детали БЧ «Наименование» — запись для спецификации; потерянную запись восстанавливает BchService.UpdateOnSave
+            bool bch = !isAssembly && BchService.IsBch(w, dict);
+            if (bch && !BchRecord.IsRecord(currentTitle) && ProvenanceRule.ShouldWrite(titleState)) titleState = Provenance.Current;
             string effective = currentTitle ?? "";
             if (ProvenanceRule.ShouldWrite(titleState))
             {
@@ -265,7 +268,7 @@ namespace ESKD.MaterialSync.Sw
             }
             if (PropertyWriter.IsEmptyOrTemplate(effective)) return;
             // Графа 1 — разметка MProp по числу строк (FrmMProp:2636–2657), перенос по 22 знака (Р-2); у БЧ — первая строка записи.
-            string stampTitle = BchRecord.IsRecord(effective) ? BchRecord.ShortTitle(effective) : effective;
+            string stampTitle = BchRecord.IsRecord(effective) || bch ? BchRecord.ShortTitle(effective) : effective;
             string wantedFb = SwPlusFormat.TitleStamp(SwPlusFormat.WrapTitle(stampTitle), dict.SmallFontMarkup);
             string currentFb = w.Raw("", titleFb);
             if (IsDerivedTitleStamp(currentFb, stampTitle, before)) w.Set("", titleFb, wantedFb);
