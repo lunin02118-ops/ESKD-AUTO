@@ -220,6 +220,65 @@ class PersistenceSave(SwTestCase):
         self.assertEqual([], self.addin_errors())
 
 
+class Performance(SwTestCase):
+    A09 = "ПРТИ.468211.100 СБ Кондуктор сварочный.sldasm"
+    A09_COMPONENTS = ("ПРТИ.468211.110 СБ Узел опоры.sldasm", A01, A04, "ПРТИ.468211.102 Стойка.sldprt",
+                      "ПРТИ.468211.103 Планка.sldprt", "Электродвигатель АИР71А4.sldprt",
+                      "ПРТИ.468211.104 Кронштейн направляющий удлинённый.sldprt", "ПРТИ.468211.105 Рама сварная.sldprt")
+
+    @staticmethod
+    def _median(values):
+        values = sorted(values)
+        return values[len(values) // 2]
+
+    def _save_times(self, doc, n):
+        import time
+        out = []
+        cpm = doc.Extension.CustomPropertyManager("")
+        for i in range(n):
+            # документ меняется по-настоящему, иначе Save3 ничего не записывает (0,05 с)
+            com.prop_set(cpm, "P14_проба", str(time.time()) + str(i))
+            started = time.perf_counter()
+            ok, err, _ = self.s.save(doc)
+            out.append(time.perf_counter() - started)
+            self.assertTrue(ok, f"Save3 err={err}")
+        return out
+
+    def _switch_times(self, docs, n):
+        import time
+        out = []
+        for _ in range(n):
+            for d in docs:
+                started = time.perf_counter()
+                self.s.activate(d)
+                out.append(time.perf_counter() - started)
+        return out
+
+    def test_P14_save_and_window_switch_overhead(self):
+        """P14 (Д-04, Д-11): сохранение сборки A-09 с надстройкой дольше, чем без неё, не больше чем на 2 с (медиана трёх
+        сохранений); переключение окна добавляет не больше 50 мс (медиана) и не пишет свойств."""
+        self.copy_fixtures(*self.A09_COMPONENTS)
+        path, asm = self.open_copy(self.A09)
+        part = self.s.open(self.case_dir / A01) if self.s.sw.GetOpenDocumentByName(str(self.case_dir / A01)) is None             else com.dyn(self.s.sw.GetOpenDocumentByName(str(self.case_dir / A01)))
+        self.s.save(asm)
+        stamp = path.stat().st_mtime_ns
+        with_addin = self._median(self._save_times(asm, 3))
+        self.assertNotEqual(stamp, path.stat().st_mtime_ns, "сохранения не записали файл")
+        mark = self.mark("P14-switch")
+        switch_addin = self._median(self._switch_times([asm, part], 5))
+        self.assertNoPropertyWrites(mark, "переключение окон записало свойства")
+        with self.s.eskd_muted():
+            without = self._median(self._save_times(asm, 3))
+            switch_plain = self._median(self._switch_times([asm, part], 5))
+        report = {"save_with_addin_s": round(with_addin, 3), "save_without_s": round(without, 3),
+                  "switch_with_addin_ms": round(switch_addin * 1000, 1), "switch_without_ms": round(switch_plain * 1000, 1)}
+        self.path("performance.json").write_text(__import__("json").dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+        cpm = asm.Extension.CustomPropertyManager("")
+        cpm.Delete2("P14_проба")
+        self.assertLessEqual(with_addin - without, 2.0, f"сохранение A-09: {report}")
+        self.assertLessEqual(switch_addin - switch_plain, 0.05, f"переключение окна: {report}")
+
+
 class PersistenceOpen(SwTestCase):
 
     def _assert_open_is_read_only(self, path, doc):
