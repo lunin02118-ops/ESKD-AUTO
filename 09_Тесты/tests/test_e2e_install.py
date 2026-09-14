@@ -169,6 +169,15 @@ class AddinLifecycle(SwTestCase):
         self.assertEqual("ПРТИ.468211.101", oracles.value(self.persisted(path), "Обозначение", "00"), "запись при сохранении")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки после перезагрузок")
 
+    def test_I10_eskd_tab_has_own_buttons_for_every_document_type(self):
+        """I10 (замечание владельца 14.09): вкладка ЕСКД у детали — «Настройки ЕСКД», «Синхронизировать», «Деталь БЧ»,
+        у сборки и чертежа — первые две; вкладка, сохранённая SolidWorks от прежней раскладки, со ссылкой на чужую команду
+        («Определенный пользователем маршрут») пересоздаётся при загрузке надстройки."""
+        common = "Настройки ЕСКД|Синхронизировать"
+        for doc_type, wanted in ((1, common + "|Деталь БЧ"), (2, common), (3, common)):
+            with self.subTest(doc_type=doc_type):
+                self.assertEqual(wanted, str(com.call(self.s.eskd(), "TabButtons", doc_type)))
+
 
 class FixtureMaterials(SwTestCase):
 

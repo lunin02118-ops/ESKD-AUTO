@@ -146,13 +146,19 @@ namespace ESKD.MaterialSync
             }
 
             int[] ids = { group.get_CommandID(settings), group.get_CommandID(sync), group.get_CommandID(bch) };
+            _commandIds = ids;
             foreach (int docType in new[] { (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, (int)swDocumentTypes_e.swDocDRAWING })
             {
                 try
                 {
                     CommandTab tab = _commands.GetCommandTab(docType, TabTitle);
-                    if (tab != null && ignorePrevious)
+                    bool part = docType == (int)swDocumentTypes_e.swDocPART;
+                    int[] wanted = part ? ids : new[] { ids[0], ids[1] };
+                    // Вкладка, сохранённая SolidWorks от прежней раскладки, ссылается на чужие команды (у сборки вместо
+                    // «Синхронизировать» — «Определенный пользователем маршрут»): её кнопки сверяются и вкладка пересоздаётся.
+                    if (tab != null && (ignorePrevious || !SameIds(TabCommands(tab), wanted)))
                     {
+                        if (!ignorePrevious) Core.Log.Info("Вкладка ЕСКД для типа " + docType + " ссылалась на чужие команды — пересоздана");
                         _commands.RemoveCommandTab(tab);
                         tab = null;
                     }
@@ -160,9 +166,8 @@ namespace ESKD.MaterialSync
                     {
                         tab = _commands.AddCommandTab(docType, TabTitle);
                         CommandTabBox box = tab.AddCommandTabBox();
-                        bool part = docType == (int)swDocumentTypes_e.swDocPART;
                         int below = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
-                        box.AddCommands(part ? ids : new[] { ids[0], ids[1] }, part ? new[] { below, below, below } : new[] { below, below });
+                        box.AddCommands(wanted, part ? new[] { below, below, below } : new[] { below, below });
                     }
                 }
                 catch (Exception ex)
@@ -184,6 +189,49 @@ namespace ESKD.MaterialSync
                 Core.Log.Error("RemoveCommandGroup2", ex);
             }
         }
+
+        /// <summary>Идентификаторы команд всех блоков вкладки по порядку.</summary>
+        private static int[] TabCommands(CommandTab tab)
+        {
+            System.Collections.Generic.List<int> result = new System.Collections.Generic.List<int>();
+            object[] boxes = tab.CommandTabBoxes() as object[];
+            if (boxes == null) return result.ToArray();
+            foreach (object b in boxes)
+            {
+                CommandTabBox box = b as CommandTabBox;
+                if (box == null) continue;
+                object commands, texts;
+                box.GetCommands(out commands, out texts);
+                int[] ids = commands as int[];
+                if (ids != null) result.AddRange(ids);
+            }
+            return result.ToArray();
+        }
+
+        /// <summary>Кнопки вкладки ЕСКД для типа документа (1 — деталь, 2 — сборка, 3 — чертёж): «имя команды» через «|».</summary>
+        public string TabButtons(int docType)
+        {
+            try
+            {
+                CommandTab tab = _commands != null ? _commands.GetCommandTab(docType, TabTitle) : null;
+                if (tab == null) return "";
+                System.Collections.Generic.List<string> names = new System.Collections.Generic.List<string>();
+                foreach (int id in TabCommands(tab))
+                {
+                    int i = _commandIds != null ? Array.IndexOf(_commandIds, id) : -1;
+                    names.Add(i >= 0 ? CommandNames[i] : "чужая команда " + id);
+                }
+                return string.Join("|", names.ToArray());
+            }
+            catch (COMException ex)
+            {
+                Core.Log.Error("TabButtons", ex);
+                return "ошибка: " + ex.Message;
+            }
+        }
+
+        private static readonly string[] CommandNames = { "Настройки ЕСКД", "Синхронизировать", "Деталь БЧ" };
+        private int[] _commandIds;
 
         private static bool SameIds(int[] a, int[] b)
         {
