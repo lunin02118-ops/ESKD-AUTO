@@ -47,6 +47,8 @@ param (
     [switch]$NonInteractive,
     [switch]$SkipFonts,
     [switch]$SkipDrew,
+    [switch]$SwInternetBlock,
+    [switch]$DrewRussian,
     [switch]$Utf8Output,
     [string]$LocalRoot = "",
     [string]$RegistryRoot = "HKCU:\Software"
@@ -221,14 +223,14 @@ Write-Host "Организация:          $(if ($Firm) { $Firm } else { '(н�
 $failures = 0
 
 # 1. SolidWorks
-Write-Step "[1/7] Проверка SolidWorks..."
+Write-Step "[1/9] Проверка SolidWorks..."
 if (-not (Close-SolidWorks -Mode $CloseMode)) {
     Write-Fail "Установка прервана: SolidWorks не закрыт. Изменения не вносились."
     exit 3
 }
 
 # 2. Локальная копия макросов SWPlus и надстройки
-Write-Step "[2/7] Копирование макросов SWPlus и надстройки ЕСКД в профиль пользователя..."
+Write-Step "[2/9] Копирование макросов SWPlus и надстройки ЕСКД в профиль пользователя..."
 try {
     $copy = Copy-EskdLocalInstance -Layout $layout
     Write-Ok ("Локальная копия: обновлено файлов {0}, без изменений {1}, настройки пользователя сохранены {2}." -f $copy.Copied.Count, $copy.Same, $copy.Kept.Count)
@@ -248,7 +250,7 @@ if ($Firm -and (Add-SwPlusFirm -Path (Join-Path $mprop "MProp_Firm.txt") -Name $
 }
 
 # 3. Профиль реестра
-Write-Step "[3/7] Корпоративный профиль SolidWorks..."
+Write-Step "[3/9] Корпоративный профиль SolidWorks..."
 $regKeyUser = "HKEY_CURRENT_USER\" + $U.Substring("HKCU:\".Length)
 $backupRoot = Join-Path (Split-Path -Path $LocalRoot -Parent) "Backups"
 [void](Backup-SolidWorksRegistryKeys -BackupRoot $backupRoot -RegistryKeys @("$regKeyUser\SolidWorks\$SwVersion", "$regKeyUser\SolidWorks\AddInsStartup"))
@@ -303,7 +305,7 @@ try {
 } catch { Write-Info "Видеокарта не определена — RealView не настраивается." }
 
 # 4. Очистка устаревших надстроек и вкладок
-Write-Step "[4/7] Очистка устаревших надстроек и вкладок..."
+Write-Step "[4/9] Очистка устаревших надстроек и вкладок..."
 $unwanted = @("{03412ba8-10f6-4d51-ac38-4937ce7bea5f}", "{7a2f5c31-9e44-4b0d-8c21-5f0e9a4b77c2}",
               "{B64E6875-B101-4D5C-B245-FF8D50772E21}", "{B64E6875-B101-4D5C-B245-FF8D50772E23}", "{B64E6875-B101-4D5C-B245-FF8D50772E24}")
 foreach ($g in $unwanted) {
@@ -350,7 +352,7 @@ foreach ($name in @("OnCadTools", "Semantic", "Semantic MDM")) {
 Write-Ok "Устаревшие надстройки и пустые вкладки убраны."
 
 # 5. Кнопки SWPlus в панели быстрого доступа
-Write-Step "[5/7] Кнопки SWPlus..."
+Write-Step "[5/9] Кнопки SWPlus..."
 $qat = "$swRoot\User Interface\CommandManager\QAT\GB0"
 $buttons = [ordered]@{ "Btn11" = "1,33639"; "Btn12" = "1,33640"; "Btn13" = "1,33641"; "Btn14" = "1,33642"; "Btn15" = "1,33643";
                        "Btn16" = "1,33644"; "Btn17" = "1,33645"; "Btn18" = "1,33646"; "Btn19" = "1,33647" }
@@ -359,7 +361,7 @@ for ($cid = 33639; $cid -le 33647; $cid++) { Set-Reg "$swRoot\Menu Customization
 Write-Ok "9 кнопок SWPlus: MProp, SProp, DProp, SpecEditor, RecordDimM, Roughness, TT, Master, SaveAsPDF."
 
 # 6. Надстройка ЕСКД
-Write-Step "[6/7] Надстройка ЕСКД..."
+Write-Step "[6/9] Надстройка ЕСКД..."
 $registration = $null
 try {
     . (Join-Path $layout.SourceAddin "Register-EskdAddin.ps1")
@@ -403,7 +405,7 @@ Set-Reg "$swRoot\Material" "__NumOfFavs" $favList.Count "DWord"
 Write-Ok "Фамилия, организация и избранные материалы записаны."
 
 # 7. Шрифты и Drew
-Write-Step "[7/7] Шрифты ГОСТ и модуль Drew..."
+Write-Step "[7/9] Шрифты ГОСТ и модуль Drew..."
 if ($sandbox -or $SkipFonts) {
     Write-Info "Шрифты пропущены."
 } elseif (Test-Path -LiteralPath $layout.Fonts) {
@@ -449,19 +451,31 @@ if ($sandbox -or $SkipDrew) {
     $drewGuid = "{08c4bc0b-c36c-470e-a0ea-02232f023333}"
     $drewCandidates = @((Join-Path $env:ProgramFiles "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"),
                         (Join-Path $env:LOCALAPPDATA "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"))
-    $drewDll = $drewCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-    $drewDir = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation"
-    $drewInstaller = Join-Path $drewDir "install-all.ps1"
-    if (-not $drewDll -and (Test-Path -LiteralPath $drewInstaller)) {
-        # install-all.ps1 завершает SolidWorks принудительно — запускается только при закрытом SolidWorks
-        if (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
-            Write-Warn "Модуль Drew не установлен: SolidWorks открыт. Закройте SolidWorks и запустите настройку ещё раз."
+    $licDll = Join-Path $env:ProgramFiles "CAD Booster\Drew\CADBooster.Common.Licensing.dll"
+    $licHash = "AA2817A7530B286FDA6EC95C5BED03A4C5062E78676064EDABFA748FC74C0485"
+    $drewOk = (Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
+    if ($drewOk) {
+        Write-Info "Drew уже установлен (сборка верная, хэш совпал)."
+    } else {
+        $drewDir = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation"
+        $drewExe = @(Get-ChildItem -LiteralPath $drewDir -Filter "*AUTO.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($drewExe.Count -eq 0) {
+            Write-Warn "Установщик Drew не найден: $drewDir"
+        } elseif (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
+            Write-Warn "Установка Drew отложена: SolidWorks открыт (установщик закрывает его сам)."
         } else {
-            Write-Info "Установка модуля Drew (издание с активацией)..."
-            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $drewInstaller -Silent -NoActivate | Out-Null
-            $drewDll = $drewCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            Write-Info "Установка Drew (Gov-издание, лицензия встроена): $($drewExe[0].Name). Подтвердите UAC."
+            Start-Process -FilePath $drewExe[0].FullName -WorkingDirectory $drewDir
+            $deadline = (Get-Date).AddMinutes(6)
+            while ((Get-Date) -lt $deadline -and -not $drewOk) {
+                Start-Sleep -Seconds 3
+                $drewOk = (Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
+            }
+            if ($drewOk) { Write-Ok "Drew установлен (контроль хэша пройден)." }
+            else { $failures++; Write-Fail "Drew не установился за 6 минут - проверьте окно установщика." }
         }
     }
+    $drewDll = $drewCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if ($drewDll) {
         $drewClass = "CADBooster.Drew.Drawing.SolidWorks.Integration.DrewAddin"
         $drewAssembly = "CADBooster.Drew.Drawing, Version=4.3.0.0, Culture=neutral, PublicKeyToken=null"
@@ -477,18 +491,48 @@ if ($sandbox -or $SkipDrew) {
         Set-Reg "$U\SolidWorks\AddIns\$drewGuid" "Title" "Drew"
         Set-Reg "$U\SolidWorks\AddinsStartup\$drewGuid" "(Default)" 1 "DWord"
         Write-Ok "Модуль Drew подключён: $drewDll"
-        # Лицензия Drew — код активации по ключу железа этого ПК (3_активация\Client-Activate-Drew.ps1 пишет
-        # %APPDATA%\CAD Booster\Drew\Activation.code). Без него Drew работает без лицензии.
-        $activation = Join-Path $env:APPDATA "CAD Booster\Drew\Activation.code"
-        if (Test-Path -LiteralPath $activation) {
-            Write-Ok "Drew активирован (код от $((Get-Content -LiteralPath $activation -TotalCount 3)[2]))."
-        } else {
-            Write-Warn ("Drew не активирован: запустите " + (Join-Path $drewDir "3_активация\АКТИВИРОВАТЬ_DREW.cmd") +
-                ", скопируйте ключ железа и передайте администратору; полученный код вставьте в то же окно.")
-        }
+        $marker = Join-Path $env:APPDATA "CAD Booster\Drew\LicenseKey.skm"
+        if (Test-Path -LiteralPath $marker) { Write-Ok "Лицензия Drew: встроенная, активация не требуется." }
+        else { Write-Warn "Лицензия Drew: нет файла-маркера ($marker) - переустановите Drew галочкой." }
     } else {
         Write-Warn "Модуль Drew не найден и не установлен."
     }
+}
+
+# 8. Отучение SolidWorks от сети (опция, галочка в окне)
+Write-Step "[8/9] Отучение SolidWorks от сети..."
+if ($SwInternetBlock) {
+    $sb = Join-Path $PSScriptRoot "SwInternetBlock\Set-SwInternetBlock.ps1"
+    if (-not (Test-Path -LiteralPath $sb)) {
+        Write-Warn "Пакет SwInternetBlock не найден: $sb"
+    } elseif ($machine) {
+        foreach ($mode in "apply", "hosts-apply") {
+            $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sb -Mode $mode 2>&1
+            foreach ($l in $out) { if ("$l".Trim()) { Write-Info "  $l" } }
+        }
+        $cnt = @(Get-NetFirewallRule -DisplayName 'Block SW Internet*' -ErrorAction SilentlyContinue).Count
+        Write-Ok "Правил Block SW Internet: $cnt; домены SW заглушены в hosts. Drew и его облако настроек не затронуты."
+    } else {
+        Write-Info "Нужны права администратора - откроется запрос UAC (два раза не потребуется)..."
+        $sbCmd = "& '{0}' -Mode apply; & '{0}' -Mode hosts-apply" -f $sb
+        try {
+            Start-Process powershell.exe -Verb RunAs -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command',$sbCmd
+        } catch { Write-Warn "UAC отклонён - отучение от сети пропущено." }
+        $cnt = @(Get-NetFirewallRule -DisplayName 'Block SW Internet*' -ErrorAction SilentlyContinue).Count
+        if ($cnt -ge 300) { Write-Ok "Правил Block SW Internet: $cnt (применено)." }
+        else { Write-Warn "Правил Block SW Internet: $cnt - похоже, UAC не подтверждён." }
+    }
+} else {
+    Write-Info "Пропущено (галочка снята)."
+}
+
+# 9. Русский интерфейс Drew (опция, галочка в окне)
+Write-Step "[9/9] Русский интерфейс Drew..."
+if ($DrewRussian) {
+    [Environment]::SetEnvironmentVariable('DREW_LANG', 'ru', 'User')
+    Write-Ok "DREW_LANG=ru для пользователя $env:USERNAME (действует со следующего запуска SolidWorks)."
+} else {
+    Write-Info "Пропущено (галочка снята)."
 }
 
 # Сведения об установке

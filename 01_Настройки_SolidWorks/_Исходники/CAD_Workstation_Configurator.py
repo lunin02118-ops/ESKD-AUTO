@@ -5,7 +5,9 @@
 Запускается двойным щелчком из папки инструментария (сетевой или локальной). Папка, из которой запущена программа,
 и есть источник: путь нигде не зашит и не вводится. Окно берёт фамилию и организацию, а всю работу делает
 установщик Setup_Workstation_SolidWorks.ps1 из той же папки: пути SolidWorks на папку инструментария, макросы
-SWPlus и надстройка ЕСКД — в профиль пользователя, кнопки, шрифты, Drew. Права администратора не нужны.
+SWPlus и надстройка ЕСКД — в профиль пользователя, кнопки, шрифты, Drew (лицензия встроена - активация
+не нужна). Галочки: Drew, отучение SolidWorks от сети (единственная опция, запрашивающая права администратора),
+русский интерфейс Drew.
 
 Повторный запуск — обновление: если на ПК уже есть установка, оно начинается само через несколько секунд.
 
@@ -132,12 +134,18 @@ def windows_display_name():
     return ""
 
 
-def build_command(engine, author, firm, close_mode):
-    """Командная строка установщика: без вопросов в консоли, вывод в UTF-8."""
+def build_command(engine, author, firm, close_mode, drew=True, block=False, ru=False):
+    """Командная строка установщика: без вопросов в консоли, вывод в UTF-8; флаги чекбоксов."""
     cmd = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", engine,
            "-Author", author, "-CloseMode", close_mode, "-NonInteractive", "-Utf8Output"]
     if firm:
         cmd += ["-Firm", firm]
+    if not drew:
+        cmd += ["-SkipDrew"]
+    if block:
+        cmd += ["-SwInternetBlock"]
+    if ru:
+        cmd += ["-DrewRussian"]
     return cmd
 
 
@@ -232,6 +240,18 @@ class ConfiguratorApp:
         self.var_firm = tk.StringVar(value=settings["Organization"])
         ttk.Combobox(form, textvariable=self.var_firm, values=firms, width=34).grid(row=0, column=3, sticky=tk.W, padx=8)
 
+        comp = ttk.LabelFrame(root, text=" Компоненты ", padding="12 6 12 8")
+        comp.pack(fill=tk.X, padx=16, pady=(6, 6))
+        self.var_drew = tk.BooleanVar(value=True)
+        self.var_block = tk.BooleanVar(value=False)
+        self.var_ru = tk.BooleanVar(value=True)
+        ttk.Checkbutton(comp, text="Drew — Gov-издание (лицензия встроена, без активации и кейгена)",
+                        variable=self.var_drew).pack(anchor=tk.W)
+        ttk.Checkbutton(comp, text="Отучение SolidWorks от сети (файрвол + hosts; запросит права администратора)",
+                        variable=self.var_block).pack(anchor=tk.W)
+        ttk.Checkbutton(comp, text="Русский интерфейс Drew (DREW_LANG=ru)",
+                        variable=self.var_ru).pack(anchor=tk.W)
+
         log_frame = ttk.LabelFrame(root, text=" Ход настройки ", padding=6)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 6))
         self.log = tk.Text(log_frame, height=12, font=("Consolas", 9), wrap=tk.WORD, relief=tk.FLAT, background="#f7f8fa")
@@ -250,13 +270,7 @@ class ConfiguratorApp:
         self.btn_close.pack(side=tk.RIGHT)
         self.btn_install = ttk.Button(bottom, text="Установить / Обновить", command=self.start)
         self.btn_install.pack(side=tk.RIGHT, padx=(0, 8))
-        self.btn_drew = ttk.Button(bottom, text="Активация Drew…", command=self.activate_drew)
-        self.btn_drew.pack(side=tk.RIGHT, padx=(0, 8))
-        self.drew_needs_activation = False
         root.protocol("WM_DELETE_WINDOW", self.on_close)
-
-        if not self.source or not os.path.isfile(os.path.join(self.source, DREW_ACTIVATION)):
-            self.btn_drew.state(["disabled"])
         if not self.source or not self.engine:
             self.btn_install.state(["disabled"])
             self.set_status("Запустите программу из папки инструментария на сетевом диске.", "error")
@@ -308,8 +322,8 @@ class ConfiguratorApp:
         self.log.delete("1.0", self.tk.END)
         self.log.configure(state=self.tk.DISABLED)
         self.set_status("Идёт настройка…", "text")
-        self.drew_needs_activation = False
-        cmd = build_command(self.engine, author, self.var_firm.get().strip(), close_mode)
+        cmd = build_command(self.engine, author, self.var_firm.get().strip(), close_mode,
+                             drew=self.var_drew.get(), block=self.var_block.get(), ru=self.var_ru.get())
         threading.Thread(target=self.run_engine, args=(cmd,), daemon=True).start()
 
     def run_engine(self, cmd):
@@ -331,32 +345,14 @@ class ConfiguratorApp:
                 if kind == "line":
                     if value.strip():
                         self.write(value)
-                        if DREW_NOT_ACTIVATED in value:
-                            self.drew_needs_activation = True
                 else:
                     self.process = None
                     self.btn_install.state(["!disabled"])
                     self.set_status(EXIT_MESSAGES.get(value, "Установщик завершился с кодом {}.".format(value)),
                                     "ok" if value == 0 else "error")
-                    if value == 0 and self.drew_needs_activation:
-                        self.root.after(200, self.offer_drew_activation)
         except queue.Empty:
             pass
         self.root.after(100, self.pump)
-
-    def offer_drew_activation(self):
-        from tkinter import messagebox
-        if messagebox.askyesno("Активация Drew",
-                               "Модуль Drew установлен, но не активирован.\n\nОткрыть окно активации? Оно покажет ключ "
-                               "железа этого компьютера — передайте его администратору и вставьте полученный код "
-                               "в то же окно (кнопка «Активация Drew…»)."):
-            self.activate_drew()
-
-    def activate_drew(self):
-        try:
-            subprocess.Popen(drew_activation_command(self.source), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-        except OSError as exc:
-            self.set_status("Не удалось открыть окно активации Drew: {}".format(exc), "error")
 
     def on_close(self):
         if self.countdown is not None:

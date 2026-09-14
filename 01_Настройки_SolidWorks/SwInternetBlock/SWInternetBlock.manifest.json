@@ -1,0 +1,1826 @@
+[
+ {
+  "name": "Block SW Internet 001 - SolidWorksLicensing",
+  "path": "C:\\Program Files (x86)\\Common Files\\SOLIDWORKS Shared\\Service\\SolidWorksLicensing.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 002 - FNPLicensingService64",
+  "path": "C:\\Program Files\\Common Files\\Macrovision Shared\\FlexNet Publisher\\FNPLicensingService64.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 003 - lmutil",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\lmutil.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 004 - sldrx",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\sldrx\\sldrx.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 005 - sldrxET",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\sldrx\\sldrxET.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 006 - sldrxmm",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\sldrx\\sldrxmm.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 007 - swlmutil",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\swlmutil.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 008 - swlmwiz",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\swlmwiz.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 009 - sldShellExtServer",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\sldShellExtServer.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 010 - swShellFileLauncher",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\swShellFileLauncher.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 011 - eDrawingOfficeAutomator",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\eDrawings\\eDrawingOfficeAutomator.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 012 - eDrawings",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\eDrawings\\eDrawings.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 013 - edRemoteWindow",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\eDrawings\\edRemoteWindow.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 014 - EModelViewer",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\eDrawings\\EModelViewer.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 015 - innovahxreg",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\api\\HTMLHelp2x\\innovahxreg.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 016 - pidcollector",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\api\\pidcollector.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 017 - circuitworks",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\CircuitWorksFull\\circuitworks.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 018 - driveworksxpressdt",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\DriveWorksXpress\\driveworksxpressdt.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 019 - Dsgnchkbldu",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\dsgnchk\\Dsgnchkbldu.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 020 - DsgnChkDesignBinderu",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\dsgnchk\\DsgnChkDesignBinderu.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 021 - DsgnChkRptView",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\DsgnChkRptView.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 022 - efdsolver",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\FloXpress\\bin\\efdsolver.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 023 - ffmpeg",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\FloXpress\\bin\\ffmpeg.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 024 - gabiswengine",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\gabiswengine.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 025 - LocalSldService",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\LocalSldService.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 026 - mg-tetra",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\mg-tetra.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 027 - myproducts",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\myproducts\\myproducts.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 028 - propertyManagerUpload",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\propertyManagerUpload.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 029 - QuickTours",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\QuickTours.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 030 - RTLibraryManager",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\RTLibraryManager.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 031 - copyoptwiz",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\copyoptwiz.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 032 - swactwiz",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\swactwiz.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 033 - swactwiz_s",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\swactwiz_s.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 034 - swactwizhelpersc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\swactwizhelpersc.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 035 - swinstactsvc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\swinstactsvc.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 036 - swlicservinst",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\swlicservinst.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 037 - swlicservinst",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\x86\\swlicservinst.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 038 - check",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\check.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 039 - check_net",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\check_net.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 040 - cos2abq",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cos2abq.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 041 - cos2ans",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cos2ans.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 042 - cos2nas",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cos2nas.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 043 - cos2pat",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cos2pat.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 044 - cos2xds",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cos2xds.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 045 - cwanalysisproc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cwanalysisproc.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 046 - cwbcbfmesh",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cwbcbfmesh.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 047 - cwmeshproc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cwmeshproc.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 048 - dpost",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\dpost.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 049 - dstar",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\dstar.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 050 - fat",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\fat.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 051 - ghs3d",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\ghs3d.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 052 - ghs3dv3",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\ghs3dv3.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 053 - hstar",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\hstar.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 054 - ids2cos",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\ids2cos.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 055 - swlicservinst",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\License\\setup\\i386\\swlicservinst.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 056 - nstar",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\nstar.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 057 - pre1",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\pre1.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 058 - renum",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\renum.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 059 - swactwiz",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\setup\\i386\\swactwiz.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 060 - swlicservinst",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\setup\\i386\\swlicservinst.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 061 - SOLIDWORKS Simulation Network Share",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\SOLIDWORKS Simulation Network Share.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 062 - star",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\star.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 063 - stopt",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\stopt.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 064 - stres",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\stres.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 065 - sysinf",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\sysinf.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 066 - smatoctoscaservermain",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatoctoscaservermain.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 067 - SMATrtOptResExportTool",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\SMATrtOptResExportTool.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 068 - SMATrtOptResImportTool",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\SMATrtOptResImportTool.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 069 - SMATrtOptResInfo",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\SMATrtOptResInfo.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 070 - smatrttstructsmoothmain",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatrttstructsmoothmain.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 071 - smatsocosmosjobchecker",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsocosmosjobchecker.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 072 - smatsocosmossetlc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsocosmossetlc.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 073 - smatsofeminclude",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsofeminclude.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 074 - smatsofemmodif",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsofemmodif.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 075 - smatsofemtoonf",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsofemtoonf.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 076 - smatsorestovtm",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsorestovtm.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 077 - smatsotoscaopt",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsotoscaopt.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 078 - smatsotoscaprep",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsotoscaprep.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 079 - smatsotoscapython",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsotoscapython.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 080 - python",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\tools\\smapy\\python\\python.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 081 - pythonw",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\tools\\smapy\\python\\pythonw.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 082 - cosmossupporttool",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Utilities\\cosmossupporttool.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 083 - material",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Utilities\\material.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 084 - simulation cleaning utility",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Utilities\\simulation cleaning utility.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 085 - SldBatchUploadPreprocessor",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SldBatchUploadPreprocessor\\SldBatchUploadPreprocessor.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 086 - sldBenchmark",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldBenchmarking\\sldBenchmark.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 087 - sldbgproc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldbgproc.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 088 - sldCostingTemplateEditorAppU",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldCostingTemplateEditorAppU.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 089 - SLDEXITAPP",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SLDEXITAPP.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 090 - sldProcMon",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldProcMon.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 091 - PropertyTabBuilder",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldPropertyTabBuilder\\PropertyTabBuilder.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 092 - sldSettingsAdmin",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldSettingsAdmin.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 093 - SldToolboxConfigure",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SldToolboxConfigure.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 094 - sldtoolboxupdater",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldtoolboxupdater.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 095 - GtReportManager",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldutils\\GtReportManager.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 097 - sldworks_fs",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldworks_fs.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 098 - cnextmproc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\cnextmproc.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 099 - spaxchildconnect",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\spaxchildconnect.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 100 - spaxchildprocess",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\spaxchildprocess.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 101 - spaxchilduconnectacis",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\spaxchilduconnectacis.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 102 - spaxchilduconnectcgm",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\spaxchilduconnectcgm.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 103 - spaxchilduconnectps",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\spaxchilduconnectps.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 104 - sldimport",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\sldimport.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 105 - sldsurfacing",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\surfacing\\sldsurfacing.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 106 - DTSCoordinatorService",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swScheduler\\DTSCoordinatorService.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 107 - DTSMonitor",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swScheduler\\DTSMonitor.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 108 - DTSServiceManager",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swScheduler\\DTSServiceManager.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 109 - swboengine",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swScheduler\\swboengine.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 110 - swScheduler",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swScheduler\\swScheduler.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 111 - swspmanager",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swspmanager.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 112 - drawcompare",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swVBAServer\\drawcompare.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 113 - swxdesktophelper",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SWXDesktopHelper\\swxdesktophelper.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 114 - testconsole",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\testconsole.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 115 - PresentationStudioThemeEditor",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\ThemeEditor\\PresentationStudioThemeEditor.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 116 - DatabaseConverter",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Toolbox\\data utilities\\DatabaseConverter.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 117 - sldsetdocprop",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Toolbox\\data utilities\\sldsetdocprop.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 118 - UpdateBrowserDatabase",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Toolbox\\data utilities\\UpdateBrowserDatabase.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 119 - Treehouse",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Treehouse\\Treehouse.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 120 - UtlReportViewer",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\UtlReportViewer.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 121 - x264",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\x264.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 122 - installs",
+  "path": "C:\\SolidWorks_Flexnet_Server\\installs.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 123 - lmgrd",
+  "path": "C:\\SolidWorks_Flexnet_Server\\lmgrd.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 124 - lmtools",
+  "path": "C:\\SolidWorks_Flexnet_Server\\lmtools.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 125 - lmutil",
+  "path": "C:\\SolidWorks_Flexnet_Server\\lmutil.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 126 - sw_d",
+  "path": "C:\\SolidWorks_Flexnet_Server\\sw_d.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 127 - setup",
+  "path": "C:\\Windows\\SolidWorks\\IM_20250-40300-1100-100\\setup.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 128 - sldadminoptioneditor",
+  "path": "C:\\Windows\\SolidWorks\\IM_20250-40300-1100-100\\sldim\\sldadminoptioneditor.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 129 - sldIM",
+  "path": "C:\\Windows\\SolidWorks\\IM_20250-40300-1100-100\\sldim\\sldIM.exe",
+  "direction": "Outbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 001 - SolidWorksLicensing",
+  "path": "C:\\Program Files (x86)\\Common Files\\SOLIDWORKS Shared\\Service\\SolidWorksLicensing.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 002 - FNPLicensingService64",
+  "path": "C:\\Program Files\\Common Files\\Macrovision Shared\\FlexNet Publisher\\FNPLicensingService64.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 003 - lmutil",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\lmutil.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 004 - sldrx",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\sldrx\\sldrx.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 005 - sldrxET",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\sldrx\\sldrxET.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 006 - sldrxmm",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\sldrx\\sldrxmm.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 007 - swlmutil",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\swlmutil.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 008 - swlmwiz",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\2025\\swlmwiz.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 009 - sldShellExtServer",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\sldShellExtServer.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 010 - swShellFileLauncher",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\swShellFileLauncher.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 011 - eDrawingOfficeAutomator",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\eDrawings\\eDrawingOfficeAutomator.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 012 - eDrawings",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\eDrawings\\eDrawings.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 013 - edRemoteWindow",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\eDrawings\\edRemoteWindow.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 014 - EModelViewer",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\eDrawings\\EModelViewer.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 015 - innovahxreg",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\api\\HTMLHelp2x\\innovahxreg.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 016 - pidcollector",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\api\\pidcollector.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 017 - circuitworks",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\CircuitWorksFull\\circuitworks.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 018 - driveworksxpressdt",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\DriveWorksXpress\\driveworksxpressdt.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 019 - Dsgnchkbldu",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\dsgnchk\\Dsgnchkbldu.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 020 - DsgnChkDesignBinderu",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\dsgnchk\\DsgnChkDesignBinderu.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 021 - DsgnChkRptView",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\DsgnChkRptView.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 022 - efdsolver",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\FloXpress\\bin\\efdsolver.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 023 - ffmpeg",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\FloXpress\\bin\\ffmpeg.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 024 - gabiswengine",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\gabiswengine.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 025 - LocalSldService",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\LocalSldService.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 026 - mg-tetra",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\mg-tetra.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 027 - myproducts",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\myproducts\\myproducts.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 028 - propertyManagerUpload",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\propertyManagerUpload.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 029 - QuickTours",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\QuickTours.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 030 - RTLibraryManager",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\RTLibraryManager.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 031 - copyoptwiz",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\copyoptwiz.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 032 - swactwiz",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\swactwiz.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 033 - swactwiz_s",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\swactwiz_s.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 034 - swactwizhelpersc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\swactwizhelpersc.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 035 - swinstactsvc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\swinstactsvc.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 036 - swlicservinst",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\swlicservinst.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 037 - swlicservinst",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\setup\\i386\\x86\\swlicservinst.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 038 - check",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\check.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 039 - check_net",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\check_net.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 040 - cos2abq",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cos2abq.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 041 - cos2ans",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cos2ans.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 042 - cos2nas",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cos2nas.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 043 - cos2pat",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cos2pat.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 044 - cos2xds",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cos2xds.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 045 - cwanalysisproc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cwanalysisproc.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 046 - cwbcbfmesh",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cwbcbfmesh.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 047 - cwmeshproc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\cwmeshproc.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 048 - dpost",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\dpost.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 049 - dstar",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\dstar.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 050 - fat",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\fat.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 051 - ghs3d",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\ghs3d.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 052 - ghs3dv3",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\ghs3dv3.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 053 - hstar",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\hstar.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 054 - ids2cos",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\ids2cos.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 055 - swlicservinst",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\License\\setup\\i386\\swlicservinst.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 056 - nstar",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\nstar.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 057 - pre1",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\pre1.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 058 - renum",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\renum.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 059 - swactwiz",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\setup\\i386\\swactwiz.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 060 - swlicservinst",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\setup\\i386\\swlicservinst.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 061 - SOLIDWORKS Simulation Network Share",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\SOLIDWORKS Simulation Network Share.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 062 - star",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\star.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 063 - stopt",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\stopt.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 064 - stres",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\stres.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 065 - sysinf",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\sysinf.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 066 - smatoctoscaservermain",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatoctoscaservermain.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 067 - SMATrtOptResExportTool",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\SMATrtOptResExportTool.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 068 - SMATrtOptResImportTool",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\SMATrtOptResImportTool.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 069 - SMATrtOptResInfo",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\SMATrtOptResInfo.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 070 - smatrttstructsmoothmain",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatrttstructsmoothmain.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 071 - smatsocosmosjobchecker",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsocosmosjobchecker.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 072 - smatsocosmossetlc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsocosmossetlc.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 073 - smatsofeminclude",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsofeminclude.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 074 - smatsofemmodif",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsofemmodif.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 075 - smatsofemtoonf",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsofemtoonf.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 076 - smatsorestovtm",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsorestovtm.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 077 - smatsotoscaopt",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsotoscaopt.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 078 - smatsotoscaprep",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsotoscaprep.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 079 - smatsotoscapython",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\code\\bin\\smatsotoscapython.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 080 - python",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\tools\\smapy\\python\\python.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 081 - pythonw",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Topology\\tools\\smapy\\python\\pythonw.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 082 - cosmossupporttool",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Utilities\\cosmossupporttool.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 083 - material",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Utilities\\material.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 084 - simulation cleaning utility",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Simulation\\Utilities\\simulation cleaning utility.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 085 - SldBatchUploadPreprocessor",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SldBatchUploadPreprocessor\\SldBatchUploadPreprocessor.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 086 - sldBenchmark",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldBenchmarking\\sldBenchmark.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 087 - sldbgproc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldbgproc.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 088 - sldCostingTemplateEditorAppU",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldCostingTemplateEditorAppU.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 089 - SLDEXITAPP",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SLDEXITAPP.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 090 - sldProcMon",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldProcMon.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 091 - PropertyTabBuilder",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldPropertyTabBuilder\\PropertyTabBuilder.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 092 - sldSettingsAdmin",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldSettingsAdmin.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 093 - SldToolboxConfigure",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SldToolboxConfigure.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 094 - sldtoolboxupdater",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldtoolboxupdater.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 095 - GtReportManager",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldutils\\GtReportManager.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 096 - SLDWORKS",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SLDWORKS.exe",
+  "direction": "Inbound",
+  "category": "sldworks-main"
+ },
+ {
+  "name": "Block SW Internet IN 097 - sldworks_fs",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\sldworks_fs.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 098 - cnextmproc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\cnextmproc.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 099 - spaxchildconnect",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\spaxchildconnect.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 100 - spaxchildprocess",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\spaxchildprocess.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 101 - spaxchilduconnectacis",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\spaxchilduconnectacis.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 102 - spaxchilduconnectcgm",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\spaxchilduconnectcgm.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 103 - spaxchilduconnectps",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\files\\code\\bin\\spaxchilduconnectps.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 104 - sldimport",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\spiop\\sldimport.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 105 - sldsurfacing",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\surfacing\\sldsurfacing.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 106 - DTSCoordinatorService",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swScheduler\\DTSCoordinatorService.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 107 - DTSMonitor",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swScheduler\\DTSMonitor.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 108 - DTSServiceManager",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swScheduler\\DTSServiceManager.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 109 - swboengine",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swScheduler\\swboengine.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 110 - swScheduler",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swScheduler\\swScheduler.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 111 - swspmanager",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swspmanager.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 112 - drawcompare",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\swVBAServer\\drawcompare.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 113 - swxdesktophelper",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SWXDesktopHelper\\swxdesktophelper.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 114 - testconsole",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\testconsole.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 115 - PresentationStudioThemeEditor",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\ThemeEditor\\PresentationStudioThemeEditor.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 116 - DatabaseConverter",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Toolbox\\data utilities\\DatabaseConverter.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 117 - sldsetdocprop",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Toolbox\\data utilities\\sldsetdocprop.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 118 - UpdateBrowserDatabase",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Toolbox\\data utilities\\UpdateBrowserDatabase.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 119 - Treehouse",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\Treehouse\\Treehouse.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 120 - UtlReportViewer",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\UtlReportViewer.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 121 - x264",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\x264.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 122 - installs",
+  "path": "C:\\SolidWorks_Flexnet_Server\\installs.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 123 - lmgrd",
+  "path": "C:\\SolidWorks_Flexnet_Server\\lmgrd.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 124 - lmtools",
+  "path": "C:\\SolidWorks_Flexnet_Server\\lmtools.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 125 - lmutil",
+  "path": "C:\\SolidWorks_Flexnet_Server\\lmutil.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 126 - sw_d",
+  "path": "C:\\SolidWorks_Flexnet_Server\\sw_d.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet IN 127 - setup",
+  "path": "C:\\Windows\\SolidWorks\\IM_20250-40300-1100-100\\setup.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 128 - sldadminoptioneditor",
+  "path": "C:\\Windows\\SolidWorks\\IM_20250-40300-1100-100\\sldim\\sldadminoptioneditor.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet IN 129 - sldIM",
+  "path": "C:\\Windows\\SolidWorks\\IM_20250-40300-1100-100\\sldim\\sldIM.exe",
+  "direction": "Inbound",
+  "category": "tools"
+ },
+ {
+  "name": "Block SW Internet 096 - SLDWORKS",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS\\SLDWORKS.exe",
+  "direction": "Outbound",
+  "category": "sldworks-main"
+ },
+ {
+  "name": "Block SW Internet 130 - sldCefViewer",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\swcef\\sldCefViewer.exe",
+  "direction": "Outbound",
+  "category": "cef"
+ },
+ {
+  "name": "Block SW Internet 130IN  - sldCefViewer",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\swcef\\sldCefViewer.exe",
+  "direction": "Inbound",
+  "category": "cef"
+ },
+ {
+  "name": "Block SW Internet 131 - swCefSubProc",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\swcef\\swCefSubProc.exe",
+  "direction": "Outbound",
+  "category": "cef"
+ },
+ {
+  "name": "Block SW Internet 131IN  - swCefSubProc",
+  "path": "C:\\Program Files\\Common Files\\SOLIDWORKS Shared\\swcef\\swCefSubProc.exe",
+  "direction": "Inbound",
+  "category": "cef"
+ },
+ {
+  "name": "Block SW Internet 132 - FNPLicensingService",
+  "path": "C:\\Program Files (x86)\\Common Files\\Macrovision Shared\\FlexNet Publisher\\FNPLicensingService.exe",
+  "direction": "Outbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 132IN  - FNPLicensingService",
+  "path": "C:\\Program Files (x86)\\Common Files\\Macrovision Shared\\FlexNet Publisher\\FNPLicensingService.exe",
+  "direction": "Inbound",
+  "category": "licensing"
+ },
+ {
+  "name": "Block SW Internet 133 - composercrashreport",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composercrashreport.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 133IN  - composercrashreport",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composercrashreport.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 134 - composer",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composer.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 134IN  - composer",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composer.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 135 - composersync",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composersync.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 135IN  - composersync",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composersync.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 136 - composerplayer",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composerplayer.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 136IN  - composerplayer",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composerplayer.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 137 - composerconverter",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composerconverter.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 137IN  - composerconverter",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composerconverter.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 138 - composersfx",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composersfx.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 138IN  - composersfx",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\composersfx.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 139 - composersfx",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\x86\\composersfx.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 139IN  - composersfx",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\x86\\composersfx.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 140 - x264",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\x264.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 140IN  - x264",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\x264.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 141 - swactwiz",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\setup\\i386\\swactwiz.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 141IN  - swactwiz",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\setup\\i386\\swactwiz.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 142 - swactwizhelpersc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\setup\\i386\\swactwizhelpersc.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 142IN  - swactwizhelpersc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\setup\\i386\\swactwizhelpersc.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 143 - swinstactsvc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\setup\\i386\\swinstactsvc.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 143IN  - swinstactsvc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\setup\\i386\\swinstactsvc.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 144 - swlicservinst",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\setup\\i386\\swlicservinst.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 144IN  - swlicservinst",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\setup\\i386\\swlicservinst.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 145 - swinstactsvc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\x86\\swinstactsvc.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 145IN  - swinstactsvc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\bin\\x86\\swinstactsvc.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 146 - acis3dt_xchg",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\acis3dt_xchg.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 146IN  - acis3dt_xchg",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\acis3dt_xchg.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 147 - cnextmproc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\cnextmproc.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 147IN  - cnextmproc",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\cnextmproc.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 148 - SPAXChildConnect",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\SPAXChildConnect.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 148IN  - SPAXChildConnect",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\SPAXChildConnect.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 149 - SPAXChildProcess",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\SPAXChildProcess.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 149IN  - SPAXChildProcess",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\SPAXChildProcess.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 150 - SPAXChildUConnectAcis",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\SPAXChildUConnectAcis.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 150IN  - SPAXChildUConnectAcis",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\SPAXChildUConnectAcis.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 151 - SPAXChildUConnectCGM",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\SPAXChildUConnectCGM.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 151IN  - SPAXChildUConnectCGM",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\SPAXChildUConnectCGM.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 152 - SPAXChildUConnectPS",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\SPAXChildUConnectPS.exe",
+  "direction": "Outbound",
+  "category": "composer"
+ },
+ {
+  "name": "Block SW Internet 152IN  - SPAXChildUConnectPS",
+  "path": "C:\\Program Files\\SOLIDWORKS Corp\\SOLIDWORKS Composer (2)\\Spatial\\SPAXChildUConnectPS.exe",
+  "direction": "Inbound",
+  "category": "composer"
+ }
+]
