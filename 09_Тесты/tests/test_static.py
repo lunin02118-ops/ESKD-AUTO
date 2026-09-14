@@ -162,6 +162,12 @@ class StaticRepository(StaticTestCase):
                       "движок сверяет сборку Drew по контрольному хэшу")
         self.assertIn("AddMinutes(6)", setup, "движок ждёт завершения установщика Drew с таймаутом")
         self.assertIn("Лицензия Drew: встроенная", setup, "активация больше не требуется — сообщается прямо")
+        # решение владельца 15.09.2026: Drew другой сборки той же версии удаляется штатно и ставится заново —
+        # иначе установщик Windows только «перенастраивает» продукт и прежние файлы остаются
+        self.assertRegex(setup, r'Start-Process -FilePath "msiexec\.exe" -ArgumentList "/x", \$old\.Code, "/qn", "/norestart" -Verb RunAs',
+                         "прежняя сборка Drew удаляется msiexec /x с запросом прав")
+        self.assertIn("Новая сборка не ставится", setup, "при отказе в правах новая сборка не ставится поверх старой")
+        self.assertLess(setup.index("msiexec.exe"), setup.index("$drewExe[0].FullName -WorkingDirectory"), "удаление — до установки")
         self.assertNotIn("-Silent -NoActivate", setup, "старый вызов классического установщика убран")
         self.assertNotIn("Drew не активирован", setup)
         self.assertNotIn("Activation.code", setup)

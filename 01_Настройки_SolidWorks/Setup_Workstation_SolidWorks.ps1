@@ -464,15 +464,49 @@ if ($sandbox -or $SkipDrew) {
         } elseif (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
             Write-Warn "Установка Drew отложена: SolidWorks открыт (установщик закрывает его сам)."
         } else {
-            Write-Info "Установка Drew (Gov-издание, лицензия встроена): $($drewExe[0].Name). Подтвердите UAC."
-            Start-Process -FilePath $drewExe[0].FullName -WorkingDirectory $drewDir
-            $deadline = (Get-Date).AddMinutes(6)
-            while ((Get-Date) -lt $deadline -and -not $drewOk) {
-                Start-Sleep -Seconds 3
-                $drewOk = (Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
+            # Прежняя сборка Drew той же версии 4.3.0.0: установщик Windows её только «перенастроит» и файлы не заменит.
+            # Поэтому сначала штатное удаление (msiexec /x по коду продукта; Program Files — нужны права администратора).
+            $removeOk = $true
+            $uninstallRoots = @("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                                "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+                                "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall")
+            $oldDrew = @(foreach ($root in $uninstallRoots) {
+                foreach ($key in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
+                    $entry = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+                    if ($entry -and "$($entry.DisplayName)" -eq "Drew" -and "$($entry.Publisher)" -match "CAD Booster" -and $key.PSChildName -match '^\{[0-9A-Fa-f\-]{36}\}$') {
+                        [pscustomobject]@{ Code = $key.PSChildName; Version = "$($entry.DisplayVersion)" }
+                    }
+                }
+            })
+            foreach ($old in $oldDrew) {
+                $current = if (Test-Path -LiteralPath $licDll) { (Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash } else { "нет файла" }
+                Write-Info "Удаление прежней сборки Drew $($old.Version) $($old.Code) (хэш лицензии $current). Подтвердите запрос прав администратора."
+                try {
+                    $msi = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x", $old.Code, "/qn", "/norestart" -Verb RunAs -Wait -PassThru
+                    # 0 — удалено, 3010 — удалено, нужна перезагрузка, 1605 — продукт уже не установлен
+                    if (@(0, 3010, 1605) -contains $msi.ExitCode) { Write-Ok "Прежняя сборка Drew удалена (код $($msi.ExitCode))." }
+                    else { $removeOk = $false; $failures++; Write-Fail "Удаление прежней сборки Drew завершилось с кодом $($msi.ExitCode)." }
+                } catch {
+                    $removeOk = $false; $failures++
+                    Write-Fail "Прежняя сборка Drew не удалена: запрос прав администратора отклонён. Новая сборка не ставится."
+                }
             }
-            if ($drewOk) { Write-Ok "Drew установлен (контроль хэша пройден)." }
-            else { $failures++; Write-Fail "Drew не установился за 6 минут - проверьте окно установщика." }
+            if ($removeOk) {
+                Write-Info "Установка Drew (Gov-издание, лицензия встроена): $($drewExe[0].Name)."
+                $setup = Start-Process -FilePath $drewExe[0].FullName -WorkingDirectory $drewDir -PassThru
+                $deadline = (Get-Date).AddMinutes(6)
+                $exitedAt = $null
+                while ((Get-Date) -lt $deadline -and -not $drewOk) {
+                    Start-Sleep -Seconds 3
+                    $drewOk = (Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
+                    if (-not $drewOk -and $setup.HasExited) {
+                        if (-not $exitedAt) { $exitedAt = Get-Date } elseif (((Get-Date) - $exitedAt).TotalSeconds -gt 20) { break }
+                    }
+                }
+                if ($drewOk) { Write-Ok "Drew установлен (контроль хэша пройден)." }
+                elseif ($setup.HasExited) { $failures++; Write-Fail "Установщик Drew завершился, а сборка не та (код $($setup.ExitCode)) - запустите $($drewExe[0].Name) вручную." }
+                else { $failures++; Write-Fail "Drew не установился за 6 минут - проверьте окно установщика." }
+            }
         }
     }
     $drewDll = $drewCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
