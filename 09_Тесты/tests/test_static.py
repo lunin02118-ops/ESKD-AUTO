@@ -158,7 +158,7 @@ class StaticRepository(StaticTestCase):
             self.assertFalse((drew / absent).exists(), f"артефакт классического издания не должен входить: {absent}")
         self.assertTrue((drew / "1_УСТАНОВКА.txt").exists(), "нет инструкции 1_УСТАНОВКА.txt")
         setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
-        self.assertIn("AA2817A7530B286FDA6EC95C5BED03A4C5062E78676064EDABFA748FC74C0485", setup,
+        self.assertIn("645654CF9055FDA11EF16CF131952F9BF235CBD3841AFDE6B5663DCC16C18F15", setup,
                       "движок сверяет сборку Drew по контрольному хэшу")
         self.assertIn("AddMinutes(6)", setup, "движок ждёт завершения установщика Drew с таймаутом")
         self.assertIn("Лицензия Drew: встроенная", setup, "активация больше не требуется — сообщается прямо")

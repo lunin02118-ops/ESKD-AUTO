@@ -452,7 +452,9 @@ if ($sandbox -or $SkipDrew) {
     $drewCandidates = @((Join-Path $env:ProgramFiles "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"),
                         (Join-Path $env:LOCALAPPDATA "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"))
     $licDll = Join-Path $env:ProgramFiles "CAD Booster\Drew\CADBooster.Common.Licensing.dll"
-    $licHash = "AA2817A7530B286FDA6EC95C5BED03A4C5062E78676064EDABFA748FC74C0485"
+    # Хэш CADBooster.Common.Licensing.dll, которую ставит УСТАНОВЩИК_Drew_AUTO.exe инструментария (замер 15.09.2026: удаление
+    # прежнего Drew, чистая установка этим установщиком). Новый установщик в Drw_System_Automation — новый замер и этот хэш.
+    $licHash = "645654CF9055FDA11EF16CF131952F9BF235CBD3841AFDE6B5663DCC16C18F15"
     $drewOk = (Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
     if ($drewOk) {
         Write-Info "Drew уже установлен (сборка верная, хэш совпал)."
