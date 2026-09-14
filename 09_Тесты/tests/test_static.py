@@ -146,6 +146,29 @@ class StaticRepository(StaticTestCase):
         spec_text = (setup_dir / "_Исходники" / "Настройка_Рабочего_Места_SolidWorks.spec").read_text(encoding="utf-8")
         self.assertNotIn("uac_admin", spec_text, "окно запрашивает права администратора")
 
+    def test_T0_drew_installed_with_offline_activation(self):
+        """T0 (решение владельца 14.09.2026): Drew ставится изданием с активацией по коду — установщик ставит его только
+        при закрытом SolidWorks, после установки сообщает «Drew не активирован» с путём к окну активации, окно настройки
+        открывает активацию; код кейгена принимается только на своей машине (публичный ключ клиентского скрипта)."""
+        drew = ROOT / "03_Макросы_и_Плагины" / "Drw_System_Automation"
+        self.assertTrue((drew / "Drew_4.3.0.0.msi").exists() and (drew / "2_комплект_издания" / "bin" / "DrewAirGap.Activation.dll").exists())
+        self.assertFalse(list(ROOT.rglob("УСТАНОВЩИК_Drew*")), "AUTO-издание с зашитой лицензией в инструментарий не входит")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("-Silent -NoActivate", setup, "установка Drew тихая, окно активации открывает окно настройки")
+        self.assertRegex(setup, r'Get-Process -Name "SLDWORKS"[^\n]*\n[^\n]*Drew не установлен: SolidWorks открыт',
+                         "install-all.ps1 завершает SolidWorks принудительно — установщик должен проверять его сам")
+        self.assertIn("Drew не активирован", setup)
+        self.assertIn("Activation.code", setup)
+        configurator = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
+        for needed in ("Client-Activate-Drew.ps1", '"-STA"', "Активация Drew", "Drew не активирован"):
+            self.assertIn(needed, configurator, "окно настройки не открывает активацию Drew")
+        out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                              str(paths.TESTS / "tools" / "check_drew_activation.ps1"),
+                              "-ClientScript", str(drew / "3_активация" / "Client-Activate-Drew.ps1")], capture_output=True, timeout=120)
+        lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+        self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
+        self.assertEqual([], json.loads(lines[-1])["problems"])
+
     def test_T0_mprop_firm_is_pairs(self):
         """T0: MProp_Firm.txt — пары «организация / код», имена не пустые (Д-25)."""
         lines = (paths.SWPLUS / "MProp" / "MProp_Firm.txt").read_bytes().decode("cp1251").split("\r\n")

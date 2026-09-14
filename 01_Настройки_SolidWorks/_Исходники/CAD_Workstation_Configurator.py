@@ -26,6 +26,8 @@ TOOLKIT_MARKERS = (
 )
 SWPLUS = os.path.join("03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0")
 ENGINE = "Setup_Workstation_SolidWorks.ps1"
+DREW_ACTIVATION = os.path.join("03_Макросы_и_Плагины", "Drw_System_Automation", "3_активация", "Client-Activate-Drew.ps1")
+DREW_NOT_ACTIVATED = "Drew не активирован"
 AUTO_UPDATE_SECONDS = 5
 EXIT_MESSAGES = {
     0: "Готово. Запустите SolidWorks.",
@@ -152,6 +154,12 @@ def line_level(line):
     return "text"
 
 
+def drew_activation_command(source_root):
+    """Окно активации Drew: показывает ключ железа этого ПК и принимает код от администратора."""
+    return ["powershell.exe", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File",
+            os.path.join(source_root, DREW_ACTIVATION)]
+
+
 def solidworks_running():
     try:
         out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq SLDWORKS.exe", "/NH"], capture_output=True, text=True,
@@ -242,8 +250,13 @@ class ConfiguratorApp:
         self.btn_close.pack(side=tk.RIGHT)
         self.btn_install = ttk.Button(bottom, text="Установить / Обновить", command=self.start)
         self.btn_install.pack(side=tk.RIGHT, padx=(0, 8))
+        self.btn_drew = ttk.Button(bottom, text="Активация Drew…", command=self.activate_drew)
+        self.btn_drew.pack(side=tk.RIGHT, padx=(0, 8))
+        self.drew_needs_activation = False
         root.protocol("WM_DELETE_WINDOW", self.on_close)
 
+        if not self.source or not os.path.isfile(os.path.join(self.source, DREW_ACTIVATION)):
+            self.btn_drew.state(["disabled"])
         if not self.source or not self.engine:
             self.btn_install.state(["disabled"])
             self.set_status("Запустите программу из папки инструментария на сетевом диске.", "error")
@@ -295,6 +308,7 @@ class ConfiguratorApp:
         self.log.delete("1.0", self.tk.END)
         self.log.configure(state=self.tk.DISABLED)
         self.set_status("Идёт настройка…", "text")
+        self.drew_needs_activation = False
         cmd = build_command(self.engine, author, self.var_firm.get().strip(), close_mode)
         threading.Thread(target=self.run_engine, args=(cmd,), daemon=True).start()
 
@@ -317,14 +331,32 @@ class ConfiguratorApp:
                 if kind == "line":
                     if value.strip():
                         self.write(value)
+                        if DREW_NOT_ACTIVATED in value:
+                            self.drew_needs_activation = True
                 else:
                     self.process = None
                     self.btn_install.state(["!disabled"])
                     self.set_status(EXIT_MESSAGES.get(value, "Установщик завершился с кодом {}.".format(value)),
                                     "ok" if value == 0 else "error")
+                    if value == 0 and self.drew_needs_activation:
+                        self.root.after(200, self.offer_drew_activation)
         except queue.Empty:
             pass
         self.root.after(100, self.pump)
+
+    def offer_drew_activation(self):
+        from tkinter import messagebox
+        if messagebox.askyesno("Активация Drew",
+                               "Модуль Drew установлен, но не активирован.\n\nОткрыть окно активации? Оно покажет ключ "
+                               "железа этого компьютера — передайте его администратору и вставьте полученный код "
+                               "в то же окно (кнопка «Активация Drew…»)."):
+            self.activate_drew()
+
+    def activate_drew(self):
+        try:
+            subprocess.Popen(drew_activation_command(self.source), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        except OSError as exc:
+            self.set_status("Не удалось открыть окно активации Drew: {}".format(exc), "error")
 
     def on_close(self):
         if self.countdown is not None:

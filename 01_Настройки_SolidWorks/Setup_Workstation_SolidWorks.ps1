@@ -450,11 +450,17 @@ if ($sandbox -or $SkipDrew) {
     $drewCandidates = @((Join-Path $env:ProgramFiles "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"),
                         (Join-Path $env:LOCALAPPDATA "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"))
     $drewDll = $drewCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-    $drewInstaller = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation\install-all.ps1"
+    $drewDir = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation"
+    $drewInstaller = Join-Path $drewDir "install-all.ps1"
     if (-not $drewDll -and (Test-Path -LiteralPath $drewInstaller)) {
-        Write-Info "Установка модуля Drew..."
-        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $drewInstaller -Silent -NoActivate | Out-Null
-        $drewDll = $drewCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        # install-all.ps1 завершает SolidWorks принудительно — запускается только при закрытом SolidWorks
+        if (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
+            Write-Warn "Модуль Drew не установлен: SolidWorks открыт. Закройте SolidWorks и запустите настройку ещё раз."
+        } else {
+            Write-Info "Установка модуля Drew (издание с активацией)..."
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $drewInstaller -Silent -NoActivate | Out-Null
+            $drewDll = $drewCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        }
     }
     if ($drewDll) {
         $drewClass = "CADBooster.Drew.Drawing.SolidWorks.Integration.DrewAddin"
@@ -471,6 +477,15 @@ if ($sandbox -or $SkipDrew) {
         Set-Reg "$U\SolidWorks\AddIns\$drewGuid" "Title" "Drew"
         Set-Reg "$U\SolidWorks\AddinsStartup\$drewGuid" "(Default)" 1 "DWord"
         Write-Ok "Модуль Drew подключён: $drewDll"
+        # Лицензия Drew — код активации по ключу железа этого ПК (3_активация\Client-Activate-Drew.ps1 пишет
+        # %APPDATA%\CAD Booster\Drew\Activation.code). Без него Drew работает без лицензии.
+        $activation = Join-Path $env:APPDATA "CAD Booster\Drew\Activation.code"
+        if (Test-Path -LiteralPath $activation) {
+            Write-Ok "Drew активирован (код от $((Get-Content -LiteralPath $activation -TotalCount 3)[2]))."
+        } else {
+            Write-Warn ("Drew не активирован: запустите " + (Join-Path $drewDir "3_активация\АКТИВИРОВАТЬ_DREW.cmd") +
+                ", скопируйте ключ железа и передайте администратору; полученный код вставьте в то же окно.")
+        }
     } else {
         Write-Warn "Модуль Drew не найден и не установлен."
     }
