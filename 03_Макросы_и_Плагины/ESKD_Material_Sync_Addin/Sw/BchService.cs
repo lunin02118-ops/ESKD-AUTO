@@ -130,6 +130,12 @@ namespace ESKD.MaterialSync.Sw
             {
                 sortament = info.Sortament;
                 grade = (info.Grade + " " + info.GostMaterial).Trim();
+                // Знаменатель — как в графе 3 («Обозначение_ГОСТ»): у записей «как есть» (МДФ, фанера, ДВП, HPL — класс Б
+                // таблицы Д-2) он не совпадает с «Марка_Материала ГОСТ_Материал»
+                string designation = info.GostDesignation ?? "";
+                int over = designation.IndexOf("<OVER>", StringComparison.OrdinalIgnoreCase);
+                int end = designation.IndexOf("</STACK>", StringComparison.OrdinalIgnoreCase);
+                if (over >= 0 && end > over) grade = designation.Substring(over + 6, end - over - 6).Trim();
                 materialText = info.Name;
             }
             else if (!string.IsNullOrEmpty(materialText) && materialText.Contains("/"))

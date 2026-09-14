@@ -635,6 +635,9 @@ class StaticRepository(StaticTestCase):
                 problems.append(f"{name}: плотность стали {dens}")
             if "ABS" in name and abs(dens - 1050.0) > 0.1:
                 problems.append(f"{name}: плотность ABS {dens}")
+            flat = lambda s: re.sub(r"\s+", " ", re.sub(r"</?STACK[^>]*>|<OVER>", " ", s)).strip()
+            if flat(m.get("description") or "") != flat(gost):
+                problems.append(f"{name}: описание «{m.get('description')}» не совпадает с обозначением (Д-42)")
         self.assertEqual([], problems)
 
 
