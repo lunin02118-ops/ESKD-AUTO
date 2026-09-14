@@ -85,6 +85,30 @@ class SheetFormats(SwTestCase):
                 report[template.name] = extra
         self.assertEqual({}, report, "свойства, которые форматки и шаблоны Master приносят в чертёж")
 
+    def test_I04_property_tab_values_reach_stamp(self):
+        """I04 (Д-19): значения, введённые во вкладке свойств по шаблону «Деталь_ГОСТ.prtprp» (имя и уровень каждого поля берутся
+        из шаблона), после сохранения детали выводятся в основной надписи чертежа A-10."""
+        import xml.etree.ElementTree as ET
+        template = paths.PROPERTY_TAB_TEMPLATES / "Деталь_ГОСТ.prtprp"
+        controls = {c.get("PropName"): c.get("ApplyTo") for c in ET.fromstring(template.read_bytes().decode("utf-8-sig")).iter("Control")}
+        values = {"Наименование": "Пластина проверочная", "Конструктор": "Проба К.К.", "Проверил": "Проба П.П.",
+                  "Контора": "ООО «Проба»"}
+        model = self.copy_fixture("ПРТИ.468211.101 Пластина опорная.sldprt")
+        drawing = self.copy_fixture("ПРТИ.468211.101 Пластина опорная.slddrw")
+        doc = self.s.open(model)
+        for name, value in values.items():
+            self.assertIn(name, controls, f"поле «{name}» в шаблоне вкладки свойств")
+            level = "" if controls[name] == "Global" else "00"
+            self.assertEqual(0, com.prop_set(doc.Extension.CustomPropertyManager(level), name, value), name)
+        self.s.save(doc)
+        self.s.close(doc)
+        drw = self.s.open(drawing)
+        notes = next(iter(oracles.stamp(drw).values()))
+        self.s.close(drw)
+        shown = " | ".join(" ".join(re.sub(r"<[^>]*>", " ", (n.get("text") or "")).split()) for n in notes.values())
+        missing = [f"{name} = {value}" for name, value in values.items() if value not in shown]
+        self.assertEqual([], missing, f"значения вкладки свойств, которых нет в штампе: {shown[:600]}")
+
     def test_I09_master_templates_match_sheet_formats(self):
         """I09 (К-9, WP-4.1): надписи шаблонов Master совпадают с форматками A4 — имя, шрифт, высота, ширина, интервал и
         положение от правого нижнего угла; иначе «Сменить формат» в Master пересоздаёт форматку со старым штампом (Н-34)."""
