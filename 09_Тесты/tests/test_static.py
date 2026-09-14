@@ -69,11 +69,82 @@ class StaticRepository(StaticTestCase):
 
     @tags("smoke")
     def test_T0_installer_batch_is_ascii_and_finds_setup(self):
-        """T0: УСТАНОВИТЬ_ЕСКД.bat — только ASCII, путь к Setup находится маской (Д-23)."""
+        """T0: УСТАНОВИТЬ_ЕСКД.bat — только ASCII, путь к Setup находится маской (Д-23), права администратора не
+        запрашиваются: у повышенного процесса нет подключённого сетевого диска и HKCU — другого пользователя."""
         data = (ROOT / "УСТАНОВИТЬ_ЕСКД.bat").read_bytes()
         self.assertTrue(all(b < 128 for b in data), "в батнике есть не-ASCII символы")
         self.assertIn(b"01_*", data)
+        self.assertNotRegex(data.decode("ascii"), r"(?i)runas|net session", "батник повышает права")
         self.assertTrue(list(ROOT.glob("01_*/Setup_Workstation_SolidWorks.ps1")), "Setup не найден по маске 01_*")
+
+    def test_T0_deploy_from_readonly_toolkit_folder(self):
+        """T0 (сетевая схема, решение владельца 14.09.2026): установка из папки инструментария «только чтение» с
+        непривычным именем — источник не меняется, пути SolidWorks на источник, макросы и надстройка — в локальную копию,
+        Master.ini на основные надписи источника, повторная установка сохраняет настройки макросов. Временный раздел
+        реестра и временные папки; настоящий реестр не затрагивается."""
+        if not paths.ADDIN_DLL.exists():
+            self.skipTest("нет собранной DLL")
+        out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                              str(paths.TESTS / "tools" / "check_deploy_engine.ps1"), "-RepoRoot", str(ROOT)],
+                             capture_output=True, timeout=600)
+        lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+        self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
+        result = json.loads(lines[-1])
+        self.assertEqual([], result["problems"], result.get("output", ""))
+        self.assertTrue(result["sandboxRemoved"], "временный раздел реестра не удалён")
+
+    def test_T0_deploy_scripts_write_nothing_into_toolkit(self):
+        """T0: установщик не пишет в папку инструментария и не собирает надстройку; окно настройки — только окно над
+        установщиком (реестр и файлы не пишет, личных умолчаний и зашитых путей нет); публикация исключает папки
+        разработки и не зеркалит в чужую папку."""
+        setup_dir = ROOT / "01_Настройки_SolidWorks"
+        setup = (setup_dir / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        module = (setup_dir / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
+        self.assertNotIn("build.ps1", setup, "установщик собирает надстройку — сборку кладёт в источник публикация")
+        self.assertNotRegex(setup + module, r"(?i)[a-z]:\\+work\\+", "зашитый путь D:\\Work")
+        self.assertNotIn("Лунин", setup + module)
+        self.assertNotRegex(setup, r"Join-Path \$SourceRoot[^\n]*\n[^\n]*(WriteAllText|Set-Content|Out-File)", "запись в источник")
+        self.assertIn("GetTempPath()", setup, "временный .reg — во временной папке пользователя")
+
+        import ast
+        configurator_path = setup_dir / "_Исходники" / "CAD_Workstation_Configurator.py"
+        text = configurator_path.read_text(encoding="utf-8")
+        tree = ast.parse(text)
+        calls = {node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
+                 for node in ast.walk(tree) if isinstance(node, ast.Call)}
+        self.assertEqual(set(), calls & {"SetValueEx", "CreateKey", "DeleteKey", "DeleteValue", "copy", "copy2", "copyfile",
+                                         "rmtree", "remove", "makedirs"}, "окно пишет реестр или файлы")
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "open" and len(node.args) > 1:
+                self.assertEqual("r", getattr(node.args[1], "value", "r"), "окно открывает файл на запись")
+        self.assertNotRegex(text, r"(?i)taskkill|reg import|[a-z]:\\+work|Лунин|\"123\"", "окно: принудительное закрытие, "
+                                                                                        "импорт реестра, зашитые путь или фамилия")
+        self.assertIn("Setup_Workstation_SolidWorks.ps1", text)
+
+        import importlib.util
+        import tempfile
+        spec = importlib.util.spec_from_file_location("configurator", configurator_path)
+        configurator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(configurator)
+        self.assertEqual(str(ROOT), configurator.find_source_root(str(setup_dir)))
+        with tempfile.TemporaryDirectory() as foreign:
+            self.assertIsNone(configurator.find_source_root(foreign), "запасной путь к инструментарию")
+        firms = configurator.read_firms(str(ROOT))
+        self.assertTrue(firms and all(firms), firms)
+        cmd = configurator.build_command("S.ps1", "Иванов И.И.", "", "Graceful")
+        for flag in ("-NonInteractive", "-Utf8Output", "-CloseMode", "Graceful", "-Author", "Иванов И.И."):
+            self.assertIn(flag, cmd)
+        self.assertNotIn("-Firm", cmd, "пустая организация не передаётся")
+        self.assertEqual(["ok", "error", "warn", "info"],
+                         [configurator.line_level(s) for s in ("  [OK] x", "  [ОШИБКА] x", "  [ВНИМАНИЕ] x", "  [ИНФО] x")])
+
+        publish = (setup_dir / "Publish-EskdToolkit.ps1").read_text(encoding="utf-8-sig")
+        for excluded in ('".git"', '"08_Результаты_Тестирования"', '"09_Тесты"', '"99_Архив"', '"Backups"', '"_VBA_выгрузка"'):
+            self.assertIn(excluded, publish, f"публикация копирует {excluded}")
+        self.assertIn("build.ps1", publish, "надстройку собирает публикация")
+        self.assertIn("Test-EskdSourceRoot -Path $Target", publish, "зеркало в чужую папку")
+        spec_text = (setup_dir / "_Исходники" / "Настройка_Рабочего_Места_SolidWorks.spec").read_text(encoding="utf-8")
+        self.assertNotIn("uac_admin", spec_text, "окно запрашивает права администратора")
 
     def test_T0_mprop_firm_is_pairs(self):
         """T0: MProp_Firm.txt — пары «организация / код», имена не пустые (Д-25)."""
@@ -161,7 +232,7 @@ class StaticRepository(StaticTestCase):
             ADDIN / "unregister.ps1": "Register-EskdAddin.ps1",
             ADDIN / "build_and_register.ps1": "register_eskd.ps1",
             ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1": "Register-EskdAddin.ps1",
-            ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py": "register_eskd.ps1",
+            ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py": "Setup_Workstation_SolidWorks.ps1",
         }
         for path, reference in wrappers.items():
             with self.subTest(script=path.name):
@@ -189,16 +260,17 @@ class StaticRepository(StaticTestCase):
         self.assertTrue(result["sandboxRemoved"], "временный раздел реестра не удалён")
 
     def test_T0_setup_writes_swplus_files_only_when_changed(self):
-        """T0: установщик переписывает файлы SWPlus только при отличии, фамилии и организации дописывает в конец (WP-3.4)."""
+        """T0: установщик переписывает файлы SWPlus только при отличии, фамилии и организации дописывает в конец (WP-3.4);
+        функции — в модуле EskdDeploy.psm1, запись идёт в локальную копию."""
+        module = ROOT / "01_Настройки_SolidWorks" / "EskdDeploy.psm1"
         out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                               str(paths.TESTS / "tools" / "check_setup_swplus_files.ps1"),
-                              "-SetupPath", str(ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1"),
-                              "-SwPlusRoot", str(paths.SWPLUS)], capture_output=True, timeout=120)
+                              "-SetupPath", str(module), "-SwPlusRoot", str(paths.SWPLUS)], capture_output=True, timeout=120)
         lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
         self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
         self.assertEqual([], json.loads(lines[-1])["problems"])
-        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
-        self.assertNotIn("WriteAllLines", setup, "файлы SWPlus пишутся только через Write-SwPlusLines")
+        for script in (module, ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1"):
+            self.assertNotIn("WriteAllLines", script.read_text(encoding="utf-8-sig"), "файлы SWPlus пишутся только через Write-SwPlusLines")
 
     def test_T0_mprop_ini_cleanup_flag_untouched(self):
         """T0: надстройка не пишет MProp.ini — первая строка там флаг MProp «Очистка свойств», в репозитории он выключен (Д-29)."""
@@ -433,7 +505,7 @@ class StaticRepository(StaticTestCase):
                 problems.append(f"избранный материал не из библиотеки ГОСТ: {favorite}")
         if favorites_declared != len(favorites):
             problems.append(f"__NumOfFavs = {favorites_declared}, записей {len(favorites)}")
-        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
         if "%USERPROFILE%" in text and "'%USERPROFILE%'" not in setup:
             problems.append("Setup не подставляет %USERPROFILE%")
         self.assertEqual([], problems[:30])
@@ -499,8 +571,8 @@ class StaticRepository(StaticTestCase):
         leftovers = [f for f in files if f.endswith("_old") or "Legacy_Builds/" in f or "/TEST_REPORT_2" in f
                      or f.startswith("99_Архив/") or f in built]
         self.assertEqual([], leftovers)
-        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
-        self.assertIn('Join-Path $addinDir "build.ps1"', setup, "установщик собирает надстройку из исходников")
+        publish = (ROOT / "01_Настройки_SolidWorks" / "Publish-EskdToolkit.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("ESKD_Material_Sync_Addin\\build.ps1", publish, "надстройку собирает из исходников публикация")
 
     @known_defect("Д-31")
     def test_T0_registry_snapshot_survives_interrupted_run(self):

@@ -1,0 +1,181 @@
+﻿<#
+.SYNOPSIS
+    Проверка установки из папки инструментария «только для чтения» (T0, сетевая схема 14.09.2026).
+.DESCRIPTION
+    Собирает во временном каталоге папку инструментария с непривычным именем (пробелы, кириллица, не
+    «_Инструменты_Конструктора»), ставит всем файлам атрибут «только чтение» и запускает установщик из неё с
+    временной локальной копией и временным разделом реестра HKCU:\Software\ESKD_DeployTest_*. Настоящий реестр,
+    шрифты и Drew не затрагиваются, SolidWorks не нужен.
+
+    Проверяется: источник не изменился (ни одного нового или изменённого файла); пути SolidWorks — на источник,
+    кнопки и папка макросов — на локальную копию; надстройка зарегистрирована из локальной копии; Master.ini указывает
+    на основные надписи источника; фамилия и организация дописаны в локальные списки MProp; повторная установка
+    сохраняет настройки макросов пользователя и возвращает изменённые файлы выпуска. Вывод — JSON.
+#>
+param([Parameter(Mandatory = $true)][string]$RepoRoot)
+
+$ErrorActionPreference = "Stop"
+$problems = New-Object System.Collections.Generic.List[string]
+function Expect($label, $actual, $expected) {
+    if ("$actual" -ne "$expected") { $problems.Add("${label}: ожидалось «$expected», получено «$actual»") }
+}
+function Read-Value($path, $name) {
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    $item = Get-ItemProperty -LiteralPath $path
+    if ($null -eq $item.PSObject.Properties[$name]) { return $null }
+    return $item.PSObject.Properties[$name].Value
+}
+function Snapshot($root) {
+    $map = @{}
+    foreach ($f in Get-ChildItem -LiteralPath $root -File -Recurse -Force) {
+        $map[$f.FullName.Substring($root.Length)] = "{0}|{1}" -f $f.Length, $f.LastWriteTimeUtc.Ticks
+    }
+    return $map
+}
+
+$cp1251 = [System.Text.Encoding]::GetEncoding(1251)
+$id = [guid]::NewGuid().ToString("N")
+$temp = Join-Path ([System.IO.Path]::GetTempPath()) "eskd_deploy_$id"
+$source = Join-Path $temp "Сетевая папка\Инструменты КТО"
+$local = Join-Path $temp "Профиль\ESKD\Toolkit"
+$registryName = "ESKD_DeployTest_$id"
+$sandbox = "HKCU:\Software\$registryName"
+$swKey = "$sandbox\SolidWorks\SOLIDWORKS 2025"
+$liveInstallBefore = Test-Path "HKCU:\Software\SolidWorks\ESKD_Install"
+$liveAuthorBefore = Read-Value "HKCU:\Software\SolidWorks\ESKD_Settings" "Author"
+$output = ""
+
+try {
+    # Папка инструментария: только то, что читает установка и SolidWorks
+    $swplusRel = "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0"
+    $addinRel = "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin"
+    foreach ($rel in @("02_Шаблоны_и_Форматки", $swplusRel, "04_Библиотеки_Материалов_и_Профилей\Библиотека материалов",
+                       "04_Библиотеки_Материалов_и_Профилей\Профили резьбы", "01_Настройки_SolidWorks\Реестровые_Профили")) {
+        $dst = Join-Path $source $rel
+        New-Item -ItemType Directory -Path $dst -Force | Out-Null
+        Copy-Item -Path (Join-Path (Join-Path $RepoRoot $rel) "*") -Destination $dst -Recurse -Force -Exclude "Backups"
+    }
+    Remove-Item -LiteralPath (Join-Path $source "01_Настройки_SolidWorks\Реестровые_Профили\Backups") -Recurse -Force -ErrorAction SilentlyContinue
+    foreach ($name in @("Setup_Workstation_SolidWorks.ps1", "EskdDeploy.psm1")) {
+        Copy-Item -LiteralPath (Join-Path $RepoRoot "01_Настройки_SolidWorks\$name") -Destination (Join-Path $source "01_Настройки_SolidWorks\$name")
+    }
+    $addinDst = Join-Path $source $addinRel
+    New-Item -ItemType Directory -Path $addinDst -Force | Out-Null
+    foreach ($name in @("ESKD_Material_Sync_v5.dll", "ESKD.exe", "ESKD_Sync.exe", "ESKD.ico", "Register-EskdAddin.ps1",
+                        "SolidWorks.Interop.sldworks.dll", "SolidWorks.Interop.swconst.dll", "SolidWorks.Interop.swpublished.dll")) {
+        Copy-Item -LiteralPath (Join-Path (Join-Path $RepoRoot $addinRel) $name) -Destination $addinDst
+    }
+    Copy-Item -LiteralPath (Join-Path (Join-Path $RepoRoot $addinRel) "Icons") -Destination $addinDst -Recurse
+    New-Item -ItemType Directory -Path (Join-Path $source "04_Библиотеки_Материалов_и_Профилей\Профили сварных деталей") -Force | Out-Null
+    Get-ChildItem -LiteralPath $source -File -Recurse | ForEach-Object { $_.IsReadOnly = $true }
+    $before = Snapshot $source
+
+    # Разбор профиля отдельно: при тестовом корне нет HKLM и все разделы — в тестовом корне
+    Import-Module (Join-Path $source "01_Настройки_SolidWorks\EskdDeploy.psm1") -Force -DisableNameChecking
+    $regText = [System.IO.File]::ReadAllText((Join-Path $source "01_Настройки_SolidWorks\Реестровые_Профили\01_SW2025_Корпоративный_Стандарт_ЕСКД.reg"), [System.Text.Encoding]::Unicode)
+    $adapted = Convert-EskdRegProfile -Text $regText -SourceRoot $source -LocalRoot $local -RegistryRoot $sandbox
+    Expect "профиль: разделы HKLM" ([regex]::Matches($adapted, '(?m)^\[-?HKEY_LOCAL_MACHINE').Count) 0
+    Expect "профиль: разделы вне тестового корня" ([regex]::Matches($adapted, "(?m)^\[-?HKEY_CURRENT_USER\\Software\\(?!$registryName\\)").Count) 0
+    Expect "профиль: следы d:\Work" ([regex]::Matches($adapted, '(?i)[a-z]:\\\\+work\\\\+').Count) 0
+    Expect "профиль: Toolbox" ([regex]::Matches($adapted, '"Toolbox Data Location"').Count) 0
+    Expect "класс: основные надписи" (Resolve-EskdProfilePath -Relative "$swplusRel\Основные надписи" -SourceRoot "S" -LocalRoot "L") "S\$swplusRel\Основные надписи"
+    Expect "класс: макрос" (Resolve-EskdProfilePath -Relative "$swplusRel\MProp\MProp.swp" -SourceRoot "S" -LocalRoot "L") "L\$swplusRel\MProp\MProp.swp"
+    Expect "класс: надстройка" (Resolve-EskdProfilePath -Relative "$addinRel\x.dll" -SourceRoot "S" -LocalRoot "L") "L\$addinRel\x.dll"
+    Expect "класс: шаблоны" (Resolve-EskdProfilePath -Relative "02_Шаблоны_и_Форматки\Шаблоны документов" -SourceRoot "S" -LocalRoot "L") "S\02_Шаблоны_и_Форматки\Шаблоны документов"
+    Expect "класс: папка «Основные надписи 2» не путается с «Основные надписи»" (Resolve-EskdProfilePath -Relative "$swplusRel\Основные надписи 2" -SourceRoot "S" -LocalRoot "L") "L\$swplusRel\Основные надписи 2"
+
+    $setup = Join-Path $source "01_Настройки_SolidWorks\Setup_Workstation_SolidWorks.ps1"
+    $setupArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $setup, "-Author", "Тестов Т.Т.", "-Firm", "ООО «Проверка»",
+              "-CloseMode", "Skip", "-NonInteractive", "-LocalRoot", $local, "-RegistryRoot", $sandbox, "-SwVersion", "SOLIDWORKS 2025", "-Utf8Output")
+    $run = {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo "powershell.exe"
+        $psi.Arguments = ($setupArgs | ForEach-Object { if ($_ -match '[\s«»"]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ } }) -join " "
+        $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
+        $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+        $p = [System.Diagnostics.Process]::Start($psi)
+        $out = $p.StandardOutput.ReadToEnd() + $p.StandardError.ReadToEnd()
+        $p.WaitForExit()
+        return @($p.ExitCode, $out)
+    }
+    $code, $output = & $run
+    Expect "код выхода установки" $code 0
+
+    $sheetFormats = Join-Path $source "$swplusRel\Основные надписи"
+    $localSwPlus = Join-Path $local $swplusRel
+    $ext = "$swKey\ExtReferences"
+    Expect "шаблоны документов — источник" (Read-Value $ext "Document Template Folders") (Join-Path $source "02_Шаблоны_и_Форматки\Шаблоны документов")
+    Expect "основные надписи — источник" (Read-Value $ext "Sheet Format Folders") $sheetFormats
+    Expect "библиотека материалов — источник" (Read-Value $ext "Material Database Folders") (Join-Path $source "04_Библиотеки_Материалов_и_Профилей\Библиотека материалов")
+    Expect "шаблоны свойств — источник" (Read-Value $ext "Custom Property Folders") (Join-Path $source "02_Шаблоны_и_Форматки\Шаблоны свойств")
+    Expect "профили — источник" (Read-Value $ext "Weldment Profile Folders") (Join-Path $source "04_Библиотеки_Материалов_и_Профилей\Профили сварных деталей")
+    Expect "папка макросов — локальная копия" (Read-Value $ext "Macro Folders") $localSwPlus
+    Expect "стандарт оформления — локальная копия SpecEditor" (Read-Value $ext "Drafting Standard Folder") (Join-Path $localSwPlus "SpecEditor")
+    Expect "кнопка MProp — локальная копия" (Read-Value "$swKey\User Defined Macros\01 - Macro Folder" "Source Path") (Join-Path $localSwPlus "MProp\MProp.swp")
+    Expect "шаблон детали по умолчанию — источник" (Read-Value "$swKey\Document Templates" "Default Part template") (Join-Path $source "02_Шаблоны_и_Форматки\Шаблоны документов\Деталь.prtdot")
+    Expect "Toolbox не подставлен из профиля" (Read-Value "$swKey\General" "Toolbox Data Location") $null
+    $dll = Join-Path $local "$addinRel\ESKD_Material_Sync_v5.dll"
+    Expect "CodeBase надстройки — локальная копия" (Read-Value "$sandbox\Classes\CLSID\{B64E6875-B101-4D5C-B245-FF8D50772E25}\InprocServer32" "CodeBase") ("file:///" + $dll.Replace('\', '/'))
+    Expect "автозагрузка надстройки" (Read-Value "$sandbox\SolidWorks\AddInsStartup\{B64E6875-B101-4D5C-B245-FF8D50772E25}" "(default)") 1
+    Expect "фамилия" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
+    Expect "организация" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Organization") "ООО «Проверка»"
+    Expect "ESKD_Install: источник" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "SourceRoot") $source
+    Expect "ESKD_Install: итог" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "LastResult") "OK"
+
+    $exported = Join-Path $temp "sandbox.reg"
+    $null = & reg.exe export "HKCU\Software\$registryName" $exported /y 2>&1
+    $dump = [System.IO.File]::ReadAllText($exported, [System.Text.Encoding]::Unicode)
+    Expect "в реестре нет путей d:\Work" ([regex]::Matches($dump, '(?i)[a-z]:\\\\+work\\\\+').Count) 0
+    Expect "в реестре нет «_Инструменты_Конструктора»" ([regex]::Matches($dump, '_Инструменты_Конструктора').Count) 0
+
+    Expect "DLL в локальной копии" (Test-Path -LiteralPath $dll) $true
+    Expect "иконки надстройки" (Test-Path -LiteralPath (Join-Path $local "$addinRel\Icons\icons_small.bmp")) $true
+    Expect "MProp в локальной копии" (Test-Path -LiteralPath (Join-Path $localSwPlus "MProp\MProp.swp")) $true
+    Expect "основных надписей в локальной копии нет" (Test-Path -LiteralPath (Join-Path $localSwPlus "Основные надписи")) $false
+    Expect "служебная копия библиотеки" (Test-Path -LiteralPath (Join-Path $local "04_Библиотеки_Материалов_и_Профилей\Библиотека материалов\Библиотека_Материалов_ГОСТ.sldmat")) $true
+    Expect "локальные файлы без «только чтение»" (@(Get-ChildItem -LiteralPath $local -File -Recurse | Where-Object IsReadOnly).Count) 0
+    $master = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "Master\Master.ini"), $cp1251))
+    Expect "Master.ini: основные надписи источника" $master[3] ($sheetFormats + "\")
+    $fam = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "MProp\MProp_Fam.txt"), $cp1251))
+    Expect "MProp_Fam.txt: фамилия в конце" $fam[-1] "Тестов Т.Т."
+    $firm = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "MProp\MProp_Firm.txt"), $cp1251))
+    Expect "MProp_Firm.txt: пара в конце" ($firm[-2] + "|" + $firm[-1]) "ООО «Проверка»|"
+
+    $after = Snapshot $source
+    $changed = @($after.Keys | Where-Object { $before[$_] -ne $after[$_] }) + @($before.Keys | Where-Object { -not $after.ContainsKey($_) })
+    Expect "источник не изменён" ($changed -join ", ") ""
+
+    # Повторная установка: настройки макросов пользователя остаются, изменённые файлы выпуска возвращаются
+    $prof = Join-Path $localSwPlus "MProp\MProp_Prof.txt"
+    [System.IO.File]::AppendAllText($prof, "`$`$`$Профиль Тестов`r`n", $cp1251)
+    $profText = [System.IO.File]::ReadAllText($prof, $cp1251)
+    $masterLines = @($master); $masterLines[0] = "Arial"
+    [System.IO.File]::WriteAllText((Join-Path $localSwPlus "Master\Master.ini"), (($masterLines -join "`r`n") + "`r`n"), $cp1251)
+    $sort = Join-Path $localSwPlus "MProp\MProp_Sort.txt"
+    [System.IO.File]::WriteAllText($sort, "испорчено", $cp1251)
+    $code2, $output2 = & $run
+    $output += "`n--- повторная установка ---`n" + $output2
+    Expect "код выхода повторной установки" $code2 0
+    Expect "профили MProp пользователя сохранены" ([System.IO.File]::ReadAllText($prof, $cp1251)) $profText
+    $master2 = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "Master\Master.ini"), $cp1251))
+    Expect "Master.ini: шрифт пользователя сохранён" $master2[0] "Arial"
+    Expect "Master.ini: путь к основным надписям — источник" $master2[3] ($sheetFormats + "\")
+    Expect "файл выпуска возвращён" ([System.IO.File]::ReadAllText($sort, $cp1251)) ([System.IO.File]::ReadAllText((Join-Path $source "$swplusRel\MProp\MProp_Sort.txt"), $cp1251))
+    $fam2 = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "MProp\MProp_Fam.txt"), $cp1251))
+    Expect "фамилия не задвоена" (@($fam2 | Where-Object { $_ -eq "Тестов Т.Т." }).Count) 1
+    $after2 = Snapshot $source
+    Expect "источник не изменён повторной установкой" (@($after2.Keys | Where-Object { $before[$_] -ne $after2[$_] }) -join ", ") ""
+} catch {
+    $problems.Add("исключение: $($_.Exception.Message) @ $($_.InvocationInfo.ScriptLineNumber)")
+} finally {
+    if (Test-Path -LiteralPath $sandbox) { Remove-Item -LiteralPath $sandbox -Recurse -Force }
+    if (Test-Path -LiteralPath $temp) {
+        Get-ChildItem -LiteralPath $temp -File -Recurse -Force | ForEach-Object { $_.IsReadOnly = $false }
+        Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+Expect "настоящая ветка ESKD_Install не создана тестом" (Test-Path "HKCU:\Software\SolidWorks\ESKD_Install") $liveInstallBefore
+Expect "настоящая фамилия не изменена" (Read-Value "HKCU:\Software\SolidWorks\ESKD_Settings" "Author") $liveAuthorBefore
+$tail = if ($problems.Count) { ($output -split "`n" | Select-Object -Last 40) -join "`n" } else { "" }
+[pscustomobject]@{ ok = ($problems.Count -eq 0); problems = @($problems); sandboxRemoved = -not (Test-Path -LiteralPath $sandbox); output = $tail } |
+    ConvertTo-Json -Compress
+if ($problems.Count) { exit 1 }

@@ -1,1052 +1,345 @@
 # -*- coding: utf-8 -*-
 """
-Универсальный конфигуратор рабочего места SolidWorks 2025
-Корпоративный стандарт ЕСКД и миграция настроек
-- Автоматическая привязка сетевых библиотек, макросов SWPlus, шаблонов документов и стилей ЕСКД
-- Полный перенос всех параметров корпоративного стандарта (Сборки, Чертежи, Оформление, Производительность, Цвета)
-- Полная интеграция всех 9 кнопок макросов SWPlus в верхнюю панель быстрого доступа (QAT)
-- Совместимость с официальным «Мастером копирования настроек SolidWorks» (.sldreg)
-- Постоянная регистрация шрифтов ГОСТ (тип А, тип В) в Windows
-- Аппаратный RealView с динамическим определением видеокарты (WMI)
+Настройка рабочего места SolidWorks — инструментарий ЕСКД.
+
+Запускается двойным щелчком из папки инструментария (сетевой или локальной). Папка, из которой запущена программа,
+и есть источник: путь нигде не зашит и не вводится. Окно берёт фамилию и организацию, а всю работу делает
+установщик Setup_Workstation_SolidWorks.ps1 из той же папки: пути SolidWorks на папку инструментария, макросы
+SWPlus и надстройка ЕСКД — в профиль пользователя, кнопки, шрифты, Drew. Права администратора не нужны.
+
+Повторный запуск — обновление: если на ПК уже есть установка, оно начинается само через несколько секунд.
+
+Само окно реестр и файлы ПК не меняет — только читает (текущие фамилия, организация, сведения об установке).
 """
-import os
-import sys
-import subprocess
-import winreg
-import time
 import ctypes
-import shutil
-import re
-from pathlib import Path
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+import json
+import os
+import queue
+import subprocess
+import sys
+import threading
 
-def find_tools_root():
-    d = os.path.abspath(os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__))
-    if os.path.exists(os.path.join(d, '04_Библиотеки_Материалов_и_Профилей')):
-        return d
-    p = os.path.dirname(d)
-    if os.path.exists(os.path.join(p, '04_Библиотеки_Материалов_и_Профилей')):
-        return p
-    fallback = r'D:\Work\_Инструменты_Конструктора'
-    if os.path.exists(fallback):
-        return fallback
-    return d
+TOOLKIT_MARKERS = (
+    "02_Шаблоны_и_Форматки",
+    os.path.join("03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0"),
+    "04_Библиотеки_Материалов_и_Профилей",
+)
+SWPLUS = os.path.join("03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0")
+ENGINE = "Setup_Workstation_SolidWorks.ps1"
+AUTO_UPDATE_SECONDS = 5
+EXIT_MESSAGES = {
+    0: "Готово. Запустите SolidWorks.",
+    1: "Настройка завершена с ошибками — см. сообщения выше.",
+    2: "Папка инструментария неполная или выпуск не опубликован — сообщите администратору.",
+    3: "SolidWorks не закрыт — настройка не выполнялась.",
+}
 
-DEFAULT_ROOT = find_tools_root()
 
-def get_installed_gpus():
-    gpus = []
+# ---------------------------------------------------------------- логика без окна (проверяется автотестом)
+def program_dir():
+    return os.path.dirname(os.path.abspath(sys.executable if getattr(sys, "frozen", False) else __file__))
+
+
+def is_toolkit_root(path):
+    return bool(path) and all(os.path.isdir(os.path.join(path, m)) for m in TOOLKIT_MARKERS)
+
+
+def find_source_root(start):
+    """Папка инструментария — папка программы или её родители (не выше трёх уровней). Запасных путей нет."""
+    cur = os.path.abspath(start)
+    for _ in range(3):
+        if is_toolkit_root(cur):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    return None
+
+
+def find_engine(source_root, start):
+    near = os.path.join(start, ENGINE)
+    if os.path.isfile(near):
+        return near
+    for name in sorted(os.listdir(source_root)):
+        candidate = os.path.join(source_root, name, ENGINE)
+        if name.startswith("01_") and os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def _read_cp1251_lines(path):
     try:
-        cmd = ['powershell', '-NoProfile', '-Command', '(Get-CimInstance Win32_VideoController).Name']
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
-        for line in res.stdout.splitlines():
-            line = line.strip()
-            if line and line not in gpus:
-                gpus.append(line)
-    except Exception:
+        with open(path, "r", encoding="cp1251") as f:
+            return [line.rstrip("\r\n") for line in f]
+    except OSError:
+        return []
+
+
+def read_families(source_root):
+    """Фамилии из общего списка MProp (MProp_Fam.txt, по строке)."""
+    names = []
+    for line in _read_cp1251_lines(os.path.join(source_root, SWPLUS, "MProp", "MProp_Fam.txt")):
+        if line.strip() and line.strip() not in names:
+            names.append(line.strip())
+    return names
+
+
+def read_firms(source_root):
+    """Организации из MProp_Firm.txt: пары строк «организация / код»."""
+    lines = _read_cp1251_lines(os.path.join(source_root, SWPLUS, "MProp", "MProp_Firm.txt"))
+    return [lines[i].strip() for i in range(0, len(lines), 2) if lines[i].strip()]
+
+
+def read_release(source_root):
+    path = os.path.join(source_root, "toolkit_release.json")
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+        return "{} от {}".format(data.get("version", "?"), data.get("date", "?"))
+    except (OSError, ValueError):
+        return "рабочая копия (не опубликована)"
+
+
+def read_registry(subkey, names):
+    """Чтение значений HKCU\\Software\\SolidWorks\\<subkey>; отсутствующие — пустая строка."""
+    result = {n: "" for n in names}
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Software\\SolidWorks\\" + subkey) as key:
+            for n in names:
+                try:
+                    result[n] = str(winreg.QueryValueEx(key, n)[0])
+                except OSError:
+                    pass
+    except (OSError, ImportError):
         pass
-    if not gpus:
-        gpus = ['NVIDIA GeForce RTX 5070 Ti/PCIe/SSE2']
-    return gpus
+    return result
 
-class CADConfiguratorApp:
+
+def windows_display_name():
+    """Полное имя учётной записи Windows (GetUserNameExW, NameDisplay) или пусто."""
+    try:
+        size = ctypes.c_ulong(0)
+        ctypes.windll.secur32.GetUserNameExW(3, None, ctypes.byref(size))
+        buffer = ctypes.create_unicode_buffer(size.value)
+        if ctypes.windll.secur32.GetUserNameExW(3, buffer, ctypes.byref(size)):
+            return buffer.value.strip()
+    except (AttributeError, OSError):
+        pass
+    return ""
+
+
+def build_command(engine, author, firm, close_mode):
+    """Командная строка установщика: без вопросов в консоли, вывод в UTF-8."""
+    cmd = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", engine,
+           "-Author", author, "-CloseMode", close_mode, "-NonInteractive", "-Utf8Output"]
+    if firm:
+        cmd += ["-Firm", firm]
+    return cmd
+
+
+def line_level(line):
+    text = line.strip()
+    if text.startswith("[OK]"):
+        return "ok"
+    if text.startswith("[ОШИБКА]") or "С ОШИБКАМИ" in text:
+        return "error"
+    if text.startswith("[ВНИМАНИЕ]"):
+        return "warn"
+    if text.startswith("[ИНФО]"):
+        return "info"
+    return "text"
+
+
+def solidworks_running():
+    try:
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq SLDWORKS.exe", "/NH"], capture_output=True, text=True,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0), timeout=15)
+        return "sldworks.exe" in out.stdout.lower()
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+# ---------------------------------------------------------------- окно
+class ConfiguratorApp:
     def __init__(self, root):
-        self.root = root
-        self.root.title("Настройка рабочего места SolidWorks 2025 — Корпоративный стандарт ЕСКД")
-        self.root.geometry("860x720")
-        self.root.minsize(800, 640)
-        
-        self.style = ttk.Style()
+        import tkinter as tk
+        from tkinter import ttk
+        self.tk, self.ttk, self.root = tk, ttk, root
+        self.start_dir = program_dir()
+        self.source = find_source_root(self.start_dir)
+        self.engine = find_engine(self.source, self.start_dir) if self.source else None
+        self.events = queue.Queue()
+        self.process = None
+        self.countdown = None
+
+        root.title("Настройка рабочего места SolidWorks — ЕСКД")
+        root.geometry("820x600")
+        root.minsize(640, 460)
+        if getattr(sys, "frozen", False):
+            try:
+                root.iconbitmap(default=sys.executable)
+            except tk.TclError:
+                pass
         try:
-            self.style.theme_use('vista')
-        except Exception:
-            pass
-            
-        self.setup_ui()
-        self.validate_paths()
-        
-    def setup_ui(self):
-        header_frame = ttk.Frame(self.root, padding="15 10 15 10")
-        header_frame.pack(fill=tk.X)
-        
-        lbl_title = ttk.Label(header_frame, text="Конфигуратор рабочего места SolidWorks 2025", font=("Segoe UI", 14, "bold"))
-        lbl_title.pack(anchor=tk.W)
-        lbl_desc = ttk.Label(header_frame, text="Перенос и фиксация корпоративного стандарта: шаблоны документов, форматки, 9 кнопок SWPlus в верхней панели, шрифты ГОСТ, стили ЕСКД и RealView.", font=("Segoe UI", 9))
-        lbl_desc.pack(anchor=tk.W, pady=(2, 0))
-        
-        ttk.Separator(self.root, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=10)
-        
-        main_frame = ttk.Frame(self.root, padding="15 10 15 10")
-        main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # 1. Paths Group
-        grp_paths = ttk.LabelFrame(main_frame, text=" 1. Расположение корпоративных инструментов и библиотек ", padding="10")
-        grp_paths.pack(fill=tk.X, pady=(0, 10))
-        
-        lbl_net = ttk.Label(grp_paths, text="Корневая папка инструментов (_Инструменты_Конструктора):")
-        lbl_net.pack(anchor=tk.W)
-        
-        frame_net = ttk.Frame(grp_paths)
-        frame_net.pack(fill=tk.X, pady=(3, 6))
-        
-        self.var_root_path = tk.StringVar(value=DEFAULT_ROOT)
-        self.entry_root = ttk.Entry(frame_net, textvariable=self.var_root_path, font=("Segoe UI", 9))
-        self.entry_root.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
-        
-        btn_browse_net = ttk.Button(frame_net, text="Обзор...", command=self.browse_root_path)
-        btn_browse_net.pack(side=tk.RIGHT)
-        
-        self.lbl_path_status = ttk.Label(grp_paths, text="Проверка путей...", font=("Segoe UI", 8, "italic"))
-        self.lbl_path_status.pack(anchor=tk.W)
-        
-        # 2. Personal Data Group
-        grp_user = ttk.LabelFrame(main_frame, text=" 2. Данные конструктора (ЕСКД / SWPlus) ", padding="10")
-        grp_user.pack(fill=tk.X, pady=(0, 10))
-        
-        frame_user_grid = ttk.Frame(grp_user)
-        frame_user_grid.pack(fill=tk.X)
-        
-        ttk.Label(frame_user_grid, text="Фамилия (Разработал):").grid(row=0, column=0, sticky=tk.W, pady=3)
-        self.var_author = tk.StringVar(value="Лунин В.И.")
-        ttk.Entry(frame_user_grid, textvariable=self.var_author, width=25).grid(row=0, column=1, sticky=tk.W, padx=10, pady=3)
-        
-        ttk.Label(frame_user_grid, text="Организация (Контора):").grid(row=0, column=2, sticky=tk.W, pady=3)
-        self.var_firm = tk.StringVar(value="123")
-        ttk.Entry(frame_user_grid, textvariable=self.var_firm, width=25).grid(row=0, column=3, sticky=tk.W, padx=10, pady=3)
-        
-        # 3. Options Group
-        grp_opts = ttk.LabelFrame(main_frame, text=" 3. Компоненты настройки корпоративного стандарта ", padding="10")
-        grp_opts.pack(fill=tk.X, pady=(0, 10))
-        
-        self.var_opt_profile = tk.BooleanVar(value=True)
-        ttk.Checkbutton(grp_opts, text="Полный корпоративный профиль (Сборки, Чертежи, Оформление, Размеры, Цвета, Панели инструментов)", variable=self.var_opt_profile).pack(anchor=tk.W, pady=2)
-
-        self.var_opt_templates = tk.BooleanVar(value=True)
-        ttk.Checkbutton(grp_opts, text="Шаблоны документов (Деталь, Сборка, Чертеж) и корпоративная База форматок", variable=self.var_opt_templates).pack(anchor=tk.W, pady=2)
-
-        self.var_opt_macros = tk.BooleanVar(value=True)
-        ttk.Checkbutton(grp_opts, text="9 кнопок SWPlus в верхней панели быстрого доступа (QAT: MProp, SProp, DProp, SpecEditor, RecordDimM, Roughness, TT, Master, SaveAsPDF)", variable=self.var_opt_macros).pack(anchor=tk.W, pady=2)
-        
-        self.var_opt_lang = tk.BooleanVar(value=True)
-        ttk.Checkbutton(grp_opts, text="Русский язык интерфейса и дерева конструирования", variable=self.var_opt_lang).pack(anchor=tk.W, pady=2)
-        
-        self.var_opt_realview = tk.BooleanVar(value=True)
-        ttk.Checkbutton(grp_opts, text="Аппаратный RealView (автоопределение видеокарты WMI)", variable=self.var_opt_realview).pack(anchor=tk.W, pady=2)
-        
-        self.var_opt_fonts = tk.BooleanVar(value=True)
-        ttk.Checkbutton(grp_opts, text="Постоянная системная регистрация шрифтов ГОСТ (тип А, тип В) в Windows", variable=self.var_opt_fonts).pack(anchor=tk.W, pady=2)
-        
-        self.var_opt_highlight = tk.BooleanVar(value=True)
-        ttk.Checkbutton(grp_opts, text="Динамическая подсветка кромок и граней при наведении курсора (Dynamic Highlight)", variable=self.var_opt_highlight).pack(anchor=tk.W, pady=2)
-        
-        # 4. Log Group
-        grp_log = ttk.LabelFrame(main_frame, text=" Журнал выполнения ", padding="5")
-        grp_log.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        
-        self.txt_log = tk.Text(grp_log, height=7, font=("Consolas", 8), bg="#F8F9FA", wrap=tk.WORD)
-        self.txt_log.pack(fill=tk.BOTH, expand=True)
-        
-        # Action Buttons
-        btn_frame = ttk.Frame(self.root, padding="15 0 15 15")
-        btn_frame.pack(fill=tk.X)
-        
-        btn_reset = ttk.Button(btn_frame, text="СБРОС ДО ЗАВОДСКИХ + ЧИСТАЯ НАСТРОЙКА", command=self.full_factory_reset_and_apply)
-        btn_reset.pack(side=tk.LEFT, padx=(0, 8))
-        
-        btn_exp_sldreg = ttk.Button(btn_frame, text="Экспорт в .sldreg (Мастер SW)", command=self.export_sldreg_file)
-        btn_exp_sldreg.pack(side=tk.LEFT, padx=(0, 5))
-        
-        btn_export = ttk.Button(btn_frame, text="Экспорт в .reg", command=self.export_reg_file)
-        btn_export.pack(side=tk.LEFT)
-        
-        btn_apply = ttk.Button(btn_frame, text="ПРИМЕНИТЬ НАСТРОЙКИ", command=self.apply_configuration)
-        btn_apply.pack(side=tk.RIGHT)
-        
-    def log(self, msg, level="INFO"):
-        prefix = {"INFO": "[ИНФО] ", "SUCCESS": "[УСПЕХ] ", "WARN": "[ВНИМАНИЕ] ", "ERROR": "[ОШИБКА] "}.get(level, "")
-        self.txt_log.insert(tk.END, f"{prefix}{msg}\n")
-        self.txt_log.see(tk.END)
-        self.root.update_idletasks()
-        
-    def browse_root_path(self):
-        d = filedialog.askdirectory(initialdir=self.var_root_path.get(), title="Выберите корневую папку _Инструменты_Конструктора")
-        if d:
-            self.var_root_path.set(os.path.abspath(d))
-            self.validate_paths()
-            
-    def validate_paths(self):
-        root_p = self.var_root_path.get().strip()
-        self.txt_log.delete("1.0", tk.END)
-        self.log(f"Проверка структуры каталогов в: {root_p}")
-        
-        required_dirs = [
-            ("Шаблоны документов", os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблоны документов")),
-            ("Основные надписи (SWPlus)", os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "Основные надписи")),
-            ("Макросы SWPlus", os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0")),
-            ("Профили сварных деталей", os.path.join(root_p, "04_Библиотеки_Материалов_и_Профилей", "Профили сварных деталей")),
-            ("Профили резьбы", os.path.join(root_p, "04_Библиотеки_Материалов_и_Профилей", "Профили резьбы")),
-            ("Библиотека материалов", os.path.join(root_p, "04_Библиотеки_Материалов_и_Профилей", "Библиотека материалов")),
-            ("Шаблон списка вырезов", os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблон списка вырезов")),
-            ("Шаблон таблицы сварных швов", os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблон таблицы сварных швов")),
-            ("Избранные размеры и примечания", os.path.join(root_p, "02_Шаблоны_и_Форматки", "Часто используемые размеры и примечания")),
-            ("Шрифты ГОСТ", os.path.join(root_p, "05_Шрифты")),
-        ]
-        
-        all_ok = True
-        for name, path in required_dirs:
-            if os.path.exists(path):
-                cnt = len(os.listdir(path)) if os.path.isdir(path) else 1
-                self.log(f"[OK] {name} -> найдено ({cnt} эл.)", "SUCCESS")
-            else:
-                self.log(f"[НЕ НАЙДЕНО] {name} -> {path}", "ERROR")
-                all_ok = False
-                
-        if all_ok:
-            self.lbl_path_status.config(text="Все необходимые библиотеки, шаблоны и макросы найдены!", foreground="green")
-        else:
-            self.lbl_path_status.config(text="Внимание: некоторые папки не найдены! Проверьте путь.", foreground="red")
-        return all_ok
-
-    def build_full_profile(self, root_p, as_sldreg=True):
-        candidate_2025 = os.path.join(root_p, "01_Настройки_SolidWorks", "Реестровые_Профили", "01_SW2025_Корпоративный_Стандарт_ЕСКД.sldreg")
-        if os.path.exists(candidate_2025):
-            src_profile = candidate_2025
-        else:
-            candidates = [
-                os.path.join(root_p, "01_Настройки_SolidWorks", "SW 2021 12-12-2021.sldreg"),
-                os.path.join(root_p, "99_Архив", "SW 2021 12-12-2021.sldreg"),
-                os.path.join(DEFAULT_ROOT, "01_Настройки_SolidWorks", "SW 2021 12-12-2021.sldreg"),
-                os.path.join(DEFAULT_ROOT, "99_Архив", "SW 2021 12-12-2021.sldreg")
-            ]
-            src_profile = next((c for c in candidates if os.path.exists(c)), candidates[0])
-            
-        with open(src_profile, "rb") as f:
-            text = f.read().decode("cp1251", errors="replace")
-            
-        # 1. Upgrade Version 2021 -> 2025
-        text = text.replace(r"Software\SolidWorks\SOLIDWORKS 2021", r"Software\SolidWorks\SOLIDWORKS 2025")
-        
-        # 2. Exclude personal / temporary MRU and broken addins
-        excluded_patterns = [
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\Recent Folder List\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\Recent Macro File List\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\SW Event Log\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\PDMWorks Workgroup\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddInsStartup\\\{03412BA8-10F6-4D51-AC38-4937CE7BEA5F\}\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddIns\\\{03412BA8-10F6-4D51-AC38-4937CE7BEA5F\}\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_LOCAL_MACHINE\\SOFTWARE\\SolidWorks\\AddIns\\\{03412BA8-10F6-4D51-AC38-4937CE7BEA5F\}\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\[^\\]+\\Tab\d+\].*?(OnCadTools|Ounan|03412BA8).*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\TaskPane\\.*?(OnCadTools|Ounan).*?\].*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\Custom API Flyouts\\.*?\].*?03412BA8.*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\[^\\]+\\Tab\d+\].*?Semantic.*?(?=\r?\n\[|\Z)',
-            r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\TaskPane\\.*?Semantic.*?\].*?(?=\r?\n\[|\Z)',
-        ]
-        for ep in excluded_patterns:
-            text = re.sub(ep, '', text, flags=re.DOTALL | re.IGNORECASE)
-            
-        # Strip Semantic from Addin Performance
-        text = re.sub(r'"Semantic"="[^"]*"\r?\n', '', text, flags=re.IGNORECASE)
-        text = re.sub(r'"Semantic MDM"="[^"]*"\r?\n', '', text, flags=re.IGNORECASE)
-            
-        # 3. Path mappings
-        doc_templates   = os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблоны документов")
-        # Один комплект форматок — SWPlus «Основные надписи» (WP-3.2); стандарт оформления MyStandard.sldstd лежит в SpecEditor
-        drafting_std    = os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "SpecEditor")
-        sheet_formats   = os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "Основные надписи")
-        weld_profiles   = os.path.join(root_p, "04_Библиотеки_Материалов_и_Профилей", "Профили сварных деталей")
-        thread_profiles = os.path.join(root_p, "04_Библиотеки_Материалов_и_Профилей", "Профили резьбы")
-        mat_library     = os.path.join(root_p, "04_Библиотеки_Материалов_и_Профилей", "Библиотека материалов")
-        cut_lists       = os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблон списка вырезов")
-        weld_tables     = os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблон таблицы сварных швов")
-        fav_symbols     = os.path.join(root_p, "02_Шаблоны_и_Форматки", "Часто используемые размеры и примечания")
-        swplus_root     = os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0")
-
-        # Определение системной папки библиотеки обозначений SolidWorks (gtol.sym)
-        sym_candidates = [
-            r"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2025\lang\russian",
-            r"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\lang\russian",
-            r"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2025\lang\english",
-            r"C:\ProgramData\SolidWorks\SOLIDWORKS 2025\lang\english",
-            r"C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\lang\russian",
-            r"C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\lang\english",
-        ]
-        sym_lib_folder = r"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2025\lang\russian"
-        for sc in sym_candidates:
-            if os.path.exists(os.path.join(sc, "gtol.sym")):
-                sym_lib_folder = sc
-                break
-
-        part_default = os.path.join(doc_templates, "Деталь.prtdot")
-        asm_default  = os.path.join(doc_templates, "Сборка.asmdot")
-        drw_default  = os.path.join(doc_templates, "Чертеж.drwdot")
-        mat_db_str   = mat_library  # корпоративный стандарт: единственная библиотека в путях системы"
-        tmpl_folders = doc_templates
-
-        def esc(s): return s.replace('\\', '\\\\')
-
-        replacements = [
-            (r"D:\\_Работа Solidworks рабочая!!!!\\_Шаблоны SW 2020\\Шаблоны", esc(doc_templates)),
-            (r"D:\\_Основные надписи Solidworks Не трогать!!!!\\_Всё для SW 2020\\Шаблоны", esc(doc_templates)),
-            (r"D:\\_Работа Solidworks рабочая!!!!\\_Шаблоны SW 2020\\Форматки", esc(sheet_formats)),
-            (r"D:\\_Основные надписи Solidworks Не трогать!!!!\\_Всё для SW 2020\\Основные надписи", esc(sheet_formats)),
-            (r"D:\\_Работа Solidworks рабочая!!!!\\_Шаблоны SW 2020\\SpecEditor", esc(drafting_std)),
-            (r"D:\\_Основные надписи Solidworks Не трогать!!!!\\_Всё для SW 2020\\SpecEditor", esc(drafting_std)),
-            (r"D:\\_3.Материалы и профили\\Профили сварных деталей\\weldment profiles", esc(weld_profiles)),
-            (r"D:\\_3.Библиотека проектирования\\Сварные профили\\weldment profiles", esc(weld_profiles)),
-            (r"D:\\_3.Материалы и профили", esc(os.path.join(root_p, "04_Библиотеки_Материалов_и_Профилей"))),
-            (r"C:\\Users\\OneSmiLe\\", r"C:\\Users\\Vladimir\\"),
-            (r"C:\\Users\\Владимир\\", r"C:\\Users\\Vladimir\\"),
-            (r"C:\\Users\\Юрий\\", r"C:\\Users\\Vladimir\\"),
-            (r"SOLIDWORKS 2020", r"SOLIDWORKS 2025"),
-            (r"SOLIDWORKS 2021", r"SOLIDWORKS 2025"),
-        ]
-
-        for old, new in replacements:
-            text = re.sub(re.escape(old), new, text, flags=re.IGNORECASE)
-
-        # Dynamic replacement of any previous drive/path to _Инструменты_Конструктора with current root_p
-        pattern_root = r'[A-Za-z]:(?:\\\\+|/)[^"\r\n;]*?(?:\\\\+|/)_Инструменты_Конструктора'
-        text = re.sub(pattern_root, esc(root_p), text, flags=re.IGNORECASE)
-
-        # Toolbox location - auto-detect real location with swbrowser.sldedb
-        def find_toolbox_path():
-            candidates = [
-                os.path.join(os.path.dirname(root_p), "_Библиотека проектирования", "_Toolbox"),
-                r"D:\Work\_Библиотека проектирования\_Toolbox",
-                os.path.join(root_p, "_Библиотека проектирования", "_Toolbox"),
-                r"C:\SOLIDWORKS Data",
-                r"C:\SOLIDWORKS Data 2025",
-                r"D:\Work\_Toolbox",
-            ]
-            for c in candidates:
-                if os.path.exists(os.path.join(c, "lang", "english", "swbrowser.sldedb")) or \
-                   os.path.exists(os.path.join(c, "lang", "russian", "swbrowser.sldedb")):
-                    return c
-            return candidates[1]
-
-        toolbox_location = find_toolbox_path()
-        text = re.sub(r'"Toolbox Data Location"="[^"]*"', f'"Toolbox Data Location"="{esc(toolbox_location)}"', text)
-
-        # 4. Clean and inject accurate ExtReferences, Document Templates, ExtFolder
-        ext_ref_block = f'''
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\ExtReferences]
-"Document Template Folders"="{esc(tmpl_folders)}"
-"Sheet Format Folders"="{esc(sheet_formats)}"
-"Drafting Standard Folder"="{esc(drafting_std)}"
-"Weldment Profile Folders"="{esc(weld_profiles)}"
-"Thread Profiles Folder"="{esc(thread_profiles)}"
-"Material Database Folders"="{esc(mat_db_str)}"
-"Weldment Cut List Template Folders"="{esc(cut_lists)}"
-"Weld Table Template Folder"="{esc(weld_tables)}"
-"Symbol Library Folders"="{esc(sym_lib_folder)}"
-"Dimension Favorite Folders"="{esc(fav_symbols)}"
-"Macro Folders"="{esc(swplus_root)}"
-"Custom Property Folders"="{esc(os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблоны свойств"))}"
-"Custom Property File"="{esc(os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблоны свойств", "default.prtprp"))}"
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\Document Templates]
-"Default Part template"="{esc(part_default)}"
-"Default Assy template"="{esc(asm_default)}"
-"Default Draw Template"="{esc(drw_default)}"
-"Use Default Document Templates"=dword:00000000
-"Templates Last Tab Used"="Шаблоны документов"
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\ExtFolder]
-"Document Template Folder"="{esc(tmpl_folders)}"
-"Sheet Format Folders"="{esc(sheet_formats)}"
-"Drafting Standard Folder"="{esc(drafting_std)}"
-"Weldment Profile Folders"="{esc(weld_profiles)}"
-"Thread Profiles Folder"="{esc(thread_profiles)}"
-"Material Database Folders"="{esc(mat_db_str)}"
-"Weldment Cut List Template Folders"="{esc(cut_lists)}"
-"Weld Table Template Folder"="{esc(weld_tables)}"
-"Symbol Library Folder"="{esc(sym_lib_folder)}"
-"Dimension Favorite Folders"="{esc(fav_symbols)}"
-"Macro Folder"="{esc(swplus_root)}"
-"Custom Property Folders"="{esc(os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблоны свойств"))}"
-"Custom Property File"="{esc(os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблоны свойств", "default.prtprp"))}"
-"Default Template Part"="{esc(part_default)}"
-"Default Template Assembly"="{esc(asm_default)}"
-"Default Template Drawing"="{esc(drw_default)}"
-'''
-        text = re.sub(r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\ExtReferences\].*?(?=\r?\n\[|\Z)', '', text, flags=re.DOTALL)
-        text = re.sub(r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\Document Templates\].*?(?=\r?\n\[|\Z)', '', text, flags=re.DOTALL)
-        text = re.sub(r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\ExtFolder\].*?(?=\r?\n\[|\Z)', '', text, flags=re.DOTALL)
-        text += "\r\n" + ext_ref_block.strip() + "\r\n"
-
-        # 5. Inject exact 9 SWPlus macros
-        macro_block = f'''
-[-HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros]
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros]
-"Macro Count"=dword:00000009
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros\\01 - Macro Folder]
-"Command Offset"=dword:00000000
-"Project"="MProp_run"
-"MacroMethod"="main"
-"ToolTip"="MProp"
-"Prompt Msg"="{esc(os.path.join(swplus_root, "MProp", "MProp.swp"))}"
-"Source Path"="{esc(os.path.join(swplus_root, "MProp", "MProp.swp"))}"
-"Bitmap Path"="{esc(os.path.join(swplus_root, "MProp", "MProp.bmp"))}"
-"Mouse Gesture Part"=dword:00000000
-"Mouse Gesture Assembly"=dword:00000000
-"Mouse Gesture Drawing"=dword:00000000
-"Mouse Gesture Sketch"=dword:00000000
-"Accelerator"=""
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros\\02 - Macro Folder]
-"Command Offset"=dword:00000001
-"Project"="SProp_run"
-"MacroMethod"="main"
-"ToolTip"="SProp"
-"Prompt Msg"="{esc(os.path.join(swplus_root, "SProp", "SProp.swp"))}"
-"Source Path"="{esc(os.path.join(swplus_root, "SProp", "SProp.swp"))}"
-"Bitmap Path"="{esc(os.path.join(swplus_root, "SProp", "SProp.bmp"))}"
-"Mouse Gesture Part"=dword:00000000
-"Mouse Gesture Assembly"=dword:00000000
-"Mouse Gesture Drawing"=dword:00000000
-"Mouse Gesture Sketch"=dword:00000000
-"Accelerator"=""
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros\\03 - Macro Folder]
-"Command Offset"=dword:00000002
-"Project"="DProp_run"
-"MacroMethod"="main"
-"ToolTip"="DProp"
-"Prompt Msg"="{esc(os.path.join(swplus_root, "DProp", "DProp.swp"))}"
-"Source Path"="{esc(os.path.join(swplus_root, "DProp", "DProp.swp"))}"
-"Bitmap Path"="{esc(os.path.join(swplus_root, "DProp", "DProp.bmp"))}"
-"Mouse Gesture Part"=dword:00000000
-"Mouse Gesture Assembly"=dword:00000000
-"Mouse Gesture Drawing"=dword:00000000
-"Mouse Gesture Sketch"=dword:00000000
-"Accelerator"=""
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros\\04 - Macro Folder]
-"Command Offset"=dword:00000003
-"Project"="SpecEditor_run"
-"MacroMethod"="main"
-"ToolTip"="SpecEditor"
-"Prompt Msg"="{esc(os.path.join(swplus_root, "SpecEditor", "SpecEditor.swp"))}"
-"Source Path"="{esc(os.path.join(swplus_root, "SpecEditor", "SpecEditor.swp"))}"
-"Bitmap Path"="{esc(os.path.join(swplus_root, "SpecEditor", "SpecEditor.bmp"))}"
-"Mouse Gesture Part"=dword:00000000
-"Mouse Gesture Assembly"=dword:00000000
-"Mouse Gesture Drawing"=dword:00000000
-"Mouse Gesture Sketch"=dword:00000000
-"Accelerator"=""
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros\\05 - Macro Folder]
-"Command Offset"=dword:00000004
-"Project"="RecordDimM_run"
-"MacroMethod"="main"
-"ToolTip"="RecordDimM"
-"Prompt Msg"="{esc(os.path.join(swplus_root, "RecordDimM", "RecordDimM.swp"))}"
-"Source Path"="{esc(os.path.join(swplus_root, "RecordDimM", "RecordDimM.swp"))}"
-"Bitmap Path"="{esc(os.path.join(swplus_root, "RecordDimM", "RecordDimM.bmp"))}"
-"Mouse Gesture Part"=dword:00000000
-"Mouse Gesture Assembly"=dword:00000000
-"Mouse Gesture Drawing"=dword:00000000
-"Mouse Gesture Sketch"=dword:00000000
-"Accelerator"=""
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros\\06 - Macro Folder]
-"Command Offset"=dword:00000005
-"Project"="Roughness_run"
-"MacroMethod"="main"
-"ToolTip"="Roughness"
-"Prompt Msg"="{esc(os.path.join(swplus_root, "Roughness", "Roughness.swp"))}"
-"Source Path"="{esc(os.path.join(swplus_root, "Roughness", "Roughness.swp"))}"
-"Bitmap Path"="{esc(os.path.join(swplus_root, "Roughness", "Roughness.bmp"))}"
-"Mouse Gesture Part"=dword:00000000
-"Mouse Gesture Assembly"=dword:00000000
-"Mouse Gesture Drawing"=dword:00000000
-"Mouse Gesture Sketch"=dword:00000000
-"Accelerator"=""
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros\\07 - Macro Folder]
-"Command Offset"=dword:00000006
-"Project"="Run_Program"
-"MacroMethod"="main"
-"ToolTip"="TT"
-"Prompt Msg"="{esc(os.path.join(swplus_root, "ТТ", "TT.SWP"))}"
-"Source Path"="{esc(os.path.join(swplus_root, "ТТ", "TT.SWP"))}"
-"Bitmap Path"="{esc(os.path.join(swplus_root, "ТТ", "TT.BMP"))}"
-"Mouse Gesture Part"=dword:00000000
-"Mouse Gesture Assembly"=dword:00000000
-"Mouse Gesture Drawing"=dword:00000000
-"Mouse Gesture Sketch"=dword:00000000
-"Accelerator"=""
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros\\08 - Macro Folder]
-"Command Offset"=dword:00000007
-"Project"="Master_run"
-"MacroMethod"="main"
-"ToolTip"="Master"
-"Prompt Msg"="{esc(os.path.join(swplus_root, "Master", "Master.swp"))}"
-"Source Path"="{esc(os.path.join(swplus_root, "Master", "Master.swp"))}"
-"Bitmap Path"="{esc(os.path.join(swplus_root, "Master", "Master.bmp"))}"
-"Mouse Gesture Part"=dword:00000000
-"Mouse Gesture Assembly"=dword:00000000
-"Mouse Gesture Drawing"=dword:00000000
-"Mouse Gesture Sketch"=dword:00000000
-"Accelerator"=""
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros\\09 - Macro Folder]
-"Command Offset"=dword:00000008
-"Project"="PDFCreatorPrint_run"
-"MacroMethod"="main"
-"ToolTip"="SaveAsPDF"
-"Prompt Msg"="{esc(os.path.join(swplus_root, "SaveAsPDF", "PDFCreator.swp"))}"
-"Source Path"="{esc(os.path.join(swplus_root, "SaveAsPDF", "PDFCreator.swp"))}"
-"Bitmap Path"="{esc(os.path.join(swplus_root, "SaveAsPDF", "SaveAsPDF.bmp"))}"
-"Mouse Gesture Part"=dword:00000000
-"Mouse Gesture Assembly"=dword:00000000
-"Mouse Gesture Drawing"=dword:00000000
-"Mouse Gesture Sketch"=dword:00000000
-"Accelerator"=""
-'''
-        text = re.sub(r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Defined Macros.*?\].*?(?=\r?\n\[|\Z)', '', text, flags=re.DOTALL)
-        text += "\r\n" + macro_block.strip() + "\r\n"
-
-        # 6. Inject QAT GB0 with all 9 macros
-        qat_block = '''
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\QAT\\GB0]
-"Btn0"="1,21781"
-"Btn1"="1,54312"
-"Btn2"="1,54416"
-"Btn3"="1,54302"
-"Btn4"="1,54303"
-"Btn5"="1,57643"
-"Btn6"="1,57644"
-"Btn7"="1,34128"
-"Btn8"="1,32805"
-"Btn9"="1,33040"
-"Btn10"="1,54325"
-"Btn11"="1,33639"
-"Btn12"="1,33640"
-"Btn13"="1,33641"
-"Btn14"="1,33642"
-"Btn15"="1,33643"
-"Btn16"="1,33644"
-"Btn17"="1,33645"
-"Btn18"="1,33646"
-"Btn19"="1,33647"
-'''
-        text = re.sub(r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\User Interface\\CommandManager\\QAT\\GB0\].*?(?=\r?\n\[|\Z)', '', text, flags=re.DOTALL)
-        text += "\r\n" + qat_block.strip() + "\r\n"
-
-        # 7. Menu Customizations for 33639..33647
-        menu_custom_lines = "\r\n".join([f'"{cid}"=dword:00000000' for cid in range(33639, 33648)])
-        text = re.sub(r'\[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\Menu Customizations\].*?(?=\r?\n\[|\Z)', '', text, flags=re.DOTALL)
-        text += f"\r\n[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\Menu Customizations]\r\n{menu_custom_lines}\r\n"
-
-        # 8. RealView AllowList entries
-        rv_block = "\r\n".join([
-            f'[HKEY_CURRENT_USER\\Software\\SolidWorks\\AllowList\\Gl2Shaders\\NV40\\{esc(gpu)}]\r\n"Workarounds"=dword:00030408'
-            for gpu in get_installed_gpus()
-        ])
-        text += f"\r\n{rv_block}\r\n"
-
-        # 9. Dynamic Highlight (Динамическая подсветка кромок и граней при наведении курсора)
-        is_highlight_on = getattr(self, "var_opt_highlight", None) is None or self.var_opt_highlight.get()
-        hl_dword = "dword:00000001" if is_highlight_on else "dword:00000000"
-        
-        text = re.sub(r'"Dynamic Highlight"=dword:[0-9a-fA-F]+', f'"Dynamic Highlight"={hl_dword}', text)
-        text = re.sub(r'"Dynamic Highlight from Browser"=dword:[0-9a-fA-F]+', f'"Dynamic Highlight from Browser"={hl_dword}', text)
-        
-        edges_highlight_block = f'''
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\Edges]
-"Dynamic Highlight"={hl_dword}
-"Show Shaded Edges"=dword:00000001
-"Highlight new or modified faces"=dword:00000001
-"Tangent Edge Display With Font"=dword:00000001
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\General]
-"Dynamic Highlight from Browser"={hl_dword}
-'''
-        text += "\r\n" + edges_highlight_block.strip() + "\r\n"
-
-        # 10. Fix graphics performance on Intel Arc / hybrid GPUs (disable buggy Enhanced Performance Pipeline)
-        text = re.sub(r'"Use Performance Pipeline 2020"=dword:[0-9a-fA-F]+', '"Use Performance Pipeline 2020"=dword:00000000', text)
-        perf_fix_block = f'''
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\Performance]
-"Use Performance Pipeline 2020"=dword:00000000
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025\\General]
-"Toolbox Data Location"="{esc(toolbox_location)}"
-
-[HKEY_CURRENT_USER\\Software\\SolidWorks\\AddIns\\{{B64E6875-B101-4D5C-B245-FF8D50772E25}}]
-@=dword:00000001
-"Title"="ЕСКД: Синхронизация материалов и реквизитов"
-"Description"="Автоматическая синхронизация материалов, реквизитов ГОСТ, центрирование массы в штампе чертежа"
-'''
-        text += "\r\n" + perf_fix_block.strip() + "\r\n"
-
-        if as_sldreg:
-            if not text.startswith("REGEDIT4"):
-                text = "REGEDIT4\r\n;SolidWorks Copy Settings Wizard\r\n\r\n" + text.lstrip()
-            return text
-        else:
-            prefix = "Windows Registry Editor Version 5.00\r\n\r\n"
-            clean_body = re.sub(r'^(REGEDIT4\r?\n)?(;[^\r\n]*\r?\n)*', '', text, flags=re.DOTALL)
-            return prefix + clean_body.lstrip()
-
-    def delete_key_recursive(self, root_h, sub_path):
-        try:
-            with winreg.OpenKey(root_h, sub_path, 0, winreg.KEY_ALL_ACCESS) as k:
-                sub_cnt = winreg.QueryInfoKey(k)[0]
-                sub_names = [winreg.EnumKey(k, i) for i in range(sub_cnt)]
-                for sub_name in sub_names:
-                    self.delete_key_recursive(root_h, f"{sub_path}\\{sub_name}")
-            winreg.DeleteKey(root_h, sub_path)
-        except Exception:
+            ttk.Style().theme_use("vista")
+        except tk.TclError:
             pass
 
-    def full_factory_reset_and_apply(self):
-        if not messagebox.askyesno("Подтверждение полного сброса", "Вы действительно хотите выполнить полный сброс SolidWorks 2025?\n\nВся ветка реестра SolidWorks 2025 будет очищена от мусора и сбоев, а затем чисто накатятся полные настройки корпоративного стандарта ЕСКД.\n\nУбедитесь, что все открытые документы SolidWorks сохранены!"):
+        top = ttk.Frame(root, padding="16 12 16 6")
+        top.pack(fill=tk.X)
+        ttk.Label(top, text="Настройка рабочего места SolidWorks", font=("Segoe UI", 14, "bold")).pack(anchor=tk.W)
+        ttk.Label(top, text="Шаблоны, форматки и библиотеки — из папки инструментария; макросы SWPlus и надстройка ЕСКД — "
+                            "на этот компьютер.", font=("Segoe UI", 9)).pack(anchor=tk.W, pady=(2, 8))
+
+        info = ttk.Frame(top)
+        info.pack(fill=tk.X)
+        installed = read_registry("ESKD_Install", ("ReleaseVersion", "InstalledAt", "SourceRoot", "LastResult"))
+        settings = read_registry("ESKD_Settings", ("Author", "Organization"))
+        self.installed = bool(installed["InstalledAt"])
+        rows = [
+            ("Папка инструментария:", self.source or "не найдена — программа запущена не из папки инструментария"),
+            ("Выпуск в папке:", read_release(self.source) if self.source else "—"),
+            ("На этом компьютере:", "установлено {} ({})".format(installed["InstalledAt"], installed["ReleaseVersion"])
+             if self.installed else "не установлено"),
+        ]
+        for i, (label, value) in enumerate(rows):
+            ttk.Label(info, text=label).grid(row=i, column=0, sticky=tk.W, padx=(0, 10), pady=1)
+            ttk.Label(info, text=value, font=("Segoe UI", 9, "bold")).grid(row=i, column=1, sticky=tk.W, pady=1)
+        if self.installed and installed["SourceRoot"] and self.source and \
+                os.path.normcase(installed["SourceRoot"]) != os.path.normcase(self.source):
+            ttk.Label(info, text="Прежняя установка была из другой папки ({}) — пути будут переписаны на текущую."
+                      .format(installed["SourceRoot"]), foreground="#9a6a12").grid(row=3, column=0, columnspan=2, sticky=tk.W)
+
+        form = ttk.LabelFrame(root, text=" Данные для основной надписи ", padding="12 8 12 10")
+        form.pack(fill=tk.X, padx=16, pady=(6, 6))
+        ttk.Label(form, text="Фамилия И.О.:").grid(row=0, column=0, sticky=tk.W, pady=3)
+        families = read_families(self.source) if self.source else []
+        author = settings["Author"] or windows_display_name()
+        self.var_author = tk.StringVar(value=author)
+        ttk.Combobox(form, textvariable=self.var_author, values=families, width=34).grid(row=0, column=1, sticky=tk.W, padx=8)
+        ttk.Label(form, text="Организация:").grid(row=0, column=2, sticky=tk.W, padx=(16, 0))
+        firms = read_firms(self.source) if self.source else []
+        self.var_firm = tk.StringVar(value=settings["Organization"])
+        ttk.Combobox(form, textvariable=self.var_firm, values=firms, width=34).grid(row=0, column=3, sticky=tk.W, padx=8)
+
+        log_frame = ttk.LabelFrame(root, text=" Ход настройки ", padding=6)
+        log_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 6))
+        self.log = tk.Text(log_frame, height=12, font=("Consolas", 9), wrap=tk.WORD, relief=tk.FLAT, background="#f7f8fa")
+        scroll = ttk.Scrollbar(log_frame, command=self.log.yview)
+        self.log.configure(yscrollcommand=scroll.set, state=tk.DISABLED)
+        scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.log.pack(fill=tk.BOTH, expand=True)
+        for tag, color in (("ok", "#2b7a4b"), ("error", "#a83a3a"), ("warn", "#9a6a12"), ("info", "#6b7682"), ("text", "#1b232c")):
+            self.log.tag_configure(tag, foreground=color)
+
+        bottom = ttk.Frame(root, padding="16 4 16 14")
+        bottom.pack(fill=tk.X)
+        self.status = ttk.Label(bottom, text="", font=("Segoe UI", 10, "bold"))
+        self.status.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.btn_close = ttk.Button(bottom, text="Закрыть", command=self.on_close)
+        self.btn_close.pack(side=tk.RIGHT)
+        self.btn_install = ttk.Button(bottom, text="Установить / Обновить", command=self.start)
+        self.btn_install.pack(side=tk.RIGHT, padx=(0, 8))
+        root.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        if not self.source or not self.engine:
+            self.btn_install.state(["disabled"])
+            self.set_status("Запустите программу из папки инструментария на сетевом диске.", "error")
+        elif self.installed and self.var_author.get().strip():
+            self.countdown = AUTO_UPDATE_SECONDS
+            self.tick()
+        else:
+            self.set_status("Выберите свою фамилию и нажмите «Установить / Обновить».", "text")
+        root.after(100, self.pump)
+
+    def set_status(self, text, level):
+        colors = {"ok": "#2b7a4b", "error": "#a83a3a", "warn": "#9a6a12", "text": "#1b232c"}
+        self.status.configure(text=text, foreground=colors.get(level, "#1b232c"))
+
+    def write(self, line, level=None):
+        self.log.configure(state=self.tk.NORMAL)
+        self.log.insert(self.tk.END, line + "\n", level or line_level(line))
+        self.log.see(self.tk.END)
+        self.log.configure(state=self.tk.DISABLED)
+
+    def tick(self):
+        if self.countdown is None:
             return
-            
-        self.txt_log.delete("1.0", tk.END)
-        self.log("=== НАЧАЛО ПОЛНОГО СБРОСА И НАСТРОЙКИ ===", "INFO")
-        
-        self.log("1. Закрытие процессов SolidWorks...", "INFO")
-        subprocess.run(["taskkill", "/F", "/IM", "SLDWORKS.exe"], capture_output=True)
-        subprocess.run(["taskkill", "/F", "/IM", "sldworks.exe"], capture_output=True)
-        time.sleep(2)
-        
-        self.log("2. Полная очистка реестра от следов OnCadTools...", "INFO")
-        hkcu = winreg.HKEY_CURRENT_USER
-        hklm = winreg.HKEY_LOCAL_MACHINE
-        unwanted_guids = [
-            "{03412BA8-10F6-4D51-AC38-4937CE7BEA5F}".lower(), # OnCadTools
-            "{7A2F5C31-9E44-4B0D-8C21-5F0E9A4B77C2}".lower(), # OnCadTools Shim
-        ]
+        if self.countdown <= 0:
+            self.countdown = None
+            self.start()
+            return
+        self.set_status("Обновление начнётся через {} с. Нажмите «Закрыть», чтобы отменить.".format(self.countdown), "text")
+        self.countdown -= 1
+        self.root.after(1000, self.tick)
 
-        # Удаление из автозагрузки и списков надстроек
-        for root_k, base_p in [
-            (hkcu, r"Software\SolidWorks\AddInsStartup"),
-            (hkcu, r"Software\SolidWorks\AddIns"),
-            (hkcu, r"Software\SolidWorks\AddInsEntitlement"),
-            (hklm, r"SOFTWARE\SolidWorks\AddIns"),
-            (hklm, r"SOFTWARE\SolidWorks"),
-            (hklm, r"SOFTWARE\WOW6432Node\SolidWorks\AddIns"),
-            (hkcu, r"Software\Classes\CLSID"),
-            (hklm, r"SOFTWARE\Classes\CLSID"),
-            (hklm, r"SOFTWARE\Classes\WOW6432Node\CLSID"),
-        ]:
-            try:
-                with winreg.OpenKey(root_k, base_p, 0, winreg.KEY_ALL_ACCESS) as k:
-                    sub_cnt = winreg.QueryInfoKey(k)[0]
-                    sub_keys = [winreg.EnumKey(k, i) for i in range(sub_cnt)]
-                    for sub in sub_keys:
-                        if any(ug in sub.lower() for ug in unwanted_guids):
-                            self.delete_key_recursive(root_k, f"{base_p}\\{sub}")
-                            self.log(f"Удален ключ: {base_p}\\{sub}", "SUCCESS")
-            except Exception:
-                pass
-
-        # Удаление ProgID OnCadTools в Classes
-        for root_k, base_p in [(hklm, r"SOFTWARE\Classes"), (hkcu, r"Software\Classes")]:
-            try:
-                with winreg.OpenKey(root_k, base_p, 0, winreg.KEY_ALL_ACCESS) as k:
-                    sub_cnt = winreg.QueryInfoKey(k)[0]
-                    sub_keys = [winreg.EnumKey(k, i) for i in range(sub_cnt)]
-                    for sub in sub_keys:
-                        sub_low = sub.lower()
-                        if sub_low.startswith("oncadtools"):
-                            self.delete_key_recursive(root_k, f"{base_p}\\{sub}")
-            except Exception:
-                pass
-            
-        self.log("3. Сброс профиля SolidWorks 2025 в реестре...", "INFO")
-        self.delete_key_recursive(hkcu, r"Software\SolidWorks\SOLIDWORKS 2025")
-        self.log("Профиль SolidWorks 2025 очищен.", "SUCCESS")
-        
-        self.log("4. Применение чистой корпоративной конфигурации...", "INFO")
-        self.apply_configuration(show_msgbox=False, skip_close_check=True)
-        
-        self.log("\nСБРОС И ЧИСТАЯ НАСТРОЙКА УСПЕШНО ЗАВЕРШЕНЫ!", "SUCCESS")
-        messagebox.showinfo("Успех", "SolidWorks 2025 полностью настроен с нуля!\n\nПолный корпоративный профиль ЕСКД, шаблоны документов, 9 кнопок SWPlus в верхней панели и шрифты ГОСТ успешно привязаны.")
-
-    def export_sldreg_file(self):
-        root_p = self.var_root_path.get().strip()
-        save_path = filedialog.asksaveasfilename(
-            defaultextension=".sldreg",
-            filetypes=[("Профиль SolidWorks (*.sldreg)", "*.sldreg")],
-            initialfile="01_SW2025_Корпоративный_Стандарт_ЕСКД.sldreg",
-            title="Сохранить файл профиля настроек SolidWorks (.sldreg)"
-        )
-        if save_path:
-            content = self.build_full_profile(root_p, as_sldreg=True)
-            with open(save_path, "wb") as f:
-                f.write(content.encode("cp1251", errors="replace"))
-            self.log(f"Экспорт .sldreg завершен: {save_path}", "SUCCESS")
-            messagebox.showinfo("Экспорт завершен", f"Файл профиля настроек сохранен в:\n{save_path}\n\nЕго можно импортировать в любое время двойным кликом через стандартный «Мастер копирования настроек SolidWorks».")
-
-    def export_reg_file(self):
-        root_p = self.var_root_path.get().strip()
-        save_path = filedialog.asksaveasfilename(
-            defaultextension=".reg",
-            filetypes=[("Файлы реестра (*.reg)", "*.reg")],
-            initialfile="01_SW2025_Корпоративный_Стандарт_ЕСКД.reg",
-            title="Сохранить файл настроек реестра (.reg)"
-        )
-        if save_path:
-            content = self.build_full_profile(root_p, as_sldreg=False)
-            with open(save_path, "w", encoding="utf-16") as f:
-                f.write(content)
-            self.log(f"Экспорт .reg завершен: {save_path}", "SUCCESS")
-            messagebox.showinfo("Экспорт завершен", f"Файл настроек сохранен в:\n{save_path}")
-
-    def apply_configuration(self, show_msgbox=True, skip_close_check=False):
-        root_p = self.var_root_path.get().strip()
-        if not self.validate_paths():
-            if not messagebox.askyesno("Предупреждение", "Некоторые пути не найдены. Продолжить применение?"):
-                return
-                
-        if not skip_close_check:
-            try:
-                chk = subprocess.run(["tasklist", "/FI", "IMAGENAME eq SLDWORKS.exe"], capture_output=True, text=True)
-                if "SLDWORKS.exe" in chk.stdout or "sldworks.exe" in chk.stdout:
-                    if not messagebox.askyesno("SolidWorks запущен", "Для надежной записи реестра процесс SolidWorks должен быть закрыт.\n\nСохранить документы и закрыть SolidWorks?"):
-                        return
-                    self.log("Закрытие запущенного процесса SolidWorks...", "INFO")
-                    subprocess.run(["taskkill", "/F", "/IM", "SLDWORKS.exe"], capture_output=True)
-                    subprocess.run(["taskkill", "/F", "/IM", "sldworks.exe"], capture_output=True)
-                    time.sleep(2)
-            except Exception:
-                pass
-
-        self.log("\n=== Импорт полного корпоративного профиля SolidWorks 2025 ===", "INFO")
-        
-        # 1. Generate and import full registry profile
-        try:
-            reg_content = self.build_full_profile(root_p, as_sldreg=False)
-            temp_reg = os.path.join(root_p, "01_Настройки_SolidWorks", "_temp_import.reg")
-            with open(temp_reg, "w", encoding="utf-16") as f:
-                f.write(reg_content)
-                
-            res = subprocess.run(["reg", "import", temp_reg], capture_output=True, text=True)
-            if os.path.exists(temp_reg):
-                os.remove(temp_reg)
-                
-            if res.returncode == 0:
-                self.log("Полный профиль корпоративного стандарта успешно импортирован в реестр!", "SUCCESS")
-            else:
-                self.log(f"Ошибка reg import: {res.stderr}", "WARN")
-
-            # Прямая запись Toolbox и исправления графики в HKCU и HKLM
-            try:
-                tb_path = os.path.join(os.path.dirname(root_p), "_Библиотека проектирования", "_Toolbox")
-                if not os.path.exists(tb_path):
-                    tb_path = r"D:\Work\_Библиотека проектирования\_Toolbox"
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\SolidWorks\SOLIDWORKS 2025\General", 0, winreg.KEY_SET_VALUE) as k:
-                    winreg.SetValueEx(k, "Toolbox Data Location", 0, winreg.REG_SZ, tb_path)
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\SolidWorks\SOLIDWORKS 2025\Performance", 0, winreg.KEY_SET_VALUE) as k:
-                    winreg.SetValueEx(k, "Use Performance Pipeline 2020", 0, winreg.REG_DWORD, 0)
-                self.log(f"База данных стандартов Toolbox зафиксирована: '{tb_path}'", "SUCCESS")
-                self.log("Графический конвейер зафиксирован в безопасном режиме (черный экран устранен)", "SUCCESS")
-            except Exception as e:
-                self.log(f"Предупреждение при записи ключей Toolbox/Graphics: {e}", "WARN")
-
-            try:
-                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\SolidWorks\SOLIDWORKS 2025\General", 0, winreg.KEY_SET_VALUE) as k:
-                    winreg.SetValueEx(k, "Toolbox Data Location", 0, winreg.REG_SZ, tb_path)
-            except Exception:
-                pass
-
-            # Гарантированное закрепление 9 кнопок макросов SWPlus в верхней панели QAT и Menu Customizations
-            try:
-                qat_path = r"Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\QAT\GB0"
-                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, qat_path) as k_qat:
-                    qat_btns = {
-                        "Btn11": "1,33639",
-                        "Btn12": "1,33640",
-                        "Btn13": "1,33641",
-                        "Btn14": "1,33642",
-                        "Btn15": "1,33643",
-                        "Btn16": "1,33644",
-                        "Btn17": "1,33645",
-                        "Btn18": "1,33646",
-                        "Btn19": "1,33647",
-                    }
-                    for b_name, b_val in qat_btns.items():
-                        winreg.SetValueEx(k_qat, b_name, 0, winreg.REG_SZ, b_val)
-
-                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\SolidWorks\SOLIDWORKS 2025\Menu Customizations") as k_mc:
-                    for cid in range(33639, 33648):
-                        winreg.SetValueEx(k_mc, str(cid), 0, winreg.REG_DWORD, 0)
-
-                # Очистка фантомных ссылок Toolbars (OnCadTools, SWTools) предотвращающая диалог сброса тулбаров SolidWorks
-                self.delete_key_recursive(winreg.HKEY_CURRENT_USER, r"Software\SolidWorks\SOLIDWORKS 2025\User Interface\Toolbars\ToolbarChangesOnUpgrade")
-                self.log("9 кнопок макросов SWPlus зафиксированы в верхней панели быстрого доступа (QAT: 33639-33647)!", "SUCCESS")
-            except Exception as e_qat:
-                self.log(f"Предупреждение при фиксации кнопок QAT: {e_qat}", "WARN")
-        except Exception as e:
-            self.log(f"Ошибка при импорте профиля: {e}", "ERROR")
-
-        # 2. Master.ini
-        master_ini = os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "Master", "Master.ini")
-        sheet_formats = os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "Основные надписи")
-        os.makedirs(sheet_formats, exist_ok=True)
-        if os.path.exists(master_ini):
-            try:
-                with open(master_ini, 'r', encoding='cp1251', errors='ignore') as f:
-                    lines = f.readlines()
-                if len(lines) >= 4:
-                    sf_norm = sheet_formats.rstrip("\\") + "\\"
-                    lines[3] = f"{sf_norm}\n"
-                    with open(master_ini, 'w', encoding='cp1251') as f:
-                        f.writelines(lines)
-                    self.log(f"Обновлен Master.ini -> '{sf_norm}'", "SUCCESS")
-            except Exception as e:
-                self.log(f"Ошибка обновления Master.ini: {e}", "WARN")
-
-        # 3. Personal Author / Firm
+    def start(self):
+        from tkinter import messagebox
+        self.countdown = None
         author = self.var_author.get().strip()
-        firm = self.var_firm.get().strip()
-        mprop_dir = os.path.join(root_p, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "MProp")
-        if os.path.exists(mprop_dir):
-            # Справочники MProp только дополняются: списки коллег и организаций не затираются.
-            if author:
-                fam_file = os.path.join(mprop_dir, "MProp_Fam.txt")
-                try:
-                    names = []
-                    if os.path.exists(fam_file):
-                        with open(fam_file, "r", encoding="cp1251") as f:
-                            names = [ln.strip() for ln in f if ln.strip()]
-                    if author not in names:
-                        names.insert(0, author)
-                        with open(fam_file, "w", encoding="cp1251", newline="\r\n") as f:
-                            f.write("\n".join(names) + "\n")
-                    self.log(f"Фамилия конструктора в справочнике MProp: {author}", "SUCCESS")
-                except Exception as e:
-                    self.log(f"Ошибка обновления MProp_Fam.txt: {e}", "WARN")
-            if firm:
-                firm_file = os.path.join(mprop_dir, "MProp_Firm.txt")
-                try:
-                    # Формат MProp: пары строк «организация» / «буквенный код» (код может быть пустым).
-                    lines = []
-                    if os.path.exists(firm_file):
-                        with open(firm_file, "r", encoding="cp1251") as f:
-                            lines = [ln.rstrip("\r\n") for ln in f]
-                    pairs = []
-                    for i in range(0, len(lines), 2):
-                        name = lines[i].strip()
-                        code = lines[i + 1].strip() if i + 1 < len(lines) else ""
-                        if name:
-                            pairs.append((name, code))
-                    if firm not in [p[0] for p in pairs]:
-                        pairs.insert(0, (firm, ""))
-                        with open(firm_file, "w", encoding="cp1251", newline="\r\n") as f:
-                            f.write("".join(f"{n}\n{c}\n" for n, c in pairs))
-                    self.log(f"Организация в справочнике MProp: {firm}", "SUCCESS")
-                except Exception as e:
-                    self.log(f"Ошибка обновления MProp_Firm.txt: {e}", "WARN")
+        if not author:
+            messagebox.showwarning("Фамилия", "Укажите фамилию и инициалы — они пишутся в основную надпись.")
+            return
+        close_mode = "Skip"
+        if solidworks_running():
+            if not messagebox.askyesno("SolidWorks открыт",
+                                       "Для настройки SolidWorks нужно закрыть.\n\nСохраните открытые документы. "
+                                       "Закрыть SolidWorks и продолжить?"):
+                self.set_status("Отменено: SolidWorks открыт.", "warn")
+                return
+            close_mode = "Graceful"
+        self.btn_install.state(["disabled"])
+        self.log.configure(state=self.tk.NORMAL)
+        self.log.delete("1.0", self.tk.END)
+        self.log.configure(state=self.tk.DISABLED)
+        self.set_status("Идёт настройка…", "text")
+        cmd = build_command(self.engine, author, self.var_firm.get().strip(), close_mode)
+        threading.Thread(target=self.run_engine, args=(cmd,), daemon=True).start()
 
-        # 4. Fonts Registration (Permanent in HKLM/HKCU Fonts + GDI AddFontResourceW)
-        if self.var_opt_fonts.get():
-            fonts_dir = os.path.join(root_p, "05_Шрифты")
-            if os.path.exists(fonts_dir):
-                win_fonts = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Fonts")
-                installed_cnt = 0
-                for f_name in os.listdir(fonts_dir):
-                    if f_name.lower().endswith(('.ttf', '.fon', '.otf')):
-                        src_font = os.path.join(fonts_dir, f_name)
-                        dst_font = os.path.join(win_fonts, f_name)
-                        try:
-                            if not os.path.exists(dst_font):
-                                shutil.copy2(src_font, dst_font)
-                            ctypes.windll.gdi32.AddFontResourceW(dst_font)
-                            
-                            font_val_name = f"{os.path.splitext(f_name)[0]} (TrueType)"
-                            try:
-                                with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts", 0, winreg.KEY_ALL_ACCESS) as k_fnt:
-                                    winreg.SetValueEx(k_fnt, font_val_name, 0, winreg.REG_SZ, f_name)
-                            except Exception:
-                                try:
-                                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts", 0, winreg.KEY_ALL_ACCESS) as k_fnt_u:
-                                        winreg.SetValueEx(k_fnt_u, font_val_name, 0, winreg.REG_SZ, dst_font)
-                                except Exception:
-                                    pass
-                            installed_cnt += 1
-                        except Exception:
-                            try:
-                                ctypes.windll.gdi32.AddFontResourceW(src_font)
-                                installed_cnt += 1
-                            except Exception: pass
-                if installed_cnt > 0:
-                    try:
-                        ctypes.windll.user32.PostMessageW(0xFFFF, 0x001D, 0, 0)
-                    except Exception: pass
-                    self.log(f"Шрифты ГОСТ зарегистрированы в Windows ({installed_cnt} шт.)!", "SUCCESS")
-
-        # 5. Надстройка ЕСКД: раскладка CommandManager, регистрация, параметры и избранные материалы
-        # Вкладки прежних версий удаляются, у существующей вкладки ЕСКД фиксируется видимость.
-        # Новые вкладки не создаются: вкладку строит сама надстройка (AddCommandTab).
-        active_guid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
-        old_guids = ["{B64E6875-B101-4D5C-B245-FF8D50772E21}", "{B64E6875-B101-4D5C-B245-FF8D50772E23}",
-                     "{B64E6875-B101-4D5C-B245-FF8D50772E24}"]
-        for ctx in ['PartContext', 'AssyContext', 'DrwContext']:
-            base_ctx = rf"Software\SolidWorks\SOLIDWORKS 2025\User Interface\CommandManager\{ctx}"
-            try:
-                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base_ctx) as k_ctx:
-                    sub_keys = []
-                    i = 0
-                    while True:
-                        try:
-                            sub_keys.append(winreg.EnumKey(k_ctx, i))
-                            i += 1
-                        except OSError:
-                            break
-                    for sk in sub_keys:
-                        try:
-                            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, rf"{base_ctx}\{sk}", 0, winreg.KEY_ALL_ACCESS) as k_tab:
-                                mod = ""
-                                try: mod = winreg.QueryValueEx(k_tab, "ModuleName")[0]
-                                except: pass
-                                if any(og.lower() == mod.lower() for og in old_guids):
-                                    self.delete_key_recursive(winreg.HKEY_CURRENT_USER, rf"{base_ctx}\{sk}")
-                                    continue
-                                ref = ""
-                                try: ref = winreg.QueryValueEx(k_tab, "RefName")[0]
-                                except: pass
-                                if (ref and "ЕСКД" in ref) or (mod and mod.upper() == active_guid.upper()):
-                                    winreg.SetValueEx(k_tab, "RefName", 0, winreg.REG_SZ, "ЕСКД")
-                                    winreg.SetValueEx(k_tab, "ModuleName", 0, winreg.REG_SZ, active_guid)
-                                    winreg.SetValueEx(k_tab, "Tab Props", 0, winreg.REG_SZ, "ЕСКД,1,1,-1")
-                        except Exception: pass
-            except Exception: pass
-
-        # Регистрация — общим модулем Register-EskdAddin.ps1 через register_eskd.ps1 (WP-4.2): тот же код,
-        # что у установщика, без RegAsm (он портит CodeBase с кириллицей) и без суррогатных вкладок CommandManager.
-        register_script = os.path.join(root_p, "03_Макросы_и_Плагины", "ESKD_Material_Sync_Addin", "register_eskd.ps1")
-        if os.path.exists(register_script):
-            proc = subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", register_script],
-                                  capture_output=True, text=True, encoding="utf-8", errors="replace")
-            if proc.returncode == 0:
-                self.log("Надстройка ЕСКД зарегистрирована общим модулем регистрации.", "SUCCESS")
-            else:
-                self.log(f"Регистрация надстройки ЕСКД не выполнена (код {proc.returncode}): {(proc.stdout + proc.stderr)[-800:]}", "WARN")
-        else:
-            self.log(f"Не найден сценарий регистрации: {register_script}", "WARN")
-
+    def run_engine(self, cmd):
         try:
-            # Шаблоны вкладки свойств
-            prop_f = os.path.join(root_p, "02_Шаблоны_и_Форматки", "Шаблоны свойств")
-            prop_default = os.path.join(prop_f, "default.prtprp")
-            for subk in [r"Software\SolidWorks\SOLIDWORKS 2025\ExtReferences", r"Software\SolidWorks\SOLIDWORKS 2025\ExtFolder"]:
-                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, subk) as k_prop:
-                    winreg.SetValueEx(k_prop, "Custom Property Folders", 0, winreg.REG_SZ, prop_f)
-                    winreg.SetValueEx(k_prop, "Custom Property File", 0, winreg.REG_SZ, prop_default)
+            self.process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            for raw in self.process.stdout:
+                self.events.put(("line", raw.decode("utf-8", errors="replace").rstrip()))
+            code = self.process.wait()
+        except OSError as exc:
+            self.events.put(("line", "[ОШИБКА] Не удалось запустить установщик: {}".format(exc)))
+            code = 1
+        self.events.put(("done", code))
 
-            # ESKD_Settings: фамилия и организация — из формы; остальные значения пишутся, только если их ещё нет
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\SolidWorks\ESKD_Settings") as k_eskd:
-                if author:
-                    winreg.SetValueEx(k_eskd, "Author", 0, winreg.REG_SZ, author)
-                if firm:
-                    winreg.SetValueEx(k_eskd, "Organization", 0, winreg.REG_SZ, firm)
-                for name, kind, value in (("Checker", winreg.REG_SZ, ""), ("AutoMass", winreg.REG_DWORD, 1),
-                                          ("MassDecimals", winreg.REG_DWORD, 2), ("AutoSplitName", winreg.REG_DWORD, 1)):
-                    try:
-                        winreg.QueryValueEx(k_eskd, name)
-                    except FileNotFoundError:
-                        winreg.SetValueEx(k_eskd, name, 0, kind, value)
-                try:
-                    winreg.DeleteValue(k_eskd, "AutoCenterMass")
-                except FileNotFoundError:
-                    pass
+    def pump(self):
+        try:
+            while True:
+                kind, value = self.events.get_nowait()
+                if kind == "line":
+                    if value.strip():
+                        self.write(value)
+                else:
+                    self.process = None
+                    self.btn_install.state(["!disabled"])
+                    self.set_status(EXIT_MESSAGES.get(value, "Установщик завершился с кодом {}.".format(value)),
+                                    "ok" if value == 0 else "error")
+        except queue.Empty:
+            pass
+        self.root.after(100, self.pump)
 
-            # Избранные материалы — те же записи, что в профиле .reg и Setup: имена и matid сверены с библиотекой.
-            # При неверном matid SolidWorks молча подставляет другой материал («Лист 6,0» → «Лист 3,0»).
-            fav_list = [
-                "Библиотека_Материалов_ГОСТ|Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89|1003",
-                "Библиотека_Материалов_ГОСТ|Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89|1108",
-                "Библиотека_Материалов_ГОСТ|Труба 80х80х4,0 ГОСТ 8639-82 / В 10 ГОСТ 13663-86|1024",
-                "Библиотека_Материалов_ГОСТ|Труба 57х3,5 ГОСТ 8732-78 / В 10 ГОСТ 8731-74|1109",
-                "Библиотека_Материалов_ГОСТ|Труба 102х4,0 ГОСТ 8732-78 / В 20 ГОСТ 8731-74|1110",
-                "Библиотека_Материалов_ГОСТ|Сталь 3сп (ГОСТ 380-2005)|1111",
-                "Библиотека_Материалов_ГОСТ|Сталь 20 (ГОСТ 1050-2013)|1112",
-                "Библиотека_Материалов_ГОСТ|Сталь 45 (ГОСТ 1050-2013)|1113",
-                "Библиотека_Материалов_ГОСТ|Сталь 09Г2С (ГОСТ 19281-2014)|1114",
-            ]
-            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Software\SolidWorks\SOLIDWORKS 2025\Material") as k_mat:
-                for i, fv in enumerate(fav_list, start=1):
-                    winreg.SetValueEx(k_mat, f"Favorite Material {i}", 0, winreg.REG_SZ, fv)
-                    winreg.SetValueEx(k_mat, f"_FavMaterial{i}", 0, winreg.REG_SZ, fv)
-                winreg.SetValueEx(k_mat, "__NumOfFavs", 0, winreg.REG_DWORD, len(fav_list))
-            self.log("Шаблоны свойств, параметры ЕСКД и избранные материалы настроены.", "SUCCESS")
-        except Exception as e:
-            self.log(f"Предупреждение при настройке надстройки: {e}", "WARN")
+    def on_close(self):
+        if self.countdown is not None:
+            self.countdown = None
+            self.set_status("Обновление отменено.", "warn")
+            return
+        if self.process is not None:
+            from tkinter import messagebox
+            if not messagebox.askyesno("Идёт настройка", "Настройка ещё не закончена. Закрыть окно? Установщик доработает сам."):
+                return
+        self.root.destroy()
 
-        # 6. Проверка и регистрация надстройки Drw (CAD Booster Drew)
-        drew_guid = "{08C4BC0B-C36C-470E-A0EA-02232F023333}"
-        drew_candidates = [
-            r"C:\Program Files\CAD Booster\Drew\CADBooster.Drew.Drawing.dll",
-            os.path.join(os.environ.get("LOCALAPPDATA", ""), r"CAD Booster\Drew\CADBooster.Drew.Drawing.dll"),
-            os.path.join(root_p, "03_Макросы_и_Плагины", "Drw_System_Automation", "2_комплект_издания", "bin", "CADBooster.Drew.Drawing.dll")
-        ]
-        drew_dll = next((p for p in drew_candidates if os.path.exists(p)), None)
-        if drew_dll:
-            try:
-                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\SolidWorks\AddIns\{drew_guid}") as k_drew:
-                    winreg.SetValueEx(k_drew, "", 0, winreg.REG_DWORD, 1)
-                    winreg.SetValueEx(k_drew, "Title", 0, winreg.REG_SZ, "Drew")
-                    winreg.SetValueEx(k_drew, "Description", 0, winreg.REG_SZ, "Drew Drawing Automation")
-                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"Software\SolidWorks\AddinsStartup\{drew_guid}") as k_drew_st:
-                    winreg.SetValueEx(k_drew_st, "", 0, winreg.REG_DWORD, 1)
-
-                drew_codebase = "file:///" + drew_dll.replace(chr(92), "/")
-                drew_clsid = rf"Software\Classes\CLSID\{drew_guid}"
-                full_class = "CADBooster.Drew.Drawing.SolidWorks.Integration.DrewAddin"
-                assembly_nm = "CADBooster.Drew.Drawing, Version=4.3.0.0, Culture=neutral, PublicKeyToken=null"
-
-                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, drew_clsid) as k_dc:
-                    winreg.SetValueEx(k_dc, "", 0, winreg.REG_SZ, full_class)
-                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"{drew_clsid}\InprocServer32") as k_din:
-                    winreg.SetValueEx(k_din, "", 0, winreg.REG_SZ, "mscoree.dll")
-                    winreg.SetValueEx(k_din, "ThreadingModel", 0, winreg.REG_SZ, "Both")
-                    winreg.SetValueEx(k_din, "Class", 0, winreg.REG_SZ, full_class)
-                    winreg.SetValueEx(k_din, "Assembly", 0, winreg.REG_SZ, assembly_nm)
-                    winreg.SetValueEx(k_din, "RuntimeVersion", 0, winreg.REG_SZ, "v4.0.30319")
-                    winreg.SetValueEx(k_din, "CodeBase", 0, winreg.REG_SZ, drew_codebase)
-                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"{drew_clsid}\InprocServer32\4.3.0.0") as k_din_v:
-                    winreg.SetValueEx(k_din_v, "Class", 0, winreg.REG_SZ, full_class)
-                    winreg.SetValueEx(k_din_v, "Assembly", 0, winreg.REG_SZ, assembly_nm)
-                    winreg.SetValueEx(k_din_v, "RuntimeVersion", 0, winreg.REG_SZ, "v4.0.30319")
-                    winreg.SetValueEx(k_din_v, "CodeBase", 0, winreg.REG_SZ, drew_codebase)
-                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, rf"{drew_clsid}\Implemented Categories\{{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}}") as _:
-                    pass
-
-                try:
-                    with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, rf"SOFTWARE\SolidWorks\AddIns\{drew_guid}") as k_drew_m:
-                        winreg.SetValueEx(k_drew_m, "", 0, winreg.REG_DWORD, 1)
-                        winreg.SetValueEx(k_drew_m, "Title", 0, winreg.REG_SZ, "Drew")
-                        winreg.SetValueEx(k_drew_m, "Description", 0, winreg.REG_SZ, "Drew Drawing Automation")
-                except Exception: pass
-
-                self.log(f"Надстройка черчения Drw (CAD Booster Drew) успешно активирована ({drew_dll})!", "SUCCESS")
-            except Exception as e_drew:
-                self.log(f"Предупреждение при регистрации Drew: {e_drew}", "WARN")
-
-        if show_msgbox:
-            self.log("\nНАСТРОЙКА РАБОЧЕГО МЕСТА ЗАВЕРШЕНА!", "SUCCESS")
-            messagebox.showinfo(
-                "Успех", 
-                "Рабочее место SolidWorks 2025 успешно настроено!\n\n"
-                "• Полный корпоративный профиль ЕСКД перенесён и применён.\n"
-                "• Плагин Zero-Click автосинхронизации материалов ЕСКД активирован.\n"
-                "• Надстройка автоматизации черчения Drw (Drew) зарегистрирована.\n"
-                "• Шаблоны документов (Деталь, Сборка, Чертеж) и База форматок подключены.\n"
-                "• 9 кнопок SWPlus встроены в верхнюю панель быстрого доступа (QAT).\n"
-                "• Динамическая подсветка кромок и граней (Dynamic Highlight) включена.\n"
-                "• Шрифты ГОСТ установлены."
-            )
 
 if __name__ == "__main__":
-    tk_root = tk.Tk()
-    app = CADConfiguratorApp(tk_root)
-    tk_root.mainloop()
+    import tkinter
+    window = tkinter.Tk()
+    ConfiguratorApp(window)
+    window.mainloop()

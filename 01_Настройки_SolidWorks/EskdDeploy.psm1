@@ -1,0 +1,252 @@
+﻿<#
+.SYNOPSIS
+    Развёртывание инструментария ЕСКД из общей папки (сетевая схема, решение владельца 14.09.2026).
+.DESCRIPTION
+    Источник — папка инструментария, из которой запущен установщик (сетевая или локальная, путь не зашит).
+    Данные SolidWorks читает прямо из источника: шаблоны, основные надписи, библиотека материалов, профили.
+    Макросы SWPlus и надстройка ЕСКД копируются в профиль пользователя (%LOCALAPPDATA%\ESKD\Toolkit): макросы
+    пишут настройки рядом с собой, DLL надстройки SolidWorks держит открытой. В источник установка не пишет.
+    Функции модуля проверяются автотестом без SolidWorks (09_Тесты/tools/check_deploy_engine.ps1).
+#>
+
+$script:Rel = @{
+    Templates     = "02_Шаблоны_и_Форматки"
+    Addin         = "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin"
+    SwPlus        = "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0"
+    SheetFormats  = "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\Основные надписи"
+    Libraries     = "04_Библиотеки_Материалов_и_Профилей"
+    MaterialLib   = "04_Библиотеки_Материалов_и_Профилей\Библиотека материалов\Библиотека_Материалов_ГОСТ.sldmat"
+    Fonts         = "05_Шрифты"
+    Setup         = "01_Настройки_SolidWorks"
+}
+
+# Файлы надстройки, которые нужны для работы (исходники и скрипты сборки не копируются).
+$script:AddinFiles = @("ESKD_Material_Sync_v5.dll", "ESKD.exe", "ESKD_Sync.exe", "ESKD.ico",
+    "SolidWorks.Interop.sldworks.dll", "SolidWorks.Interop.swconst.dll", "SolidWorks.Interop.swpublished.dll")
+
+# Файлы, в которые макросы SWPlus пишут настройки пользователя (выгрузка VBA: FrmMProp:2437,2480; *_Pref: CmdSave_Click;
+# MyStandard() пяти макросов). Если файл уже есть в локальной копии, обновление его не заменяет.
+$script:SwPlusStateFiles = @(
+    "MProp\MProp_Prof.txt", "MProp\MProp_Project.txt", "MProp\MProp.ini",
+    "DProp\DProp.ini", "SProp\SProp.ini",
+    "SpecEditor\SpecEditor.ini", "SpecEditor\MyProperties_2.ini",
+    "Master\Master.ini",
+    "ТТ\TT.ini", "ТТ\TT.TXT", "ТТ\TT_Prof.txt",
+    "SaveAsPDF\SaveAsPDF.ini", "SaveAsPDF\PDFCreator.dat"
+)
+
+function Get-EskdRelativePaths { return $script:Rel.Clone() }
+
+function Test-EskdSourceRoot {
+    # Папка инструментария: есть шаблоны, макросы SWPlus, библиотеки.
+    param([Parameter(Mandatory = $true)][string]$Path)
+    foreach ($rel in @($script:Rel.Templates, $script:Rel.SwPlus, $script:Rel.Libraries)) {
+        if (-not (Test-Path -LiteralPath (Join-Path $Path $rel))) { return $false }
+    }
+    return $true
+}
+
+function Find-EskdSourceRoot {
+    # Корень — папка, из которой запущен установщик (01_Настройки_SolidWorks) или её родитель.
+    param([Parameter(Mandatory = $true)][string]$StartPath)
+    $cur = $StartPath
+    for ($i = 0; $i -lt 3 -and $cur; $i++) {
+        if (Test-EskdSourceRoot -Path $cur) { return $cur.TrimEnd('\') }
+        $cur = Split-Path -Path $cur -Parent
+    }
+    return $null
+}
+
+function Get-EskdDefaultLocalRoot { return (Join-Path $env:LOCALAPPDATA "ESKD\Toolkit") }
+
+function Get-EskdLayout {
+    param([Parameter(Mandatory = $true)][string]$SourceRoot, [Parameter(Mandatory = $true)][string]$LocalRoot)
+    $r = $script:Rel
+    return [pscustomobject]@{
+        SourceRoot       = $SourceRoot
+        LocalRoot        = $LocalRoot
+        SourceAddin      = Join-Path $SourceRoot $r.Addin
+        SourceSwPlus     = Join-Path $SourceRoot $r.SwPlus
+        SheetFormats     = Join-Path $SourceRoot $r.SheetFormats
+        SourceMaterial   = Join-Path $SourceRoot $r.MaterialLib
+        Fonts            = Join-Path $SourceRoot $r.Fonts
+        LocalAddin       = Join-Path $LocalRoot $r.Addin
+        LocalAddinDll    = Join-Path (Join-Path $LocalRoot $r.Addin) "ESKD_Material_Sync_v5.dll"
+        LocalSwPlus      = Join-Path $LocalRoot $r.SwPlus
+        LocalMaterial    = Join-Path $LocalRoot $r.MaterialLib
+        PropertyTemplates = Join-Path $SourceRoot "$($r.Templates)\Шаблоны свойств"
+        MaterialFolder   = Join-Path $SourceRoot "$($r.Libraries)\Библиотека материалов"
+        RegProfile       = Join-Path $SourceRoot "$($r.Setup)\Реестровые_Профили\01_SW2025_Корпоративный_Стандарт_ЕСКД.reg"
+        Release          = Join-Path $SourceRoot "toolkit_release.json"
+    }
+}
+
+function Resolve-EskdProfilePath {
+    # Класс пути профиля по подпути после корня инструментария: макросы SWPlus и надстройка — локальная копия,
+    # основные надписи и всё остальное — источник.
+    param([Parameter(Mandatory = $true)][string]$Relative, [Parameter(Mandatory = $true)][string]$SourceRoot,
+          [Parameter(Mandatory = $true)][string]$LocalRoot)
+    $rel = $Relative.TrimStart('\')
+    $low = $rel.ToLowerInvariant()
+    $isUnder = { param($prefix) $p = $prefix.ToLowerInvariant(); $low -eq $p -or $low.StartsWith($p + "\") }
+    if (& $isUnder $script:Rel.SheetFormats) { $base = $SourceRoot }
+    elseif ((& $isUnder $script:Rel.SwPlus) -or (& $isUnder $script:Rel.Addin)) { $base = $LocalRoot }
+    else { $base = $SourceRoot }
+    if (-not $rel) { return $base }
+    return (Join-Path $base $rel)
+}
+
+function Convert-EskdRegProfile {
+    <#
+    Адаптация текста профиля .reg: корень инструментария (любая буква диска, путь до «_Инструменты_Конструктора»)
+    заменяется по классу пути; %USERPROFILE% раскрывается; значения Toolbox убираются (их задаёт установщик по факту);
+    разделы HKLM убираются без прав администратора; ветка версии SolidWorks переименовывается; при тестовом корне
+    реестра все разделы HKCU\Software переносятся в него.
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Text,
+        [Parameter(Mandatory = $true)][string]$SourceRoot,
+        [Parameter(Mandatory = $true)][string]$LocalRoot,
+        [string]$UserProfile = $env:USERPROFILE,
+        [string]$SwVersion = "SOLIDWORKS 2025",
+        [switch]$KeepMachineSections,
+        [string]$RegistryRoot = "HKCU:\Software"
+    )
+    $pattern = '(?i)[A-Za-z]:(?:\\\\+|/)(?:[^"\r\n;\\/]+(?:\\\\+|/))*?_Инструменты_Конструктора((?:(?:\\\\+|/)[^"\r\n;\\/]+)*)'
+    $evaluator = [System.Text.RegularExpressions.MatchEvaluator]{
+        param($m)
+        $rel = ($m.Groups[1].Value -replace '(\\\\+|/)', '\')
+        (Resolve-EskdProfilePath -Relative $rel -SourceRoot $SourceRoot -LocalRoot $LocalRoot).Replace('\', '\\')
+    }
+    $out = [regex]::Replace($Text, $pattern, $evaluator)
+    $out = $out.Replace('%USERPROFILE%', $UserProfile.Replace('\', '\\'))
+    $out = [regex]::Replace($out, '(?m)^"Toolbox Data Location"="[^"\r\n]*"\r?\n', '')
+    if ($SwVersion -ne "SOLIDWORKS 2025") { $out = [regex]::Replace($out, 'SOLIDWORKS 20\d{2}', $SwVersion) }
+    if (-not $KeepMachineSections) {
+        $out = [regex]::Replace($out, '(?ms)^\[-?HKEY_LOCAL_MACHINE\\[^\]]*\]\r?\n.*?(?=^\[|\z)', '')
+    }
+    if ($RegistryRoot -ne "HKCU:\Software") {
+        if ($RegistryRoot -notmatch '^HKCU:\\Software\\(.+)$') { throw "Тестовый корень реестра должен быть в HKCU:\Software: $RegistryRoot" }
+        $sub = $Matches[1]
+        $out = [regex]::Replace($out, '(?m)^\[(-?)HKEY_CURRENT_USER\\Software\\', "[`$1HKEY_CURRENT_USER\Software\$sub\")
+    }
+    return $out
+}
+
+function Test-EskdFileSame {
+    param([string]$A, [string]$B)
+    if (-not (Test-Path -LiteralPath $B)) { return $false }
+    $fa = Get-Item -LiteralPath $A; $fb = Get-Item -LiteralPath $B
+    return ($fa.Length -eq $fb.Length) -and ($fa.LastWriteTimeUtc -eq $fb.LastWriteTimeUtc)
+}
+
+function Copy-EskdFile {
+    # Копия с сохранением времени изменения; атрибут «только чтение» источника снимается у копии.
+    param([string]$Source, [string]$Target)
+    $dir = Split-Path -Path $Target -Parent
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    if (Test-Path -LiteralPath $Target) {
+        $existing = Get-Item -LiteralPath $Target
+        if ($existing.IsReadOnly) { $existing.IsReadOnly = $false }
+    }
+    Copy-Item -LiteralPath $Source -Destination $Target -Force
+    $copy = Get-Item -LiteralPath $Target
+    if ($copy.IsReadOnly) { $copy.IsReadOnly = $false }
+}
+
+function Copy-EskdLocalInstance {
+    <#
+    Локальная копия: надстройка (файлы $AddinFiles и Icons), вся папка SWPlus кроме «Основные надписи», служебная копия
+    библиотеки материалов (запасной путь надстройки, MaterialCatalog.LocateCorporateLibrary). Файлы выпуска заменяются
+    версией источника; файлы настроек макросов ($SwPlusStateFiles), уже существующие локально, не трогаются.
+    Возвращает сводку: Copied, Kept, Skipped.
+    #>
+    param([Parameter(Mandatory = $true)][pscustomobject]$Layout)
+    $copied = New-Object System.Collections.Generic.List[string]
+    $kept = New-Object System.Collections.Generic.List[string]
+    $same = 0
+
+    $sourceDll = Join-Path $Layout.SourceAddin "ESKD_Material_Sync_v5.dll"
+    if (-not (Test-Path -LiteralPath $sourceDll)) {
+        throw "В папке инструментария нет собранной надстройки ($sourceDll). Опубликуйте выпуск: 01_Настройки_SolidWorks\Publish-EskdToolkit.ps1"
+    }
+    $pairs = New-Object System.Collections.Generic.List[object]
+    foreach ($name in $script:AddinFiles) {
+        $src = Join-Path $Layout.SourceAddin $name
+        if (Test-Path -LiteralPath $src) { $pairs.Add(@($src, (Join-Path $Layout.LocalAddin $name), $false)) }
+    }
+    $icons = Join-Path $Layout.SourceAddin "Icons"
+    if (Test-Path -LiteralPath $icons) {
+        foreach ($f in Get-ChildItem -LiteralPath $icons -File) { $pairs.Add(@($f.FullName, (Join-Path $Layout.LocalAddin "Icons\$($f.Name)"), $false)) }
+    }
+    $formatsLow = $Layout.SheetFormats.TrimEnd('\').ToLowerInvariant() + "\"
+    $stateLow = @($script:SwPlusStateFiles | ForEach-Object { $_.ToLowerInvariant() })
+    foreach ($f in Get-ChildItem -LiteralPath $Layout.SourceSwPlus -File -Recurse) {
+        if ($f.FullName.ToLowerInvariant().StartsWith($formatsLow)) { continue }
+        $rel = $f.FullName.Substring($Layout.SourceSwPlus.TrimEnd('\').Length + 1)
+        $pairs.Add(@($f.FullName, (Join-Path $Layout.LocalSwPlus $rel), ($stateLow -contains $rel.ToLowerInvariant())))
+    }
+    if (Test-Path -LiteralPath $Layout.SourceMaterial) { $pairs.Add(@($Layout.SourceMaterial, $Layout.LocalMaterial, $false)) }
+
+    foreach ($p in $pairs) {
+        $src, $dst, $isState = $p
+        if ($isState -and (Test-Path -LiteralPath $dst)) { $kept.Add($dst); continue }
+        if (Test-EskdFileSame -A $src -B $dst) { $same++; continue }
+        Copy-EskdFile -Source $src -Target $dst
+        $copied.Add($dst)
+    }
+    return [pscustomobject]@{ Copied = @($copied); Kept = @($kept); Same = $same }
+}
+
+# WP-3.4: справочники SWPlus записываются, только если содержимое меняется; фамилии и организации дописываются в конец.
+function Write-SwPlusLines {
+    param([Parameter(Mandatory = $true)][string]$Path, [string[]]$Lines = @())
+    $encoding = [System.Text.Encoding]::GetEncoding(1251)
+    $text = if ($Lines.Count) { ($Lines -join "`r`n") + "`r`n" } else { "" }
+    if ((Test-Path -LiteralPath $Path) -and ([System.IO.File]::ReadAllText($Path, $encoding) -ceq $text)) { return $false }
+    [System.IO.File]::WriteAllText($Path, $text, $encoding)
+    return $true
+}
+
+function Add-SwPlusFamily {
+    # MProp_Fam.txt: фамилия на строке; новая — в конец.
+    param([Parameter(Mandatory = $true)][string]$Path, [string]$Name)
+    if (-not $Name -or -not $Name.Trim()) { return $false }
+    $lines = @()
+    if (Test-Path -LiteralPath $Path) { $lines = @([System.IO.File]::ReadAllLines($Path, [System.Text.Encoding]::GetEncoding(1251))) }
+    if (@($lines | Where-Object { $_.Trim() -eq $Name.Trim() }).Count) { return $false }
+    return Write-SwPlusLines -Path $Path -Lines (@($lines | Where-Object { $_.Trim() -ne "" }) + @($Name.Trim()))
+}
+
+function Add-SwPlusFirm {
+    # MProp_Firm.txt: пары строк «организация / код»; новая пара — в конец.
+    param([Parameter(Mandatory = $true)][string]$Path, [string]$Name)
+    if (-not $Name -or -not $Name.Trim()) { return $false }
+    $lines = @()
+    if (Test-Path -LiteralPath $Path) { $lines = @([System.IO.File]::ReadAllLines($Path, [System.Text.Encoding]::GetEncoding(1251))) }
+    for ($i = 0; $i -lt $lines.Count; $i += 2) {
+        if ($lines[$i].Trim() -eq $Name.Trim()) { return $false }
+    }
+    if ($lines.Count % 2 -eq 1) { $lines += "" }
+    return Write-SwPlusLines -Path $Path -Lines ($lines + @($Name.Trim(), ""))
+}
+
+function Set-EskdMasterIniFormats {
+    # Master.ini строка 4 — папка основных надписей (FrmMaster:147, FrmDProp:250); в локальной копии — папка источника.
+    param([Parameter(Mandatory = $true)][string]$MasterIni, [Parameter(Mandatory = $true)][string]$SheetFormats)
+    if (-not (Test-Path -LiteralPath $MasterIni)) { return $false }
+    $lines = @([System.IO.File]::ReadAllLines($MasterIni, [System.Text.Encoding]::GetEncoding(1251)))
+    while ($lines.Count -lt 4) { $lines += "" }
+    $lines[3] = $SheetFormats.TrimEnd('\') + '\'
+    return Write-SwPlusLines -Path $MasterIni -Lines $lines
+}
+
+function Get-EskdRelease {
+    # toolkit_release.json пишет публикация; в клоне репозитория его нет — выпуск «рабочая копия».
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) { return [pscustomobject]@{ Version = "рабочая копия"; Commit = ""; Date = "" } }
+    $json = [System.IO.File]::ReadAllText($Path, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+    return [pscustomobject]@{ Version = [string]$json.version; Commit = [string]$json.commit; Date = [string]$json.date }
+}
+
+Export-ModuleMember -Function *-Eskd*, Write-SwPlusLines, Add-SwPlusFamily, Add-SwPlusFirm
