@@ -28,8 +28,6 @@ TOOLKIT_MARKERS = (
 )
 SWPLUS = os.path.join("03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0")
 ENGINE = "Setup_Workstation_SolidWorks.ps1"
-DREW_ACTIVATION = os.path.join("03_Макросы_и_Плагины", "Drw_System_Automation", "3_активация", "Client-Activate-Drew.ps1")
-DREW_NOT_ACTIVATED = "Drew не активирован"
 AUTO_UPDATE_SECONDS = 5
 EXIT_MESSAGES = {
     0: "Готово. Запустите SolidWorks.",
@@ -160,12 +158,6 @@ def line_level(line):
     if text.startswith("[ИНФО]"):
         return "info"
     return "text"
-
-
-def drew_activation_command(source_root):
-    """Окно активации Drew: показывает ключ железа этого ПК и принимает код от администратора."""
-    return ["powershell.exe", "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File",
-            os.path.join(source_root, DREW_ACTIVATION)]
 
 
 def solidworks_running():

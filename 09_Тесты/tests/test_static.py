@@ -146,28 +146,36 @@ class StaticRepository(StaticTestCase):
         spec_text = (setup_dir / "_Исходники" / "Настройка_Рабочего_Места_SolidWorks.spec").read_text(encoding="utf-8")
         self.assertNotIn("uac_admin", spec_text, "окно запрашивает права администратора")
 
-    def test_T0_drew_installed_with_offline_activation(self):
-        """T0 (решение владельца 14.09.2026): Drew ставится изданием с активацией по коду — установщик ставит его только
-        при закрытом SolidWorks, после установки сообщает «Drew не активирован» с путём к окну активации, окно настройки
-        открывает активацию; код кейгена принимается только на своей машине (публичный ключ клиентского скрипта)."""
+    def test_T0_drew_installed_with_builtin_license(self):
+        """T0 (решение владельца 15.09.2026): Drew — Gov-издание со ВСТРОЕННОЙ лицензией (AUTO):
+        в инструментарии один установщик AUTO.exe без MSI/комплекта/активации; движок ставит его
+        только при закрытом SolidWorks, ждёт завершения по контрольному хэшу сборки и не требует
+        активации; окно настройки предлагает чекбоксы Drew/отучение от сети/русский интерфейс."""
         drew = ROOT / "03_Макросы_и_Плагины" / "Drw_System_Automation"
-        self.assertTrue((drew / "Drew_4.3.0.0.msi").exists() and (drew / "2_комплект_издания" / "bin" / "DrewAirGap.Activation.dll").exists())
-        self.assertFalse(list(ROOT.rglob("УСТАНОВЩИК_Drew*")), "AUTO-издание с зашитой лицензией в инструментарий не входит")
+        auto = list(drew.glob("УСТАНОВЩИК_Drew_*AUTO.exe"))
+        self.assertTrue(auto, "нет AUTO-установщика Drew в Drw_System_Automation")
+        for absent in ("Drew_4.3.0.0.msi", "install-all.ps1", "2_комплект_издания", "3_активация", "УСТАНОВИТЬ_DREW.cmd"):
+            self.assertFalse((drew / absent).exists(), f"артефакт классического издания не должен входить: {absent}")
+        self.assertTrue((drew / "1_УСТАНОВКА.txt").exists(), "нет инструкции 1_УСТАНОВКА.txt")
         setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
-        self.assertIn("-Silent -NoActivate", setup, "установка Drew тихая, окно активации открывает окно настройки")
-        self.assertRegex(setup, r'Get-Process -Name "SLDWORKS"[^\n]*\n[^\n]*Drew не установлен: SolidWorks открыт',
-                         "install-all.ps1 завершает SolidWorks принудительно — установщик должен проверять его сам")
-        self.assertIn("Drew не активирован", setup)
-        self.assertIn("Activation.code", setup)
+        self.assertIn("AA2817A7530B286FDA6EC95C5BED03A4C5062E78676064EDABFA748FC74C0485", setup,
+                      "движок сверяет сборку Drew по контрольному хэшу")
+        self.assertIn("AddMinutes(6)", setup, "движок ждёт завершения установщика Drew с таймаутом")
+        self.assertIn("Лицензия Drew: встроенная", setup, "активация больше не требуется — сообщается прямо")
+        self.assertNotIn("-Silent -NoActivate", setup, "старый вызов классического установщика убран")
+        self.assertNotIn("Drew не активирован", setup)
+        self.assertNotIn("Activation.code", setup)
+        self.assertIn("[switch]$SwInternetBlock", setup, "опция отучения от сети объявлена")
+        self.assertIn("[switch]$DrewRussian", setup, "опция русского интерфейса объявлена")
+        block = ROOT / "01_Настройки_SolidWorks" / "SwInternetBlock"
+        self.assertTrue((block / "Set-SwInternetBlock.ps1").exists() and (block / "SWInternetBlock.manifest.json").exists(),
+                        "нет пакета SwInternetBlock рядом с движком")
         configurator = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
-        for needed in ("Client-Activate-Drew.ps1", '"-STA"', "Активация Drew", "Drew не активирован"):
-            self.assertIn(needed, configurator, "окно настройки не открывает активацию Drew")
-        out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
-                              str(paths.TESTS / "tools" / "check_drew_activation.ps1"),
-                              "-ClientScript", str(drew / "3_активация" / "Client-Activate-Drew.ps1")], capture_output=True, timeout=120)
-        lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
-        self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
-        self.assertEqual([], json.loads(lines[-1])["problems"])
+        for needed in ("Gov-издание (лицензия встроена", "Отучение SolidWorks от сети", "DREW_LANG=ru",
+                       '"-SkipDrew"', '"-SwInternetBlock"', '"-DrewRussian"'):
+            self.assertIn(needed, configurator, f"в окне настройки нет: {needed}")
+        for gone in ("Активация Drew", "Client-Activate-Drew.ps1", "drew_needs_activation"):
+            self.assertNotIn(gone, configurator, f"артефакт активации не должен остаться в окне: {gone}")
 
     def test_T0_mprop_firm_is_pairs(self):
         """T0: MProp_Firm.txt — пары «организация / код», имена не пустые (Д-25)."""
