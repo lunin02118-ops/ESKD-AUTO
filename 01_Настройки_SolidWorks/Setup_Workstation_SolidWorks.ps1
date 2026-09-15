@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Настройка рабочего места SolidWorks из папки инструментария ЕСКД (сетевая схема).
 .DESCRIPTION
@@ -371,11 +371,6 @@ foreach ($ctx in @("PartContext", "AssyContext", "DrwContext")) {
             Set-Reg $tab.PSPath "ModuleName" $activeGuid
             Set-Reg $tab.PSPath "Tab Props" "ЕСКД,1,1,-1"
         }
-        if ($dedupKey -eq "SWTools") {
-            Set-Reg $tab.PSPath "RefName" "SWTools"
-            Set-Reg $tab.PSPath "ModuleName" $swToolsGuid
-            Set-Reg $tab.PSPath "Tab Props" "SWTools,0,1,-1"
-        }
     }
 }
 foreach ($flyout in @(Get-ChildItem -LiteralPath "$swRoot\User Interface\Custom API Flyouts" -ErrorAction SilentlyContinue)) {
@@ -608,29 +603,31 @@ if ($sandbox -or $SkipDrew) {
         if (Test-Path -LiteralPath $marker) { Write-Ok "Лицензия Drew: встроенная, активация не требуется." }
         else { Write-Warn "Лицензия Drew: нет файла-маркера ($marker) - переустановите Drew галочкой." }
 
-        # Настройка профилей оформления Drew и путей форматок ГОСТ
+        # Профиль оформления Drew (форматки ГОСТ, шаблон чертежа) — всегда из инструментария, чтобы результат не зависел от
+        # того, что было на ПК. В эталоне пути записаны через %TOOLKIT% и заменяются папкой инструментария (источником);
+        # прежний файл пользователя сохраняется в резервную копию.
         $drewConfigDir = Join-Path $env:APPDATA "CAD Booster\Drew"
         $drewBlueprintsTarget = Join-Path $drewConfigDir "Drew-Blueprints.xml"
-        $drewBlueprintsMaster = Join-Path $layout.DrwAutomation "Drew-Blueprints.xml"
-        if (-not (Test-Path -LiteralPath $drewConfigDir)) {
-            New-Item -ItemType Directory -Path $drewConfigDir -Force | Out-Null
-        }
-        $bpSource = if (Test-Path -LiteralPath $drewBlueprintsTarget) { $drewBlueprintsTarget } elseif (Test-Path -LiteralPath $drewBlueprintsMaster) { $drewBlueprintsMaster } else { $null }
-        if ($bpSource) {
+        $drewBlueprintsMaster = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation\Drew-Blueprints.xml"
+        if (Test-Path -LiteralPath $drewBlueprintsMaster) {
             try {
-                $xmlContent = [System.IO.File]::ReadAllText($bpSource, [System.Text.Encoding]::UTF8)
-                $oldOld = "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\Основные надписи"
-                $newNew = "02_Шаблоны_и_Форматки\Основные надписи"
-                $updated = $xmlContent.Replace($oldOld, $newNew)
-                $fmtRoot = $layout.SheetFormats.TrimEnd('\')
-                $drwRoot = (Split-Path -Path $layout.DrwTemplate -Parent).TrimEnd('\')
-                $updated = [regex]::Replace($updated, '(?i)[A-Za-z]:(?:\\\\+|/)(?:[^"\r\n;\\/]+(?:\\\\+|/))*?_Инструменты_Конструктора\\02_Шаблоны_и_Форматки\\Основные надписи', $fmtRoot.Replace('\', '\\'))
-                $updated = [regex]::Replace($updated, '(?i)[A-Za-z]:(?:\\\\+|/)(?:[^"\r\n;\\/]+(?:\\\\+|/))*?_Инструменты_Конструктора\\02_Шаблоны_и_Форматки\\Шаблоны документов', $drwRoot.Replace('\', '\\'))
-                [System.IO.File]::WriteAllText($drewBlueprintsTarget, $updated, (New-Object System.Text.UTF8Encoding($false)))
-                Write-Ok "Профиль оформления Drew настроен: $drewBlueprintsTarget"
+                New-Item -ItemType Directory -Path $drewConfigDir -Force | Out-Null
+                if (Test-Path -LiteralPath $drewBlueprintsTarget) {
+                    $drewBackup = Join-Path $env:LOCALAPPDATA ("ESKD\Backups\Drew-Blueprints_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".xml")
+                    New-Item -ItemType Directory -Path (Split-Path -Parent $drewBackup) -Force | Out-Null
+                    Copy-Item -LiteralPath $drewBlueprintsTarget -Destination $drewBackup -Force -ErrorAction Stop
+                }
+                $xmlContent = [System.IO.File]::ReadAllText($drewBlueprintsMaster, [System.Text.Encoding]::UTF8)
+                $toolkit = [System.Security.SecurityElement]::Escape($SourceRoot.TrimEnd('\'))
+                $updated = $xmlContent.Replace("%TOOLKIT%", $toolkit)
+                [xml]$updated | Out-Null
+                [System.IO.File]::WriteAllText($drewBlueprintsTarget, $updated, (New-Object System.Text.UTF8Encoding($true)))
+                Write-Ok "Профиль оформления Drew: форматки и шаблон чертежа из $SourceRoot"
             } catch {
-                Write-Warn "Настройка Drew-Blueprints.xml пропущена: $($_.Exception.Message)"
+                Write-Warn "Профиль оформления Drew не записан: $($_.Exception.Message)"
             }
+        } else {
+            Write-Warn "Эталон профиля Drew не найден: $drewBlueprintsMaster"
         }
     } else {
         Write-Warn "Модуль Drew не найден и не установлен."

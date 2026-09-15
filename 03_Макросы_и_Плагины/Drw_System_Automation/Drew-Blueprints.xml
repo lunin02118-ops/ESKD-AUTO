@@ -5,7 +5,7 @@
       <Annotations />
       <CutList i:nil="true" />
       <DrawingTemplate>
-        <Path>D:\Work\_Инструменты_Конструктора\02_Шаблоны_и_Форматки\Шаблоны документов\Чертеж.drwdot</Path>
+        <Path>%TOOLKIT%\02_Шаблоны_и_Форматки\Шаблоны документов\Чертеж.drwdot</Path>
       </DrawingTemplate>
       <FlatPatternSheetName>DXF</FlatPatternSheetName>
       <IsDefault>true</IsDefault>
@@ -28,7 +28,7 @@
       </SheetScaleNumbers>
       <SheetSizes>
         <SheetSize>
-          <FullPath>D:\Work\_Инструменты_Конструктора\02_Шаблоны_и_Форматки\Основные надписи\A3-A-1.slddrt</FullPath>
+          <FullPath>%TOOLKIT%\02_Шаблоны_и_Форматки\Основные надписи\A3-A-1.slddrt</FullPath>
           <IsDefault>false</IsDefault>
           <PaperSize>
             <Height>0.297</Height>
@@ -52,7 +52,7 @@
           <IsDefaultForFirstSheet>false</IsDefaultForFirstSheet>
         </SheetSize>
         <SheetSize>
-          <FullPath>D:\Work\_Инструменты_Конструктора\02_Шаблоны_и_Форматки\Основные надписи\A3-A-2.slddrt</FullPath>
+          <FullPath>%TOOLKIT%\02_Шаблоны_и_Форматки\Основные надписи\A3-A-2.slddrt</FullPath>
           <IsDefault>false</IsDefault>
           <PaperSize>
             <Height>0.297</Height>
@@ -76,7 +76,7 @@
           <IsDefaultForFirstSheet>false</IsDefaultForFirstSheet>
         </SheetSize>
         <SheetSize>
-          <FullPath>D:\Work\_Инструменты_Конструктора\02_Шаблоны_и_Форматки\Основные надписи\A3-P-1.slddrt</FullPath>
+          <FullPath>%TOOLKIT%\02_Шаблоны_и_Форматки\Основные надписи\A3-P-1.slddrt</FullPath>
           <IsDefault>false</IsDefault>
           <PaperSize>
             <Height>0.42</Height>
@@ -100,7 +100,7 @@
           <IsDefaultForFirstSheet>false</IsDefaultForFirstSheet>
         </SheetSize>
         <SheetSize>
-          <FullPath>D:\Work\_Инструменты_Конструктора\02_Шаблоны_и_Форматки\Основные надписи\A3-P-2.slddrt</FullPath>
+          <FullPath>%TOOLKIT%\02_Шаблоны_и_Форматки\Основные надписи\A3-P-2.slddrt</FullPath>
           <IsDefault>false</IsDefault>
           <PaperSize>
             <Height>0.42</Height>
@@ -124,7 +124,7 @@
           <IsDefaultForFirstSheet>false</IsDefaultForFirstSheet>
         </SheetSize>
         <SheetSize>
-          <FullPath>D:\Work\_Инструменты_Конструктора\02_Шаблоны_и_Форматки\Основные надписи\A4-P-1.slddrt</FullPath>
+          <FullPath>%TOOLKIT%\02_Шаблоны_и_Форматки\Основные надписи\A4-P-1.slddrt</FullPath>
           <IsDefault>false</IsDefault>
           <PaperSize>
             <Height>0.297</Height>
@@ -148,7 +148,7 @@
           <IsDefaultForFirstSheet>true</IsDefaultForFirstSheet>
         </SheetSize>
         <SheetSize>
-          <FullPath>D:\Work\_Инструменты_Конструктора\02_Шаблоны_и_Форматки\Основные надписи\A4-P-2.slddrt</FullPath>
+          <FullPath>%TOOLKIT%\02_Шаблоны_и_Форматки\Основные надписи\A4-P-2.slddrt</FullPath>
           <IsDefault>true</IsDefault>
           <PaperSize>
             <Height>0.297</Height>
@@ -195,7 +195,7 @@
         <DisplayMode>HiddenLinesRemoved</DisplayMode>
         <FlipSmartFlatPatternSheet>false</FlipSmartFlatPatternSheet>
         <FlipSmartNormalSheet>true</FlipSmartNormalSheet>
-        <HideBendLinesFlatPatternSheet>true</HideBendLinesFlatPatternSheet>
+        <HideBendLinesFlatPatternSheet>false</HideBendLinesFlatPatternSheet>
         <HideBendLinesNormalSheet>false</HideBendLinesNormalSheet>
         <HideBendNotesFlatPatternSheet>true</HideBendNotesFlatPatternSheet>
         <HideBendNotesNormalSheet>false</HideBendNotesNormalSheet>

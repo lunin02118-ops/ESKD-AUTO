@@ -155,17 +155,25 @@ namespace ESKD.MaterialSync
                     int[] wanted = part ? ids : new[] { ids[0], ids[1] };
                     CommandTab tab = _commands.GetCommandTab(docType, TabTitle);
 
-                    // Если вкладка отсутствует, ссылается на чужие команды или запрошен сброс —
-                    // гарантированно удаляем ВСЕ накопившиеся дубликаты вкладки с таким заголовком
+                    // Вкладка отсутствует, ссылается на чужие команды (у сборки вместо «Синхронизировать» — «Определенный
+                    // пользователем маршрут») или запрошен сброс: удаляются все накопившиеся дубликаты с этим заголовком.
+                    // Попыток не больше десяти — если SolidWorks не удаляет вкладку, цикл не должен повесить его запуск.
                     bool needRecreate = (tab == null) || ignorePrevious || !SameIds(TabCommands(tab), wanted);
                     if (needRecreate)
                     {
-                        while (tab != null)
+                        int removed = 0;
+                        for (int attempt = 0; tab != null && attempt < 10; attempt++)
                         {
-                            try { _commands.RemoveCommandTab(tab); }
-                            catch { break; }
+                            if (!_commands.RemoveCommandTab(tab))
+                            {
+                                Core.Log.Warn("Вкладка ЕСКД для типа " + docType + " не удалена SolidWorks — дубликаты могут остаться");
+                                break;
+                            }
+                            removed++;
                             tab = _commands.GetCommandTab(docType, TabTitle);
                         }
+                        if (removed > 0 && !ignorePrevious)
+                            Core.Log.Info("Вкладка ЕСКД для типа " + docType + " пересоздана (удалено вкладок: " + removed + ")");
                         tab = _commands.AddCommandTab(docType, TabTitle);
                         CommandTabBox box = tab.AddCommandTabBox();
                         int below = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
