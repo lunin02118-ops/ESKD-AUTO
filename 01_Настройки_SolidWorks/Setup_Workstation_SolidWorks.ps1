@@ -384,6 +384,22 @@ try {
     $failures++
     Write-Fail "Регистрация надстройки: $($_.Exception.Message)"
 }
+# Регистрация той же надстройки в HKLM от прежней установки (другая DLL): SolidWorks, запущенный от имени администратора,
+# загрузил бы её. Установка пишет только в HKCU, поэтому машинная запись — всегда устаревшая (аудит 15.09.2026, B10).
+if (-not $sandbox) {
+    $machineAddin = @("HKLM:\SOFTWARE\SolidWorks\AddIns\$activeGuid", "HKLM:\SOFTWARE\SolidWorks\AddInsStartup\$activeGuid",
+                      "HKLM:\SOFTWARE\Classes\CLSID\$activeGuid") | Where-Object { Test-Path -LiteralPath $_ }
+    if ($machineAddin) {
+        $staleDll = [string](Get-RegValue "HKLM:\SOFTWARE\Classes\CLSID\$activeGuid\InprocServer32" "CodeBase")
+        if ($machine) {
+            foreach ($p in $machineAddin) { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction SilentlyContinue }
+            Write-Ok "Устаревшая регистрация надстройки в HKLM снята$(if ($staleDll) { " ($staleDll)" })."
+        } else {
+            Write-Warn ("Устаревшая регистрация надстройки ЕСКД в HKLM$(if ($staleDll) { " ($staleDll)" }): SolidWorks, запущенный от имени " +
+                        "администратора, загрузит прежнюю DLL. Снимите её, запустив установку один раз от имени администратора.")
+        }
+    }
+}
 $current = if (Test-Path -LiteralPath $settingsKey) { Get-ItemProperty -LiteralPath $settingsKey } else { $null }
 Set-Reg $settingsKey "Author" $Author
 if ($Firm) { Set-Reg $settingsKey "Organization" $Firm }
