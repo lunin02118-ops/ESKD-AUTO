@@ -752,14 +752,41 @@ class StaticRepository(StaticTestCase):
         self.assertEqual([], unmarked, "документы с утверждениями v5 без пометки «Исторический документ»")
 
     def test_T0_library_matches_table_d2(self):
-        """T0 (К-13): библиотека материалов исправлена ровно по таблице Д-2 плана согласования и ответу «О-7 как советуешь»:
-        имена и matid не изменились, заменённые и ошибочные стандарты убраны, однострочные ТУ без дроби, «БТ» у листа
+        """T0 (К-13, аудит 15.09.2026 C1): библиотека материалов исправлена по таблице Д-2 плана согласования и ответу «О-7 как советуешь»:
+        имена в дереве по действующим ГОСТ, прежние имена сохранены копиями, заменённые и ошибочные стандарты убраны, однострочные ТУ без дроби, «БТ» у листа
         х/к, толщина листа Ст3сп определяет стандарт знаменателя, плотности стали 7850 и ABS 1050 (WP-4.5)."""
         import xml.etree.ElementTree as ET
         raw = Path(paths.MATERIAL_DB).read_bytes().decode("utf-16").replace('encoding="UTF-16"', 'encoding="UTF-8"')
-        materials = list(ET.fromstring(raw.encode("utf-8")).iter("material"))
-        self.assertEqual(114, len(materials), "число записей библиотеки")
+        root = ET.fromstring(raw.encode("utf-8"))
+        materials = list(root.iter("material"))
+        self.assertEqual(124, len(materials), "число записей библиотеки: 114 и 10 копий прежних имён")
         self.assertEqual(len(materials), len({m.get("matid") for m in materials}), "matid уникальны")
+        self.assertEqual(len(materials), len({m.get("name") for m in materials}), "имена уникальны — SolidWorks ищет материал по имени")
+
+        # Аудит 15.09.2026, C1: имена в дереве — по действующим ГОСТ; прежние имена — копиями в группе «99», чтобы старые
+        # модели нашли свой материал. У копии те же поля, что у переименованной записи.
+        custom_of = lambda m: {p.get("name"): p.get("value") or "" for p in m.findall("custom/prop")}
+        legacy_classes = [c for c in root.iter("classification") if c.get("name").startswith("99. Прежние наименования")]
+        self.assertEqual(1, len(legacy_classes), "нет группы прежних наименований")
+        legacy = legacy_classes[0].findall("material")
+        legacy_ids = {m.get("matid") for m in legacy}
+        active = [m for m in materials if m.get("matid") not in legacy_ids]
+        self.assertEqual(10, len(legacy), "копий прежних имён")
+        active_by_fields = {tuple(sorted(custom_of(m).items())): m.get("name") for m in active}
+        name_problems = []
+        for m in legacy:
+            if tuple(sorted(custom_of(m).items())) not in active_by_fields:
+                name_problems.append(f"прежнее имя «{m.get('name')}» без действующей записи с теми же полями")
+        for m in active:
+            for obsolete in ("ГОСТ 14637-89", "ГОСТ 14918-80", "ГОСТ 22233-2001"):
+                if obsolete in m.get("name"):
+                    name_problems.append(f"имя в дереве «{m.get('name')}» ссылается на {obsolete}")
+            c = custom_of(m)
+            if "ГОСТ 19903-2015" in c.get("Обозначение_ГОСТ", "") and "Ст3сп" in m.get("name"):
+                want = c.get("ГОСТ_Материал", "")
+                if want and want not in m.get("name"):
+                    name_problems.append(f"имя в дереве «{m.get('name')}» не по {want}")
+        self.assertEqual([], name_problems)
         problems = []
         for m in materials:
             name = m.get("name")
