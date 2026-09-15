@@ -455,12 +455,20 @@ if ($sandbox -or $SkipDrew) {
     # Хэш CADBooster.Common.Licensing.dll, которую ставит УСТАНОВЩИК_Drew_AUTO.exe инструментария (замер 15.09.2026: удаление
     # прежнего Drew, чистая установка этим установщиком). Новый установщик в Drw_System_Automation — новый замер и этот хэш.
     $licHash = "645654CF9055FDA11EF16CF131952F9BF235CBD3841AFDE6B5663DCC16C18F15"
-    $drewOk = (Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
+    # Какой установщик ставил Drew на этом ПК: отпечаток файла AUTO.exe после удачной установки. Пока в инструментарии тот же
+    # установщик, Drew не переустанавливается, даже если хэш лицензионной сборки не совпал с замером (другая ОС, новый
+    # установщик без обновления замера) — иначе удаление и установка с запросом прав повторялись бы при каждом обновлении.
+    $drewInstallKey = "$U\SolidWorks\ESKD_Install"
+    $drewDir = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation"
+    $drewExe = @(Get-ChildItem -LiteralPath $drewDir -Filter "*AUTO.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+    $autoHash = if ($drewExe.Count) { (Get-FileHash -LiteralPath $drewExe[0].FullName -ErrorAction SilentlyContinue).Hash } else { $null }
+    $recordedAuto = (Get-ItemProperty -LiteralPath $drewInstallKey -Name "DrewInstaller" -ErrorAction SilentlyContinue).DrewInstaller
+    $licPresent = Test-Path -LiteralPath $licDll
+    $licMatches = $licPresent -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
+    $drewOk = $licMatches -or ($licPresent -and $autoHash -and $recordedAuto -eq $autoHash)
     if ($drewOk) {
-        Write-Info "Drew уже установлен (сборка верная, хэш совпал)."
+        Write-Info "Drew уже установлен $(if ($licMatches) { '(сборка верная, хэш совпал)' } else { '(поставлен этим же установщиком)' })."
     } else {
-        $drewDir = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation"
-        $drewExe = @(Get-ChildItem -LiteralPath $drewDir -Filter "*AUTO.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
         if ($drewExe.Count -eq 0) {
             Write-Warn "Установщик Drew не найден: $drewDir"
         } elseif (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
@@ -495,19 +503,37 @@ if ($sandbox -or $SkipDrew) {
             }
             if ($removeOk) {
                 Write-Info "Установка Drew (Gov-издание, лицензия встроена): $($drewExe[0].Name)."
-                $setup = Start-Process -FilePath $drewExe[0].FullName -WorkingDirectory $drewDir -PassThru
-                $deadline = (Get-Date).AddMinutes(6)
-                $exitedAt = $null
-                while ((Get-Date) -lt $deadline -and -not $drewOk) {
-                    Start-Sleep -Seconds 3
-                    $drewOk = (Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
-                    if (-not $drewOk -and $setup.HasExited) {
-                        if (-not $exitedAt) { $exitedAt = Get-Date } elseif (((Get-Date) - $exitedAt).TotalSeconds -gt 20) { break }
-                    }
+                $startedAt = Get-Date
+                $setup = $null
+                try {
+                    $setup = Start-Process -FilePath $drewExe[0].FullName -WorkingDirectory $drewDir -PassThru -ErrorAction Stop
+                } catch {
+                    # Отказ в правах администратора, блокировка файла с сетевого ресурса SmartScreen и т. п.: ждать нечего.
+                    $failures++
+                    Write-Fail "Установщик Drew не запустился: $($_.Exception.Message) Запустите $($drewExe[0].Name) вручную."
                 }
-                if ($drewOk) { Write-Ok "Drew установлен (контроль хэша пройден)." }
-                elseif ($setup.HasExited) { $failures++; Write-Fail "Установщик Drew завершился, а сборка не та (код $($setup.ExitCode)) - запустите $($drewExe[0].Name) вручную." }
-                else { $failures++; Write-Fail "Drew не установился за 6 минут - проверьте окно установщика." }
+                if ($setup) {
+                    $deadline = (Get-Date).AddMinutes(6)
+                    $exitedAt = $null
+                    $installed = $false
+                    while ((Get-Date) -lt $deadline) {
+                        Start-Sleep -Seconds 3
+                        if ((Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)) { $installed = $true; break }
+                        if ($setup.HasExited) {
+                            # Установщик мог передать работу установщику Windows и выйти раньше — даём ему 20 секунд.
+                            if (-not $exitedAt) { $exitedAt = Get-Date } elseif (((Get-Date) - $exitedAt).TotalSeconds -gt 20) { break }
+                        }
+                    }
+                    $fresh = (Test-Path -LiteralPath $licDll) -and ((Get-Item -LiteralPath $licDll).LastWriteTime -ge $startedAt.AddMinutes(-1) -or $installed)
+                    if ($installed -or ($setup.HasExited -and $fresh)) {
+                        Set-Reg $drewInstallKey "DrewInstaller" $autoHash
+                        $drewOk = $true
+                        if ($installed) { Write-Ok "Drew установлен (контроль хэша пройден)." }
+                        else { Write-Ok "Drew установлен. Хэш лицензионной сборки отличается от замера 15.09.2026 — установщик новее; повторно ставиться не будет." }
+                    }
+                    elseif ($setup.HasExited) { $failures++; Write-Fail "Установщик Drew завершился (код $($setup.ExitCode)), а файлы Drew не обновлены - запустите $($drewExe[0].Name) вручную." }
+                    else { $failures++; Write-Fail "Drew не установился за 6 минут - проверьте окно установщика." }
+                }
             }
         }
     }

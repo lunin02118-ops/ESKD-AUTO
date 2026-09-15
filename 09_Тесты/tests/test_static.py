@@ -168,6 +168,11 @@ class StaticRepository(StaticTestCase):
                          "прежняя сборка Drew удаляется msiexec /x с запросом прав")
         self.assertIn("Новая сборка не ставится", setup, "при отказе в правах новая сборка не ставится поверх старой")
         self.assertLess(setup.index("msiexec.exe"), setup.index("$drewExe[0].FullName -WorkingDirectory"), "удаление — до установки")
+        # аудит 15.09.2026 B1, B2: сбой запуска установщика не ждёт 6 минут; установленный этим же установщиком Drew
+        # не переустанавливается при каждом обновлении из-за расхождения хэша
+        self.assertIn("-PassThru -ErrorAction Stop", setup, "сбой запуска установщика Drew перехватывается сразу")
+        self.assertIn('Set-Reg $drewInstallKey "DrewInstaller" $autoHash', setup, "отпечаток установщика Drew не запоминается")
+        self.assertIn("$recordedAuto -eq $autoHash", setup, "Drew от того же установщика не признаётся установленным")
         self.assertNotIn("-Silent -NoActivate", setup, "старый вызов классического установщика убран")
         self.assertNotIn("Drew не активирован", setup)
         self.assertNotIn("Activation.code", setup)
