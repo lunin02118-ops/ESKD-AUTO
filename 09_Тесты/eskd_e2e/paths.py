@@ -10,6 +10,7 @@ ADDIN_DIR = ROOT / "03_Макросы_и_Плагины" / "ESKD_Material_Sync_A
 ADDIN_DLL = ADDIN_DIR / "ESKD_Material_Sync_v5.dll"
 ESKD_SYNC_EXE = ADDIN_DIR / "ESKD_Sync.exe"
 ADDIN_PROGID = "ESKD.MaterialSync.SwAddin_v5"
+ADDIN_CLSID = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
 ADDIN_LOG = Path(os.environ.get("TEMP", r"C:\Temp")) / "eskd_material_sync.log"
 
 SWPLUS = ROOT / "03_Макросы_и_Плагины" / "Макросы_SW_ZTool" / "SWPlusMacro_v_2018_SP0.0"

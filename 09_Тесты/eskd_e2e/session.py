@@ -57,6 +57,12 @@ class SwSession:
         self.probe = None
         self.journal = None
         self.registry = RegistrySnapshot(backup_path=settings_backup_path(), test_values=self.settings)
+        # Регистрация надстройки пользователя указывает на его локальную копию (установщик). На время прогона CodeBase
+        # направляется на проверяемую DLL и после прогона возвращается — тем же снимком с защитой от прерывания.
+        self.addin_uri = "file:///" + str(Path(self.eskd_dll).resolve()).replace("\\", "/")
+        clsid = r"Software\Classes\CLSID\%s\InprocServer32" % paths.ADDIN_CLSID
+        self.addin_com = [RegistrySnapshot(key, settings_backup_path(key), {"CodeBase": self.addin_uri}, ("CodeBase",))
+                          for key in (clsid, clsid + "\\1.0.0.0")]
         self.eskd_loaded = False
         self._opened = []
         self._com_initialized = False
@@ -69,8 +75,19 @@ class SwSession:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         try:
             self.registry.capture()
+            for snapshot in self.addin_com:
+                snapshot.capture()
         except RegistryConflict as exc:
             raise SessionRefused(str(exc)) from exc
+        if not self.addin_com[0].existed:
+            self.registry.restore()
+            for snapshot in self.addin_com:
+                snapshot.restore()
+            raise SessionRefused("Надстройка ЕСКД не зарегистрирована для пользователя: запустите окно установки или "
+                                 "03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/register_eskd.ps1.")
+        for snapshot in self.addin_com:
+            if snapshot.existed:
+                snapshot.apply({"CodeBase": self.addin_uri})
         if self.registry.recovered:
             print(f"ESKD_Settings восстановлены из {self.registry.backup_path}: предыдущий прогон был прерван "
                   "до восстановления настроек пользователя", file=sys.stderr)
@@ -149,6 +166,8 @@ class SwSession:
             if foreign:
                 print(f"SolidWorks с PID {foreign} запущен не тестами и оставлен работать", file=sys.stderr)
             self.registry.restore()
+            for snapshot in self.addin_com:
+                snapshot.restore()
             if self._com_initialized:
                 pythoncom.CoUninitialize()
                 self._com_initialized = False
