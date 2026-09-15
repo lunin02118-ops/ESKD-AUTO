@@ -7,8 +7,10 @@
   * надстройка ЕСКД грузится явно (LoadAddIn), зонд событий — отдельный процесс;
   * все сохранения должны оказаться внутри каталога прогона: запись вне его запрещена
     харнессом до вызова API, а зонд фиксирует любое фактическое сохранение за пределами;
-  * ESKD_Settings пользователя сохраняются до прогона (и в файл runs/_eskd_settings_backup.json)
-    и восстанавливаются после; прерванный прогон восстанавливается при старте следующего.
+  * ESKD_Settings пользователя сохраняются до прогона (и в файл %LOCALAPPDATA%\\ESKD_Tests, один для всех рабочих
+    копий) и восстанавливаются после; прерванный прогон восстанавливается при старте следующего, а если настройки
+    после прерывания меняли вручную — прогон отказывается стартовать;
+  * при остановке завершается только свой процесс SolidWorks.
 """
 import contextlib
 import os
@@ -21,7 +23,7 @@ import pythoncom
 import win32com.client
 
 from . import com, paths
-from .guards import DialogWatchdog, RegistrySnapshot, solidworks_processes
+from .guards import DialogWatchdog, RegistryConflict, RegistrySnapshot, settings_backup_path, solidworks_processes
 from .probe import Journal, ProbeClient
 
 TEST_SETTINGS = {
@@ -54,7 +56,7 @@ class SwSession:
         self.watchdog = None
         self.probe = None
         self.journal = None
-        self.registry = RegistrySnapshot(backup_path=paths.RUNS / "_eskd_settings_backup.json")
+        self.registry = RegistrySnapshot(backup_path=settings_backup_path(), test_values=self.settings)
         self.eskd_loaded = False
         self._opened = []
         self._com_initialized = False
@@ -65,7 +67,10 @@ class SwSession:
             raise SessionRefused("SolidWorks уже запущен. Автотесты работают только в собственной сессии: "
                                  "сохраните работу и закройте SolidWorks.")
         self.run_dir.mkdir(parents=True, exist_ok=True)
-        self.registry.capture()
+        try:
+            self.registry.capture()
+        except RegistryConflict as exc:
+            raise SessionRefused(str(exc)) from exc
         if self.registry.recovered:
             print(f"ESKD_Settings восстановлены из {self.registry.backup_path}: предыдущий прогон был прерван "
                   "до восстановления настроек пользователя", file=sys.stderr)
@@ -128,14 +133,21 @@ class SwSession:
             self.sw = None
             if self.watchdog:
                 self.watchdog.stop()
+            # Ждём и при необходимости завершаем только свой процесс: SolidWorks, запущенный человеком во время
+            # прогона, не трогаем.
+            own = [p for p in solidworks_processes() if self.pid is not None and p.pid == self.pid]
             deadline = time.time() + 60
-            while solidworks_processes() and time.time() < deadline:
+            while own and time.time() < deadline:
+                own = [p for p in own if p.is_running()]
                 time.sleep(0.5)
-            for p in solidworks_processes():
+            for p in own:
                 try:
                     p.kill()
                 except Exception:
                     pass
+            foreign = [p.pid for p in solidworks_processes() if p.pid != self.pid]
+            if foreign:
+                print(f"SolidWorks с PID {foreign} запущен не тестами и оставлен работать", file=sys.stderr)
             self.registry.restore()
             if self._com_initialized:
                 pythoncom.CoUninitialize()

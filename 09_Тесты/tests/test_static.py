@@ -656,6 +656,31 @@ class StaticRepository(StaticTestCase):
             missing.apply({"Author": "Тестов Т.Т."})
             RegistrySnapshot(subkey, backup).capture().restore()
             self.assertIsNone(read(), "ключ, которого не было до прогона, не удалён")
+
+            # Прерванный прогон, после которого человек сам поправил настройки: снимок не откатывает его правки.
+            from eskd_e2e.guards import RegistryConflict
+            test_values = {"Author": "Тестов Т.Т.", "Checker": "Проверкин П.П.", "Organization": "ООО «Испытание»"}
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, subkey, 0, winreg.KEY_WRITE) as key:
+                winreg.SetValueEx(key, "Author", 0, winreg.REG_SZ, "Лунин В.И.")
+            RegistrySnapshot(subkey, backup, test_values).capture().apply(test_values)
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, subkey, 0, winreg.KEY_WRITE) as key:
+                winreg.SetValueEx(key, "Author", 0, winreg.REG_SZ, "Шалунов В.В.")
+                winreg.SetValueEx(key, "Organization", 0, winreg.REG_SZ, "ТОО «Троя»")
+            edited = read()
+            with self.assertRaises(RegistryConflict):
+                RegistrySnapshot(subkey, backup, test_values).capture()
+            self.assertEqual(edited, read(), "ручные правки откатились к старому снимку")
+            self.assertTrue(backup.exists(), "снимок удалён без решения человека")
+
+            # Тестовые подписи остались — снимок возвращается.
+            snap = RegistrySnapshot(subkey, backup, test_values)
+            snap._load_backup()
+            snap.apply(test_values)
+            recovered = RegistrySnapshot(subkey, backup, test_values).capture()
+            self.assertTrue(recovered.recovered)
+            self.assertEqual("Лунин В.И.", read()["Author"])
+            recovered.restore()
+            self.assertFalse(backup.exists())
         finally:
             try:
                 winreg.DeleteKey(winreg.HKEY_CURRENT_USER, subkey)
