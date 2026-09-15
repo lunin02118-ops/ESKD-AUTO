@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
     Настройка рабочего места SolidWorks из папки инструментария ЕСКД (сетевая схема).
 .DESCRIPTION
@@ -327,23 +327,54 @@ foreach ($g in $unwanted) {
     }
 }
 $activeGuid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
+$swToolsGuid = "{59959DFA-3229-4B86-852E-52ABF2BDB8C0}"
+$drewGuid = "{08C4BC0B-C36C-470E-A0EA-02232F023333}"
 foreach ($ctx in @("PartContext", "AssyContext", "DrwContext")) {
     $ctxPath = "$swRoot\User Interface\CommandManager\$ctx"
     if (-not (Test-Path -LiteralPath $ctxPath)) { continue }
     foreach ($gb in @("AssyContext", "DrwContext", "EditPartContext", "LAVContext", "PartContext", "QAT")) {
         Remove-Item -LiteralPath (Join-Path $ctxPath $gb) -Recurse -Force -ErrorAction SilentlyContinue
     }
-    foreach ($tab in @(Get-ChildItem -LiteralPath $ctxPath -ErrorAction SilentlyContinue)) {
+    $seen = @{}
+    $tabs = @(Get-ChildItem -LiteralPath $ctxPath -ErrorAction SilentlyContinue) | Sort-Object {
+        if ($_.PSChildName -match '^Tab(\d+)$') { [int]$Matches[1] } else { 9999 }
+    }
+    foreach ($tab in $tabs) {
         $ref = [string](Get-RegValue $tab.PSPath "RefName")
         $props = [string](Get-RegValue $tab.PSPath "Tab Props")
         $mod = [string](Get-RegValue $tab.PSPath "ModuleName")
         $garbage = ($ref -match "OnCad|Ounan|Semantic") -or ($props -match "OnCad|Ounan|Semantic") -or ($mod -match "03412ba8|7A2F5C31|FF8D50772E2[134]") -or
             ($tab.PSChildName -like "Tab*" -and -not $ref.Trim() -and (-not $props.Trim() -or $props.StartsWith("0,")))
         if ($garbage) { Remove-Item -LiteralPath $tab.PSPath -Recurse -Force -ErrorAction SilentlyContinue; continue }
+
+        $dedupKey = $null
         if ($ref -match "ЕСКД" -or $mod -eq $activeGuid) {
+            $dedupKey = "ЕСКД"
+        } elseif ($ref -match "SWTools" -or $mod -eq $swToolsGuid) {
+            $dedupKey = "SWTools"
+        } elseif ($ref -match "Drew" -or $mod -eq $drewGuid) {
+            $dedupKey = "Drew"
+        } elseif ($ref.Trim() -ne "") {
+            $dedupKey = $ref.Trim()
+        }
+
+        if ($dedupKey) {
+            if ($seen.ContainsKey($dedupKey)) {
+                Remove-Item -LiteralPath $tab.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+                continue
+            }
+            $seen[$dedupKey] = $true
+        }
+
+        if ($dedupKey -eq "ЕСКД") {
             Set-Reg $tab.PSPath "RefName" "ЕСКД"
             Set-Reg $tab.PSPath "ModuleName" $activeGuid
             Set-Reg $tab.PSPath "Tab Props" "ЕСКД,1,1,-1"
+        }
+        if ($dedupKey -eq "SWTools") {
+            Set-Reg $tab.PSPath "RefName" "SWTools"
+            Set-Reg $tab.PSPath "ModuleName" $swToolsGuid
+            Set-Reg $tab.PSPath "Tab Props" "SWTools,0,1,-1"
         }
     }
 }
@@ -576,6 +607,31 @@ if ($sandbox -or $SkipDrew) {
         $marker = Join-Path $env:APPDATA "CAD Booster\Drew\LicenseKey.skm"
         if (Test-Path -LiteralPath $marker) { Write-Ok "Лицензия Drew: встроенная, активация не требуется." }
         else { Write-Warn "Лицензия Drew: нет файла-маркера ($marker) - переустановите Drew галочкой." }
+
+        # Настройка профилей оформления Drew и путей форматок ГОСТ
+        $drewConfigDir = Join-Path $env:APPDATA "CAD Booster\Drew"
+        $drewBlueprintsTarget = Join-Path $drewConfigDir "Drew-Blueprints.xml"
+        $drewBlueprintsMaster = Join-Path $layout.DrwAutomation "Drew-Blueprints.xml"
+        if (-not (Test-Path -LiteralPath $drewConfigDir)) {
+            New-Item -ItemType Directory -Path $drewConfigDir -Force | Out-Null
+        }
+        $bpSource = if (Test-Path -LiteralPath $drewBlueprintsTarget) { $drewBlueprintsTarget } elseif (Test-Path -LiteralPath $drewBlueprintsMaster) { $drewBlueprintsMaster } else { $null }
+        if ($bpSource) {
+            try {
+                $xmlContent = [System.IO.File]::ReadAllText($bpSource, [System.Text.Encoding]::UTF8)
+                $oldOld = "03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\Основные надписи"
+                $newNew = "02_Шаблоны_и_Форматки\Основные надписи"
+                $updated = $xmlContent.Replace($oldOld, $newNew)
+                $fmtRoot = $layout.SheetFormats.TrimEnd('\')
+                $drwRoot = (Split-Path -Path $layout.DrwTemplate -Parent).TrimEnd('\')
+                $updated = [regex]::Replace($updated, '(?i)[A-Za-z]:(?:\\\\+|/)(?:[^"\r\n;\\/]+(?:\\\\+|/))*?_Инструменты_Конструктора\\02_Шаблоны_и_Форматки\\Основные надписи', $fmtRoot.Replace('\', '\\'))
+                $updated = [regex]::Replace($updated, '(?i)[A-Za-z]:(?:\\\\+|/)(?:[^"\r\n;\\/]+(?:\\\\+|/))*?_Инструменты_Конструктора\\02_Шаблоны_и_Форматки\\Шаблоны документов', $drwRoot.Replace('\', '\\'))
+                [System.IO.File]::WriteAllText($drewBlueprintsTarget, $updated, (New-Object System.Text.UTF8Encoding($false)))
+                Write-Ok "Профиль оформления Drew настроен: $drewBlueprintsTarget"
+            } catch {
+                Write-Warn "Настройка Drew-Blueprints.xml пропущена: $($_.Exception.Message)"
+            }
+        }
     } else {
         Write-Warn "Модуль Drew не найден и не установлен."
     }

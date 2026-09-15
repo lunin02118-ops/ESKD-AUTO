@@ -151,19 +151,21 @@ namespace ESKD.MaterialSync
             {
                 try
                 {
-                    CommandTab tab = _commands.GetCommandTab(docType, TabTitle);
                     bool part = docType == (int)swDocumentTypes_e.swDocPART;
                     int[] wanted = part ? ids : new[] { ids[0], ids[1] };
-                    // Вкладка, сохранённая SolidWorks от прежней раскладки, ссылается на чужие команды (у сборки вместо
-                    // «Синхронизировать» — «Определенный пользователем маршрут»): её кнопки сверяются и вкладка пересоздаётся.
-                    if (tab != null && (ignorePrevious || !SameIds(TabCommands(tab), wanted)))
+                    CommandTab tab = _commands.GetCommandTab(docType, TabTitle);
+
+                    // Если вкладка отсутствует, ссылается на чужие команды или запрошен сброс —
+                    // гарантированно удаляем ВСЕ накопившиеся дубликаты вкладки с таким заголовком
+                    bool needRecreate = (tab == null) || ignorePrevious || !SameIds(TabCommands(tab), wanted);
+                    if (needRecreate)
                     {
-                        if (!ignorePrevious) Core.Log.Info("Вкладка ЕСКД для типа " + docType + " ссылалась на чужие команды — пересоздана");
-                        _commands.RemoveCommandTab(tab);
-                        tab = null;
-                    }
-                    if (tab == null)
-                    {
+                        while (tab != null)
+                        {
+                            try { _commands.RemoveCommandTab(tab); }
+                            catch { break; }
+                            tab = _commands.GetCommandTab(docType, TabTitle);
+                        }
                         tab = _commands.AddCommandTab(docType, TabTitle);
                         CommandTabBox box = tab.AddCommandTabBox();
                         int below = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
