@@ -216,9 +216,17 @@ if (-not $Author) {
     exit 1
 }
 if (-not $Firm) { $Firm = [string](Get-RegValue $settingsKey "Organization") }
+if (-not $Firm -and -not $NonInteractive -and [Environment]::UserInteractive) {
+    $Firm = Read-Host "Организация для основной надписи (например, ТОО «Троя»)"
+}
 $Firm = "$Firm".Trim()
+if (-not $Firm) {
+    # Общий список организаций MProp пуст; без своей организации в локальном списке MProp падает на модели без «Конторы».
+    Write-Fail "Не указана организация (-Firm)."
+    exit 1
+}
 Write-Host "Конструктор:          $Author" -ForegroundColor White
-Write-Host "Организация:          $(if ($Firm) { $Firm } else { '(не задана)' })" -ForegroundColor White
+Write-Host "Организация:          $Firm" -ForegroundColor White
 
 $failures = 0
 
@@ -243,10 +251,10 @@ if (Set-EskdMasterIniFormats -MasterIni (Join-Path $layout.LocalSwPlus "Master\M
 }
 $mprop = Join-Path $layout.LocalSwPlus "MProp"
 if (Add-SwPlusFamily -Path (Join-Path $mprop "MProp_Fam.txt") -Name $Author) {
-    Write-Warn "Фамилии «$Author» нет в общем списке MProp — добавлена в локальный. Передайте администратору для общего списка."
+    Write-Info "Фамилия «$Author» добавлена в список MProp этого пользователя."
 }
-if ($Firm -and (Add-SwPlusFirm -Path (Join-Path $mprop "MProp_Firm.txt") -Name $Firm)) {
-    Write-Warn "Организации «$Firm» нет в общем списке MProp — добавлена в локальный. Передайте администратору."
+if (Add-SwPlusFirm -Path (Join-Path $mprop "MProp_Firm.txt") -Name $Firm) {
+    Write-Info "Организация «$Firm» добавлена в список MProp этого пользователя."
 }
 
 # 3. Профиль реестра

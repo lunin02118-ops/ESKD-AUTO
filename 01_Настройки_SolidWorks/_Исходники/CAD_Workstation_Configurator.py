@@ -266,11 +266,11 @@ class ConfiguratorApp:
         if not self.source or not self.engine:
             self.btn_install.state(["disabled"])
             self.set_status("Запустите программу из папки инструментария на сетевом диске.", "error")
-        elif self.installed and self.var_author.get().strip():
+        elif self.installed and self.var_author.get().strip() and self.var_firm.get().strip():
             self.countdown = AUTO_UPDATE_SECONDS
             self.tick()
         else:
-            self.set_status("Выберите свою фамилию и нажмите «Установить / Обновить».", "text")
+            self.set_status("Впишите свою фамилию и организацию и нажмите «Установить / Обновить».", "text")
         root.after(100, self.pump)
 
     def set_status(self, text, level):
@@ -300,6 +300,9 @@ class ConfiguratorApp:
         author = self.var_author.get().strip()
         if not author:
             messagebox.showwarning("Фамилия", "Укажите фамилию и инициалы — они пишутся в основную надпись.")
+            return
+        if not self.var_firm.get().strip():
+            messagebox.showwarning("Организация", "Укажите организацию — она пишется в основную надпись.")
             return
         close_mode = "Skip"
         if solidworks_running():

@@ -138,8 +138,13 @@ class StaticRepository(StaticTestCase):
         self.assertEqual(str(ROOT), configurator.find_source_root(str(setup_dir)))
         with tempfile.TemporaryDirectory() as foreign:
             self.assertIsNone(configurator.find_source_root(foreign), "запасной путь к инструментарию")
-        firms = configurator.read_firms(str(ROOT))
-        self.assertTrue(firms and all(firms), firms)
+        self.assertEqual([], configurator.read_firms(str(ROOT)), "общий список организаций должен быть пуст")
+        self.assertEqual([], configurator.read_families(str(ROOT)), "общий список фамилий должен быть пуст")
+        with tempfile.TemporaryDirectory() as filled:
+            mprop_dir = Path(filled) / configurator.SWPLUS / "MProp"
+            mprop_dir.mkdir(parents=True)
+            (mprop_dir / "MProp_Firm.txt").write_bytes("ТОО «Троя»\r\nТР\r\nАО Завод\r\n\r\n".encode("cp1251"))
+            self.assertEqual(["ТОО «Троя»", "АО Завод"], configurator.read_firms(filled), "пары «организация / код»")
         cmd = configurator.build_command("S.ps1", "Иванов И.И.", "", "Graceful")
         for flag in ("-NonInteractive", "-Utf8Output", "-CloseMode", "Graceful", "-Author", "Иванов И.И."):
             self.assertIn(flag, cmd)
@@ -198,8 +203,12 @@ class StaticRepository(StaticTestCase):
             self.assertNotIn(gone, configurator, f"артефакт активации не должен остаться в окне: {gone}")
 
     def test_T0_mprop_firm_is_pairs(self):
-        """T0: MProp_Firm.txt — пары «организация / код», имена не пустые (Д-25)."""
-        lines = (paths.SWPLUS / "MProp" / "MProp_Firm.txt").read_bytes().decode("cp1251").split("\r\n")
+        """T0: общие списки MProp пусты — фамилию и организацию каждый вписывает при установке (решение владельца
+        15.09.2026); если в MProp_Firm.txt что-то есть, это пары «организация / код» с непустыми именами (Д-25)."""
+        mprop = paths.SWPLUS / "MProp"
+        for name in ("MProp_Fam.txt", "MProp_Firm.txt"):
+            self.assertEqual(b"", (mprop / name).read_bytes().strip(), f"общий список {name} не пуст: чужие фамилии и организации уйдут всем")
+        lines = (mprop / "MProp_Firm.txt").read_bytes().decode("cp1251").split("\r\n")
         if lines and lines[-1] == "":
             lines = lines[:-1]
         self.assertEqual(0, len(lines) % 2, f"нечётное число строк: {lines}")
