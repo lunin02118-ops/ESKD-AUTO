@@ -29,6 +29,9 @@ KEEP_TREE = {
     "Menu Customizations", "Page", "Planes", "PlasticsMode", "Reference Triad", "Regeneration", "SheetMetal",
     "SW on ACIS", "TriadConsistency", "User Defined Macros", "Viewpoint", "Weldments",
 }
+# Подразделы, которые остаются, хотя их родитель сохраняется без подразделов: ответы «Больше не показывать» на сообщения
+# SolidWorks — стандарт отдела (без них при открытии сборки выходит сводка «Оценка производительности» и другие окна).
+KEEP_SUBTREES = {"General\\DontAskAgainOptions"}
 # Разделы, от которых остаются только значения самого раздела (параметры), без подразделов с накопленными данными.
 KEEP_ROOT_VALUES = {"General", "Performance", "Hole Wizard"}
 # Значения, которые описывают конкретный ПК или сеанс, а не настройку отдела.
@@ -73,6 +76,8 @@ def decide(delete, key):
     rest = key[len(VERSION) + 1:]
     top = rest.split("\\", 1)[0]
     if top in KEEP_TREE:
+        return True, ""
+    if any(rest == k or rest.startswith(k + "\\") for k in KEEP_SUBTREES):
         return True, ""
     if top in KEEP_ROOT_VALUES:
         return ("\\" not in rest), top + ": подраздел"

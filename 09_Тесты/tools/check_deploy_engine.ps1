@@ -162,6 +162,10 @@ try {
     Set-ItemProperty -LiteralPath "$swKey\Recent File List" -Name "File1" -Value "C:\Проект\Деталь.sldprt"
     Set-ItemProperty -LiteralPath "$swKey\General" -Name "Toolbox Data Location" -Value "C:\Мой Toolbox"
     $code2, $output2 = & $run
+    $backups = @(Get-ChildItem -LiteralPath (Join-Path (Split-Path -Path $local -Parent) "Backups") -Recurse -Filter "*SOLIDWORKS 2025*.reg" -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Length -gt 0 -and [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::Unicode).Contains("Моя панель") })
+    Expect "сброс: резервная копия раздела версии с прежними настройками создана" ($backups.Count -ge 1) $true
+    Expect "сброс: ответы «Больше не показывать» из профиля" ((Get-Item -LiteralPath "$swKey\General\DontAskAgainOptions" -ErrorAction SilentlyContinue).ValueCount -gt 0) $true
     Expect "сброс: личная панель убрана" (Test-Path -LiteralPath "$swKey\Toolbars\Моя панель") $false
     Expect "сброс: чужой путь форматок заменён профилем" (Read-Value "$swKey\ExtReferences" "Sheet Format Folders") $sheetFormats
     Expect "сброс: принятие соглашения сохранено" (Read-Value "$swKey\Security" "EULA Accepted 2025 TEST") "Yes"

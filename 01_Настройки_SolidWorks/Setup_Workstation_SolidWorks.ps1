@@ -146,17 +146,23 @@ function Backup-SolidWorksRegistryKeys {
     param([string]$BackupRoot, [string[]]$RegistryKeys)
     $backupDir = Join-Path $BackupRoot ("Backup_" + (Get-Date -Format "yyyyMMdd_HHmmss"))
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-    $ok = 0
+    # Возвращает пути ветвей, для которых копия не создана. Ключи — в форме HKEY_CURRENT_USER\…: прежняя проверка
+    # переводила только «HKCU\…», поэтому ни одна ветка не копировалась (аудит 15.09.2026).
+    $failed = @()
     foreach ($key in $RegistryKeys) {
-        if (-not (Test-Path ($key -replace '^HKCU\\', 'HKCU:\'))) { continue }
+        if (-not (Test-Path -LiteralPath ("Registry::" + $key))) { continue }
         $outFile = Join-Path $backupDir ((($key -replace '[\\/:*?"<>|]', '_')) + ".reg")
         $null = & reg.exe export "$key" "$outFile" /y 2>&1
-        if ($LASTEXITCODE -eq 0) { $ok++ } else { Write-Warn "Резервная копия ветки '$key' не создана (код $LASTEXITCODE)." }
+        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $outFile) -and (Get-Item -LiteralPath $outFile).Length -gt 0) {
+            Write-Ok "Резервная копия: $outFile"
+        } else {
+            $failed += $key
+            Write-Warn "Резервная копия ветки '$key' не создана (код $LASTEXITCODE)."
+        }
     }
     Get-ChildItem -LiteralPath $BackupRoot -Directory -Filter "Backup_*" -ErrorAction SilentlyContinue |
         Sort-Object Name -Descending | Select-Object -Skip 5 | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    if ($ok) { Write-Ok "Резервная копия реестра: $backupDir" }
-    return $backupDir
+    return ,$failed
 }
 
 function Set-Reg($Path, $Name, $Value, $Type = "String") {
@@ -261,9 +267,11 @@ if (Add-SwPlusFirm -Path (Join-Path $mprop "MProp_Firm.txt") -Name $Firm) {
 Write-Step "[3/9] Корпоративный профиль SolidWorks..."
 $regKeyUser = "HKEY_CURRENT_USER\" + $U.Substring("HKCU:\".Length)
 $backupRoot = Join-Path (Split-Path -Path $LocalRoot -Parent) "Backups"
-[void](Backup-SolidWorksRegistryKeys -BackupRoot $backupRoot -RegistryKeys @("$regKeyUser\SolidWorks\$SwVersion", "$regKeyUser\SolidWorks\AddInsStartup"))
+$backupFailed = Backup-SolidWorksRegistryKeys -BackupRoot $backupRoot -RegistryKeys @("$regKeyUser\SolidWorks\$SwVersion", "$regKeyUser\SolidWorks\AddInsStartup")
 # Сброс к стандартным перед профилем: результат установки не зависит от прежних настроек ПК (решение владельца 15.09.2026).
+# Без удачной резервной копии раздела версии сброс не выполняется — настройки удаляются только с возможностью вернуть.
 try {
+    if ($backupFailed -contains "$regKeyUser\SolidWorks\$SwVersion") { throw "нет резервной копии $regKeyUser\SolidWorks\$SwVersion — сброс отменён" }
     $reset = Reset-EskdSolidWorksProfile -UserRoot $U -SwVersion $SwVersion
     if ($reset.Existed) {
         Write-Ok ("Настройки $SwVersion сброшены к стандартным; сохранены: " + $(if ($reset.Preserved) { $reset.Preserved -join ", " } else { "нечего" }) +
