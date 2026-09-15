@@ -216,9 +216,17 @@ if (-not $Author) {
     exit 1
 }
 if (-not $Firm) { $Firm = [string](Get-RegValue $settingsKey "Organization") }
+if (-not $Firm -and -not $NonInteractive -and [Environment]::UserInteractive) {
+    $Firm = Read-Host "Организация для основной надписи (например, ТОО «Троя»)"
+}
 $Firm = "$Firm".Trim()
+if (-not $Firm) {
+    # Общий список организаций MProp пуст; без своей организации в локальном списке MProp падает на модели без «Конторы».
+    Write-Fail "Не указана организация (-Firm)."
+    exit 1
+}
 Write-Host "Конструктор:          $Author" -ForegroundColor White
-Write-Host "Организация:          $(if ($Firm) { $Firm } else { '(не задана)' })" -ForegroundColor White
+Write-Host "Организация:          $Firm" -ForegroundColor White
 
 $failures = 0
 
@@ -243,10 +251,10 @@ if (Set-EskdMasterIniFormats -MasterIni (Join-Path $layout.LocalSwPlus "Master\M
 }
 $mprop = Join-Path $layout.LocalSwPlus "MProp"
 if (Add-SwPlusFamily -Path (Join-Path $mprop "MProp_Fam.txt") -Name $Author) {
-    Write-Warn "Фамилии «$Author» нет в общем списке MProp — добавлена в локальный. Передайте администратору для общего списка."
+    Write-Info "Фамилия «$Author» добавлена в список MProp этого пользователя."
 }
-if ($Firm -and (Add-SwPlusFirm -Path (Join-Path $mprop "MProp_Firm.txt") -Name $Firm)) {
-    Write-Warn "Организации «$Firm» нет в общем списке MProp — добавлена в локальный. Передайте администратору."
+if (Add-SwPlusFirm -Path (Join-Path $mprop "MProp_Firm.txt") -Name $Firm) {
+    Write-Info "Организация «$Firm» добавлена в список MProp этого пользователя."
 }
 
 # 3. Профиль реестра
@@ -376,6 +384,22 @@ try {
     $failures++
     Write-Fail "Регистрация надстройки: $($_.Exception.Message)"
 }
+# Регистрация той же надстройки в HKLM от прежней установки (другая DLL): SolidWorks, запущенный от имени администратора,
+# загрузил бы её. Установка пишет только в HKCU, поэтому машинная запись — всегда устаревшая (аудит 15.09.2026, B10).
+if (-not $sandbox) {
+    $machineAddin = @("HKLM:\SOFTWARE\SolidWorks\AddIns\$activeGuid", "HKLM:\SOFTWARE\SolidWorks\AddInsStartup\$activeGuid",
+                      "HKLM:\SOFTWARE\Classes\CLSID\$activeGuid") | Where-Object { Test-Path -LiteralPath $_ }
+    if ($machineAddin) {
+        $staleDll = [string](Get-RegValue "HKLM:\SOFTWARE\Classes\CLSID\$activeGuid\InprocServer32" "CodeBase")
+        if ($machine) {
+            foreach ($p in $machineAddin) { Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction SilentlyContinue }
+            Write-Ok "Устаревшая регистрация надстройки в HKLM снята$(if ($staleDll) { " ($staleDll)" })."
+        } else {
+            Write-Warn ("Устаревшая регистрация надстройки ЕСКД в HKLM$(if ($staleDll) { " ($staleDll)" }): SolidWorks, запущенный от имени " +
+                        "администратора, загрузит прежнюю DLL. Снимите её, запустив установку один раз от имени администратора.")
+        }
+    }
+}
 $current = if (Test-Path -LiteralPath $settingsKey) { Get-ItemProperty -LiteralPath $settingsKey } else { $null }
 Set-Reg $settingsKey "Author" $Author
 if ($Firm) { Set-Reg $settingsKey "Organization" $Firm }
@@ -387,8 +411,8 @@ foreach ($dead in @("AutoCenterMass", "MassDecimals")) { Remove-ItemProperty -Li
 
 # Избранные материалы: имена и matid сверены с библиотекой (при неверном matid SolidWorks молча подставляет другой материал)
 $favList = @(
-    "Библиотека_Материалов_ГОСТ|Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89|1003",
-    "Библиотека_Материалов_ГОСТ|Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89|1108",
+    "Библиотека_Материалов_ГОСТ|Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-2024|1003",
+    "Библиотека_Материалов_ГОСТ|Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-2024|1108",
     "Библиотека_Материалов_ГОСТ|Труба 80х80х4,0 ГОСТ 8639-82 / В 10 ГОСТ 13663-86|1024",
     "Библиотека_Материалов_ГОСТ|Труба 57х3,5 ГОСТ 8732-78 / В 10 ГОСТ 8731-74|1109",
     "Библиотека_Материалов_ГОСТ|Труба 102х4,0 ГОСТ 8732-78 / В 20 ГОСТ 8731-74|1110",
@@ -455,12 +479,20 @@ if ($sandbox -or $SkipDrew) {
     # Хэш CADBooster.Common.Licensing.dll, которую ставит УСТАНОВЩИК_Drew_AUTO.exe инструментария (замер 15.09.2026: удаление
     # прежнего Drew, чистая установка этим установщиком). Новый установщик в Drw_System_Automation — новый замер и этот хэш.
     $licHash = "645654CF9055FDA11EF16CF131952F9BF235CBD3841AFDE6B5663DCC16C18F15"
-    $drewOk = (Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
+    # Какой установщик ставил Drew на этом ПК: отпечаток файла AUTO.exe после удачной установки. Пока в инструментарии тот же
+    # установщик, Drew не переустанавливается, даже если хэш лицензионной сборки не совпал с замером (другая ОС, новый
+    # установщик без обновления замера) — иначе удаление и установка с запросом прав повторялись бы при каждом обновлении.
+    $drewInstallKey = "$U\SolidWorks\ESKD_Install"
+    $drewDir = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation"
+    $drewExe = @(Get-ChildItem -LiteralPath $drewDir -Filter "*AUTO.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
+    $autoHash = if ($drewExe.Count) { (Get-FileHash -LiteralPath $drewExe[0].FullName -ErrorAction SilentlyContinue).Hash } else { $null }
+    $recordedAuto = (Get-ItemProperty -LiteralPath $drewInstallKey -Name "DrewInstaller" -ErrorAction SilentlyContinue).DrewInstaller
+    $licPresent = Test-Path -LiteralPath $licDll
+    $licMatches = $licPresent -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
+    $drewOk = $licMatches -or ($licPresent -and $autoHash -and $recordedAuto -eq $autoHash)
     if ($drewOk) {
-        Write-Info "Drew уже установлен (сборка верная, хэш совпал)."
+        Write-Info "Drew уже установлен $(if ($licMatches) { '(сборка верная, хэш совпал)' } else { '(поставлен этим же установщиком)' })."
     } else {
-        $drewDir = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation"
-        $drewExe = @(Get-ChildItem -LiteralPath $drewDir -Filter "*AUTO.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
         if ($drewExe.Count -eq 0) {
             Write-Warn "Установщик Drew не найден: $drewDir"
         } elseif (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
@@ -495,19 +527,37 @@ if ($sandbox -or $SkipDrew) {
             }
             if ($removeOk) {
                 Write-Info "Установка Drew (Gov-издание, лицензия встроена): $($drewExe[0].Name)."
-                $setup = Start-Process -FilePath $drewExe[0].FullName -WorkingDirectory $drewDir -PassThru
-                $deadline = (Get-Date).AddMinutes(6)
-                $exitedAt = $null
-                while ((Get-Date) -lt $deadline -and -not $drewOk) {
-                    Start-Sleep -Seconds 3
-                    $drewOk = (Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
-                    if (-not $drewOk -and $setup.HasExited) {
-                        if (-not $exitedAt) { $exitedAt = Get-Date } elseif (((Get-Date) - $exitedAt).TotalSeconds -gt 20) { break }
-                    }
+                $startedAt = Get-Date
+                $setup = $null
+                try {
+                    $setup = Start-Process -FilePath $drewExe[0].FullName -WorkingDirectory $drewDir -PassThru -ErrorAction Stop
+                } catch {
+                    # Отказ в правах администратора, блокировка файла с сетевого ресурса SmartScreen и т. п.: ждать нечего.
+                    $failures++
+                    Write-Fail "Установщик Drew не запустился: $($_.Exception.Message) Запустите $($drewExe[0].Name) вручную."
                 }
-                if ($drewOk) { Write-Ok "Drew установлен (контроль хэша пройден)." }
-                elseif ($setup.HasExited) { $failures++; Write-Fail "Установщик Drew завершился, а сборка не та (код $($setup.ExitCode)) - запустите $($drewExe[0].Name) вручную." }
-                else { $failures++; Write-Fail "Drew не установился за 6 минут - проверьте окно установщика." }
+                if ($setup) {
+                    $deadline = (Get-Date).AddMinutes(6)
+                    $exitedAt = $null
+                    $installed = $false
+                    while ((Get-Date) -lt $deadline) {
+                        Start-Sleep -Seconds 3
+                        if ((Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)) { $installed = $true; break }
+                        if ($setup.HasExited) {
+                            # Установщик мог передать работу установщику Windows и выйти раньше — даём ему 20 секунд.
+                            if (-not $exitedAt) { $exitedAt = Get-Date } elseif (((Get-Date) - $exitedAt).TotalSeconds -gt 20) { break }
+                        }
+                    }
+                    $fresh = (Test-Path -LiteralPath $licDll) -and ((Get-Item -LiteralPath $licDll).LastWriteTime -ge $startedAt.AddMinutes(-1) -or $installed)
+                    if ($installed -or ($setup.HasExited -and $fresh)) {
+                        Set-Reg $drewInstallKey "DrewInstaller" $autoHash
+                        $drewOk = $true
+                        if ($installed) { Write-Ok "Drew установлен (контроль хэша пройден)." }
+                        else { Write-Ok "Drew установлен. Хэш лицензионной сборки отличается от замера 15.09.2026 — установщик новее; повторно ставиться не будет." }
+                    }
+                    elseif ($setup.HasExited) { $failures++; Write-Fail "Установщик Drew завершился (код $($setup.ExitCode)), а файлы Drew не обновлены - запустите $($drewExe[0].Name) вручную." }
+                    else { $failures++; Write-Fail "Drew не установился за 6 минут - проверьте окно установщика." }
+                }
             }
         }
     }

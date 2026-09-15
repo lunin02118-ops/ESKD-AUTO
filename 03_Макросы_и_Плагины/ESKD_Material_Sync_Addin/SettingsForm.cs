@@ -829,10 +829,10 @@ namespace ESKD.MaterialSync
                 }
 
                 // 3. Load from registry
-                // D-13: канонические дефолты этой станции (HKCU ESKD_Settings)
-                string currentAuthor = "Лунин В.И.";
+                // Без ветки ESKD_Settings поля пустые: фамилию и организацию пишет установщик, чужие значения не подставляются.
+                string currentAuthor = "";
                 string currentChecker = "";
-                string currentOrg = "123";
+                string currentOrg = "";
                 int serviceEnabled = 1;
                 int autoSyncMat = 1;
                 int autoMass = 1;
@@ -931,9 +931,12 @@ namespace ESKD.MaterialSync
                     }
                 }
 
-                // Also sync back to SWPlus text files so MProp/DProp see the exact same values
-                SyncFullListToSwPlus(GetSwPlusFamPaths(), author, checker, cmbAuthor.Items);
-                SyncFirmsToSwPlus(GetSwPlusFirmPaths(), org, cmbOrg.Items);
+                // Списки MProp дописываются только в локальную копию SWPlus этого пользователя, из которой работает надстройка;
+                // копия в репозитории или в общей папке не меняется — она общая для всех.
+                string localFam = LocalSwPlusFile("MProp_Fam.txt");
+                string localFirm = LocalSwPlusFile("MProp_Firm.txt");
+                if (localFam != null) SyncFullListToSwPlus(new[] { localFam }, author, checker);
+                if (localFirm != null) SyncFirmsToSwPlus(new[] { localFirm }, org);
                 // MProp.ini не трогаем: его первая строка — флаг MProp «Очистка свойств» (MIni1), а не индекс фамилии (Д-29).
                 // Фамилию MProp берёт из свойств модели и списка MProp_Fam.txt.
             }
@@ -960,7 +963,33 @@ namespace ESKD.MaterialSync
             key.SetValue(valName, string.Join(";", items), RegistryValueKind.String);
         }
 
-        private static void SyncFullListToSwPlus(string[] paths, string primary, string secondary, ComboBox.ObjectCollection existingItems)
+        /// <summary>
+        /// Файл списка MProp в локальной копии SWPlus (ветка ESKD_Install\LocalRoot), если надстройка загружена из неё; иначе null.
+        /// </summary>
+        private static string LocalSwPlusFile(string fileName)
+        {
+            try
+            {
+                string localRoot;
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"Software\SolidWorks\ESKD_Install"))
+                {
+                    localRoot = key != null ? key.GetValue("LocalRoot") as string : null;
+                }
+                if (string.IsNullOrEmpty(localRoot)) return null;
+                string root = Path.GetFullPath(localRoot).TrimEnd('\\') + "\\";
+                string dll = Path.GetFullPath(typeof(SettingsForm).Assembly.Location);
+                if (!dll.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return null;
+                string path = Path.Combine(root, @"03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\MProp", fileName);
+                return File.Exists(path) ? path : null;
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("LocalSwPlusFile " + fileName, ex);
+                return null;
+            }
+        }
+
+        private static void SyncFullListToSwPlus(string[] paths, string primary, string secondary)
         {
             foreach (string path in paths)
             {
@@ -992,7 +1021,7 @@ namespace ESKD.MaterialSync
         }
 
         // Формат MProp: пары строк «организация» / «буквенный код». Новая организация добавляется в конец с пустым кодом.
-        private static void SyncFirmsToSwPlus(string[] paths, string primaryOrg, ComboBox.ObjectCollection existingItems)
+        private static void SyncFirmsToSwPlus(string[] paths, string primaryOrg)
         {
             if (string.IsNullOrEmpty(primaryOrg)) return;
             foreach (string path in paths)

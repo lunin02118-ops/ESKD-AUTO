@@ -2,6 +2,7 @@
 """T0 — статические проверки репозитория без SolidWorks."""
 import hashlib
 import json
+import os
 import re
 import subprocess
 import unittest
@@ -18,6 +19,14 @@ ADDIN = paths.ADDIN_DIR
 LEGACY_ALIASES = ("Разраб.", "Разработал", "п_Разраб", "DrawnBy", "DrawnDate", "Пров.", "п_Пров", "CheckedBy",
                   "Организация_ФБ", "\"Компания\"", "\"Firm\"", "\"Organization\"", "PartNo", "ГОСТ_Сортамент",
                   "ГОСТ_Материал")
+
+
+def need_built_addin(case, reason):
+    """Без собранной надстройки проверка пропускается; при публикации (ESKD_REQUIRE_BUILD=1) пропуск — провал,
+    иначе «зелёный» прогон без трёх проверок выглядел бы полным (аудит 15.09.2026, D3)."""
+    if os.environ.get("ESKD_REQUIRE_BUILD") == "1":
+        case.fail(reason + " — публикация требует собранную надстройку")
+    case.skipTest(reason)
 
 
 def addin_sources():
@@ -83,7 +92,7 @@ class StaticRepository(StaticTestCase):
         Master.ini на основные надписи источника, повторная установка сохраняет настройки макросов. Временный раздел
         реестра и временные папки; настоящий реестр не затрагивается."""
         if not paths.ADDIN_DLL.exists():
-            self.skipTest("нет собранной DLL")
+            need_built_addin(self, "нет собранной DLL")
         out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                               str(paths.TESTS / "tools" / "check_deploy_engine.ps1"), "-RepoRoot", str(ROOT)],
                              capture_output=True, timeout=600)
@@ -129,8 +138,13 @@ class StaticRepository(StaticTestCase):
         self.assertEqual(str(ROOT), configurator.find_source_root(str(setup_dir)))
         with tempfile.TemporaryDirectory() as foreign:
             self.assertIsNone(configurator.find_source_root(foreign), "запасной путь к инструментарию")
-        firms = configurator.read_firms(str(ROOT))
-        self.assertTrue(firms and all(firms), firms)
+        self.assertEqual([], configurator.read_firms(str(ROOT)), "общий список организаций должен быть пуст")
+        self.assertEqual([], configurator.read_families(str(ROOT)), "общий список фамилий должен быть пуст")
+        with tempfile.TemporaryDirectory() as filled:
+            mprop_dir = Path(filled) / configurator.SWPLUS / "MProp"
+            mprop_dir.mkdir(parents=True)
+            (mprop_dir / "MProp_Firm.txt").write_bytes("ТОО «Троя»\r\nТР\r\nАО Завод\r\n\r\n".encode("cp1251"))
+            self.assertEqual(["ТОО «Троя»", "АО Завод"], configurator.read_firms(filled), "пары «организация / код»")
         cmd = configurator.build_command("S.ps1", "Иванов И.И.", "", "Graceful")
         for flag in ("-NonInteractive", "-Utf8Output", "-CloseMode", "Graceful", "-Author", "Иванов И.И."):
             self.assertIn(flag, cmd)
@@ -168,6 +182,11 @@ class StaticRepository(StaticTestCase):
                          "прежняя сборка Drew удаляется msiexec /x с запросом прав")
         self.assertIn("Новая сборка не ставится", setup, "при отказе в правах новая сборка не ставится поверх старой")
         self.assertLess(setup.index("msiexec.exe"), setup.index("$drewExe[0].FullName -WorkingDirectory"), "удаление — до установки")
+        # аудит 15.09.2026 B1, B2: сбой запуска установщика не ждёт 6 минут; установленный этим же установщиком Drew
+        # не переустанавливается при каждом обновлении из-за расхождения хэша
+        self.assertIn("-PassThru -ErrorAction Stop", setup, "сбой запуска установщика Drew перехватывается сразу")
+        self.assertIn('Set-Reg $drewInstallKey "DrewInstaller" $autoHash', setup, "отпечаток установщика Drew не запоминается")
+        self.assertIn("$recordedAuto -eq $autoHash", setup, "Drew от того же установщика не признаётся установленным")
         self.assertNotIn("-Silent -NoActivate", setup, "старый вызов классического установщика убран")
         self.assertNotIn("Drew не активирован", setup)
         self.assertNotIn("Activation.code", setup)
@@ -184,8 +203,12 @@ class StaticRepository(StaticTestCase):
             self.assertNotIn(gone, configurator, f"артефакт активации не должен остаться в окне: {gone}")
 
     def test_T0_mprop_firm_is_pairs(self):
-        """T0: MProp_Firm.txt — пары «организация / код», имена не пустые (Д-25)."""
-        lines = (paths.SWPLUS / "MProp" / "MProp_Firm.txt").read_bytes().decode("cp1251").split("\r\n")
+        """T0: общие списки MProp пусты — фамилию и организацию каждый вписывает при установке (решение владельца
+        15.09.2026); если в MProp_Firm.txt что-то есть, это пары «организация / код» с непустыми именами (Д-25)."""
+        mprop = paths.SWPLUS / "MProp"
+        for name in ("MProp_Fam.txt", "MProp_Firm.txt"):
+            self.assertEqual(b"", (mprop / name).read_bytes().strip(), f"общий список {name} не пуст: чужие фамилии и организации уйдут всем")
+        lines = (mprop / "MProp_Firm.txt").read_bytes().decode("cp1251").split("\r\n")
         if lines and lines[-1] == "":
             lines = lines[:-1]
         self.assertEqual(0, len(lines) % 2, f"нечётное число строк: {lines}")
@@ -285,7 +308,7 @@ class StaticRepository(StaticTestCase):
     def test_T0_registration_module_in_sandbox(self):
         """T0: модуль регистрации во временном разделе HKCU пишет полную регистрацию с сырым CodeBase и снимает её (Д-28)."""
         if not paths.ADDIN_DLL.exists():
-            self.skipTest("нет собранной DLL")
+            need_built_addin(self, "нет собранной DLL")
         out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                               str(paths.TESTS / "tools" / "check_registration_module.ps1"),
                               "-ModulePath", str(ADDIN / "Register-EskdAddin.ps1"), "-DllPath", str(paths.ADDIN_DLL)],
@@ -488,7 +511,7 @@ class StaticRepository(StaticTestCase):
     def test_T0_dll_built_from_current_sources(self):
         """T0: build_manifest.json — хеши исходников совпадают с текущими файлами (Д-24)."""
         if not paths.ADDIN_DLL.exists():
-            self.skipTest("надстройка не собрана: запустите build.ps1")
+            need_built_addin(self, "надстройка не собрана: запустите build.ps1")
         manifest_path = ADDIN / "build_manifest.json"
         self.assertTrue(manifest_path.exists(), "нет build_manifest.json — DLL собрана не build.ps1")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
@@ -656,6 +679,31 @@ class StaticRepository(StaticTestCase):
             missing.apply({"Author": "Тестов Т.Т."})
             RegistrySnapshot(subkey, backup).capture().restore()
             self.assertIsNone(read(), "ключ, которого не было до прогона, не удалён")
+
+            # Прерванный прогон, после которого человек сам поправил настройки: снимок не откатывает его правки.
+            from eskd_e2e.guards import RegistryConflict
+            test_values = {"Author": "Тестов Т.Т.", "Checker": "Проверкин П.П.", "Organization": "ООО «Испытание»"}
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, subkey, 0, winreg.KEY_WRITE) as key:
+                winreg.SetValueEx(key, "Author", 0, winreg.REG_SZ, "Лунин В.И.")
+            RegistrySnapshot(subkey, backup, test_values).capture().apply(test_values)
+            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, subkey, 0, winreg.KEY_WRITE) as key:
+                winreg.SetValueEx(key, "Author", 0, winreg.REG_SZ, "Шалунов В.В.")
+                winreg.SetValueEx(key, "Organization", 0, winreg.REG_SZ, "ТОО «Троя»")
+            edited = read()
+            with self.assertRaises(RegistryConflict):
+                RegistrySnapshot(subkey, backup, test_values).capture()
+            self.assertEqual(edited, read(), "ручные правки откатились к старому снимку")
+            self.assertTrue(backup.exists(), "снимок удалён без решения человека")
+
+            # Тестовые подписи остались — снимок возвращается.
+            snap = RegistrySnapshot(subkey, backup, test_values)
+            snap._load_backup()
+            snap.apply(test_values)
+            recovered = RegistrySnapshot(subkey, backup, test_values).capture()
+            self.assertTrue(recovered.recovered)
+            self.assertEqual("Лунин В.И.", read()["Author"])
+            recovered.restore()
+            self.assertFalse(backup.exists())
         finally:
             try:
                 winreg.DeleteKey(winreg.HKEY_CURRENT_USER, subkey)
@@ -713,14 +761,41 @@ class StaticRepository(StaticTestCase):
         self.assertEqual([], unmarked, "документы с утверждениями v5 без пометки «Исторический документ»")
 
     def test_T0_library_matches_table_d2(self):
-        """T0 (К-13): библиотека материалов исправлена ровно по таблице Д-2 плана согласования и ответу «О-7 как советуешь»:
-        имена и matid не изменились, заменённые и ошибочные стандарты убраны, однострочные ТУ без дроби, «БТ» у листа
+        """T0 (К-13, аудит 15.09.2026 C1): библиотека материалов исправлена по таблице Д-2 плана согласования и ответу «О-7 как советуешь»:
+        имена в дереве по действующим ГОСТ, прежние имена сохранены копиями, заменённые и ошибочные стандарты убраны, однострочные ТУ без дроби, «БТ» у листа
         х/к, толщина листа Ст3сп определяет стандарт знаменателя, плотности стали 7850 и ABS 1050 (WP-4.5)."""
         import xml.etree.ElementTree as ET
         raw = Path(paths.MATERIAL_DB).read_bytes().decode("utf-16").replace('encoding="UTF-16"', 'encoding="UTF-8"')
-        materials = list(ET.fromstring(raw.encode("utf-8")).iter("material"))
-        self.assertEqual(114, len(materials), "число записей библиотеки")
+        root = ET.fromstring(raw.encode("utf-8"))
+        materials = list(root.iter("material"))
+        self.assertEqual(124, len(materials), "число записей библиотеки: 114 и 10 копий прежних имён")
         self.assertEqual(len(materials), len({m.get("matid") for m in materials}), "matid уникальны")
+        self.assertEqual(len(materials), len({m.get("name") for m in materials}), "имена уникальны — SolidWorks ищет материал по имени")
+
+        # Аудит 15.09.2026, C1: имена в дереве — по действующим ГОСТ; прежние имена — копиями в группе «99», чтобы старые
+        # модели нашли свой материал. У копии те же поля, что у переименованной записи.
+        custom_of = lambda m: {p.get("name"): p.get("value") or "" for p in m.findall("custom/prop")}
+        legacy_classes = [c for c in root.iter("classification") if c.get("name").startswith("99. Прежние наименования")]
+        self.assertEqual(1, len(legacy_classes), "нет группы прежних наименований")
+        legacy = legacy_classes[0].findall("material")
+        legacy_ids = {m.get("matid") for m in legacy}
+        active = [m for m in materials if m.get("matid") not in legacy_ids]
+        self.assertEqual(10, len(legacy), "копий прежних имён")
+        active_by_fields = {tuple(sorted(custom_of(m).items())): m.get("name") for m in active}
+        name_problems = []
+        for m in legacy:
+            if tuple(sorted(custom_of(m).items())) not in active_by_fields:
+                name_problems.append(f"прежнее имя «{m.get('name')}» без действующей записи с теми же полями")
+        for m in active:
+            for obsolete in ("ГОСТ 14637-89", "ГОСТ 14918-80", "ГОСТ 22233-2001"):
+                if obsolete in m.get("name"):
+                    name_problems.append(f"имя в дереве «{m.get('name')}» ссылается на {obsolete}")
+            c = custom_of(m)
+            if "ГОСТ 19903-2015" in c.get("Обозначение_ГОСТ", "") and "Ст3сп" in m.get("name"):
+                want = c.get("ГОСТ_Материал", "")
+                if want and want not in m.get("name"):
+                    name_problems.append(f"имя в дереве «{m.get('name')}» не по {want}")
+        self.assertEqual([], name_problems)
         problems = []
         for m in materials:
             name = m.get("name")

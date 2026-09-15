@@ -25,41 +25,78 @@ def solidworks_processes():
     return out
 
 
+class RegistryConflict(RuntimeError):
+    """Резервная копия прерванного прогона не совпадает с тем, что сейчас в реестре, — решать человеку."""
+
+
+def settings_backup_path(subkey=ESKD_SETTINGS_KEY):
+    """Один файл снимка на ключ реестра для всех рабочих копий репозитория, вне очищаемой папки прогонов."""
+    base = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "ESKD_Tests"
+    return base / ("settings_backup_" + subkey.replace("\\", "_") + ".json")
+
+
 class RegistrySnapshot:
     """Снимок значений ключа HKCU; restore() возвращает ключ в исходное состояние.
 
     С backup_path снимок до первой записи сохраняется в файл и удаляется только после restore(). Если прогон прерван
     (процесс убит, таймаут), следующий capture() сначала возвращает ключ из файла — иначе он снял бы как «исходные»
     тестовые значения, и фамилии из тестов остались бы в настройках пользователя навсегда.
+
+    С test_values ключ из файла возвращается, только если в реестре остались тестовые подписи. Если их нет и ключ не
+    совпадает со снимком, человек менял настройки после прерванного прогона: capture() бросает RegistryConflict и ничего
+    не трогает, а не откатывает его правки к старому снимку.
     """
 
-    def __init__(self, subkey=ESKD_SETTINGS_KEY, backup_path=None):
+    SIGNATURES = ("Author", "Checker", "Organization")
+
+    def __init__(self, subkey=ESKD_SETTINGS_KEY, backup_path=None, test_values=None):
         self.subkey = subkey
         self.backup_path = Path(backup_path) if backup_path else None
+        self.test_values = dict(test_values or {})
         self.existed = False
         self.values = {}
         self.recovered = False
 
-    def capture(self):
-        if self.backup_path is not None and self.backup_path.exists():
-            self._load_backup()
-            self.restore(keep_backup=True)
-            self.recovered = True
-            return self
-        self.values = {}
+    def _read(self):
+        values = {}
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.subkey, 0, winreg.KEY_READ) as key:
-                self.existed = True
                 i = 0
                 while True:
                     try:
                         name, value, kind = winreg.EnumValue(key, i)
                     except OSError:
                         break
-                    self.values[name] = (value, kind)
+                    values[name] = (value, kind)
                     i += 1
+            return True, values
         except FileNotFoundError:
-            self.existed = False
+            return False, values
+
+    def capture(self):
+        if self.backup_path is not None and self.backup_path.exists():
+            existed, current = self._read()
+            self._load_backup()
+            if self.test_values:
+                signatures = [n for n in self.SIGNATURES if isinstance(self.test_values.get(n), str)]
+                leftover = signatures and all(current.get(n, (None,))[0] == self.test_values[n] for n in signatures)
+                if not leftover:
+                    if existed == self.existed and current == self.values:
+                        self.backup_path.unlink()
+                    else:
+                        raise RegistryConflict(
+                            f"Найден снимок настроек прерванного прогона {self.backup_path}, но в HKCU\\{self.subkey} уже не "
+                            "тестовые подписи и не значения снимка: настройки меняли после прерывания. Ничего не изменено. "
+                            "Проверьте настройки ЕСКД; если они верны — удалите файл снимка и запустите тесты снова.")
+                else:
+                    self.restore(keep_backup=True)
+                    self.recovered = True
+                    return self
+            else:
+                self.restore(keep_backup=True)
+                self.recovered = True
+                return self
+        self.existed, self.values = self._read()
         self._save_backup()
         return self
 

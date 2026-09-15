@@ -27,11 +27,14 @@ $temp = Join-Path ([System.IO.Path]::GetTempPath()) ("eskd_setup_check_" + [guid
 New-Item -ItemType Directory -Path $temp | Out-Null
 try {
     if ($problems.Count -eq 0) {
-        # реальные справочники: существующие фамилия и организация — файлы не переписываются
-        foreach ($file in @("MProp\MProp_Fam.txt", "MProp\MProp_Firm.txt", "Master\Master.ini", "ТТ\TT.TXT", "ТТ\TT_Prof.txt")) {
+        # Общие списки MProp пусты (решение владельца 15.09.2026) — проверка на заполненных локальных списках пользователя;
+        # остальные файлы — реальные. Существующие фамилия и организация — файлы не переписываются.
+        foreach ($file in @("Master\Master.ini", "ТТ\TT.TXT", "ТТ\TT_Prof.txt")) {
             Copy-Item -LiteralPath (Join-Path $SwPlusRoot $file) -Destination (Join-Path $temp ([System.IO.Path]::GetFileName($file)))
         }
         $fam = Join-Path $temp "MProp_Fam.txt"; $firm = Join-Path $temp "MProp_Firm.txt"
+        [System.IO.File]::WriteAllText($fam, "Петров П.П.`r`nСидоров С.С.`r`n", $cp1251)
+        [System.IO.File]::WriteAllText($firm, "ТОО «Троя»`r`nТР`r`nАО «Завод»`r`n`r`n", $cp1251)
         $famBefore = [System.IO.File]::ReadAllBytes($fam); $firmBefore = [System.IO.File]::ReadAllBytes($firm)
         $firstFamily = ([System.IO.File]::ReadAllLines($fam, $cp1251) | Where-Object { $_.Trim() } | Select-Object -First 1)
         $firstFirm = ([System.IO.File]::ReadAllLines($firm, $cp1251) | Select-Object -First 1)

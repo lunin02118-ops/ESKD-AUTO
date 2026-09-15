@@ -27,6 +27,9 @@ $script:AddinFiles = @("ESKD_Material_Sync_v5.dll", "ESKD.exe", "ESKD_Sync.exe",
 # MyStandard() пяти макросов). Если файл уже есть в локальной копии, обновление его не заменяет.
 $script:SwPlusStateFiles = @(
     "MProp\MProp_Prof.txt", "MProp\MProp_Project.txt", "MProp\MProp.ini",
+    # Общие списки фамилий и организаций пусты (решение владельца 15.09.2026): каждый вписывает своё при установке,
+    # коллег добавляет в MProp сам — обновление эти списки не перезаписывает.
+    "MProp\MProp_Fam.txt", "MProp\MProp_Firm.txt",
     "DProp\DProp.ini", "SProp\SProp.ini",
     "SpecEditor\SpecEditor.ini", "SpecEditor\MyProperties_2.ini",
     "Master\Master.ini",
