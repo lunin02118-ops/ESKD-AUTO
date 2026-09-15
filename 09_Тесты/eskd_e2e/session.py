@@ -13,10 +13,12 @@
   * при остановке завершается только свой процесс SolidWorks.
 """
 import contextlib
+import ctypes
 import os
 import shutil
 import sys
 import time
+import winreg
 from pathlib import Path
 
 import pythoncom
@@ -57,12 +59,17 @@ class SwSession:
         self.probe = None
         self.journal = None
         self.registry = RegistrySnapshot(backup_path=settings_backup_path(), test_values=self.settings)
-        # Регистрация надстройки пользователя указывает на его локальную копию (установщик). На время прогона CodeBase
-        # направляется на проверяемую DLL и после прогона возвращается — тем же снимком с защитой от прерывания.
+        # Регистрация надстройки указывает на установленную локальную копию. На время прогона CodeBase направляется на
+        # проверяемую DLL и после прогона возвращается — снимком с защитой от прерывания, как ESKD_Settings. Ключи HKLM
+        # нужны там, где регистрация машинная: процессы администратора при отключённом UAC (EnableLUA = 0) не видят
+        # регистрацию COM из HKCU. Ключ, которого нет, не создаётся.
         self.addin_uri = "file:///" + str(Path(self.eskd_dll).resolve()).replace("\\", "/")
-        clsid = r"Software\Classes\CLSID\%s\InprocServer32" % paths.ADDIN_CLSID
-        self.addin_com = [RegistrySnapshot(key, settings_backup_path(key), {"CodeBase": self.addin_uri}, ("CodeBase",))
-                          for key in (clsid, clsid + "\\1.0.0.0")]
+        inproc = "Software\\Classes\\CLSID\\" + paths.ADDIN_CLSID + "\\InprocServer32"
+        keys = [(winreg.HKEY_CURRENT_USER, "HKCU", inproc), (winreg.HKEY_CURRENT_USER, "HKCU", inproc + "\\1.0.0.0"),
+                (winreg.HKEY_LOCAL_MACHINE, "HKLM", inproc), (winreg.HKEY_LOCAL_MACHINE, "HKLM", inproc + "\\1.0.0.0")]
+        self.addin_com = [RegistrySnapshot(key, settings_backup_path(prefix + "\\" + key), {"CodeBase": self.addin_uri},
+                                           ("CodeBase",), hive) for hive, prefix, key in keys
+                          if prefix == "HKCU" or ctypes.windll.shell32.IsUserAnAdmin()]
         self.eskd_loaded = False
         self._opened = []
         self._com_initialized = False
@@ -79,11 +86,11 @@ class SwSession:
                 snapshot.capture()
         except RegistryConflict as exc:
             raise SessionRefused(str(exc)) from exc
-        if not self.addin_com[0].existed:
+        if not any(snapshot.existed for snapshot in self.addin_com):
             self.registry.restore()
             for snapshot in self.addin_com:
                 snapshot.restore()
-            raise SessionRefused("Надстройка ЕСКД не зарегистрирована для пользователя: запустите окно установки или "
+            raise SessionRefused("Надстройка ЕСКД не зарегистрирована: запустите окно установки или "
                                  "03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/register_eskd.ps1.")
         for snapshot in self.addin_com:
             if snapshot.existed:
