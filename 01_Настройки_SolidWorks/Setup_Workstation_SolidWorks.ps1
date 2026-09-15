@@ -262,6 +262,19 @@ Write-Step "[3/9] Корпоративный профиль SolidWorks..."
 $regKeyUser = "HKEY_CURRENT_USER\" + $U.Substring("HKCU:\".Length)
 $backupRoot = Join-Path (Split-Path -Path $LocalRoot -Parent) "Backups"
 [void](Backup-SolidWorksRegistryKeys -BackupRoot $backupRoot -RegistryKeys @("$regKeyUser\SolidWorks\$SwVersion", "$regKeyUser\SolidWorks\AddInsStartup"))
+# Сброс к стандартным перед профилем: результат установки не зависит от прежних настроек ПК (решение владельца 15.09.2026).
+try {
+    $reset = Reset-EskdSolidWorksProfile -UserRoot $U -SwVersion $SwVersion
+    if ($reset.Existed) {
+        Write-Ok ("Настройки $SwVersion сброшены к стандартным; сохранены: " + $(if ($reset.Preserved) { $reset.Preserved -join ", " } else { "нечего" }) +
+                  ". Прежние — в $backupRoot")
+    } else {
+        Write-Info "Настроек $SwVersion у пользователя ещё нет — сбрасывать нечего."
+    }
+} catch {
+    $failures++
+    Write-Fail "Сброс настроек SolidWorks: $($_.Exception.Message)"
+}
 if (Test-Path -LiteralPath $layout.RegProfile) {
     $regText = [System.IO.File]::ReadAllText($layout.RegProfile, [System.Text.Encoding]::Unicode)
     $adapted = Convert-EskdRegProfile -Text $regText -SourceRoot $SourceRoot -LocalRoot $LocalRoot -SwVersion $SwVersion `
