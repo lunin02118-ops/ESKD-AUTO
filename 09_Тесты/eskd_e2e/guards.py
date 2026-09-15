@@ -49,8 +49,11 @@ class RegistrySnapshot:
 
     SIGNATURES = ("Author", "Checker", "Organization")
 
-    def __init__(self, subkey=ESKD_SETTINGS_KEY, backup_path=None, test_values=None):
+    def __init__(self, subkey=ESKD_SETTINGS_KEY, backup_path=None, test_values=None, signatures=None,
+                 hive=winreg.HKEY_CURRENT_USER):
         self.subkey = subkey
+        self.hive = hive
+        self.signatures = tuple(signatures or self.SIGNATURES)
         self.backup_path = Path(backup_path) if backup_path else None
         self.test_values = dict(test_values or {})
         self.existed = False
@@ -60,7 +63,7 @@ class RegistrySnapshot:
     def _read(self):
         values = {}
         try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, self.subkey, 0, winreg.KEY_READ) as key:
+            with winreg.OpenKey(self.hive, self.subkey, 0, winreg.KEY_READ) as key:
                 i = 0
                 while True:
                     try:
@@ -78,7 +81,7 @@ class RegistrySnapshot:
             existed, current = self._read()
             self._load_backup()
             if self.test_values:
-                signatures = [n for n in self.SIGNATURES if isinstance(self.test_values.get(n), str)]
+                signatures = [n for n in self.signatures if isinstance(self.test_values.get(n), str)]
                 leftover = signatures and all(current.get(n, (None,))[0] == self.test_values[n] for n in signatures)
                 if not leftover:
                     if existed == self.existed and current == self.values:
@@ -121,7 +124,7 @@ class RegistrySnapshot:
 
     def apply(self, values):
         """values: {имя: значение}; int → REG_DWORD, остальное → REG_SZ."""
-        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, self.subkey, 0, winreg.KEY_WRITE) as key:
+        with winreg.CreateKeyEx(self.hive, self.subkey, 0, winreg.KEY_WRITE) as key:
             for name, value in values.items():
                 if isinstance(value, int):
                     winreg.SetValueEx(key, name, 0, winreg.REG_DWORD, value)
@@ -131,11 +134,11 @@ class RegistrySnapshot:
     def restore(self, keep_backup=False):
         if not self.existed:
             try:
-                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, self.subkey)
+                winreg.DeleteKey(self.hive, self.subkey)
             except FileNotFoundError:
                 pass
         else:
-            with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, self.subkey, 0,
+            with winreg.CreateKeyEx(self.hive, self.subkey, 0,
                                     winreg.KEY_READ | winreg.KEY_WRITE) as key:
                 current = []
                 i = 0

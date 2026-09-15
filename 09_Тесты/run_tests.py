@@ -52,8 +52,10 @@ class Recorder(unittest.TextTestResult):
         super().startTest(test)
 
     def _rec(self, test, status, detail=""):
-        doc = getattr(getattr(test, test._testMethodName, None), "__doc__", "") or ""
-        defect = getattr(getattr(test, test._testMethodName, None), "__eskd_defect__", "")
+        # ошибка setUpClass приходит объектом _ErrorHolder без имени метода
+        method = getattr(test, getattr(test, "_testMethodName", ""), None)
+        doc = getattr(method, "__doc__", "") or ""
+        defect = getattr(method, "__eskd_defect__", "")
         self.records.append({"id": test.id(), "status": status, "detail": detail,
                              "seconds": round(time.time() - self._t0.get(test.id(), time.time()), 2),
                              "doc": doc.strip().splitlines()[0] if doc.strip() else "", "defect": defect})

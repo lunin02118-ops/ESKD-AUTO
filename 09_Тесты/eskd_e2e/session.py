@@ -13,10 +13,12 @@
   * при остановке завершается только свой процесс SolidWorks.
 """
 import contextlib
+import ctypes
 import os
 import shutil
 import sys
 import time
+import winreg
 from pathlib import Path
 
 import pythoncom
@@ -57,6 +59,17 @@ class SwSession:
         self.probe = None
         self.journal = None
         self.registry = RegistrySnapshot(backup_path=settings_backup_path(), test_values=self.settings)
+        # Регистрация надстройки указывает на установленную локальную копию. На время прогона CodeBase направляется на
+        # проверяемую DLL и после прогона возвращается — снимком с защитой от прерывания, как ESKD_Settings. Ключи HKLM
+        # нужны там, где регистрация машинная: процессы администратора при отключённом UAC (EnableLUA = 0) не видят
+        # регистрацию COM из HKCU. Ключ, которого нет, не создаётся.
+        self.addin_uri = "file:///" + str(Path(self.eskd_dll).resolve()).replace("\\", "/")
+        inproc = "Software\\Classes\\CLSID\\" + paths.ADDIN_CLSID + "\\InprocServer32"
+        keys = [(winreg.HKEY_CURRENT_USER, "HKCU", inproc), (winreg.HKEY_CURRENT_USER, "HKCU", inproc + "\\1.0.0.0"),
+                (winreg.HKEY_LOCAL_MACHINE, "HKLM", inproc), (winreg.HKEY_LOCAL_MACHINE, "HKLM", inproc + "\\1.0.0.0")]
+        self.addin_com = [RegistrySnapshot(key, settings_backup_path(prefix + "\\" + key), {"CodeBase": self.addin_uri},
+                                           ("CodeBase",), hive) for hive, prefix, key in keys
+                          if prefix == "HKCU" or ctypes.windll.shell32.IsUserAnAdmin()]
         self.eskd_loaded = False
         self._opened = []
         self._com_initialized = False
@@ -69,8 +82,19 @@ class SwSession:
         self.run_dir.mkdir(parents=True, exist_ok=True)
         try:
             self.registry.capture()
+            for snapshot in self.addin_com:
+                snapshot.capture()
         except RegistryConflict as exc:
             raise SessionRefused(str(exc)) from exc
+        if not any(snapshot.existed for snapshot in self.addin_com):
+            self.registry.restore()
+            for snapshot in self.addin_com:
+                snapshot.restore()
+            raise SessionRefused("Надстройка ЕСКД не зарегистрирована: запустите окно установки или "
+                                 "03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/register_eskd.ps1.")
+        for snapshot in self.addin_com:
+            if snapshot.existed:
+                snapshot.apply({"CodeBase": self.addin_uri})
         if self.registry.recovered:
             print(f"ESKD_Settings восстановлены из {self.registry.backup_path}: предыдущий прогон был прерван "
                   "до восстановления настроек пользователя", file=sys.stderr)
@@ -149,6 +173,8 @@ class SwSession:
             if foreign:
                 print(f"SolidWorks с PID {foreign} запущен не тестами и оставлен работать", file=sys.stderr)
             self.registry.restore()
+            for snapshot in self.addin_com:
+                snapshot.restore()
             if self._com_initialized:
                 pythoncom.CoUninitialize()
                 self._com_initialized = False
