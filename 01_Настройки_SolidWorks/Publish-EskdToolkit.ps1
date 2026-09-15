@@ -2,8 +2,8 @@
 .SYNOPSIS
     Публикация инструментария ЕСКД в общую папку (администратор).
 .DESCRIPTION
-    1. Проверяет автотесты static (без SolidWorks) — пропуск ключом -SkipTests.
-    2. Собирает надстройку ЕСКД (build.ps1) и окно настройки (PyInstaller) — пропуск ключом -SkipBuild.
+    1. Собирает надстройку ЕСКД (build.ps1) и окно настройки (PyInstaller) — пропуск ключом -SkipBuild.
+    2. Проверяет автотесты static (без SolidWorks) на собранной надстройке — пропуск ключом -SkipTests.
     3. Копирует репозиторий в папку -Target зеркалом robocopy без служебных папок разработки.
     4. Последним пишет toolkit_release.json: версия, коммит, дата, кто опубликовал.
 
@@ -51,12 +51,6 @@ $commit = (& git -C $repo rev-parse --short HEAD 2>$null)
 $dirty = @(& git -C $repo status --porcelain --untracked-files=no 2>$null).Count -gt 0
 if ($dirty) { Write-Host "[ВНИМАНИЕ] В репозитории есть незакоммиченные изменения — они тоже будут опубликованы." -ForegroundColor Yellow }
 
-if (-not $SkipTests) {
-    Write-Host "`nАвтотесты static..." -ForegroundColor Gray
-    & python (Join-Path $repo "09_Тесты\run_tests.py") static
-    if ($LASTEXITCODE -ne 0) { Stop-Publish "Автотесты не прошли — публикация отменена." }
-}
-
 if (-not $SkipBuild) {
     Write-Host "`nСборка надстройки ЕСКД..." -ForegroundColor Gray
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\build.ps1")
@@ -71,6 +65,14 @@ if (-not $SkipBuild) {
 }
 if (-not (Test-Path -LiteralPath (Join-Path $repo "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\ESKD_Material_Sync_v5.dll"))) {
     Stop-Publish "Нет собранной надстройки ESKD_Material_Sync_v5.dll."
+}
+
+if (-not $SkipTests) {
+    # После сборки: проверки собранной надстройки обязаны выполниться, пропуск из-за отсутствия DLL — провал.
+    Write-Host "`nАвтотесты static..." -ForegroundColor Gray
+    $env:ESKD_REQUIRE_BUILD = "1"
+    try { & python (Join-Path $repo "09_Тесты\run_tests.py") static } finally { Remove-Item Env:\ESKD_REQUIRE_BUILD -ErrorAction SilentlyContinue }
+    if ($LASTEXITCODE -ne 0) { Stop-Publish "Автотесты не прошли — публикация отменена." }
 }
 
 Write-Host "`nКопирование в $Target ..." -ForegroundColor Gray

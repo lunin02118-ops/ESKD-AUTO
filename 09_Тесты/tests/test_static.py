@@ -2,6 +2,7 @@
 """T0 — статические проверки репозитория без SolidWorks."""
 import hashlib
 import json
+import os
 import re
 import subprocess
 import unittest
@@ -18,6 +19,14 @@ ADDIN = paths.ADDIN_DIR
 LEGACY_ALIASES = ("Разраб.", "Разработал", "п_Разраб", "DrawnBy", "DrawnDate", "Пров.", "п_Пров", "CheckedBy",
                   "Организация_ФБ", "\"Компания\"", "\"Firm\"", "\"Organization\"", "PartNo", "ГОСТ_Сортамент",
                   "ГОСТ_Материал")
+
+
+def need_built_addin(case, reason):
+    """Без собранной надстройки проверка пропускается; при публикации (ESKD_REQUIRE_BUILD=1) пропуск — провал,
+    иначе «зелёный» прогон без трёх проверок выглядел бы полным (аудит 15.09.2026, D3)."""
+    if os.environ.get("ESKD_REQUIRE_BUILD") == "1":
+        case.fail(reason + " — публикация требует собранную надстройку")
+    case.skipTest(reason)
 
 
 def addin_sources():
@@ -83,7 +92,7 @@ class StaticRepository(StaticTestCase):
         Master.ini на основные надписи источника, повторная установка сохраняет настройки макросов. Временный раздел
         реестра и временные папки; настоящий реестр не затрагивается."""
         if not paths.ADDIN_DLL.exists():
-            self.skipTest("нет собранной DLL")
+            need_built_addin(self, "нет собранной DLL")
         out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                               str(paths.TESTS / "tools" / "check_deploy_engine.ps1"), "-RepoRoot", str(ROOT)],
                              capture_output=True, timeout=600)
@@ -290,7 +299,7 @@ class StaticRepository(StaticTestCase):
     def test_T0_registration_module_in_sandbox(self):
         """T0: модуль регистрации во временном разделе HKCU пишет полную регистрацию с сырым CodeBase и снимает её (Д-28)."""
         if not paths.ADDIN_DLL.exists():
-            self.skipTest("нет собранной DLL")
+            need_built_addin(self, "нет собранной DLL")
         out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                               str(paths.TESTS / "tools" / "check_registration_module.ps1"),
                               "-ModulePath", str(ADDIN / "Register-EskdAddin.ps1"), "-DllPath", str(paths.ADDIN_DLL)],
@@ -493,7 +502,7 @@ class StaticRepository(StaticTestCase):
     def test_T0_dll_built_from_current_sources(self):
         """T0: build_manifest.json — хеши исходников совпадают с текущими файлами (Д-24)."""
         if not paths.ADDIN_DLL.exists():
-            self.skipTest("надстройка не собрана: запустите build.ps1")
+            need_built_addin(self, "надстройка не собрана: запустите build.ps1")
         manifest_path = ADDIN / "build_manifest.json"
         self.assertTrue(manifest_path.exists(), "нет build_manifest.json — DLL собрана не build.ps1")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
