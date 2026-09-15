@@ -245,4 +245,77 @@ function Get-EskdRelease {
     return [pscustomobject]@{ Version = [string]$json.version; Commit = [string]$json.commit; Date = [string]$json.date }
 }
 
+function Read-EskdRegTree {
+    # Значения и подразделы ключа HKCU (RegistryKey .NET: имена и типы без раскрытия %переменных%).
+    param([Microsoft.Win32.RegistryKey]$Key)
+    $values = foreach ($name in $Key.GetValueNames()) {
+        [pscustomobject]@{ Name = $name; Kind = $Key.GetValueKind($name)
+                           Value = $Key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) }
+    }
+    $children = foreach ($childName in $Key.GetSubKeyNames()) {
+        $child = $Key.OpenSubKey($childName)
+        try { [pscustomobject]@{ Name = $childName; Tree = (Read-EskdRegTree -Key $child) } } finally { $child.Close() }
+    }
+    return [pscustomobject]@{ Values = @($values); Children = @($children) }
+}
+
+function Write-EskdRegTree {
+    param([Microsoft.Win32.RegistryKey]$Key, $Tree)
+    foreach ($v in $Tree.Values) { $Key.SetValue($v.Name, $v.Value, $v.Kind) }
+    foreach ($c in $Tree.Children) {
+        $child = $Key.CreateSubKey($c.Name)
+        try { Write-EskdRegTree -Key $child -Tree $c.Tree } finally { $child.Close() }
+    }
+}
+
+function Reset-EskdSolidWorksProfile {
+    <#
+    Сброс настроек пользователя SolidWorks перед импортом корпоративного профиля (решение владельца 15.09.2026): раздел
+    HKCU\...\SolidWorks\<версия> удаляется целиком, как «Сброс настроек» SolidWorks Rx, чтобы результат установки не
+    зависел от прежнего состояния ПК. Сохраняются только данные пользователя, а не настройки: принятие лицензионного
+    соглашения (Security), списки последних файлов и папок, путь Toolbox. Лицензии, надстройки при запуске и ESKD_Settings
+    лежат вне раздела версии и не затрагиваются. Возвращает сводку: Existed, Preserved.
+    #>
+    param([Parameter(Mandatory = $true)][string]$UserRoot, [Parameter(Mandatory = $true)][string]$SwVersion)
+    if ($UserRoot -notmatch '^HKCU:\\(.+)$') { throw "Сброс только в HKCU: $UserRoot" }
+    $sub = $Matches[1].TrimEnd('\') + "\SolidWorks\$SwVersion"
+    $hkcu = [Microsoft.Win32.Registry]::CurrentUser
+    $keepTrees = @("Security", "Recent File List", "Recent Folder List", "Recent Macro File List")
+    $keepValues = @(@{ Key = "General"; Name = "Toolbox Data Location" })
+    $version = $hkcu.OpenSubKey($sub)
+    if ($null -eq $version) { return [pscustomobject]@{ Existed = $false; Preserved = @() } }
+    $saved = @(); $savedValues = @()
+    try {
+        foreach ($name in $keepTrees) {
+            $k = $version.OpenSubKey($name)
+            if ($k) { try { $saved += [pscustomobject]@{ Name = $name; Tree = (Read-EskdRegTree -Key $k) } } finally { $k.Close() } }
+        }
+        foreach ($item in $keepValues) {
+            $k = $version.OpenSubKey($item.Key)
+            if ($k) {
+                try {
+                    if ($k.GetValueNames() -contains $item.Name) {
+                        $savedValues += [pscustomobject]@{ Key = $item.Key; Name = $item.Name; Kind = $k.GetValueKind($item.Name)
+                                                           Value = $k.GetValue($item.Name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) }
+                    }
+                } finally { $k.Close() }
+            }
+        }
+    } finally { $version.Close() }
+
+    $hkcu.DeleteSubKeyTree($sub, $false)
+    $restored = $hkcu.CreateSubKey($sub)
+    try {
+        foreach ($s in $saved) {
+            $k = $restored.CreateSubKey($s.Name)
+            try { Write-EskdRegTree -Key $k -Tree $s.Tree } finally { $k.Close() }
+        }
+        foreach ($v in $savedValues) {
+            $k = $restored.CreateSubKey($v.Key)
+            try { $k.SetValue($v.Name, $v.Value, $v.Kind) } finally { $k.Close() }
+        }
+    } finally { $restored.Close() }
+    return [pscustomobject]@{ Existed = $true; Preserved = @($saved.Name) + @($savedValues | ForEach-Object { "$($_.Key)\$($_.Name)" }) }
+}
+
 Export-ModuleMember -Function *-Eskd*, Write-SwPlusLines, Add-SwPlusFamily, Add-SwPlusFirm

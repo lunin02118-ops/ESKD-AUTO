@@ -152,7 +152,26 @@ try {
     [System.IO.File]::WriteAllText((Join-Path $localSwPlus "Master\Master.ini"), (($masterLines -join "`r`n") + "`r`n"), $cp1251)
     $sort = Join-Path $localSwPlus "MProp\MProp_Sort.txt"
     [System.IO.File]::WriteAllText($sort, "испорчено", $cp1251)
+    # Сброс перед профилем: личные настройки пропадают, данные пользователя (соглашение, последние файлы, Toolbox) остаются
+    New-Item -Path "$swKey\Toolbars\Моя панель" -Force | Out-Null
+    Set-ItemProperty -LiteralPath "$swKey\Toolbars\Моя панель" -Name "Visible" -Value 1
+    Set-ItemProperty -LiteralPath "$swKey\ExtReferences" -Name "Sheet Format Folders" -Value "C:\Чужие форматки"
+    New-Item -Path "$swKey\Security" -Force | Out-Null
+    Set-ItemProperty -LiteralPath "$swKey\Security" -Name "EULA Accepted 2025 TEST" -Value "Yes"
+    New-Item -Path "$swKey\Recent File List" -Force | Out-Null
+    Set-ItemProperty -LiteralPath "$swKey\Recent File List" -Name "File1" -Value "C:\Проект\Деталь.sldprt"
+    Set-ItemProperty -LiteralPath "$swKey\General" -Name "Toolbox Data Location" -Value "C:\Мой Toolbox"
     $code2, $output2 = & $run
+    $backups = @(Get-ChildItem -LiteralPath (Join-Path (Split-Path -Path $local -Parent) "Backups") -Recurse -Filter "*SOLIDWORKS 2025*.reg" -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Length -gt 0 -and [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::Unicode).Contains("Моя панель") })
+    Expect "сброс: резервная копия раздела версии с прежними настройками создана" ($backups.Count -ge 1) $true
+    Expect "сброс: ответы «Больше не показывать» из профиля" ((Get-Item -LiteralPath "$swKey\General\DontAskAgainOptions" -ErrorAction SilentlyContinue).ValueCount -gt 0) $true
+    Expect "сброс: личная панель убрана" (Test-Path -LiteralPath "$swKey\Toolbars\Моя панель") $false
+    Expect "сброс: чужой путь форматок заменён профилем" (Read-Value "$swKey\ExtReferences" "Sheet Format Folders") $sheetFormats
+    Expect "сброс: принятие соглашения сохранено" (Read-Value "$swKey\Security" "EULA Accepted 2025 TEST") "Yes"
+    Expect "сброс: последние файлы сохранены" (Read-Value "$swKey\Recent File List" "File1") "C:\Проект\Деталь.sldprt"
+    Expect "сброс: путь Toolbox сохранён" (Read-Value "$swKey\General" "Toolbox Data Location") "C:\Мой Toolbox"
+    Expect "сброс: фамилия вне раздела версии не тронута" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
     $output += "`n--- повторная установка ---`n" + $output2
     Expect "код выхода повторной установки" $code2 0
     Expect "профили MProp пользователя сохранены" ([System.IO.File]::ReadAllText($prof, $cp1251)) $profText

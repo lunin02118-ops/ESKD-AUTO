@@ -146,17 +146,23 @@ function Backup-SolidWorksRegistryKeys {
     param([string]$BackupRoot, [string[]]$RegistryKeys)
     $backupDir = Join-Path $BackupRoot ("Backup_" + (Get-Date -Format "yyyyMMdd_HHmmss"))
     New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-    $ok = 0
+    # Возвращает пути ветвей, для которых копия не создана. Ключи — в форме HKEY_CURRENT_USER\…: прежняя проверка
+    # переводила только «HKCU\…», поэтому ни одна ветка не копировалась (аудит 15.09.2026).
+    $failed = @()
     foreach ($key in $RegistryKeys) {
-        if (-not (Test-Path ($key -replace '^HKCU\\', 'HKCU:\'))) { continue }
+        if (-not (Test-Path -LiteralPath ("Registry::" + $key))) { continue }
         $outFile = Join-Path $backupDir ((($key -replace '[\\/:*?"<>|]', '_')) + ".reg")
         $null = & reg.exe export "$key" "$outFile" /y 2>&1
-        if ($LASTEXITCODE -eq 0) { $ok++ } else { Write-Warn "Резервная копия ветки '$key' не создана (код $LASTEXITCODE)." }
+        if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $outFile) -and (Get-Item -LiteralPath $outFile).Length -gt 0) {
+            Write-Ok "Резервная копия: $outFile"
+        } else {
+            $failed += $key
+            Write-Warn "Резервная копия ветки '$key' не создана (код $LASTEXITCODE)."
+        }
     }
     Get-ChildItem -LiteralPath $BackupRoot -Directory -Filter "Backup_*" -ErrorAction SilentlyContinue |
         Sort-Object Name -Descending | Select-Object -Skip 5 | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    if ($ok) { Write-Ok "Резервная копия реестра: $backupDir" }
-    return $backupDir
+    return ,$failed
 }
 
 function Set-Reg($Path, $Name, $Value, $Type = "String") {
@@ -261,7 +267,22 @@ if (Add-SwPlusFirm -Path (Join-Path $mprop "MProp_Firm.txt") -Name $Firm) {
 Write-Step "[3/9] Корпоративный профиль SolidWorks..."
 $regKeyUser = "HKEY_CURRENT_USER\" + $U.Substring("HKCU:\".Length)
 $backupRoot = Join-Path (Split-Path -Path $LocalRoot -Parent) "Backups"
-[void](Backup-SolidWorksRegistryKeys -BackupRoot $backupRoot -RegistryKeys @("$regKeyUser\SolidWorks\$SwVersion", "$regKeyUser\SolidWorks\AddInsStartup"))
+$backupFailed = Backup-SolidWorksRegistryKeys -BackupRoot $backupRoot -RegistryKeys @("$regKeyUser\SolidWorks\$SwVersion", "$regKeyUser\SolidWorks\AddInsStartup")
+# Сброс к стандартным перед профилем: результат установки не зависит от прежних настроек ПК (решение владельца 15.09.2026).
+# Без удачной резервной копии раздела версии сброс не выполняется — настройки удаляются только с возможностью вернуть.
+try {
+    if ($backupFailed -contains "$regKeyUser\SolidWorks\$SwVersion") { throw "нет резервной копии $regKeyUser\SolidWorks\$SwVersion — сброс отменён" }
+    $reset = Reset-EskdSolidWorksProfile -UserRoot $U -SwVersion $SwVersion
+    if ($reset.Existed) {
+        Write-Ok ("Настройки $SwVersion сброшены к стандартным; сохранены: " + $(if ($reset.Preserved) { $reset.Preserved -join ", " } else { "нечего" }) +
+                  ". Прежние — в $backupRoot")
+    } else {
+        Write-Info "Настроек $SwVersion у пользователя ещё нет — сбрасывать нечего."
+    }
+} catch {
+    $failures++
+    Write-Fail "Сброс настроек SolidWorks: $($_.Exception.Message)"
+}
 if (Test-Path -LiteralPath $layout.RegProfile) {
     $regText = [System.IO.File]::ReadAllText($layout.RegProfile, [System.Text.Encoding]::Unicode)
     $adapted = Convert-EskdRegProfile -Text $regText -SourceRoot $SourceRoot -LocalRoot $LocalRoot -SwVersion $SwVersion `
@@ -327,20 +348,46 @@ foreach ($g in $unwanted) {
     }
 }
 $activeGuid = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
+$swToolsGuid = "{59959DFA-3229-4B86-852E-52ABF2BDB8C0}"
+$drewGuid = "{08C4BC0B-C36C-470E-A0EA-02232F023333}"
 foreach ($ctx in @("PartContext", "AssyContext", "DrwContext")) {
     $ctxPath = "$swRoot\User Interface\CommandManager\$ctx"
     if (-not (Test-Path -LiteralPath $ctxPath)) { continue }
     foreach ($gb in @("AssyContext", "DrwContext", "EditPartContext", "LAVContext", "PartContext", "QAT")) {
         Remove-Item -LiteralPath (Join-Path $ctxPath $gb) -Recurse -Force -ErrorAction SilentlyContinue
     }
-    foreach ($tab in @(Get-ChildItem -LiteralPath $ctxPath -ErrorAction SilentlyContinue)) {
+    $seen = @{}
+    $tabs = @(Get-ChildItem -LiteralPath $ctxPath -ErrorAction SilentlyContinue) | Sort-Object {
+        if ($_.PSChildName -match '^Tab(\d+)$') { [int]$Matches[1] } else { 9999 }
+    }
+    foreach ($tab in $tabs) {
         $ref = [string](Get-RegValue $tab.PSPath "RefName")
         $props = [string](Get-RegValue $tab.PSPath "Tab Props")
         $mod = [string](Get-RegValue $tab.PSPath "ModuleName")
         $garbage = ($ref -match "OnCad|Ounan|Semantic") -or ($props -match "OnCad|Ounan|Semantic") -or ($mod -match "03412ba8|7A2F5C31|FF8D50772E2[134]") -or
             ($tab.PSChildName -like "Tab*" -and -not $ref.Trim() -and (-not $props.Trim() -or $props.StartsWith("0,")))
         if ($garbage) { Remove-Item -LiteralPath $tab.PSPath -Recurse -Force -ErrorAction SilentlyContinue; continue }
+
+        $dedupKey = $null
         if ($ref -match "ЕСКД" -or $mod -eq $activeGuid) {
+            $dedupKey = "ЕСКД"
+        } elseif ($ref -match "SWTools" -or $mod -eq $swToolsGuid) {
+            $dedupKey = "SWTools"
+        } elseif ($ref -match "Drew" -or $mod -eq $drewGuid) {
+            $dedupKey = "Drew"
+        } elseif ($ref.Trim() -ne "") {
+            $dedupKey = $ref.Trim()
+        }
+
+        if ($dedupKey) {
+            if ($seen.ContainsKey($dedupKey)) {
+                Remove-Item -LiteralPath $tab.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+                continue
+            }
+            $seen[$dedupKey] = $true
+        }
+
+        if ($dedupKey -eq "ЕСКД") {
             Set-Reg $tab.PSPath "RefName" "ЕСКД"
             Set-Reg $tab.PSPath "ModuleName" $activeGuid
             Set-Reg $tab.PSPath "Tab Props" "ЕСКД,1,1,-1"
@@ -576,6 +623,33 @@ if ($sandbox -or $SkipDrew) {
         $marker = Join-Path $env:APPDATA "CAD Booster\Drew\LicenseKey.skm"
         if (Test-Path -LiteralPath $marker) { Write-Ok "Лицензия Drew: встроенная, активация не требуется." }
         else { Write-Warn "Лицензия Drew: нет файла-маркера ($marker) - переустановите Drew галочкой." }
+
+        # Профиль оформления Drew (форматки ГОСТ, шаблон чертежа) — всегда из инструментария, чтобы результат не зависел от
+        # того, что было на ПК. В эталоне пути записаны через %TOOLKIT% и заменяются папкой инструментария (источником);
+        # прежний файл пользователя сохраняется в резервную копию.
+        $drewConfigDir = Join-Path $env:APPDATA "CAD Booster\Drew"
+        $drewBlueprintsTarget = Join-Path $drewConfigDir "Drew-Blueprints.xml"
+        $drewBlueprintsMaster = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation\Drew-Blueprints.xml"
+        if (Test-Path -LiteralPath $drewBlueprintsMaster) {
+            try {
+                New-Item -ItemType Directory -Path $drewConfigDir -Force | Out-Null
+                if (Test-Path -LiteralPath $drewBlueprintsTarget) {
+                    $drewBackup = Join-Path $env:LOCALAPPDATA ("ESKD\Backups\Drew-Blueprints_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".xml")
+                    New-Item -ItemType Directory -Path (Split-Path -Parent $drewBackup) -Force | Out-Null
+                    Copy-Item -LiteralPath $drewBlueprintsTarget -Destination $drewBackup -Force -ErrorAction Stop
+                }
+                $xmlContent = [System.IO.File]::ReadAllText($drewBlueprintsMaster, [System.Text.Encoding]::UTF8)
+                $toolkit = [System.Security.SecurityElement]::Escape($SourceRoot.TrimEnd('\'))
+                $updated = $xmlContent.Replace("%TOOLKIT%", $toolkit)
+                [xml]$updated | Out-Null
+                [System.IO.File]::WriteAllText($drewBlueprintsTarget, $updated, (New-Object System.Text.UTF8Encoding($true)))
+                Write-Ok "Профиль оформления Drew: форматки и шаблон чертежа из $SourceRoot"
+            } catch {
+                Write-Warn "Профиль оформления Drew не записан: $($_.Exception.Message)"
+            }
+        } else {
+            Write-Warn "Эталон профиля Drew не найден: $drewBlueprintsMaster"
+        }
     } else {
         Write-Warn "Модуль Drew не найден и не установлен."
     }

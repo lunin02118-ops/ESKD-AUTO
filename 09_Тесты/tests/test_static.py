@@ -77,6 +77,36 @@ def matching_brace(text, open_index):
 class StaticRepository(StaticTestCase):
 
     @tags("smoke")
+    def test_T0_powershell_scripts_with_cyrillic_have_bom(self):
+        """T0 (PR №1, 15.09.2026): сценарии PowerShell с кириллицей — в UTF-8 с BOM. Windows PowerShell 5.1, которым
+        запускают окно установки и батник, читает файл без BOM как ANSI: кириллица ломается, установщик не разбирается."""
+        bad = []
+        for script in list(ROOT.rglob("*.ps1")) + list(ROOT.rglob("*.psm1")):
+            if any(part in (".git", "08_Результаты_Тестирования", "99_Архив") for part in script.parts):
+                continue
+            data = script.read_bytes()
+            if any(b > 127 for b in data) and not data.startswith((b"\xef\xbb\xbf", b"\xff\xfe")):
+                bad.append(str(script.relative_to(ROOT)))
+        self.assertEqual([], bad, "сценарии с кириллицей без BOM")
+
+    def test_T0_drew_blueprints_have_no_machine_paths(self):
+        """T0 (PR №1): эталон профиля Drew — пути через %TOOLKIT% на форматки и шаблон инструментария, без путей ПК
+        разработчика; каждая форматка из профиля существует; линии гибов на листе развёртки видны (решение по DXF)."""
+        import xml.etree.ElementTree as ET
+        path = ROOT / "03_Макросы_и_Плагины" / "Drw_System_Automation" / "Drew-Blueprints.xml"
+        text = path.read_text(encoding="utf-8-sig")
+        self.assertNotRegex(text, r"(?i)[a-z]:\\", "абсолютный путь в эталоне профиля Drew")
+        root = ET.fromstring(text)
+        paths_in_xml = [e.text for e in root.iter() if e.tag in ("Path", "FullPath") and e.text]
+        self.assertTrue(paths_in_xml, "в профиле нет путей")
+        missing = [p for p in paths_in_xml if not p.startswith("%TOOLKIT%\\") or not (ROOT / p[len("%TOOLKIT%\\"):]).exists()]
+        self.assertEqual([], missing, "пути профиля Drew не на существующие файлы инструментария")
+        self.assertEqual(["false"], [e.text for e in root.iter("HideBendLinesFlatPatternSheet")], "линии гибов скрыты")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn('Replace("%TOOLKIT%", $toolkit)', setup, "установщик не подставляет папку инструментария")
+        self.assertNotIn("$layout.DrwAutomation", setup, "поле раскладки, которого нет")
+
+    @tags("smoke")
     def test_T0_installer_batch_is_ascii_and_finds_setup(self):
         """T0: УСТАНОВИТЬ_ЕСКД.bat — только ASCII, путь к Setup находится маской (Д-23), права администратора не
         запрашиваются: у повышенного процесса нет подключённого сетевого диска и HKCU — другого пользователя."""
