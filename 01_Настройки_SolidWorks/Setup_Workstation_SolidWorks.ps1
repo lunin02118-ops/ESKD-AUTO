@@ -679,18 +679,20 @@ if ($SwInternetBlock) {
     } else {
         Write-Info "Нужны права администратора - откроется запрос UAC (два раза не потребуется)..."
         $sbCmd = "& '{0}' -Mode apply; & '{0}' -Mode hosts-apply" -f $sb
+        # Ожидание ограничено, чтобы окно установки не висело бесконечно. Первое применение создаёт ~300 правил
+        # брандмауэра и на новом ПК идёт 2-3 минуты, поэтому запас 10 минут. Процесс администратора из обычного
+        # процесса не остановить - по истечении срока он продолжает работу сам, установка идёт дальше.
+        $uacState = "declined"
         try {
             $uacProc = Start-Process powershell.exe -Verb RunAs -PassThru -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command',$sbCmd
-            if ($uacProc) {
-                $finished = $uacProc.WaitForExit(120000)
-                if (-not $finished) {
-                    Write-Warn "Превышено время ожидания UAC (2 мин) - процесс остановлен, отучение от сети пропущено."
-                    try { $uacProc.Kill() } catch {}
-                }
-            }
+            $uacState = "done"
+            if ($uacProc -and -not $uacProc.WaitForExit(600000)) { $uacState = "timeout" }
         } catch { Write-Warn "UAC отклонён - отучение от сети пропущено." }
         $cnt = @(Get-NetFirewallRule -DisplayName 'Block SW Internet*' -ErrorAction SilentlyContinue).Count
-        if ($cnt -ge 300) { Write-Ok "Правил Block SW Internet: $cnt (применено)." }
+        if ($uacState -eq "timeout") {
+            Write-Warn "Отучение от сети не завершилось за 10 минут и продолжается в отдельном окне; правил пока: $cnt. Проверьте позже."
+        } elseif ($cnt -ge 300) { Write-Ok "Правил Block SW Internet: $cnt (применено)." }
+        elseif ($uacState -eq "done") { Write-Warn "Правил Block SW Internet: $cnt - отучение от сети завершилось не полностью." }
         else { Write-Warn "Правил Block SW Internet: $cnt - похоже, UAC не подтверждён." }
     }
 } else {
