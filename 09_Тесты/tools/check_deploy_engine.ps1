@@ -120,6 +120,13 @@ try {
     Expect "организация" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Organization") "ООО «Проверка»"
     Expect "ESKD_Install: источник" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "SourceRoot") $source
     Expect "ESKD_Install: итог" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "LastResult") "OK"
+    # Панель быстрого доступа: без базовых Btn0..Btn10 SolidWorks 2025 при запуске стирает её вместе с кнопками SWPlus
+    $qat = "$swKey\User Interface\CommandManager\QAT\GB0"
+    Expect "QAT: кнопок Btn0..Btn19" (@(0..19 | Where-Object { Read-Value $qat "Btn$_" }).Count) 20
+    Expect "QAT: базовая кнопка SolidWorks Btn0" (Read-Value $qat "Btn0") "1,21781"
+    Expect "QAT: базовая кнопка SolidWorks Btn10" (Read-Value $qat "Btn10") "1,54325"
+    Expect "QAT: кнопка MProp Btn11" (Read-Value $qat "Btn11") "1,33639"
+    Expect "QAT: кнопка SaveAsPDF Btn19" (Read-Value $qat "Btn19") "1,33647"
 
     $exported = Join-Path $temp "sandbox.reg"
     $null = & reg.exe export "HKCU\Software\$registryName" $exported /y 2>&1
@@ -161,6 +168,7 @@ try {
     New-Item -Path "$swKey\Recent File List" -Force | Out-Null
     Set-ItemProperty -LiteralPath "$swKey\Recent File List" -Name "File1" -Value "C:\Проект\Деталь.sldprt"
     Set-ItemProperty -LiteralPath "$swKey\General" -Name "Toolbox Data Location" -Value "C:\Мой Toolbox"
+    Set-ItemProperty -LiteralPath $qat -Name "Btn20" -Value "1,40001"
     $code2, $output2 = & $run
     $backups = @(Get-ChildItem -LiteralPath (Join-Path (Split-Path -Path $local -Parent) "Backups") -Recurse -Filter "*SOLIDWORKS 2025*.reg" -ErrorAction SilentlyContinue |
                  Where-Object { $_.Length -gt 0 -and [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::Unicode).Contains("Моя панель") })
@@ -171,6 +179,8 @@ try {
     Expect "сброс: принятие соглашения сохранено" (Read-Value "$swKey\Security" "EULA Accepted 2025 TEST") "Yes"
     Expect "сброс: последние файлы сохранены" (Read-Value "$swKey\Recent File List" "File1") "C:\Проект\Деталь.sldprt"
     Expect "сброс: путь Toolbox сохранён" (Read-Value "$swKey\General" "Toolbox Data Location") "C:\Мой Toolbox"
+    Expect "сброс: кнопка пользователя в QAT сохранена" (Read-Value $qat "Btn20") "1,40001"
+    Expect "сброс: QAT после повторной установки — Btn0..Btn19" (@(0..19 | Where-Object { Read-Value $qat "Btn$_" }).Count) 20
     Expect "сброс: фамилия вне раздела версии не тронута" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
     $output += "`n--- повторная установка ---`n" + $output2
     Expect "код выхода повторной установки" $code2 0
