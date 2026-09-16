@@ -280,7 +280,7 @@ function Reset-EskdSolidWorksProfile {
     if ($UserRoot -notmatch '^HKCU:\\(.+)$') { throw "Сброс только в HKCU: $UserRoot" }
     $sub = $Matches[1].TrimEnd('\') + "\SolidWorks\$SwVersion"
     $hkcu = [Microsoft.Win32.Registry]::CurrentUser
-    $keepTrees = @("Security", "Recent File List", "Recent Folder List", "Recent Macro File List")
+    $keepTrees = @("Security", "Recent File List", "Recent Folder List", "Recent Macro File List", "User Interface\CommandManager\QAT")
     $keepValues = @(@{ Key = "General"; Name = "Toolbox Data Location" })
     $version = $hkcu.OpenSubKey($sub)
     if ($null -eq $version) { return [pscustomobject]@{ Existed = $false; Preserved = @() } }

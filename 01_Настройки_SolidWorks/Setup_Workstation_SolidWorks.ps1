@@ -409,6 +409,14 @@ Write-Ok "Устаревшие надстройки и пустые вкладк
 # 5. Кнопки SWPlus в панели быстрого доступа
 Write-Step "[5/9] Кнопки SWPlus..."
 $qat = "$swRoot\User Interface\CommandManager\QAT\GB0"
+# Базовые кнопки QAT SolidWorks (0..10): при их отсутствии SolidWorks считает панель невалидной и сбрасывает её
+$defaultQat = [ordered]@{
+    "Btn0"  = "1,21781"; "Btn1"  = "1,54312"; "Btn2"  = "1,54416"; "Btn3"  = "1,54302"; "Btn4"  = "1,54303";
+    "Btn5"  = "1,57643"; "Btn6"  = "1,57644"; "Btn7"  = "1,34128"; "Btn8"  = "1,32805"; "Btn9"  = "1,33040"; "Btn10" = "1,54325"
+}
+foreach ($b in $defaultQat.Keys) {
+    if (-not (Get-RegValue $qat $b)) { Set-Reg $qat $b $defaultQat[$b] }
+}
 $buttons = [ordered]@{ "Btn11" = "1,33639"; "Btn12" = "1,33640"; "Btn13" = "1,33641"; "Btn14" = "1,33642"; "Btn15" = "1,33643";
                        "Btn16" = "1,33644"; "Btn17" = "1,33645"; "Btn18" = "1,33646"; "Btn19" = "1,33647" }
 foreach ($b in $buttons.Keys) { Set-Reg $qat $b $buttons[$b] }
@@ -672,7 +680,14 @@ if ($SwInternetBlock) {
         Write-Info "Нужны права администратора - откроется запрос UAC (два раза не потребуется)..."
         $sbCmd = "& '{0}' -Mode apply; & '{0}' -Mode hosts-apply" -f $sb
         try {
-            Start-Process powershell.exe -Verb RunAs -Wait -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command',$sbCmd
+            $uacProc = Start-Process powershell.exe -Verb RunAs -PassThru -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command',$sbCmd
+            if ($uacProc) {
+                $finished = $uacProc.WaitForExit(120000)
+                if (-not $finished) {
+                    Write-Warn "Превышено время ожидания UAC (2 мин) - процесс остановлен, отучение от сети пропущено."
+                    try { $uacProc.Kill() } catch {}
+                }
+            }
         } catch { Write-Warn "UAC отклонён - отучение от сети пропущено." }
         $cnt = @(Get-NetFirewallRule -DisplayName 'Block SW Internet*' -ErrorAction SilentlyContinue).Count
         if ($cnt -ge 300) { Write-Ok "Правил Block SW Internet: $cnt (применено)." }
