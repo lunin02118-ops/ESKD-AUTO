@@ -42,7 +42,8 @@ foreach ($name in $interopNames) {
     if ($src) { Copy-Item -Path $src -Destination $dst -Force }
     if (-not (Test-Path $dst)) { throw "Нет сборки интеропа $name (установлен ли SolidWorks?)" }
 }
-$refs = @("/r:System.dll", "/r:System.Drawing.dll", "/r:System.Windows.Forms.dll", "/r:System.Xml.dll") +
+$refs = @("/r:System.dll", "/r:System.Drawing.dll", "/r:System.Windows.Forms.dll", "/r:System.Xml.dll",
+          "/r:System.Core.dll", "/r:System.Xml.Linq.dll", "/r:System.IO.Compression.dll") +
         ($interopNames | ForEach-Object { "/r:" + (Join-Path $ScriptDir $_) })
 
 $core = @(Get-ChildItem (Join-Path $ScriptDir "Core") -Filter *.cs | Sort-Object Name | ForEach-Object FullName)

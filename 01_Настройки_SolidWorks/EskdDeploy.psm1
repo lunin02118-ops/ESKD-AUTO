@@ -17,6 +17,7 @@ $script:Rel = @{
     Libraries     = "04_Библиотеки_Материалов_и_Профилей"
     Fonts         = "05_Шрифты"
     Setup         = "01_Настройки_SolidWorks"
+    SwTools       = "03_Макросы_и_Плагины\SWTools_Установщик"
 }
 
 # Файлы надстройки, которые нужны для работы (исходники и скрипты сборки не копируются).
@@ -71,6 +72,7 @@ function Get-EskdLayout {
         SourceSwPlus     = Join-Path $SourceRoot $r.SwPlus
         SheetFormats     = Join-Path $SourceRoot $r.SheetFormats
         Fonts            = Join-Path $SourceRoot $r.Fonts
+        SwTools          = Join-Path $SourceRoot $r.SwTools
         LocalAddin       = Join-Path $LocalRoot $r.Addin
         LocalAddinDll    = Join-Path (Join-Path $LocalRoot $r.Addin) "ESKD_Material_Sync_v5.dll"
         LocalSwPlus      = Join-Path $LocalRoot $r.SwPlus
@@ -317,6 +319,87 @@ function Reset-EskdSolidWorksProfile {
         }
     } finally { $restored.Close() }
     return [pscustomobject]@{ Existed = $true; Preserved = @($saved.Name) + @($savedValues | ForEach-Object { "$($_.Key)\$($_.Name)" }) }
+}
+
+# ------------------------------------------------------------------ SWTools
+# Установщик SWTools не хранится в репозитории: Publish-EskdToolkit -SwToolsSetup кладёт его в общую папку
+# (03_Макросы_и_Плагины\SWTools_Установщик) вместе с описанием swtools_release.json, установщик рабочего места ставит его оттуда.
+
+function Get-EskdSwToolsRelease {
+    # Описание выпуска SWTools в папке инструментария или $null.
+    param([Parameter(Mandatory = $true)][string]$SourceRoot)
+    $dir = Join-Path $SourceRoot $script:Rel.SwTools
+    $file = Join-Path $dir "swtools_release.json"
+    if (-not (Test-Path -LiteralPath $file)) { return $null }
+    $json = [System.IO.File]::ReadAllText($file, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+    foreach ($field in "version", "setup", "sha256", "eula_sha256") {
+        if (-not "$($json.$field)".Trim()) { throw "В $file нет поля $field" }
+    }
+    if ("$($json.setup)" -match '[\\/]') { throw "В $file поле setup должно быть именем файла: $($json.setup)" }
+    return [pscustomobject]@{
+        Version    = [version]"$($json.version)"
+        SetupPath  = Join-Path $dir "$($json.setup)"
+        Sha256     = "$($json.sha256)".ToLowerInvariant()
+        EulaSha256 = "$($json.eula_sha256)".ToLowerInvariant()
+        Commit     = "$($json.source_commit)"
+    }
+}
+
+function Get-EskdSwToolsInstalledVersion {
+    # Версия установленного SWTools (запись удаления программ) или $null.
+    foreach ($root in "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall") {
+        foreach ($key in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
+            $entry = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+            if ($entry -and "$($entry.DisplayName)" -eq "SWTools" -and "$($entry.DisplayVersion)" -match '^\d+(\.\d+){1,3}$') {
+                return [version]"$($entry.DisplayVersion)"
+            }
+        }
+    }
+    return $null
+}
+
+function Test-EskdSwToolsUpdateNeeded {
+    # Ставить ли SWTools: не установлен или установлен старее выпуска. Более новая версия на ПК не понижается.
+    param([Parameter(Mandatory = $true)][version]$Release, [version]$Installed)
+    return (-not $Installed) -or ($Installed -lt $Release)
+}
+
+function Get-EskdSwToolsLicensePath {
+    return (Join-Path $env:LOCALAPPDATA "Lunin V\SWTools\license-v2.bin")
+}
+
+function Publish-EskdSwToolsSetup {
+    # Кладёт установщик SWTools в папку выпуска и пишет swtools_release.json по манифесту сборки SWTools
+    # (<Setup>.manifest.json рядом с установщиком: версия, коммит, SHA-256 EULA для тихой установки).
+    param([Parameter(Mandatory = $true)][string]$SetupPath, [Parameter(Mandatory = $true)][string]$TargetRoot)
+    $setup = Get-Item -LiteralPath $SetupPath -ErrorAction Stop
+    $manifestPath = [System.IO.Path]::ChangeExtension($setup.FullName, ".manifest.json")
+    if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Нет манифеста сборки SWTools: $manifestPath" }
+    $manifest = [System.IO.File]::ReadAllText($manifestPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+    $sha = (Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ("$($manifest.setup.sha256)".ToLowerInvariant() -ne $sha) { throw "SHA-256 установщика SWTools не совпадает с манифестом: $($setup.FullName)" }
+    $eula = "$($manifest.installer_behavior.silent_install_eula_sha256)".ToLowerInvariant()
+    if ($eula -notmatch '^[0-9a-f]{64}$') { throw "В манифесте SWTools нет SHA-256 EULA для тихой установки" }
+    $dir = Join-Path $TargetRoot $script:Rel.SwTools
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    $releaseFile = Join-Path $dir "swtools_release.json"
+    Remove-Item -LiteralPath $releaseFile -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $dir -Filter "SWTools-*Setup.exe" -File | Where-Object { $_.Name -ne $setup.Name } | Remove-Item -Force
+    $copy = Join-Path $dir $setup.Name
+    Copy-Item -LiteralPath $setup.FullName -Destination $copy -Force
+    if ((Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha) {
+        throw "Установщик SWTools скопирован с ошибкой: $copy"
+    }
+    $release = [ordered]@{
+        version       = "$($manifest.product_version)"
+        setup         = $setup.Name
+        sha256        = $sha
+        eula_sha256   = $eula
+        source_commit = "$($manifest.source_commit)"
+        artifact_kind = "$($manifest.artifact_kind)"
+    }
+    [System.IO.File]::WriteAllText($releaseFile, ($release | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+    return Get-EskdSwToolsRelease -SourceRoot $TargetRoot
 }
 
 Export-ModuleMember -Function *-Eskd*, Write-SwPlusLines, Add-SwPlusFamily, Add-SwPlusFirm

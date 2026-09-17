@@ -5,7 +5,7 @@
     Собирает во временном каталоге папку инструментария с непривычным именем (пробелы, кириллица, не
     «_Инструменты_Конструктора»), ставит всем файлам атрибут «только чтение» и запускает установщик из неё с
     временной локальной копией и временным разделом реестра HKCU:\Software\ESKD_DeployTest_*. Настоящий реестр,
-    шрифты и Drew не затрагиваются, SolidWorks не нужен.
+    шрифты, Drew и SWTools не затрагиваются, SolidWorks не нужен.
 
     Проверяется: источник не изменился (ни одного нового или изменённого файла); пути SolidWorks — на источник,
     кнопки и папка макросов — на локальную копию; надстройка зарегистрирована из локальной копии; Master.ini указывает
@@ -202,6 +202,45 @@ try {
         Get-ChildItem -LiteralPath $temp -File -Recurse -Force | ForEach-Object { $_.IsReadOnly = $false }
         Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+# Выпуск SWTools: публикация установщика по манифесту сборки, описание выпуска, решение об установке (без запуска установщика)
+$swtTemp = Join-Path ([System.IO.Path]::GetTempPath()) "eskd_swt_$id"
+try {
+    Import-Module (Join-Path $RepoRoot "01_Настройки_SolidWorks\EskdDeploy.psm1") -Force -DisableNameChecking
+    $build = Join-Path $swtTemp "сборка"
+    $share = Join-Path $swtTemp "общая папка"
+    New-Item -ItemType Directory -Path $build, $share -Force | Out-Null
+    $setup = Join-Path $build "SWTools-1.1.109-LOCAL-TEST-Setup.exe"
+    [System.IO.File]::WriteAllBytes($setup, [byte[]](1..64))
+    $sha = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+    $eula = "ab" * 32
+    $manifest = @{ product_version = "1.1.109"; source_commit = "72ba847"; artifact_kind = "local-test-installer";
+                   setup = @{ sha256 = $sha }; installer_behavior = @{ silent_install_eula_sha256 = $eula } }
+    [System.IO.File]::WriteAllText([System.IO.Path]::ChangeExtension($setup, ".manifest.json"), ($manifest | ConvertTo-Json -Depth 3))
+    Expect "без выпуска SWTools — нет описания" (Get-EskdSwToolsRelease -SourceRoot $share) ""
+    $old = Join-Path $share "03_Макросы_и_Плагины\SWTools_Установщик\SWTools-1.1.100-Setup.exe"
+    New-Item -ItemType Directory -Path (Split-Path -Parent $old) -Force | Out-Null
+    [System.IO.File]::WriteAllBytes($old, [byte[]](1..4))
+    $rel = Publish-EskdSwToolsSetup -SetupPath $setup -TargetRoot $share
+    Expect "версия выпуска SWTools" $rel.Version "1.1.109"
+    Expect "SHA-256 установщика SWTools" $rel.Sha256 $sha
+    Expect "SHA-256 EULA SWTools" $rel.EulaSha256 $eula
+    Expect "установщик SWTools в общей папке" (Test-Path -LiteralPath $rel.SetupPath) $true
+    Expect "прежний установщик SWTools удалён" (Test-Path -LiteralPath $old) $false
+    Expect "описание перечитывается" (Get-EskdSwToolsRelease -SourceRoot $share).SetupPath $rel.SetupPath
+    Expect "не установлен — ставить" (Test-EskdSwToolsUpdateNeeded -Release $rel.Version) $true
+    Expect "старее выпуска — ставить" (Test-EskdSwToolsUpdateNeeded -Release $rel.Version -Installed ([version]"1.1.102")) $true
+    Expect "та же версия — не ставить" (Test-EskdSwToolsUpdateNeeded -Release $rel.Version -Installed ([version]"1.1.109")) $false
+    Expect "новее выпуска — не понижать" (Test-EskdSwToolsUpdateNeeded -Release $rel.Version -Installed ([version]"1.2.0")) $false
+    [System.IO.File]::WriteAllBytes($setup, [byte[]](1..65))
+    $refused = $false
+    try { Publish-EskdSwToolsSetup -SetupPath $setup -TargetRoot $share | Out-Null } catch { $refused = $true }
+    Expect "установщик, не совпадающий с манифестом, не публикуется" $refused $true
+    Expect "после отказа прежнее описание цело" (Get-EskdSwToolsRelease -SourceRoot $share).Sha256 $sha
+} catch {
+    $problems.Add("SWTools: исключение: $($_.Exception.Message) @ $($_.InvocationInfo.ScriptLineNumber)")
+} finally {
+    Remove-Item -LiteralPath $swtTemp -Recurse -Force -ErrorAction SilentlyContinue
 }
 Expect "настоящая ветка ESKD_Install не создана тестом" (Test-Path "HKCU:\Software\SolidWorks\ESKD_Install") $liveInstallBefore
 Expect "настоящая фамилия не изменена" (Read-Value "HKCU:\Software\SolidWorks\ESKD_Settings" "Author") $liveAuthorBefore

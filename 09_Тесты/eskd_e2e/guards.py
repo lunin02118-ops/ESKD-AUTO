@@ -209,6 +209,12 @@ def dialogs_of(pid):
     return found
 
 
+def is_startup_notice(title, texts):
+    """Безымянная заготовка уведомления, которую SolidWorks, запущенный через SLDWORKS.exe, создаёт при старте
+    (подписи шаблона «Hyperlink Text 1/2», «Button1/2»). К проверяемому поведению отношения не имеет."""
+    return not title and "Hyperlink Text 1" in texts and "Button1" in texts
+
+
 class DialogWatchdog(threading.Thread):
     """Следит за модальными диалогами SolidWorks.
 
@@ -252,6 +258,8 @@ class DialogWatchdog(threading.Thread):
                         match = next((e for e in self._expected if e[0] in title or any(e[0] in t for t in texts)), None)
                         if match:
                             self._expected.remove(match)
+                            self.handled.append(record)
+                        elif is_startup_notice(title, texts):
                             self.handled.append(record)
                         else:
                             self.unexpected.append(record)

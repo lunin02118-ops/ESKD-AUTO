@@ -234,7 +234,11 @@ class SheetFormats(SwTestCase):
             for note, cell in expected_notes:
                 if note not in notes:
                     found.append(f"нет заметки {note}")
-                elif not oracles.inside(notes[note]["extent_mm"], cells[cell], tol=1.0):
+                # Габарит текста включает надстрочные и подстрочные поля шрифта, а в A0-A-1 и A1-P-1 номер листа
+                # набран крупнее, чем в остальных форматках, и выступает за 5-мм графу на 0,99 мм — допуск 1 мм стоял
+                # на самой границе и зависел от того, как запущен SolidWorks. Графы отстоят друг от друга не меньше
+                # чем на 5 мм, поэтому 1,5 мм по-прежнему ловит заметку не в своей графе.
+                elif not oracles.inside(notes[note]["extent_mm"], cells[cell], tol=1.5):
                     found.append(f"{note} {notes[note]['extent_mm']} вне графы {cell}")
             if (round(props[5] * 1000), round(props[6] * 1000)) != (width, height):
                 found.append(f"лист {props[5] * 1000:.0f}×{props[6] * 1000:.0f} вместо {width}×{height}")

@@ -16,6 +16,7 @@ import contextlib
 import ctypes
 import os
 import shutil
+import subprocess
 import sys
 import time
 import winreg
@@ -44,9 +45,36 @@ class SessionRefused(RuntimeError):
     pass
 
 
+def solidworks_exe():
+    """SLDWORKS.exe из регистрации SldWorks.Application или None."""
+    try:
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"SldWorks.Application\CLSID") as key:
+            clsid = winreg.QueryValueEx(key, "")[0]
+        with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, rf"CLSID\{clsid}\LocalServer32") as key:
+            command = winreg.QueryValueEx(key, "")[0].strip()
+    except OSError:
+        return None
+    exe = command[1:command.index('"', 1)] if command.startswith('"') else command.split(" /")[0]
+    return exe if Path(exe).is_file() else None
+
+
+def rot_solidworks(pid):
+    """SolidWorks из таблицы запущенных объектов по моникеру SolidWorks_PID_<pid> или None."""
+    try:
+        rot = pythoncom.GetRunningObjectTable()
+        # SolidWorks регистрирует моникер без разделителя: с «!» он не находится.
+        obj = rot.GetObject(pythoncom.CreateItemMoniker(None, f"SolidWorks_PID_{pid}"))
+        return win32com.client.Dispatch(obj.QueryInterface(pythoncom.IID_IDispatch))
+    except pythoncom.com_error:
+        return None
+
+
 class SwSession:
-    def __init__(self, run_dir, load_eskd=True, eskd_dll=None, settings=None, visible=True, use_probe=True, probe_flags=None):
+    def __init__(self, run_dir, load_eskd=True, eskd_dll=None, settings=None, visible=True, use_probe=True, probe_flags=None,
+                 launch="exe"):
         self.run_dir = Path(run_dir)
+        #: "exe" — как у пользователя (по умолчанию), "com_only" — прежний запуск через COM, для разбора расхождений.
+        self.launch_mode = launch
         self.load_eskd_on_start = load_eskd
         self.eskd_dll = Path(eskd_dll or paths.ADDIN_DLL)
         self.settings = dict(TEST_SETTINGS if settings is None else settings)
@@ -102,15 +130,13 @@ class SwSession:
         pythoncom.CoInitialize()
         self._com_initialized = True
         try:
-            raw = win32com.client.Dispatch("SldWorks.Application")
+            raw, self.pid = self._launch()
             self.sw = com.flag_methods(com.dyn(raw), com.APP_METHODS)
             self.sw.Visible = self.visible
             # Экземпляр, запущенный автоматизацией, завершается, когда другой процесс (ESKD_Sync.exe) закрывает
             # последний документ. Под управлением «пользователя» сессия ведёт себя как на рабочем месте;
             # закрывает её stop() через ExitApp.
             self.sw.UserControl = True
-            procs = solidworks_processes()
-            self.pid = procs[0].pid if procs else None
             self._wait_startup()
             if self.pid:
                 self.watchdog = DialogWatchdog(self.pid)
@@ -124,6 +150,29 @@ class SwSession:
             self.stop()
             raise
         return self
+
+    def _launch(self, timeout=180):
+        """SolidWorks запускается как у пользователя — SLDWORKS.exe — и берётся из таблицы запущенных объектов.
+
+        Только такой экземпляр видят другие программы: SWTools ищет SolidWorks по моникеру SolidWorks_PID_<pid>,
+        а запущенный через COM SolidWorks моникер не регистрирует. Заодно это ближе к рабочему месту — в сессии
+        через COM расходятся MProp и личные данные шаблонов (D01, I03, M04). Не вышло — прежний запуск через COM."""
+        exe = solidworks_exe() if self.launch_mode != "com_only" else None
+        if exe:
+            proc = subprocess.Popen([exe])
+            deadline = time.time() + timeout
+            while time.time() < deadline and proc.poll() is None:
+                app = rot_solidworks(proc.pid)
+                if app is not None:
+                    return app, proc.pid
+                time.sleep(1)
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(30)
+            print(f"SolidWorks {exe} не появился в таблице запущенных объектов — запуск через COM", file=sys.stderr)
+        raw = win32com.client.Dispatch("SldWorks.Application")
+        procs = solidworks_processes()
+        return raw, (procs[0].pid if procs else None)
 
     def _wait_startup(self, timeout=120):
         t0 = time.time()

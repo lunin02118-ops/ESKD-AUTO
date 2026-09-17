@@ -24,7 +24,7 @@ namespace ESKD.MaterialSync
         public const string Version = "6.0.0";
         private const int CommandGroupId = 9997;
         private const string TabTitle = "ЕСКД";
-        private static readonly int[] CommandUserIds = { 9900, 9901, 9902, 9903 };
+        private static readonly int[] CommandUserIds = { 9900, 9901, 9902, 9903, 9904 };
 
         private ISldWorks _app;
         private ICommandManager _commands;
@@ -133,6 +133,9 @@ namespace ESKD.MaterialSync
                 "Синхронизировать", 1, "SyncCurrentDoc", "EnableCommand", CommandUserIds[2], buttons);
             int bch = group.AddCommandItem2("Деталь БЧ", -1, "Установить или снять признак безчертёжной детали (ГОСТ Р 2.109-2023)",
                 "Деталь БЧ", 2, "ToggleDrawingless", "EnableBchCommand", CommandUserIds[3], buttons);
+            int lzk = group.AddCommandItem2("Ведомость ЛЗК", -1,
+                "Операции, габариты, выгрузка SWTools, листы «Покраска» и «Покупные» — Ведомость_<шифр>.xlsx в папке изделия",
+                "Ведомость ЛЗК", 3, "BuildLzk", "EnableLzkCommand", CommandUserIds[4], buttons);
             group.HasToolbar = true;
             group.HasMenu = true;
             group.Activate();
@@ -145,14 +148,17 @@ namespace ESKD.MaterialSync
                 Core.Log.Error("SetToolbarVisibility", ex);
             }
 
-            int[] ids = { group.get_CommandID(settings), group.get_CommandID(sync), group.get_CommandID(bch) };
+            int[] ids = { group.get_CommandID(settings), group.get_CommandID(sync), group.get_CommandID(bch), group.get_CommandID(lzk) };
             _commandIds = ids;
             foreach (int docType in new[] { (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, (int)swDocumentTypes_e.swDocDRAWING })
             {
                 try
                 {
                     bool part = docType == (int)swDocumentTypes_e.swDocPART;
-                    int[] wanted = part ? ids : new[] { ids[0], ids[1] };
+                    bool assembly = docType == (int)swDocumentTypes_e.swDocASSEMBLY;
+                    int[] wanted = part ? new[] { ids[0], ids[1], ids[2] }
+                        : assembly ? new[] { ids[0], ids[1], ids[3] }
+                        : new[] { ids[0], ids[1] };
                     CommandTab tab = _commands.GetCommandTab(docType, TabTitle);
 
                     // Вкладка отсутствует, ссылается на чужие команды (у сборки вместо «Синхронизировать» — «Определенный
@@ -177,7 +183,9 @@ namespace ESKD.MaterialSync
                         tab = _commands.AddCommandTab(docType, TabTitle);
                         CommandTabBox box = tab.AddCommandTabBox();
                         int below = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
-                        box.AddCommands(wanted, part ? new[] { below, below, below } : new[] { below, below });
+                        int[] texts = new int[wanted.Length];
+                        for (int t = 0; t < texts.Length; t++) texts[t] = below;
+                        box.AddCommands(wanted, texts);
                     }
                 }
                 catch (Exception ex)
@@ -240,7 +248,7 @@ namespace ESKD.MaterialSync
             }
         }
 
-        private static readonly string[] CommandNames = { "Настройки ЕСКД", "Синхронизировать", "Деталь БЧ" };
+        private static readonly string[] CommandNames = { "Настройки ЕСКД", "Синхронизировать", "Деталь БЧ", "Ведомость ЛЗК" };
         private int[] _commandIds;
 
         private static bool SameIds(int[] a, int[] b)
@@ -458,6 +466,38 @@ namespace ESKD.MaterialSync
                 Core.Log.Error("ToggleDrawinglessSilent", ex);
                 return BchService.NotPart;
             }
+        }
+
+        /// <summary>Кнопка «Ведомость ЛЗК»: доступна у сборки и неактивна, пока предыдущая ведомость формируется.</summary>
+        public int EnableLzkCommand()
+        {
+            try
+            {
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY) return 0;
+                return LzkService.Running ? 0 : 1;
+            }
+            catch (COMException)
+            {
+                return 1;
+            }
+        }
+
+        public void BuildLzk()
+        {
+            LzkService.Start(_app, true);
+        }
+
+        /// <summary>Ведомость ЛЗК без окон (проверки, пакетный запуск). Итог — LzkStatus().</summary>
+        public void BuildLzkSilent()
+        {
+            LzkService.Start(_app, false);
+        }
+
+        /// <summary>«running», «ok|путь|строк|замечаний» или «error|текст».</summary>
+        public string LzkStatus()
+        {
+            return LzkService.LastOutcome;
         }
 
         // Пакетная очистка файлов v5 — отдельной утилитой ESKD_Sync.exe /clean (Sw.MigrationService), а не методом надстройки:

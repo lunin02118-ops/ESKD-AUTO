@@ -174,7 +174,7 @@ class AddinLifecycle(SwTestCase):
         у сборки и чертежа — первые две; вкладка, сохранённая SolidWorks от прежней раскладки, со ссылкой на чужую команду
         («Определенный пользователем маршрут») пересоздаётся при загрузке надстройки."""
         common = "Настройки ЕСКД|Синхронизировать"
-        for doc_type, wanted in ((1, common + "|Деталь БЧ"), (2, common), (3, common)):
+        for doc_type, wanted in ((1, common + "|Деталь БЧ"), (2, common + "|Ведомость ЛЗК"), (3, common)):
             with self.subTest(doc_type=doc_type):
                 self.assertEqual(wanted, str(com.call(self.s.eskd(), "TabButtons", doc_type)))
 

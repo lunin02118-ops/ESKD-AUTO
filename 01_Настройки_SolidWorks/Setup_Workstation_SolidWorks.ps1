@@ -11,7 +11,8 @@
         настройки рядом с собой, DLL надстройки SolidWorks держит открытой. Настройки макросов при повторной
         установке сохраняются; кнопки SWPlus и надстройка — на локальную копию; в Master.ini — основные надписи источника;
       * корпоративный профиль реестра, 9 кнопок SWPlus, вкладка ЕСКД, фамилия и организация, избранные материалы;
-      * шрифты ГОСТ (без прав администратора — в профиль пользователя), модуль Drew.
+      * шрифты ГОСТ (без прав администратора — в профиль пользователя), модуль Drew;
+      * SWTools из общей папки (тихая установка с запросом прав администратора; лицензию активирует конструктор).
     В источник не пишет ничего: папка инструментария может быть только для чтения. Надстройку не собирает — сборку
     кладёт в источник публикация (Publish-EskdToolkit.ps1). Права администратора не нужны.
 
@@ -29,7 +30,7 @@
     Локальная копия (по умолчанию %LOCALAPPDATA%\ESKD\Toolkit).
 .PARAMETER RegistryRoot
     Корень HKCU\Software для записи (по умолчанию HKCU:\Software). Автотест передаёт временный раздел
-    HKCU:\Software\ESKD_DeployTest_*: тогда HKLM, шрифты и Drew не трогаются.
+    HKCU:\Software\ESKD_DeployTest_*: тогда HKLM, шрифты, Drew и SWTools не трогаются.
 .EXAMPLE
     .\Setup_Workstation_SolidWorks.ps1
 .EXAMPLE
@@ -47,6 +48,7 @@ param (
     [switch]$NonInteractive,
     [switch]$SkipFonts,
     [switch]$SkipDrew,
+    [switch]$SkipSwTools,
     [switch]$SwInternetBlock,
     [switch]$DrewRussian,
     [switch]$Utf8Output,
@@ -482,8 +484,8 @@ for ($i = 0; $i -lt $favList.Count; $i++) {
 Set-Reg "$swRoot\Material" "__NumOfFavs" $favList.Count "DWord"
 Write-Ok "Фамилия, организация и избранные материалы записаны."
 
-# 7. Шрифты и Drew
-Write-Step "[7/9] Шрифты ГОСТ и модуль Drew..."
+# 7. Шрифты, Drew и SWTools
+Write-Step "[7/9] Шрифты ГОСТ, модуль Drew и SWTools..."
 if ($sandbox -or $SkipFonts) {
     Write-Info "Шрифты пропущены."
 } elseif (Test-Path -LiteralPath $layout.Fonts) {
@@ -663,6 +665,73 @@ if ($sandbox -or $SkipDrew) {
         }
     } else {
         Write-Warn "Модуль Drew не найден и не установлен."
+    }
+}
+
+# SWTools: выгрузка спецификаций, в том числе для кнопки «Ведомость ЛЗК». Установщик из общей папки (Publish-EskdToolkit
+# -SwToolsSetup), тихая установка с запросом прав администратора; лицензию конструктор активирует сам в окне SWTools.
+if ($sandbox -or $SkipSwTools) {
+    Write-Info "SWTools пропущен."
+} else {
+    $swToolsRelease = $null
+    try { $swToolsRelease = Get-EskdSwToolsRelease -SourceRoot $SourceRoot } catch { $failures++; Write-Fail "Описание выпуска SWTools: $($_.Exception.Message)" }
+    $swToolsInstalled = Get-EskdSwToolsInstalledVersion
+    if (-not $swToolsRelease) {
+        if ($swToolsInstalled) { Write-Info "SWTools $swToolsInstalled установлен; в общей папке выпуска SWTools нет." }
+        else { Write-Warn "SWTools не установлен, а в общей папке нет его установщика ($($layout.SwTools)). Кнопка «Ведомость ЛЗК» не будет работать." }
+    } elseif (-not (Test-EskdSwToolsUpdateNeeded -Release $swToolsRelease.Version -Installed $swToolsInstalled)) {
+        Write-Ok "SWTools $swToolsInstalled уже установлен (выпуск $($swToolsRelease.Version))."
+    } elseif (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
+        Write-Warn "Установка SWTools $($swToolsRelease.Version) отложена: SolidWorks открыт. Закройте его и запустите настройку ещё раз."
+    } elseif (-not (Test-Path -LiteralPath $swToolsRelease.SetupPath)) {
+        $failures++
+        Write-Fail "Нет установщика SWTools: $($swToolsRelease.SetupPath)"
+    } else {
+        # Копия во временной папке: установщик не запускается с сетевого ресурса и сверяется с описанием выпуска.
+        $swToolsTemp = Join-Path $env:TEMP ("ESKD_SWTools_" + [guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $swToolsTemp -Force | Out-Null
+        $swToolsSetup = Join-Path $swToolsTemp (Split-Path -Leaf $swToolsRelease.SetupPath)
+        try {
+            Copy-Item -LiteralPath $swToolsRelease.SetupPath -Destination $swToolsSetup -Force -ErrorAction Stop
+            if ((Get-FileHash -LiteralPath $swToolsSetup -Algorithm SHA256).Hash.ToLowerInvariant() -ne $swToolsRelease.Sha256) {
+                $failures++
+                Write-Fail "Установщик SWTools не совпадает с выпуском (SHA-256) — не запускается: $($swToolsRelease.SetupPath)"
+            } else {
+                $from = if ($swToolsInstalled) { "обновление с $swToolsInstalled" } else { "установка" }
+                Write-Info "SWTools $($swToolsRelease.Version): $from. Подтвердите запрос прав администратора."
+                $swToolsProc = $null
+                try {
+                    $swToolsProc = Start-Process -FilePath $swToolsSetup -Verb RunAs -PassThru -ErrorAction Stop `
+                        -ArgumentList "/S", "/SWTOOLS_EULA_SHA256=$($swToolsRelease.EulaSha256)"
+                } catch {
+                    $failures++
+                    Write-Fail "Установщик SWTools не запущен (запрос прав отклонён?): $($_.Exception.Message)"
+                }
+                if ($swToolsProc) {
+                    if (-not $swToolsProc.WaitForExit(600000)) {
+                        $failures++
+                        Write-Fail "Установка SWTools не завершилась за 10 минут."
+                    } else {
+                        $after = Get-EskdSwToolsInstalledVersion
+                        if ($swToolsProc.ExitCode -eq 0 -and $after -and $after -ge $swToolsRelease.Version) {
+                            Write-Ok "SWTools $after установлен."
+                        } else {
+                            $failures++
+                            Write-Fail "Установщик SWTools завершился с кодом $($swToolsProc.ExitCode); установлена версия: $(if ($after) { $after } else { 'нет' })."
+                        }
+                    }
+                }
+            }
+        } catch {
+            $failures++
+            Write-Fail "SWTools: $($_.Exception.Message)"
+        } finally {
+            Remove-Item -LiteralPath $swToolsTemp -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (Get-EskdSwToolsInstalledVersion) {
+        if (Test-Path -LiteralPath (Get-EskdSwToolsLicensePath)) { Write-Ok "Лицензия SWTools: файл лицензии есть." }
+        else { Write-Warn "Лицензия SWTools не активирована: откройте SWTools из SolidWorks и активируйте лицензию. До этого кнопка «Ведомость ЛЗК» не работает." }
     }
 }
 
