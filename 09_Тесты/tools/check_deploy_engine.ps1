@@ -34,9 +34,10 @@ function Snapshot($root) {
 }
 
 $cp1251 = [System.Text.Encoding]::GetEncoding(1251)
-$id = [guid]::NewGuid().ToString("N")
-$temp = Join-Path ([System.IO.Path]::GetTempPath()) "eskd_deploy_$id"
-$source = Join-Path $temp "Сетевая папка\Инструменты КТО"
+# Короткие имена: самый длинный файл инструментария — 154 знака, путь во %TEMP% должен уложиться в 260 (MAX_PATH)
+$id = [guid]::NewGuid().ToString("N").Substring(0, 8)
+$temp = Join-Path ([System.IO.Path]::GetTempPath()) "eskd_d_$id"
+$source = Join-Path $temp "Сеть КТО\Инструменты КТО"
 $local = Join-Path $temp "Профиль\ESKD\Toolkit"
 $registryName = "ESKD_DeployTest_$id"
 $sandbox = "HKCU:\Software\$registryName"
