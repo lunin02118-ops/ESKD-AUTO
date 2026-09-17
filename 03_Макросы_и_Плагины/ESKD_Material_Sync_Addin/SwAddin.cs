@@ -24,7 +24,7 @@ namespace ESKD.MaterialSync
         public const string Version = "6.0.0";
         private const int CommandGroupId = 9997;
         private const string TabTitle = "ЕСКД";
-        private static readonly int[] CommandUserIds = { 9900, 9901, 9902, 9903, 9904 };
+        private static readonly int[] CommandUserIds = { 9900, 9901, 9902, 9903, 9904, 9905, 9906, 9907, 9908 };
 
         private ISldWorks _app;
         private ICommandManager _commands;
@@ -136,6 +136,19 @@ namespace ESKD.MaterialSync
             int lzk = group.AddCommandItem2("Ведомость ЛЗК", -1,
                 "Операции, габариты, выгрузка SWTools, листы «Покраска» и «Покупные» — Ведомость_<шифр>.xlsx в папке изделия",
                 "Ведомость ЛЗК", 3, "BuildLzk", "EnableLzkCommand", CommandUserIds[4], buttons);
+            int check = group.AddCommandItem2("Проверить изделие", -1,
+                "Состав, перестроение, реквизиты, чертежи и ведомость — отчёт _Проверка.txt с итогом ГОТОВО, ЗАМЕЧАНИЯ или БРАК",
+                "Проверить изделие", 4, "CheckProduct", "EnableCheckCommand", CommandUserIds[5], buttons);
+            // Пункт «Отчёт проверки» живёт в меню «Инструменты → ЕСКД» и на панели инструментов: на вкладке
+            // ему места нет, а открыть прежний отчёт, ничего не проверяя, бывает нужно (ТЗ-02 Т-34).
+            int report = group.AddCommandItem2("Отчёт проверки", -1, "Открыть последний отчёт _Проверка.txt, не проверяя заново",
+                "Отчёт проверки", 5, "ShowCheckReport", "EnableCheckCommand", CommandUserIds[6], buttons);
+            int export = group.AddCommandItem2("Выгрузить в производство", -1,
+                "PDF чертежей, DXF развёрток и IGS профиля в папки изделия — отчёт _Экспорт.txt",
+                "Выгрузить в производство", 6, "ExportProduct", "EnableExportCommand", CommandUserIds[7], buttons);
+            int independent = group.AddCommandItem2("Сделать независимым", -1,
+                "Выделенный эталон или чужая деталь становится своей копией в 01_3D — с чертежом и новым номером",
+                "Сделать независимым", 7, "MakeIndependent", "EnableIndependentCommand", CommandUserIds[8], buttons);
             group.HasToolbar = true;
             group.HasMenu = true;
             group.Activate();
@@ -148,7 +161,12 @@ namespace ESKD.MaterialSync
                 Core.Log.Error("SetToolbarVisibility", ex);
             }
 
-            int[] ids = { group.get_CommandID(settings), group.get_CommandID(sync), group.get_CommandID(bch), group.get_CommandID(lzk) };
+            int[] ids =
+            {
+                group.get_CommandID(settings), group.get_CommandID(sync), group.get_CommandID(bch),
+                group.get_CommandID(lzk), group.get_CommandID(check), group.get_CommandID(report),
+                group.get_CommandID(export), group.get_CommandID(independent)
+            };
             _commandIds = ids;
             foreach (int docType in new[] { (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, (int)swDocumentTypes_e.swDocDRAWING })
             {
@@ -156,8 +174,11 @@ namespace ESKD.MaterialSync
                 {
                     bool part = docType == (int)swDocumentTypes_e.swDocPART;
                     bool assembly = docType == (int)swDocumentTypes_e.swDocASSEMBLY;
-                    int[] wanted = part ? new[] { ids[0], ids[1], ids[2] }
-                        : assembly ? new[] { ids[0], ids[1], ids[3] }
+                    // Порядок идентификаторов тот же, что в CommandNames; «Отчёт проверки» (ids[5]) живёт
+                    // только в меню, на вкладку идут «Выгрузить в производство» (ids[6]) и у сборки
+                    // «Сделать независимым» (ids[7]) — в том порядке, в каком идёт работа над изделием.
+                    int[] wanted = part ? new[] { ids[0], ids[1], ids[2], ids[6] }
+                        : assembly ? new[] { ids[0], ids[1], ids[7], ids[3], ids[4], ids[6] }
                         : new[] { ids[0], ids[1] };
                     CommandTab tab = _commands.GetCommandTab(docType, TabTitle);
 
@@ -248,7 +269,11 @@ namespace ESKD.MaterialSync
             }
         }
 
-        private static readonly string[] CommandNames = { "Настройки ЕСКД", "Синхронизировать", "Деталь БЧ", "Ведомость ЛЗК" };
+        private static readonly string[] CommandNames =
+        {
+            "Настройки ЕСКД", "Синхронизировать", "Деталь БЧ", "Ведомость ЛЗК", "Проверить изделие", "Отчёт проверки",
+            "Выгрузить в производство", "Сделать независимым"
+        };
         private int[] _commandIds;
 
         private static bool SameIds(int[] a, int[] b)
@@ -347,8 +372,9 @@ namespace ESKD.MaterialSync
         {
             try
             {
+                if (ActiveDocType() != (int)swDocumentTypes_e.swDocPART) return 0;
                 ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
-                if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocPART) return 0;
+                if (doc == null) return 0;
                 if (_formatProperty == null) _formatProperty = SyncService.Dictionary(Settings.Read())[Role.Format];
                 string cfg = doc.ConfigurationManager.ActiveConfiguration != null ? doc.ConfigurationManager.ActiveConfiguration.Name : "";
                 string value = FormatValue(doc, cfg) ?? FormatValue(doc, "");
@@ -363,6 +389,23 @@ namespace ESKD.MaterialSync
 
         private string _formatProperty;
         private DateTime _bchDialogClosed = DateTime.MinValue;
+
+        private int _activeType = -1;
+        private DateTime _activeTypeRead = DateTime.MinValue;
+
+        /// <summary>
+        /// Тип активного документа для доступности кнопок. SolidWorks опрашивает каждую кнопку отдельно, и при
+        /// семи командах это семь обращений к ActiveDoc на каждое обновление панели — переключение окна из-за
+        /// этого заметно дорожало (P14). Ответ живёт четверть секунды: за это время окно не сменится.
+        /// </summary>
+        private int ActiveDocType()
+        {
+            if ((DateTime.UtcNow - _activeTypeRead).TotalMilliseconds < 250) return _activeType;
+            ModelDoc2 doc = _app != null ? _app.ActiveDoc as ModelDoc2 : null;
+            _activeType = doc == null ? 0 : doc.GetType();
+            _activeTypeRead = DateTime.UtcNow;
+            return _activeType;
+        }
 
         private string FormatValue(ModelDoc2 doc, string cfg)
         {
@@ -473,8 +516,7 @@ namespace ESKD.MaterialSync
         {
             try
             {
-                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
-                if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY) return 0;
+                if (ActiveDocType() != (int)swDocumentTypes_e.swDocASSEMBLY) return 0;
                 return LzkService.Running ? 0 : 1;
             }
             catch (COMException)
@@ -498,6 +540,117 @@ namespace ESKD.MaterialSync
         public string LzkStatus()
         {
             return LzkService.LastOutcome;
+        }
+
+        /// <summary>Кнопка «Проверить изделие» доступна на сборке (ТЗ-02 Т-2, Т-25).</summary>
+        public int EnableCheckCommand()
+        {
+            try
+            {
+                return ActiveDocType() == (int)swDocumentTypes_e.swDocASSEMBLY ? 1 : 0;
+            }
+            catch (COMException)
+            {
+                return 1;
+            }
+        }
+
+        public void CheckProduct()
+        {
+            CheckService.Run(_app, true);
+        }
+
+        /// <summary>Проверка изделия без окон. Итог — CheckStatus().</summary>
+        public void CheckProductSilent()
+        {
+            CheckService.Run(_app, false);
+        }
+
+        /// <summary>Открыть последний отчёт проверки, не проверяя заново (Т-34).</summary>
+        public void ShowCheckReport()
+        {
+            CheckService.ShowLast(_app, true);
+        }
+
+        /// <summary>Последний отчёт без окон: итог — CheckStatus().</summary>
+        public void ShowCheckReportSilent()
+        {
+            CheckService.ShowLast(_app, false);
+        }
+
+        /// <summary>«ok|итог|брак|замечаний|отчёт» или «error|текст».</summary>
+        public string CheckStatus()
+        {
+            return CheckService.LastOutcome;
+        }
+
+        /// <summary>Кнопка «Выгрузить в производство» доступна на сборке изделия и на детали (ТЗ-02 Т-25).</summary>
+        public int EnableExportCommand()
+        {
+            try
+            {
+                int type = ActiveDocType();
+                return type == (int)swDocumentTypes_e.swDocASSEMBLY || type == (int)swDocumentTypes_e.swDocPART ? 1 : 0;
+            }
+            catch (COMException)
+            {
+                return 1;
+            }
+        }
+
+        public void ExportProduct()
+        {
+            ExportService.Run(_app, true);
+        }
+
+        /// <summary>Выгрузка без окон. Итог — ExportStatus().</summary>
+        public void ExportProductSilent()
+        {
+            ExportService.Run(_app, false);
+        }
+
+        /// <summary>«ok|файлов|пропущено|отчёт» или «error|текст».</summary>
+        public string ExportStatus()
+        {
+            return ExportService.LastOutcome;
+        }
+
+        /// <summary>
+        /// Кнопка «Сделать независимым» доступна в сборке (ТЗ-02 Т-19). Выделение здесь не проверяется:
+        /// SolidWorks опрашивает доступность постоянно, а разбор дерева на каждый опрос сделал бы
+        /// переключение окон заметно медленнее — что выделено, кнопка объясняет при нажатии.
+        /// </summary>
+        public int EnableIndependentCommand()
+        {
+            try
+            {
+                return ActiveDocType() == (int)swDocumentTypes_e.swDocASSEMBLY ? 1 : 0;
+            }
+            catch (COMException)
+            {
+                return 1;
+            }
+        }
+
+        public void MakeIndependent()
+        {
+            IndependentService.Run(_app, true);
+        }
+
+        /// <summary>
+        /// Сделать выделенное независимым без окон (Т-9). Обозначение и наименование пустые — берутся
+        /// предложенные; withDrawing: 1 — с чертежом, 0 — без, -1 — как есть рядом с исходной моделью.
+        /// </summary>
+        public void MakeIndependentSilent(string designation, string name, int withDrawing)
+        {
+            IndependentService.Run(_app, false, designation, name,
+                withDrawing < 0 ? (bool?)null : withDrawing != 0);
+        }
+
+        /// <summary>«ok|создано|пропущено|оборванных размеров|отчёт» или «error|текст».</summary>
+        public string IndependentStatus()
+        {
+            return IndependentService.LastOutcome;
         }
 
         // Пакетная очистка файлов v5 — отдельной утилитой ESKD_Sync.exe /clean (Sw.MigrationService), а не методом надстройки:

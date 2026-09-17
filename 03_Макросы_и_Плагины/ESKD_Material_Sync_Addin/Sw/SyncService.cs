@@ -593,6 +593,9 @@ namespace ESKD.MaterialSync.Sw
         /// Единицы массы документа, как выставляет MProp (FrmMProp:2339, 2449–2468, 3353–3368); true — масса в граммах (суффикс
         /// « г» у выражения, FrmMProp:2848). При переключении единиц — предупреждение в строке состояния.
         /// </summary>
+        /// <summary>Начало предупреждения о единицах массы: их выставляет сама синхронизация, конструктору решать нечего.</summary>
+        internal const string MassUnitsWarning = "Единицы массы документа переключены, как в MProp";
+
         private static bool MassUnitsAsMProp(PropertyWriter w, ModelDoc2 doc, string active, SyncReport report)
         {
             int[] prefs =
@@ -625,7 +628,7 @@ namespace ESKD.MaterialSync.Sw
             if (changed)
             {
                 System.Globalization.CultureInfo ru = System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
-                report.Warnings.Add(string.Format("Единицы массы документа переключены, как в MProp: {0} (масса {1})",
+                report.Warnings.Add(string.Format(MassUnitsWarning + ": {0} (масса {1})",
                     units.Grams ? "граммы — см, г, см³, 1 знак" : "килограммы — м, кг, м³, 2 знака",
                     units.Grams ? (mass * 1000).ToString("0.#", ru) + " г" : mass.ToString("0.##", ru) + " кг"));
             }
