@@ -182,6 +182,14 @@ namespace ESKD.MaterialSync.Core
             return "";
         }
 
+        /// <summary>Заготовку режут из листа, а не из хлыста: сводная заявка считает такие метры не в хлыстах (Т-40).</summary>
+        public static bool IsSheet(string material)
+        {
+            foreach (string word in SheetStock)
+                if (HasWord(material ?? "", word)) return true;
+            return false;
+        }
+
         /// <summary>Слово целиком, без учёта регистра: «Лист 4,0 …» — лист, «Листогиб» — нет.</summary>
         private static bool HasWord(string value, string word)
         {

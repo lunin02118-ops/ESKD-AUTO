@@ -4,7 +4,8 @@
 Порядок изображений совпадает с индексами AddCommandItem2 в SwAddin:
 0 — «Настройки ЕСКД», 1 — «Синхронизировать», 2 — «Деталь БЧ», 3 — «Ведомость ЛЗК»,
 4 — «Проверить изделие», 5 — «Отчёт проверки», 6 — «Выгрузить в производство»,
-7 — «Сделать независимым», 8 — «Новая ревизия», 9 — «Снимок эталона». Первые два изображения
+7 — «Сделать независимым», 8 — «Новая ревизия», 9 — «Снимок эталона»,
+10 — «Выдать в производство», 11 — «Закрыть заказ». Первые два изображения
 берутся из прежних полос,
 остальные рисуются здесь.
 Запуск: python build_icon_strips.py (нужен Pillow).
@@ -255,6 +256,65 @@ def draw_snapshot(size):
     return img
 
 
+def draw_issue(size):
+    """Ящик со стрелкой наружу: заявка и документы уходят из КТО в цех."""
+    img = Image.new("RGB", (size, size), WHITE)
+    px = img.load()
+    left, right = (1, 9) if size == 16 else (2, 14)
+    top, bottom = (5, 14) if size == 16 else (7, 21)
+    for x in range(left, right + 1):
+        for y in range(top, bottom + 1):
+            px[x, y] = BORDER if x in (left, right) or y in (top, bottom) else PLATE
+    # крышка ящика
+    lid = top + (3 if size == 16 else 4)
+    for x in range(left + 1, right):
+        px[x, lid] = GRID
+    # стрелка вправо-вверх: документы уезжают
+    thickness = 1 if size == 16 else 2
+    y0 = top - (3 if size == 16 else 5)
+    for i in range(5 if size == 16 else 8):
+        for t2 in range(thickness):
+            x = right - 1 + i
+            if x < size and 0 <= y0 + t2 < size:
+                px[x, y0 + t2] = ARROW
+    head = 3 if size == 16 else 5
+    tip = min(size - 1, right - 1 + (5 if size == 16 else 8))
+    for i in range(head):
+        for t2 in range(thickness):
+            for dy in (-i, i):
+                x, y = tip - i, y0 + dy + t2
+                if 0 <= x < size and 0 <= y < size:
+                    px[x, y] = ARROW
+    return img
+
+
+def draw_close(size):
+    """Папка с галочкой: заказ собран, сверен и сдан в архив."""
+    img = Image.new("RGB", (size, size), WHITE)
+    px = img.load()
+    left, right = (1, 12) if size == 16 else (2, 18)
+    top, bottom = (4, 13) if size == 16 else (6, 20)
+    for x in range(left, right + 1):
+        for y in range(top, bottom + 1):
+            px[x, y] = BORDER if x in (left, right) or y in (top, bottom) else FOLD
+    tab_right = left + (5 if size == 16 else 8)
+    for x in range(left, tab_right + 1):
+        px[x, top - 1] = BORDER if x in (left, tab_right) else FOLD
+    # галочка сдачи поверх папки
+    thickness = 1 if size == 16 else 2
+    x0, y0 = (4, 9) if size == 16 else (6, 14)
+    for i in range(3 if size == 16 else 5):
+        for t2 in range(thickness):
+            px[min(size - 1, x0 + i), min(size - 1, y0 + i + t2)] = CHECK
+    for i in range(5 if size == 16 else 8):
+        for t2 in range(thickness):
+            x = x0 + (3 if size == 16 else 5) + i
+            y = y0 + (3 if size == 16 else 5) - i
+            if 0 <= x < size and 0 <= y < size:
+                px[x, y + t2] = CHECK
+    return img
+
+
 def tiles(strip_path, size, count):
     strip = Image.open(strip_path).convert("RGB")
     return [strip.crop((i * size, 0, (i + 1) * size, size)) for i in range(count)]
@@ -266,7 +326,8 @@ def build(name, size):
     existing = old.size[0] // size
     parts = tiles(path, size, min(existing, 2)) + [draw_bch(size), draw_lzk(size), draw_check(size), draw_report(size),
                                                    draw_export(size), draw_independent(size),
-                                                   draw_revision(size), draw_snapshot(size)]
+                                                   draw_revision(size), draw_snapshot(size),
+                                                   draw_issue(size), draw_close(size)]
     out = Image.new("RGB", (size * len(parts), size), WHITE)
     for i, tile in enumerate(parts):
         out.paste(tile, (i * size, 0))

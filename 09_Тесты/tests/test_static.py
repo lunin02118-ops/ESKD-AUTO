@@ -787,7 +787,7 @@ class StaticRepository(StaticTestCase):
         self.assertGreater(len(settings), 10, "параметры реестра в Settings.cs не найдены")
         self.assertEqual([], sorted(n for n in settings if f"`{n}`" not in guide), "параметры ESKD_Settings без описания в руководстве")
         buttons = [b for b in re.findall(r'AddCommandItem2\("([^"]*)"', (ADDIN / "SwAddin.cs").read_text(encoding="utf-8")) if b]
-        self.assertEqual(10, len(buttons), buttons)
+        self.assertEqual(12, len(buttons), buttons)
         self.assertEqual([], [b for b in buttons if f"**{b}**" not in guide], "кнопки вкладки ЕСКД без описания в руководстве")
 
         existing = set()

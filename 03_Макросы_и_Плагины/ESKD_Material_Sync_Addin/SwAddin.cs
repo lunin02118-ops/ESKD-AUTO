@@ -24,7 +24,7 @@ namespace ESKD.MaterialSync
         public const string Version = "6.0.0";
         private const int CommandGroupId = 9997;
         private const string TabTitle = "ЕСКД";
-        private static readonly int[] CommandUserIds = { 9900, 9901, 9902, 9903, 9904, 9905, 9906, 9907, 9908, 9909, 9910 };
+        private static readonly int[] CommandUserIds = { 9900, 9901, 9902, 9903, 9904, 9905, 9906, 9907, 9908, 9909, 9910, 9911, 9912 };
 
         private ISldWorks _app;
         private ICommandManager _commands;
@@ -156,6 +156,14 @@ namespace ESKD.MaterialSync
             int snapshot = group.AddCommandItem2("Снимок эталона", -1,
                 "Сложить нынешнее состояние эталона в _Версии и записать строку в Изменения.xlsx",
                 "Снимок эталона", 9, "EtalonSnapshot", "EnableEtalonCommand", CommandUserIds[10], buttons);
+            // Выдача и закрытие заказа — работа Начальника КТО: документ для них не нужен, поэтому
+            // кнопки доступны и без открытой модели (Т-38, Т-44), а на вкладке стоят последними.
+            int issue = group.AddCommandItem2("Выдать в производство", -1,
+                "Собрать сводную заявку по заказу и скопировать документы в 04_ПРОИЗВОДСТВО",
+                "Выдать в производство", 10, "IssueProduction", "EnableIssueCommand", CommandUserIds[11], buttons);
+            int close = group.AddCommandItem2("Закрыть заказ", -1,
+                "Собрать комплекты изделий, сдать заказ в архив Y: и убрать папку в _Сдано",
+                "Закрыть заказ", 11, "CloseOrder", "EnableCloseCommand", CommandUserIds[12], buttons);
             group.HasToolbar = true;
             group.HasMenu = true;
             group.Activate();
@@ -173,7 +181,7 @@ namespace ESKD.MaterialSync
                 group.get_CommandID(settings), group.get_CommandID(sync), group.get_CommandID(bch),
                 group.get_CommandID(lzk), group.get_CommandID(check), group.get_CommandID(report),
                 group.get_CommandID(export), group.get_CommandID(independent), group.get_CommandID(revision),
-                group.get_CommandID(snapshot)
+                group.get_CommandID(snapshot), group.get_CommandID(issue), group.get_CommandID(close)
             };
             _commandIds = ids;
             for (int i = 0; i < ids.Length; i++)
@@ -188,8 +196,10 @@ namespace ESKD.MaterialSync
                     // только в меню, на вкладку идут «Выгрузить в производство» (ids[6]) и у сборки
                     // «Сделать независимым» (ids[7]) — в том порядке, в каком идёт работа над изделием.
                     // «Новая ревизия» (ids[8]) живёт там, где живёт ревизия: на чертеже и на БЧ-детали (Т-48).
+                    // «Выдать в производство» (ids[10]) и «Закрыть заказ» (ids[11]) заказом заведуют целиком,
+                    // поэтому стоят на вкладке сборки в конце — там, где работа над изделием заканчивается.
                     int[] wanted = part ? new[] { ids[0], ids[1], ids[2], ids[6], ids[8] }
-                        : assembly ? new[] { ids[0], ids[1], ids[7], ids[3], ids[4], ids[6] }
+                        : assembly ? new[] { ids[0], ids[1], ids[7], ids[3], ids[4], ids[6], ids[10], ids[11] }
                         : new[] { ids[0], ids[1], ids[8] };
                     CommandTab tab = _commands.GetCommandTab(docType, TabTitle);
 
@@ -283,7 +293,8 @@ namespace ESKD.MaterialSync
         private static readonly string[] CommandNames =
         {
             "Настройки ЕСКД", "Синхронизировать", "Деталь БЧ", "Ведомость ЛЗК", "Проверить изделие", "Отчёт проверки",
-            "Выгрузить в производство", "Сделать независимым", "Новая ревизия", "Снимок эталона"
+            "Выгрузить в производство", "Сделать независимым", "Новая ревизия", "Снимок эталона",
+            "Выдать в производство", "Закрыть заказ"
         };
         private int[] _commandIds;
 
@@ -736,6 +747,56 @@ namespace ESKD.MaterialSync
         public string EtalonStatus()
         {
             return EtalonService.LastOutcome;
+        }
+
+        // --------------------------------------------------------------- К-5 «Выдать в производство» (Т-38…Т-43)
+
+        /// <summary>Кнопка живёт без открытого документа: заказ выбирают в окне (Т-38).</summary>
+        public int EnableIssueCommand()
+        {
+            return 1;
+        }
+
+        public void IssueProduction()
+        {
+            IssueService.Run(_app, true, "", "", "", "", false);
+        }
+
+        /// <summary>Выдача без окон (Т-9): папка заказа, № заявки, «И01_…=2;…», цвет по умолчанию, черновик.</summary>
+        public void IssueProductionSilent(string orderFolder, string number, string quantities, string color, int draft)
+        {
+            IssueService.Run(_app, false, orderFolder, number, quantities, color, draft != 0);
+        }
+
+        /// <summary>«ok|сводная|изделий|файлов|отчёт» или «error|текст».</summary>
+        public string IssueStatus()
+        {
+            return IssueService.LastOutcome;
+        }
+
+        // --------------------------------------------------------------- К-6 «Закрыть заказ» (Т-44…Т-47)
+
+        /// <summary>Закрытие заказа тоже не требует документа — наоборот, требует, чтобы их не было (Т-44).</summary>
+        public int EnableCloseCommand()
+        {
+            return 1;
+        }
+
+        public void CloseOrder()
+        {
+            CloseOrderService.Run(_app, true, "", "");
+        }
+
+        /// <summary>Закрытие без окон (Т-9): папка заказа и корень архива.</summary>
+        public void CloseOrderSilent(string orderFolder, string archiveRoot)
+        {
+            CloseOrderService.Run(_app, false, orderFolder, archiveRoot);
+        }
+
+        /// <summary>«ok|архив|файлов|сдано» или «error|текст».</summary>
+        public string CloseOrderStatus()
+        {
+            return CloseOrderService.LastOutcome;
         }
 
         // Пакетная очистка файлов v5 — отдельной утилитой ESKD_Sync.exe /clean (Sw.MigrationService), а не методом надстройки:

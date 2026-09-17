@@ -35,7 +35,7 @@ SUITES = {
     "e2e": ["tests.test_e2e_persistence", "tests.test_e2e_model", "tests.test_e2e_bch",
             "tests.test_e2e_drawing", "tests.test_e2e_spec", "tests.test_e2e_real", "tests.test_e2e_install", "tests.test_e2e_mprop",
             "tests.test_e2e_stamp", "tests.test_e2e_order_structure", "tests.test_e2e_lzk",
-            "tests.test_e2e_check", "tests.test_e2e_export", "tests.test_e2e_independent", "tests.test_e2e_revision", "tests.test_e2e_etalon"],
+            "tests.test_e2e_check", "tests.test_e2e_export", "tests.test_e2e_independent", "tests.test_e2e_revision", "tests.test_e2e_etalon", "tests.test_e2e_issue"],
 }
 SUITES["full"] = SUITES["static"] + SUITES["unit"] + SUITES["contract"] + SUITES["e2e"]
 SUITES["smoke"] = SUITES["static"] + SUITES["unit"] + SUITES["contract"]
@@ -86,6 +86,17 @@ class Recorder(unittest.TextTestResult):
         self._rec(test, "xpass", "дефект, по-видимому, исправлен — обновите defects.json")
 
 
+def broken(name, error):
+    """Модуль не загрузился — прогон обязан покраснеть, а не молча стать короче на целую группу."""
+
+    class BrokenModule(unittest.TestCase):
+        def test_module_is_importable(self):
+            """Модуль тестов не загружается: сломан импорт или синтаксис."""
+            self.fail(f"модуль {name} не загружен:\n{error}")
+
+    return BrokenModule("test_module_is_importable")
+
+
 def load(names, pattern):
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
@@ -93,7 +104,9 @@ def load(names, pattern):
         try:
             mod_suite = loader.loadTestsFromName(name)
         except Exception:
-            print(f"  [пропуск] модуль {name} не загружен:\n{traceback.format_exc()}")
+            error = traceback.format_exc()
+            print(f"  [ошибка] модуль {name} не загружен:\n{error}")
+            suite.addTest(broken(name, error))
             continue
         for test in iter_tests(mod_suite):
             if pattern and not any(part.strip().lower() in test.id().lower() for part in pattern.split(",") if part.strip()):

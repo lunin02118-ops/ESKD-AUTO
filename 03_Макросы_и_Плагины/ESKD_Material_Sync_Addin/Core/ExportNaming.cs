@@ -174,7 +174,16 @@ namespace ESKD.MaterialSync.Core
         {
             HashSet<string> names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (string.IsNullOrEmpty(productFolder) || !Directory.Exists(productFolder)) return names;
-            foreach (string file in Directory.GetFiles(productFolder, IssuedPrefix + "*.txt"))
+            // Отчёт выдачи кнопка К-5 пишет в папку заказа (Т-42) — один на все изделия; более ранние
+            // отчёты могли лечь и в папку изделия. Читаем оба места, иначе выданное будет выглядеть
+            // черновиком, и К-2 молча перезапишет документ, который уже у цеха.
+            List<string> reports = new List<string>(Directory.GetFiles(productFolder, IssuedPrefix + "*.txt"));
+            string section = Path.GetDirectoryName(productFolder.TrimEnd(Path.DirectorySeparatorChar)) ?? "";
+            string order = string.Equals(Path.GetFileName(section), ProductLocator.SectionFolder,
+                StringComparison.OrdinalIgnoreCase) ? (Path.GetDirectoryName(section) ?? "") : "";
+            if (order.Length > 0 && Directory.Exists(order))
+                reports.AddRange(Directory.GetFiles(order, IssuedPrefix + "*.txt"));
+            foreach (string file in reports)
             {
                 string[] lines;
                 try
