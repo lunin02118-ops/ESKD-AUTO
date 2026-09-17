@@ -77,6 +77,9 @@ namespace ESKD.MaterialSync.Sw
                 foreach (Item item in items)
                 {
                     Status(app, "ЕСКД: выгрузка — " + Path.GetFileName(item.Path));
+                    // Ревизия принадлежит чертежу (Р0-8): её поднимает К-7 в чертеже, а модель об этом не знает.
+                    // Поэтому суффикс «_ИзмN» и право переписать выданное берутся из чертежа, если он есть.
+                    item.Revision = Math.Max(item.Revision, DrawingRevision(app, item.Path));
                     // Выданный документ перезаписывать нельзя: цех работает по тому, что у него на руках (Т-30).
                     if (item.Revision == 0 && issued.Contains(Path.GetFileName(item.Path)))
                     {
@@ -180,6 +183,38 @@ namespace ESKD.MaterialSync.Sw
             {
                 Log.Error("Выгрузка: свойство " + name, ex);
                 return "";
+            }
+        }
+
+        /// <summary>Ревизия чертежа рядом с моделью: 0 — чертежа нет или он ещё черновик.</summary>
+        private static int DrawingRevision(ISldWorks app, string modelPath)
+        {
+            string drawingPath = Path.ChangeExtension(modelPath, ".slddrw");
+            if (!File.Exists(drawingPath)) return 0;
+            ModelDoc2 drawing = null;
+            bool opened = false;
+            try
+            {
+                drawing = app.GetOpenDocumentByName(drawingPath) as ModelDoc2;
+                if (drawing == null)
+                {
+                    int errors = 0, warnings = 0;
+                    drawing = app.OpenDoc6(drawingPath, (int)swDocumentTypes_e.swDocDRAWING,
+                        (int)swOpenDocOptions_e.swOpenDocOptions_Silent | (int)swOpenDocOptions_e.swOpenDocOptions_ReadOnly,
+                        "", ref errors, ref warnings) as ModelDoc2;
+                    opened = drawing != null;
+                }
+                if (drawing == null) return 0;
+                return ExportNaming.Revision(new PropertyWriter(drawing, true).Resolved("", "Revision"));
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Выгрузка: ревизия чертежа " + drawingPath, ex);
+                return 0;
+            }
+            finally
+            {
+                if (opened && drawing != null) app.CloseDoc(drawing.GetPathName());
             }
         }
 

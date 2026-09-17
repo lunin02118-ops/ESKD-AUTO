@@ -53,6 +53,15 @@ namespace ESKD.MaterialSync.Core
             MaterialRecord.LineProperty, BchRecord.SavedFormatProperty, BchRecord.SavedRemarkProperty
         };
 
+        /// <summary>
+        /// Доп. свойства словаря SWPlus — строки 51 и 53 файла `MyProperties_1.ini` (ТЗ-02 Т-15). Их знает и MProp
+        /// (поля LblAddPRP1/2), и надстройка: «Операции» ставит конструктор в окне ведомости, «Ревизия» — кнопка
+        /// «Новая ревизия» у безчертёжной детали, у которой штампа с таблицей изменений нет.
+        /// </summary>
+        public const string OperationsName = "Операции";
+        public const string RevisionName = "Ревизия";
+        public static readonly string[] ExtraNames = new string[] { OperationsName, RevisionName };
+
         /// <summary>Общие свойства шаблона детали с живыми выражениями «"SW-Mass"» и «"SW-Material"»: надстройка их не пишет, очистка v5 возвращает выражения.</summary>
         public static readonly string[] TemplateNames = new string[] { "Масса", "Материал" };
 

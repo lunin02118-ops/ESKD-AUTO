@@ -24,7 +24,7 @@ namespace ESKD.MaterialSync
         public const string Version = "6.0.0";
         private const int CommandGroupId = 9997;
         private const string TabTitle = "ЕСКД";
-        private static readonly int[] CommandUserIds = { 9900, 9901, 9902, 9903, 9904, 9905, 9906, 9907, 9908 };
+        private static readonly int[] CommandUserIds = { 9900, 9901, 9902, 9903, 9904, 9905, 9906, 9907, 9908, 9909, 9910 };
 
         private ISldWorks _app;
         private ICommandManager _commands;
@@ -149,6 +149,13 @@ namespace ESKD.MaterialSync
             int independent = group.AddCommandItem2("Сделать независимым", -1,
                 "Выделенный эталон или чужая деталь становится своей копией в 01_3D — с чертежом и новым номером",
                 "Сделать независимым", 7, "MakeIndependent", "EnableIndependentCommand", CommandUserIds[8], buttons);
+            int revision = group.AddCommandItem2("Новая ревизия", -1,
+                "Поднять ревизию выданного чертежа: штамп, строка в Изменения.xlsx и выгрузка с суффиксом _ИзмN",
+                "Новая ревизия", 8, "NewRevision", "EnableRevisionCommand", CommandUserIds[9], buttons);
+            // Снимок делает куратор базы и делает редко: место ему в меню «Инструменты → ЕСКД», а не на вкладке.
+            int snapshot = group.AddCommandItem2("Снимок эталона", -1,
+                "Сложить нынешнее состояние эталона в _Версии и записать строку в Изменения.xlsx",
+                "Снимок эталона", 9, "EtalonSnapshot", "EnableEtalonCommand", CommandUserIds[10], buttons);
             group.HasToolbar = true;
             group.HasMenu = true;
             group.Activate();
@@ -165,9 +172,12 @@ namespace ESKD.MaterialSync
             {
                 group.get_CommandID(settings), group.get_CommandID(sync), group.get_CommandID(bch),
                 group.get_CommandID(lzk), group.get_CommandID(check), group.get_CommandID(report),
-                group.get_CommandID(export), group.get_CommandID(independent)
+                group.get_CommandID(export), group.get_CommandID(independent), group.get_CommandID(revision),
+                group.get_CommandID(snapshot)
             };
             _commandIds = ids;
+            for (int i = 0; i < ids.Length; i++)
+                if (ids[i] <= 0) Core.Log.Error("Команда «" + CommandNames[i] + "» не создана: идентификатор " + ids[i]);
             foreach (int docType in new[] { (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, (int)swDocumentTypes_e.swDocDRAWING })
             {
                 try
@@ -177,9 +187,10 @@ namespace ESKD.MaterialSync
                     // Порядок идентификаторов тот же, что в CommandNames; «Отчёт проверки» (ids[5]) живёт
                     // только в меню, на вкладку идут «Выгрузить в производство» (ids[6]) и у сборки
                     // «Сделать независимым» (ids[7]) — в том порядке, в каком идёт работа над изделием.
-                    int[] wanted = part ? new[] { ids[0], ids[1], ids[2], ids[6] }
+                    // «Новая ревизия» (ids[8]) живёт там, где живёт ревизия: на чертеже и на БЧ-детали (Т-48).
+                    int[] wanted = part ? new[] { ids[0], ids[1], ids[2], ids[6], ids[8] }
                         : assembly ? new[] { ids[0], ids[1], ids[7], ids[3], ids[4], ids[6] }
-                        : new[] { ids[0], ids[1] };
+                        : new[] { ids[0], ids[1], ids[8] };
                     CommandTab tab = _commands.GetCommandTab(docType, TabTitle);
 
                     // Вкладка отсутствует, ссылается на чужие команды (у сборки вместо «Синхронизировать» — «Определенный
@@ -272,7 +283,7 @@ namespace ESKD.MaterialSync
         private static readonly string[] CommandNames =
         {
             "Настройки ЕСКД", "Синхронизировать", "Деталь БЧ", "Ведомость ЛЗК", "Проверить изделие", "Отчёт проверки",
-            "Выгрузить в производство", "Сделать независимым"
+            "Выгрузить в производство", "Сделать независимым", "Новая ревизия", "Снимок эталона"
         };
         private int[] _commandIds;
 
@@ -651,6 +662,80 @@ namespace ESKD.MaterialSync
         public string IndependentStatus()
         {
             return IndependentService.LastOutcome;
+        }
+
+        /// <summary>
+        /// Кнопка «Новая ревизия» доступна на чертеже и БЧ-детали выданного изделия (ТЗ-02 Т-48).
+        /// Причина недоступности видна в подсказке: конструктору важно знать, что документ ещё черновик.
+        /// </summary>
+        public int EnableRevisionCommand()
+        {
+            try
+            {
+                int type = ActiveDocType();
+                if (type != (int)swDocumentTypes_e.swDocDRAWING && type != (int)swDocumentTypes_e.swDocPART) return 0;
+                return RevisionService.Unavailable(_app).Length == 0 ? 1 : 0;
+            }
+            catch (COMException)
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>Почему «Новая ревизия» недоступна — текст для подсказки и автотестов.</summary>
+        public string RevisionUnavailable()
+        {
+            return RevisionService.Unavailable(_app);
+        }
+
+        public void NewRevision()
+        {
+            RevisionService.Run(_app, true);
+        }
+
+        /// <summary>Новая ревизия без окон (Т-9): что изменено, код причины, задел.</summary>
+        public void NewRevisionSilent(string what, string code, string backlog)
+        {
+            RevisionService.Run(_app, false, what, code, backlog);
+        }
+
+        /// <summary>«ok|ревизия|строка журнала|выгрузка» или «error|текст».</summary>
+        public string RevisionStatus()
+        {
+            return RevisionService.LastOutcome;
+        }
+
+        /// <summary>Кнопка «Снимок эталона» доступна в сборке базы эталонов (ТЗ-02 Т-53).</summary>
+        public int EnableEtalonCommand()
+        {
+            try
+            {
+                if (ActiveDocType() != (int)swDocumentTypes_e.swDocASSEMBLY) return 0;
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                string path = doc == null ? "" : (doc.GetPathName() ?? "");
+                return path.Length > 0 && ProductLocator.Locate(path).InBase ? 1 : 0;
+            }
+            catch (COMException)
+            {
+                return 0;
+            }
+        }
+
+        public void EtalonSnapshot()
+        {
+            EtalonService.Run(_app, true);
+        }
+
+        /// <summary>Снимок эталона без окон (Т-9): что изменено и код причины.</summary>
+        public void EtalonSnapshotSilent(string what, string code)
+        {
+            EtalonService.Run(_app, false, what, code);
+        }
+
+        /// <summary>«ok|папка снимка|файлов|применяемость» или «error|текст».</summary>
+        public string EtalonStatus()
+        {
+            return EtalonService.LastOutcome;
         }
 
         // Пакетная очистка файлов v5 — отдельной утилитой ESKD_Sync.exe /clean (Sw.MigrationService), а не методом надстройки:

@@ -172,13 +172,14 @@ class AddinLifecycle(SwTestCase):
     def test_I10_eskd_tab_has_own_buttons_for_every_document_type(self):
         """I10 (замечание владельца 14.09): вкладка ЕСКД у детали — «Настройки ЕСКД», «Синхронизировать», «Деталь БЧ»,
         у сборки — ещё «Сделать независимым», «Ведомость ЛЗК» и «Проверить изделие», у обоих — «Выгрузить в производство»,
-        у чертежа — первые две; вкладка, сохранённая SolidWorks от
+        у чертежа — первые две и «Новая ревизия»; вкладка, сохранённая SolidWorks от
         прежней раскладки, со ссылкой на чужую команду («Определенный пользователем маршрут») пересоздаётся при загрузке."""
         common = "Настройки ЕСКД|Синхронизировать"
         export = "|Выгрузить в производство"
-        for doc_type, wanted in ((1, common + "|Деталь БЧ" + export),
+        revision = "|Новая ревизия"
+        for doc_type, wanted in ((1, common + "|Деталь БЧ" + export + revision),
                                  (2, common + "|Сделать независимым|Ведомость ЛЗК|Проверить изделие" + export),
-                                 (3, common)):
+                                 (3, common + revision)):
             with self.subTest(doc_type=doc_type):
                 self.assertEqual(wanted, str(com.call(self.s.eskd(), "TabButtons", doc_type)))
 

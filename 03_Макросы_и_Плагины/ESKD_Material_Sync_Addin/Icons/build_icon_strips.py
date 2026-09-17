@@ -4,7 +4,7 @@
 Порядок изображений совпадает с индексами AddCommandItem2 в SwAddin:
 0 — «Настройки ЕСКД», 1 — «Синхронизировать», 2 — «Деталь БЧ», 3 — «Ведомость ЛЗК»,
 4 — «Проверить изделие», 5 — «Отчёт проверки», 6 — «Выгрузить в производство»,
-7 — «Сделать независимым». Первые два изображения
+7 — «Сделать независимым», 8 — «Новая ревизия», 9 — «Снимок эталона». Первые два изображения
 берутся из прежних полос,
 остальные рисуются здесь.
 Запуск: python build_icon_strips.py (нужен Pillow).
@@ -212,6 +212,49 @@ def draw_independent(size):
     return img
 
 
+def draw_revision(size):
+    """Лист с треугольником ревизии: в штампе изменение помечают именно так."""
+    img = Image.new("RGB", (size, size), WHITE)
+    px = img.load()
+    left, right = (2, 13) if size == 16 else (3, 20)
+    top, bottom = (1, 14) if size == 16 else (1, 22)
+    for x in range(left, right + 1):
+        for y in range(top, bottom + 1):
+            px[x, y] = BORDER if x in (left, right) or y in (top, bottom) else SHEET
+    step = 3 if size == 16 else 4
+    y = top + step
+    while y < bottom - step:
+        for x in range(left + 2, right - 1):
+            px[x, y] = GRID
+        y += step
+    # треугольник изменения у нижнего края листа
+    height = 5 if size == 16 else 8
+    cx = left + (5 if size == 16 else 8)
+    base = bottom - 2
+    for row in range(height):
+        for x in range(cx - row, cx + row + 1):
+            if left < x < right and top < base - height + 1 + row < bottom:
+                px[x, base - height + 1 + row] = LINK if row in (0, height - 1) or x in (cx - row, cx + row) else SHEET
+    return img
+
+
+def draw_snapshot(size):
+    """Папка со слоями: снимок эталона — это его состояние, отложенное на полку."""
+    img = Image.new("RGB", (size, size), WHITE)
+    px = img.load()
+    layers = ((2, 12, 4, 9), (3, 13, 7, 12)) if size == 16 else ((3, 18, 6, 13), (5, 20, 11, 19))
+    for n, (left, right, top, bottom) in enumerate(layers):
+        fill = ETALON if n == 0 else SHEET
+        for x in range(left, right + 1):
+            for y in range(top, bottom + 1):
+                px[x, y] = BORDER if x in (left, right) or y in (top, bottom) else fill
+        # корешок папки
+        tab_right = left + (4 if size == 16 else 6)
+        for x in range(left, tab_right + 1):
+            px[x, top - 1] = BORDER if x in (left, tab_right) else fill
+    return img
+
+
 def tiles(strip_path, size, count):
     strip = Image.open(strip_path).convert("RGB")
     return [strip.crop((i * size, 0, (i + 1) * size, size)) for i in range(count)]
@@ -222,7 +265,8 @@ def build(name, size):
     old = Image.open(path)
     existing = old.size[0] // size
     parts = tiles(path, size, min(existing, 2)) + [draw_bch(size), draw_lzk(size), draw_check(size), draw_report(size),
-                                                   draw_export(size), draw_independent(size)]
+                                                   draw_export(size), draw_independent(size),
+                                                   draw_revision(size), draw_snapshot(size)]
     out = Image.new("RGB", (size * len(parts), size), WHITE)
     for i, tile in enumerate(parts):
         out.paste(tile, (i * size, 0))

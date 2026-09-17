@@ -42,9 +42,12 @@ namespace ESKD.MaterialSync.Core
             return SafeFileName(Path.GetFileNameWithoutExtension(assemblyPath) ?? "Изделие");
         }
 
+        /// <summary>Начало имени ведомости изделия: по нему её находят и снимок эталона, и проверка.</summary>
+        public const string WorkbookPrefix = "Ведомость_";
+
         public static string WorkbookPath(string productFolder, string cipher)
         {
-            return Path.Combine(productFolder, "Ведомость_" + SafeFileName(cipher) + ".xlsx");
+            return Path.Combine(productFolder, WorkbookPrefix + SafeFileName(cipher) + ".xlsx");
         }
 
         public static string ReportPath(string productFolder)
@@ -190,7 +193,7 @@ namespace ESKD.MaterialSync.Core
     /// <summary>Свойство «Операции»: словарь, порядок маршрута, автоподсказка (ТЗ-02 Т-14б, Р0-5).</summary>
     public static class LzkOperations
     {
-        public const string PropertyName = "Операции";
+        public const string PropertyName = PropertyDictionary.OperationsName;
         public const string SizePropertyName = "Габарит";
         public const string SheetCutting = "Лазерная резка листа";
         public const string TubeCutting = "Лазерная резка трубы";

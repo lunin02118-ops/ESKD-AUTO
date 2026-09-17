@@ -471,7 +471,7 @@ class StaticRepository(StaticTestCase):
             body = m.group(1)
             return set(re.findall(r'"([^"]+)"', body)) | {consts[ref.split(".")[-1]] for ref in re.findall(r"\b[A-Z]\w*\.\w+", body)}
 
-        groups = {a: declared(a) for a in ("DefaultNames", "SwPlusServiceNames", "LegacyExtraNames", "AddinNames", "TemplateNames")}
+        groups = {a: declared(a) for a in ("DefaultNames", "SwPlusServiceNames", "LegacyExtraNames", "AddinNames", "TemplateNames", "ExtraNames")}
         self.assertEqual({"Материал_Строка", "Формат_до_БЧ", "Примечание_до_БЧ"}, groups["AddinNames"])
         known = set().union(*groups.values())
 
@@ -787,7 +787,7 @@ class StaticRepository(StaticTestCase):
         self.assertGreater(len(settings), 10, "параметры реестра в Settings.cs не найдены")
         self.assertEqual([], sorted(n for n in settings if f"`{n}`" not in guide), "параметры ESKD_Settings без описания в руководстве")
         buttons = [b for b in re.findall(r'AddCommandItem2\("([^"]*)"', (ADDIN / "SwAddin.cs").read_text(encoding="utf-8")) if b]
-        self.assertEqual(8, len(buttons), buttons)
+        self.assertEqual(10, len(buttons), buttons)
         self.assertEqual([], [b for b in buttons if f"**{b}**" not in guide], "кнопки вкладки ЕСКД без описания в руководстве")
 
         existing = set()

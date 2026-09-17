@@ -67,6 +67,90 @@ namespace ESKD.MaterialSync.Core
             return new XlsxBook(path);
         }
 
+        /// <summary>
+        /// Новая книга с одним листом. Журнал изменений (ТЗ-02 Т-51) заводится в папке изделия сам:
+        /// держать в репозитории двоичный шаблон ради одного листа с шапкой незачем, а книга,
+        /// собранная здесь, открывается и Excel, и этим же разбором.
+        /// </summary>
+        public static XlsxBook Create(string path, string sheetName)
+        {
+            string directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+            XDocument types = new XDocument(new XElement(ContentTypes + "Types",
+                new XElement(ContentTypes + "Default", new XAttribute("Extension", "rels"),
+                    new XAttribute("ContentType", "application/vnd.openxmlformats-package.relationships+xml")),
+                new XElement(ContentTypes + "Default", new XAttribute("Extension", "xml"), new XAttribute("ContentType", "application/xml")),
+                new XElement(ContentTypes + "Override", new XAttribute("PartName", "/xl/workbook.xml"),
+                    new XAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml")),
+                new XElement(ContentTypes + "Override", new XAttribute("PartName", "/xl/worksheets/sheet1.xml"),
+                    new XAttribute("ContentType", WorksheetContent)),
+                new XElement(ContentTypes + "Override", new XAttribute("PartName", "/xl/styles.xml"),
+                    new XAttribute("ContentType", "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"))));
+            XDocument rels = new XDocument(new XElement(PackageRel + "Relationships",
+                new XElement(PackageRel + "Relationship", new XAttribute("Id", "rId1"),
+                    new XAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"),
+                    new XAttribute("Target", "xl/workbook.xml"))));
+            XDocument workbook = new XDocument(new XElement(Main + "workbook",
+                new XAttribute(XNamespace.Xmlns + "r", Rel.NamespaceName),
+                new XElement(Main + "sheets", new XElement(Main + "sheet", new XAttribute("name", sheetName),
+                    new XAttribute("sheetId", 1), new XAttribute(Rel + "id", "rId1")))));
+            XDocument workbookRels = new XDocument(new XElement(PackageRel + "Relationships",
+                new XElement(PackageRel + "Relationship", new XAttribute("Id", "rId1"),
+                    new XAttribute("Type", WorksheetType), new XAttribute("Target", "worksheets/sheet1.xml")),
+                new XElement(PackageRel + "Relationship", new XAttribute("Id", "rId2"),
+                    new XAttribute("Type", "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"),
+                    new XAttribute("Target", "styles.xml"))));
+            XDocument sheet = new XDocument(new XElement(Main + "worksheet",
+                new XAttribute(XNamespace.Xmlns + "r", Rel.NamespaceName),
+                new XElement(Main + "sheetData"),
+                new XElement(Main + "pageMargins", new XAttribute("left", "0.4"), new XAttribute("right", "0.4"),
+                    new XAttribute("top", "0.6"), new XAttribute("bottom", "0.6"),
+                    new XAttribute("header", "0.3"), new XAttribute("footer", "0.3"))));
+            // Нулевые шрифт, заливки и рамка — основа, к которой AddStyle дописывает свои.
+            XDocument styles = new XDocument(new XElement(Main + "styleSheet",
+                new XElement(Main + "fonts", new XAttribute("count", 1),
+                    new XElement(Main + "font", new XElement(Main + "sz", new XAttribute("val", "10")),
+                        new XElement(Main + "name", new XAttribute("val", "Arial")),
+                        new XElement(Main + "charset", new XAttribute("val", "204")),
+                        new XElement(Main + "family", new XAttribute("val", "2")))),
+                new XElement(Main + "fills", new XAttribute("count", 2),
+                    new XElement(Main + "fill", new XElement(Main + "patternFill", new XAttribute("patternType", "none"))),
+                    new XElement(Main + "fill", new XElement(Main + "patternFill", new XAttribute("patternType", "gray125")))),
+                new XElement(Main + "borders", new XAttribute("count", 1),
+                    new XElement(Main + "border", new XElement(Main + "left"), new XElement(Main + "right"),
+                        new XElement(Main + "top"), new XElement(Main + "bottom"), new XElement(Main + "diagonal"))),
+                new XElement(Main + "cellStyleXfs", new XAttribute("count", 1),
+                    new XElement(Main + "xf", new XAttribute("numFmtId", 0), new XAttribute("fontId", 0),
+                        new XAttribute("fillId", 0), new XAttribute("borderId", 0))),
+                new XElement(Main + "cellXfs", new XAttribute("count", 1),
+                    new XElement(Main + "xf", new XAttribute("numFmtId", 0), new XAttribute("fontId", 0),
+                        new XAttribute("fillId", 0), new XAttribute("borderId", 0), new XAttribute("xfId", 0))),
+                // Именованный стиль «Обычный»: без него Excel и сторонние разборы считают книгу без стиля по умолчанию.
+                new XElement(Main + "cellStyles", new XAttribute("count", 1),
+                    new XElement(Main + "cellStyle", new XAttribute("name", "Normal"),
+                        new XAttribute("xfId", 0), new XAttribute("builtinId", 0)))));
+
+            using (FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write))
+            using (ZipArchive zip = new ZipArchive(fs, ZipArchiveMode.Create))
+            {
+                Write(zip, "[Content_Types].xml", types);
+                Write(zip, "_rels/.rels", rels);
+                Write(zip, "xl/workbook.xml", workbook);
+                Write(zip, "xl/_rels/workbook.xml.rels", workbookRels);
+                Write(zip, "xl/worksheets/sheet1.xml", sheet);
+                Write(zip, "xl/styles.xml", styles);
+            }
+            return Open(path);
+        }
+
+        private static void Write(ZipArchive zip, string part, XDocument doc)
+        {
+            ZipArchiveEntry entry = zip.CreateEntry(part, CompressionLevel.Optimal);
+            using (Stream s = entry.Open())
+            using (XmlWriter w = XmlWriter.Create(s, new XmlWriterSettings { Encoding = new UTF8Encoding(false) }))
+                doc.Save(w);
+        }
+
         public void Dispose()
         {
         }
