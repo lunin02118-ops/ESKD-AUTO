@@ -170,22 +170,35 @@ namespace ESKD.MaterialSync.Core
         /// <summary>Стиль ячейки: жирный шрифт, тонкие рамки, перенос по словам. Возвращает индекс в cellXfs.</summary>
         public int AddStyle(bool bold, bool border, bool wrap)
         {
+            return AddStyle(new XlsxStyle { Bold = bold, Border = border, Wrap = wrap });
+        }
+
+        /// <summary>Стиль ячейки по описанию: шрифт, рамки, выравнивание, заливка, числовой формат.</summary>
+        public int AddStyle(XlsxStyle style)
+        {
+            if (style == null) style = new XlsxStyle();
             if (_styles == null) _styles = Load("xl/styles.xml");
             XElement root = _styles.Root;
             int fontId = 0;
-            if (bold)
+            if (style.Bold || style.Size > 0 || style.Gray)
             {
                 XElement fonts = root.Element(Main + "fonts");
-                XElement baseFont = fonts.Elements(Main + "font").First();
-                XElement font = new XElement(baseFont);
+                XElement font = new XElement(fonts.Elements(Main + "font").First());
                 font.Elements(Main + "b").Remove();
-                font.AddFirst(new XElement(Main + "b"));
+                font.Elements(Main + "color").Remove();
+                if (style.Bold) font.AddFirst(new XElement(Main + "b"));
+                if (style.Size > 0)
+                {
+                    font.Elements(Main + "sz").Remove();
+                    font.Add(new XElement(Main + "sz", new XAttribute("val", style.Size.ToString(CultureInfo.InvariantCulture))));
+                }
+                if (style.Gray) font.Add(new XElement(Main + "color", new XAttribute("rgb", "FF595959")));
                 fonts.Add(font);
                 fontId = fonts.Elements(Main + "font").Count() - 1;
                 fonts.SetAttributeValue("count", fontId + 1);
             }
             int borderId = 0;
-            if (border)
+            if (style.Border)
             {
                 XElement borders = root.Element(Main + "borders");
                 XElement thin = new XElement(Main + "border");
@@ -196,21 +209,97 @@ namespace ESKD.MaterialSync.Core
                 borderId = borders.Elements(Main + "border").Count() - 1;
                 borders.SetAttributeValue("count", borderId + 1);
             }
+            int fillId = 0;
+            if (style.Fill != null && style.Fill.Length > 0)
+            {
+                XElement fills = root.Element(Main + "fills");
+                fills.Add(new XElement(Main + "fill",
+                    new XElement(Main + "patternFill", new XAttribute("patternType", "solid"),
+                        new XElement(Main + "fgColor", new XAttribute("rgb", style.Fill)),
+                        new XElement(Main + "bgColor", new XAttribute("indexed", "64")))));
+                fillId = fills.Elements(Main + "fill").Count() - 1;
+                fills.SetAttributeValue("count", fillId + 1);
+            }
+            int numFmtId = 0;
+            if (style.NumberFormat != null && style.NumberFormat.Length > 0)
+            {
+                XElement formats = root.Element(Main + "numFmts");
+                if (formats == null)
+                {
+                    formats = new XElement(Main + "numFmts");
+                    root.AddFirst(formats);
+                }
+                numFmtId = formats.Elements(Main + "numFmt").Select(f => (int)f.Attribute("numFmtId")).DefaultIfEmpty(163).Max() + 1;
+                formats.Add(new XElement(Main + "numFmt", new XAttribute("numFmtId", numFmtId),
+                    new XAttribute("formatCode", style.NumberFormat)));
+                formats.SetAttributeValue("count", formats.Elements(Main + "numFmt").Count());
+            }
             XElement xfs = root.Element(Main + "cellXfs");
-            XElement xf = new XElement(Main + "xf", new XAttribute("numFmtId", 0), new XAttribute("fontId", fontId),
-                new XAttribute("fillId", 0), new XAttribute("borderId", borderId), new XAttribute("xfId", 0));
-            if (bold) xf.SetAttributeValue("applyFont", 1);
-            if (border) xf.SetAttributeValue("applyBorder", 1);
-            if (wrap)
+            XElement xf = new XElement(Main + "xf", new XAttribute("numFmtId", numFmtId), new XAttribute("fontId", fontId),
+                new XAttribute("fillId", fillId), new XAttribute("borderId", borderId), new XAttribute("xfId", 0));
+            if (fontId > 0) xf.SetAttributeValue("applyFont", 1);
+            if (borderId > 0) xf.SetAttributeValue("applyBorder", 1);
+            if (fillId > 0) xf.SetAttributeValue("applyFill", 1);
+            if (numFmtId > 0) xf.SetAttributeValue("applyNumberFormat", 1);
+            if (style.Wrap || style.Horizontal != null)
             {
                 xf.SetAttributeValue("applyAlignment", 1);
-                xf.Add(new XElement(Main + "alignment", new XAttribute("vertical", "center"), new XAttribute("wrapText", 1)));
+                XElement alignment = new XElement(Main + "alignment", new XAttribute("vertical", style.Vertical ?? "center"));
+                if (style.Horizontal != null) alignment.SetAttributeValue("horizontal", style.Horizontal);
+                if (style.Wrap) alignment.SetAttributeValue("wrapText", 1);
+                xf.Add(alignment);
             }
             xfs.Add(xf);
             int index = xfs.Elements(Main + "xf").Count() - 1;
             xfs.SetAttributeValue("count", index + 1);
             _stylesChanged = true;
             return index;
+        }
+
+        /// <summary>Шрифт всей книги: шаблон SWTools собран из китайского образца (宋体), кириллица в нём выглядит чужой.</summary>
+        public void NormalizeFonts(string face)
+        {
+            if (_styles == null) _styles = Load("xl/styles.xml");
+            foreach (XElement font in _styles.Root.Element(Main + "fonts").Elements(Main + "font"))
+            {
+                XElement name = font.Element(Main + "name");
+                if (name == null) font.Add(new XElement(Main + "name", new XAttribute("val", face)));
+                else name.SetAttributeValue("val", face);
+                XElement charset = font.Element(Main + "charset");
+                if (charset == null) font.Add(new XElement(Main + "charset", new XAttribute("val", "204")));
+                else charset.SetAttributeValue("val", "204");
+                XElement family = font.Element(Main + "family");
+                if (family == null) font.Add(new XElement(Main + "family", new XAttribute("val", "2")));
+                else family.SetAttributeValue("val", "2");
+            }
+            _stylesChanged = true;
+        }
+
+        /// <summary>Печать листа: область, повторяемая шапка (строка) — именованными диапазонами книги.</summary>
+        public void SetPrintNames(string sheetName, string printArea, int repeatRow)
+        {
+            XElement sheets = _workbook.Root.Element(Main + "sheets");
+            List<XElement> list = sheets.Elements(Main + "sheet").ToList();
+            int index = list.FindIndex(s => string.Equals((string)s.Attribute("name"), sheetName, StringComparison.OrdinalIgnoreCase));
+            if (index < 0) return;
+            XElement names = _workbook.Root.Element(Main + "definedNames");
+            if (names == null)
+            {
+                names = new XElement(Main + "definedNames");
+                sheets.AddAfterSelf(names);
+            }
+            string quoted = "'" + sheetName.Replace("'", "''") + "'";
+            Define(names, index, "_xlnm.Print_Area", quoted + "!" + printArea);
+            if (repeatRow > 0)
+                Define(names, index, "_xlnm.Print_Titles", quoted + "!$" + repeatRow + ":$" + repeatRow);
+        }
+
+        private static void Define(XElement names, int sheetIndex, string name, string value)
+        {
+            names.Elements(Main + "definedName")
+                .Where(n => (string)n.Attribute("name") == name && (int?)n.Attribute("localSheetId") == sheetIndex).Remove();
+            names.Add(new XElement(Main + "definedName", new XAttribute("name", name),
+                new XAttribute("localSheetId", sheetIndex), value));
         }
 
         /// <summary>Записать книгу: во временный файл рядом, затем заменить исходный.</summary>
@@ -258,8 +347,35 @@ namespace ESKD.MaterialSync.Core
         }
     }
 
+    /// <summary>Описание стиля ячейки для <see cref="XlsxBook.AddStyle(XlsxStyle)"/>.</summary>
+    public sealed class XlsxStyle
+    {
+        public bool Bold;
+        public bool Border;
+        public bool Wrap;
+        public bool Gray;
+        public double Size;
+        /// <summary>Заливка ARGB, например FFF2F2F2.</summary>
+        public string Fill;
+        /// <summary>left / center / right; null — по умолчанию.</summary>
+        public string Horizontal;
+        /// <summary>top / center / bottom; по умолчанию center.</summary>
+        public string Vertical;
+        /// <summary>Числовой формат, например 0.000.</summary>
+        public string NumberFormat;
+    }
+
     public sealed class XlsxSheet
     {
+        // Порядок дочерних элементов листа задан схемой: элемент не на своём месте Excel считает повреждением файла.
+        private static readonly string[] ChildOrder =
+        {
+            "sheetPr", "dimension", "sheetViews", "sheetFormatPr", "cols", "sheetData", "sheetCalcPr", "sheetProtection",
+            "protectedRanges", "scenarios", "autoFilter", "sortState", "dataConsolidate", "customSheetViews", "mergeCells",
+            "phoneticPr", "conditionalFormatting", "dataValidations", "hyperlinks", "printOptions", "pageMargins",
+            "pageSetup", "headerFooter"
+        };
+
         private readonly XlsxBook _book;
         private readonly XElement _data;
 
@@ -342,6 +458,73 @@ namespace ESKD.MaterialSync.Core
             cols.Add(new XElement(XlsxBook.Main + "col", new XAttribute("min", column), new XAttribute("max", column),
                 new XAttribute("width", width.ToString(CultureInfo.InvariantCulture)), new XAttribute("customWidth", 1)));
             Changed = true;
+        }
+
+        /// <summary>Объединить ячейки, например A1:F1.</summary>
+        public void Merge(string range)
+        {
+            XElement merges = Section("mergeCells");
+            merges.Elements(XlsxBook.Main + "mergeCell").Where(m => (string)m.Attribute("ref") == range).Remove();
+            merges.Add(new XElement(XlsxBook.Main + "mergeCell", new XAttribute("ref", range)));
+            merges.SetAttributeValue("count", merges.Elements(XlsxBook.Main + "mergeCell").Count());
+            Changed = true;
+        }
+
+        /// <summary>Высота строки в пунктах.</summary>
+        public void SetRowHeight(int row, double height)
+        {
+            XElement c = Find(XlsxBook.CellName(1, row), true);
+            XElement rowNode = c.Parent;
+            rowNode.SetAttributeValue("ht", height.ToString(CultureInfo.InvariantCulture));
+            rowNode.SetAttributeValue("customHeight", 1);
+            if (!c.HasElements && c.Attribute("t") == null) c.Remove();
+            Changed = true;
+        }
+
+        /// <summary>Закрепить строки выше указанной ячейки (шапка остаётся на экране при прокрутке).</summary>
+        public void FreezeRowsAbove(string cell)
+        {
+            int column, row;
+            XlsxBook.ParseCell(cell, out column, out row);
+            XElement views = Section("sheetViews");
+            XElement view = views.Element(XlsxBook.Main + "sheetView");
+            if (view == null)
+            {
+                view = new XElement(XlsxBook.Main + "sheetView", new XAttribute("workbookViewId", 0));
+                views.Add(view);
+            }
+            view.Elements(XlsxBook.Main + "pane").Remove();
+            view.AddFirst(new XElement(XlsxBook.Main + "pane", new XAttribute("ySplit", row - 1),
+                new XAttribute("topLeftCell", cell), new XAttribute("activePane", "bottomLeft"), new XAttribute("state", "frozen")));
+            Changed = true;
+        }
+
+        /// <summary>A4, книжная, вписать в одну страницу по ширине.</summary>
+        public void FitToWidth()
+        {
+            XElement properties = Section("sheetPr");
+            properties.Elements(XlsxBook.Main + "pageSetUpPr").Remove();
+            properties.Add(new XElement(XlsxBook.Main + "pageSetUpPr", new XAttribute("fitToPage", 1)));
+            XElement setup = Section("pageSetup");
+            setup.SetAttributeValue("paperSize", 9);
+            setup.SetAttributeValue("orientation", "portrait");
+            setup.SetAttributeValue("fitToWidth", 1);
+            setup.SetAttributeValue("fitToHeight", 0);
+            Changed = true;
+        }
+
+        /// <summary>Существующий или созданный на своём месте по схеме элемент листа.</summary>
+        private XElement Section(string name)
+        {
+            XElement existing = Document.Root.Element(XlsxBook.Main + name);
+            if (existing != null) return existing;
+            XElement created = new XElement(XlsxBook.Main + name);
+            int index = Array.IndexOf(ChildOrder, name);
+            XElement after = Document.Root.Elements()
+                .LastOrDefault(e => Array.IndexOf(ChildOrder, e.Name.LocalName) >= 0 && Array.IndexOf(ChildOrder, e.Name.LocalName) < index);
+            if (after != null) after.AddAfterSelf(created);
+            else Document.Root.AddFirst(created);
+            return created;
         }
 
         private XElement Find(string cell, bool create)

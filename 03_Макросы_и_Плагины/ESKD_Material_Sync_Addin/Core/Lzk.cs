@@ -88,6 +88,103 @@ namespace ESKD.MaterialSync.Core
         public bool IsStructuralMember;
         public bool HasWeldBeads;
         public bool IsWeldment;
+        /// <summary>Материал детали («Материал_Строка»): по нему решается покраска.</summary>
+        public string Material = "";
+        /// <summary>Покупное или стандартное изделие: приходит готовым, ничего с ним не делают.</summary>
+        public bool IsPurchased;
+        /// <summary>Плотность материала модели, кг/м³: запасной признак металла, когда «Материал_Строка» не заполнен.</summary>
+        public double DensityKgM3;
+    }
+
+    /// <summary>Что за материал у детали: от этого зависит покраска (замечание владельца З-1 к ТЗ-02б).</summary>
+    public enum MaterialKind
+    {
+        /// <summary>Материал не заполнен или не опознан — решает конструктор.</summary>
+        Unknown,
+        /// <summary>Металлопрокат: лист, труба, профиль, уголок, швеллер, круг, полоса. Красится.</summary>
+        RolledMetal,
+        /// <summary>Пластик, ЛДСП, МДФ, ДВП, ХДФ, фанера, кромка, резина, стекло. Не красится.</summary>
+        NonMetal
+    }
+
+    /// <summary>
+    /// Распознавание материала по строке обозначения («Материал_Строка» или имя материала библиотеки):
+    /// первое слово — сортамент, дальше марка. Списки держатся здесь, чтобы правка была в одном месте.
+    /// </summary>
+    public static class LzkMaterials
+    {
+        /// <summary>Сортамент проката — красится.</summary>
+        public static readonly string[] Rolled =
+        {
+            "Лист", "Труба", "Профиль", "Уголок", "Швеллер", "Двутавр", "Балка", "Круг", "Квадрат",
+            "Полоса", "Шестигранник", "Лента", "Проволока", "Рулон", "Прокат", "Сталь", "Прут"
+        };
+
+        /// <summary>Неметалл — не красится: пластик, древесные плиты, кромка, стекло, резина.</summary>
+        public static readonly string[] NonMetal =
+        {
+            "Плита", "Фанера", "Пластик", "Кромка", "ЛДСП", "МДФ", "ДВП", "ХДФ", "ДСП", "Полиэтилен",
+            "Полипропилен", "Полиамид", "Поликарбонат", "ПВХ", "ABS", "HPL", "Оргстекло", "Акрил",
+            "Резина", "Стекло", "Поролон", "Ткань", "Картон", "Дерево", "Брус", "Доска", "Капролон", "Фторопласт"
+        };
+
+        /// <summary>Плотность, ниже которой материал точно не металл: алюминий 2700, сталь 7850, ЛДСП 800, пластики до 1600.</summary>
+        public const double MetalDensityKgM3 = 2000;
+
+        public static MaterialKind Kind(string material)
+        {
+            string value = (material ?? "").Trim();
+            if (value.Length == 0) return MaterialKind.Unknown;
+            foreach (string word in NonMetal)
+                if (HasWord(value, word)) return MaterialKind.NonMetal;
+            foreach (string word in Rolled)
+                if (HasWord(value, word)) return MaterialKind.RolledMetal;
+            return MaterialKind.Unknown;
+        }
+
+        /// <summary>
+        /// Материал с учётом плотности модели: у заказов, ещё не оформленных по ЕСКД, «Материал_Строка» пуст,
+        /// но материал детали в SolidWorks задан — по нему и видно, металл это или пластик.
+        /// </summary>
+        public static MaterialKind Kind(string material, double densityKgM3)
+        {
+            MaterialKind byName = Kind(material);
+            if (byName != MaterialKind.Unknown || densityKgM3 <= 0) return byName;
+            return densityKgM3 >= MetalDensityKgM3 ? MaterialKind.RolledMetal : MaterialKind.NonMetal;
+        }
+
+        public static bool IsRolledMetal(string material)
+        {
+            return Kind(material) == MaterialKind.RolledMetal;
+        }
+
+        /// <summary>Сортамент, который режут лазером по листу.</summary>
+        private static readonly string[] SheetStock = { "Лист", "Рулон" };
+
+        /// <summary>Сортамент, который режут на трубном лазере.</summary>
+        private static readonly string[] TubeStock = { "Труба", "Профиль", "Уголок", "Швеллер", "Двутавр", "Балка" };
+
+        /// <summary>
+        /// Раскрой по сортаменту материала для деталей, у которых SolidWorks не дал признаков (деталь не листовая
+        /// и не элемент сварной конструкции): «Лист …» — резка листа, «Труба …», «Профиль …» — резка трубы.
+        /// Круг, полоса, проволока сюда не попадают: их режут не лазером, операцию ставит конструктор.
+        /// </summary>
+        public static string Cutting(string material)
+        {
+            if (Kind(material) != MaterialKind.RolledMetal) return "";
+            foreach (string word in SheetStock)
+                if (HasWord(material, word)) return LzkOperations.SheetCutting;
+            foreach (string word in TubeStock)
+                if (HasWord(material, word)) return LzkOperations.TubeCutting;
+            return "";
+        }
+
+        /// <summary>Слово целиком, без учёта регистра: «Лист 4,0 …» — лист, «Листогиб» — нет.</summary>
+        private static bool HasWord(string value, string word)
+        {
+            return Regex.IsMatch(value, @"(^|[^\p{L}\p{N}])" + Regex.Escape(word) + @"($|[^\p{L}\p{N}])",
+                RegexOptions.IgnoreCase);
+        }
     }
 
     /// <summary>Свойство «Операции»: словарь, порядок маршрута, автоподсказка (ТЗ-02 Т-14б, Р0-5).</summary>
@@ -134,15 +231,23 @@ namespace ESKD.MaterialSync.Core
             return Parse(value).Contains(operation);
         }
 
-        /// <summary>Автоподсказка по модели: лист → резка листа (+ гибка при сгибах); элемент сварной конструкции → резка трубы;
-        /// сборка со швами или сварная → сварная, иначе механическая. «Покраска» не подсказывается.</summary>
+        /// <summary>
+        /// Автоподсказка по модели: лист → резка листа (+ гибка при сгибах); элемент сварной конструкции → резка трубы;
+        /// сборка со швами или сварная → сварная, иначе механическая.
+        ///
+        /// «Покраска» (З-1): красится металлопрокат и сварной узел целиком; пластик, древесные плиты, кромка и покупные
+        /// не красятся; у сварного узла детали внутри на лист «Покраска» не выводятся (Т-14б). Материал не опознан —
+        /// покраска не подставляется, решает конструктор в окне «Операции».
+        /// </summary>
         public static List<string> Suggest(ModelTraits t)
         {
             List<string> result = new List<string>();
-            if (t == null) return result;
+            if (t == null || t.IsPurchased) return result;
             if (t.IsAssembly)
             {
-                result.Add(t.HasWeldBeads || t.IsWeldment ? WeldedAssembly : MechanicalAssembly);
+                bool welded = t.HasWeldBeads || t.IsWeldment;
+                result.Add(welded ? WeldedAssembly : MechanicalAssembly);
+                if (welded) result.Add(Painting);
                 return result;
             }
             if (t.IsSheetMetal)
@@ -154,6 +259,14 @@ namespace ESKD.MaterialSync.Core
             {
                 result.Add(TubeCutting);
             }
+            else
+            {
+                // Признаков нет (деталь смоделирована телом, а не листовым металлом или элементом конструкции) —
+                // раскрой по сортаменту материала.
+                string cutting = LzkMaterials.Cutting(t.Material);
+                if (cutting.Length > 0) result.Add(cutting);
+            }
+            if (LzkMaterials.Kind(t.Material, t.DensityKgM3) == MaterialKind.RolledMetal) result.Add(Painting);
             return result;
         }
 
@@ -240,6 +353,10 @@ namespace ESKD.MaterialSync.Core
         public const string Mark = "?";
         public const string PaintSheet = "Покраска";
         public const string PurchasedSheet = "Покупные";
+        /// <summary>Шрифт книги: есть на каждом рабочем месте, в таблице читается лучше Times New Roman.</summary>
+        public const string FontFace = "Arial";
+        /// <summary>Разделитель ключа группировки: в реквизитах такого символа нет.</summary>
+        private const string Key = "\u0001";
 
         public static readonly string[] RequiredNames =
         {
@@ -342,8 +459,10 @@ namespace ESKD.MaterialSync.Core
             if (missing.Count > 0)
                 result.Issues.Add("В ведомости нет изготавливаемых моделей (" + missing.Count + "): " + string.Join(", ", missing.ToArray()));
 
-            result.PaintRows = WritePaint(book, items);
-            result.PurchasedRows = WritePurchased(book, items, result);
+            // Шаблон SWTools собран из китайского образца: без этого вся книга печатается шрифтом 宋体.
+            book.NormalizeFonts(FontFace);
+            result.PaintRows = WritePaint(book, items, header);
+            result.PurchasedRows = WritePurchased(book, items, header);
 
             if (header != null)
             {
@@ -383,90 +502,160 @@ namespace ESKD.MaterialSync.Core
             target.SetText(cell, value);
         }
 
-        private static int WritePaint(XlsxBook book, IList<LzkItem> items)
+        private static int WritePaint(XlsxBook book, IList<LzkItem> items, LzkHeader header)
         {
             List<LzkItem> painted = items
                 .Where(i => !i.IsPurchased && !i.InsidePaintedUnit && LzkOperations.Contains(i.Operations, LzkOperations.Painting))
                 .ToList();
-            XlsxSheet sheet = book.AddSheet(PaintSheet);
-            int head = book.AddStyle(true, true, true);
-            int cell = book.AddStyle(false, true, true);
             string[] titles = { "№", "Обозначение", "Наименование", "Площадь 1 шт., м²", "Кол-во, шт.", "Площадь всего, м²" };
-            double[] widths = { 5, 24, 34, 14, 10, 14 };
-            sheet.SetText("A1", "Покраска (на 1 изделие)", head);
-            for (int c = 0; c < titles.Length; c++)
-            {
-                sheet.SetText(XlsxBook.CellName(c + 1, 3), titles[c], head);
-                sheet.SetColumnWidth(c + 1, widths[c]);
-            }
-            int row = 4;
+            double[] widths = { 5, 24, 40, 14, 11, 15 };
+            Layout layout = new Layout(book, PaintSheet, "Покраска (на одно изделие)", header, titles, widths);
+            int row = layout.FirstRow;
             double total = 0;
             foreach (LzkItem i in painted)
             {
-                sheet.SetNumber(XlsxBook.CellName(1, row), row - 3, cell);
-                sheet.SetText(XlsxBook.CellName(2, row), i.Designation, cell);
-                sheet.SetText(XlsxBook.CellName(3, row), i.Name, cell);
+                layout.Sheet.SetNumber(XlsxBook.CellName(1, row), row - layout.FirstRow + 1, layout.Center);
+                layout.Sheet.SetText(XlsxBook.CellName(2, row), i.Designation, layout.Text);
+                layout.Sheet.SetText(XlsxBook.CellName(3, row), i.Name, layout.Text);
                 if (double.IsNaN(i.AreaM2))
                 {
-                    sheet.SetText(XlsxBook.CellName(4, row), Mark, cell);
-                    sheet.SetText(XlsxBook.CellName(6, row), Mark, cell);
+                    layout.Sheet.SetText(XlsxBook.CellName(4, row), Mark, layout.Center);
+                    layout.Sheet.SetText(XlsxBook.CellName(6, row), Mark, layout.Center);
                 }
                 else
                 {
                     double area = Math.Round(i.AreaM2, 3);
-                    sheet.SetNumber(XlsxBook.CellName(4, row), area, cell);
-                    sheet.SetNumber(XlsxBook.CellName(6, row), Math.Round(area * i.Quantity, 3), cell);
+                    layout.Sheet.SetNumber(XlsxBook.CellName(4, row), area, layout.Area);
+                    layout.Sheet.SetNumber(XlsxBook.CellName(6, row), Math.Round(area * i.Quantity, 3), layout.Area);
                     total += area * i.Quantity;
                 }
-                sheet.SetNumber(XlsxBook.CellName(5, row), i.Quantity, cell);
+                layout.Sheet.SetNumber(XlsxBook.CellName(5, row), i.Quantity, layout.Center);
                 row++;
             }
-            if (painted.Count == 0) sheet.SetText("A4", "Окрашиваемых единиц нет (операция «Покраска» не указана)");
+            if (painted.Count == 0)
+            {
+                layout.Sheet.SetText(XlsxBook.CellName(1, row), "Окрашиваемых единиц нет: операция «Покраска» не назначена ни одной единице", layout.Note);
+                layout.Sheet.Merge("A" + row + ":" + XlsxBook.CellName(titles.Length, row));
+            }
             else
             {
-                sheet.SetText(XlsxBook.CellName(3, row), "Итого", head);
-                sheet.SetNumber(XlsxBook.CellName(6, row), Math.Round(total, 3), head);
+                layout.Sheet.SetText(XlsxBook.CellName(3, row), "Итого", layout.Total);
+                layout.Sheet.SetText(XlsxBook.CellName(4, row), "", layout.Total);
+                layout.Sheet.SetText(XlsxBook.CellName(5, row), "", layout.Total);
+                layout.Sheet.SetNumber(XlsxBook.CellName(6, row), Math.Round(total, 3), layout.TotalNumber);
             }
+            layout.Finish(row);
             return painted.Count;
         }
 
-        private static int WritePurchased(XlsxBook book, IList<LzkItem> items, LzkResult result)
+        private static int WritePurchased(XlsxBook book, IList<LzkItem> items, LzkHeader header)
         {
             var groups = items.Where(i => i.IsPurchased)
-                .GroupBy(i => (i.Designation + "\u0001" + i.Name + "\u0001" + i.Code).ToLowerInvariant())
+                .GroupBy(i => (i.Designation + Key + i.Name + Key + i.Code).ToLowerInvariant())
                 .Select(g => new { First = g.First(), Quantity = g.Sum(i => i.Quantity) })
                 .OrderBy(g => g.First.Name, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
-            XlsxSheet sheet = book.AddSheet(PurchasedSheet);
-            int head = book.AddStyle(true, true, true);
-            int cell = book.AddStyle(false, true, true);
-            string[] titles = { "№", "Наименование", "Обозначение", "Код", "Ед. изм. (ОКЕИ)", "Кол-во" };
-            double[] widths = { 5, 40, 24, 16, 14, 10 };
-            sheet.SetText("A1", "Покупные и стандартные изделия (на 1 изделие)", head);
-            for (int c = 0; c < titles.Length; c++)
-            {
-                sheet.SetText(XlsxBook.CellName(c + 1, 3), titles[c], head);
-                sheet.SetColumnWidth(c + 1, widths[c]);
-            }
-            int row = 4;
+            string[] titles = { "№", "Наименование", "Обозначение", "Код 1С", "Ед. изм.", "ОКЕИ", "Кол-во" };
+            double[] widths = { 5, 44, 26, 12, 10, 8, 10 };
+            Layout layout = new Layout(book, PurchasedSheet,
+                "Покупные и стандартные изделия (на одно изделие)", header, titles, widths);
+            int row = layout.FirstRow;
             foreach (var g in groups)
             {
                 LzkItem i = g.First;
-                sheet.SetNumber(XlsxBook.CellName(1, row), row - 3, cell);
-                sheet.SetText(XlsxBook.CellName(2, row), i.Name.Length > 0 ? i.Name : System.IO.Path.GetFileNameWithoutExtension(i.Path), cell);
-                sheet.SetText(XlsxBook.CellName(3, row), i.Designation, cell);
-                if (i.Code.Trim().Length > 0) sheet.SetText(XlsxBook.CellName(4, row), i.Code, cell);
-                else
-                {
-                    sheet.SetText(XlsxBook.CellName(4, row), Mark, cell);
-                    result.Issues.Add("Покупное «" + (i.Name.Length > 0 ? i.Name : i.Designation) + "»: нет кода (Код_Продукции или Справочный_номер)");
-                }
-                sheet.SetText(XlsxBook.CellName(5, row), i.Unit.Trim().Length > 0 ? i.Unit : "796 шт", cell);
-                sheet.SetNumber(XlsxBook.CellName(6, row), g.Quantity, cell);
+                string unit, okei;
+                Unit(i.Unit, out unit, out okei);
+                layout.Sheet.SetNumber(XlsxBook.CellName(1, row), row - layout.FirstRow + 1, layout.Center);
+                layout.Sheet.SetText(XlsxBook.CellName(2, row), i.Name.Length > 0 ? i.Name : System.IO.Path.GetFileNameWithoutExtension(i.Path), layout.Text);
+                layout.Sheet.SetText(XlsxBook.CellName(3, row), i.Designation, layout.Text);
+                // Код 1С — из справочника снабжения (ТЗ-02 Т-14а). Справочника нет — ячейка пустая: это не забытый
+                // реквизит конструктора, замечанием в отчёт не идёт.
+                layout.Sheet.SetText(XlsxBook.CellName(4, row), i.Code.Trim(), layout.Center);
+                layout.Sheet.SetText(XlsxBook.CellName(5, row), unit, layout.Center);
+                layout.Sheet.SetText(XlsxBook.CellName(6, row), okei, layout.Center);
+                layout.Sheet.SetNumber(XlsxBook.CellName(7, row), g.Quantity, layout.Center);
                 row++;
             }
-            if (groups.Count == 0) sheet.SetText("A4", "Покупных изделий нет");
+            if (groups.Count == 0)
+            {
+                layout.Sheet.SetText(XlsxBook.CellName(1, row), "Покупных и стандартных изделий в составе нет", layout.Note);
+                layout.Sheet.Merge("A" + row + ":" + XlsxBook.CellName(titles.Length, row));
+            }
+            layout.Finish(row);
             return groups.Count;
+        }
+
+        /// <summary>«796 ШТ», «шт» → единица и код ОКЕИ; по умолчанию штуки (ТЗ-02 Т-14а).</summary>
+        public static void Unit(string value, out string unit, out string okei)
+        {
+            string raw = (value ?? "").Trim();
+            Match m = Regex.Match(raw, @"^(\d{3})\s*(.*)$");
+            okei = m.Success ? m.Groups[1].Value : "";
+            unit = (m.Success ? m.Groups[2].Value : raw).Trim().ToLowerInvariant();
+            if (unit.Length == 0) unit = "шт";
+            if (okei.Length == 0 && unit == "шт") okei = "796";
+        }
+
+        /// <summary>Вёрстка листа ведомости: название, подзаголовок, шапка, стили строк, печать.</summary>
+        private sealed class Layout
+        {
+            private const string HeadFill = "FFF2F2F2";
+            private readonly XlsxBook _book;
+            private readonly string _name;
+            private readonly int _columns;
+
+            public readonly XlsxSheet Sheet;
+            public readonly int FirstRow = 4;
+            public readonly int Text, Center, Area, Total, TotalNumber, Note;
+
+            public Layout(XlsxBook book, string name, string title, LzkHeader header, string[] titles, double[] widths)
+            {
+                _book = book;
+                _name = name;
+                _columns = titles.Length;
+                Sheet = book.AddSheet(name);
+                int titleStyle = book.AddStyle(new XlsxStyle { Bold = true, Size = 12, Horizontal = "left" });
+                int subtitle = book.AddStyle(new XlsxStyle { Gray = true, Size = 9, Horizontal = "left" });
+                int head = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Wrap = true, Horizontal = "center", Fill = HeadFill });
+                Text = book.AddStyle(new XlsxStyle { Border = true, Wrap = true, Horizontal = "left" });
+                Center = book.AddStyle(new XlsxStyle { Border = true, Horizontal = "center" });
+                Area = book.AddStyle(new XlsxStyle { Border = true, Horizontal = "center", NumberFormat = "0.000" });
+                Total = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Horizontal = "right" });
+                TotalNumber = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Horizontal = "center", NumberFormat = "0.000" });
+                Note = book.AddStyle(new XlsxStyle { Gray = true, Horizontal = "left" });
+
+                Sheet.SetText("A1", title, titleStyle);
+                Sheet.Merge("A1:" + XlsxBook.CellName(_columns, 1));
+                Sheet.SetRowHeight(1, 22);
+                Sheet.SetText("A2", Subtitle(header), subtitle);
+                Sheet.Merge("A2:" + XlsxBook.CellName(_columns, 2));
+                for (int c = 0; c < titles.Length; c++)
+                {
+                    Sheet.SetText(XlsxBook.CellName(c + 1, 3), titles[c], head);
+                    Sheet.SetColumnWidth(c + 1, widths[c]);
+                }
+                Sheet.SetRowHeight(3, 30);
+            }
+
+            private static string Subtitle(LzkHeader header)
+            {
+                if (header == null) return "";
+                string product = (header.Product ?? "").Trim();
+                string date = (header.Date ?? "").Trim();
+                return (product.Length > 0 ? "Изделие: " + product : "") +
+                    (product.Length > 0 && date.Length > 0 ? ";  " : "") +
+                    (date.Length > 0 ? "сформировано " + date : "");
+            }
+
+            /// <summary>Закрепление шапки, область печати и повтор шапки на каждой странице.</summary>
+            public void Finish(int lastRow)
+            {
+                Sheet.FreezeRowsAbove("A" + FirstRow);
+                Sheet.FitToWidth();
+                string lastColumn = XlsxBook.CellName(_columns, 1);
+                lastColumn = lastColumn.Substring(0, lastColumn.Length - 1);
+                _book.SetPrintNames(_name, "$A$1:$" + lastColumn + "$" + Math.Max(lastRow, FirstRow), 3);
+            }
         }
 
         /// <summary>Текст отчёта _Ведомость.txt.</summary>

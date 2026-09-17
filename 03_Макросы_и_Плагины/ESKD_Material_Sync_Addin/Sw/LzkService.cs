@@ -186,7 +186,7 @@ namespace ESKD.MaterialSync.Sw
                 if (!byKey.TryGetValue(path, out item))
                 {
                     item = Describe(model, path, comp.ReferencedConfiguration ?? "", model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, traits);
-                    item.AreaM2 = Area(comp);
+                    item.AreaM2 = Area(model, comp);
                     byKey[path] = item;
                     models[path] = model;
                 }
@@ -297,6 +297,9 @@ namespace ESKD.MaterialSync.Sw
             if (item.Name.Length == 0 || string.Equals(item.Name, baseName, StringComparison.OrdinalIgnoreCase))
                 item.Name = parsed.Title.Length > 0 ? parsed.Title : parsed.BaseName;
             ModelTraits t = Traits(model, assembly);
+            t.Material = item.Material;
+            t.IsPurchased = item.IsPurchased;
+            if (!assembly) t.DensityKgM3 = Density(model);
             traits[path] = t;
             item.IsProfile = t.IsStructuralMember;
             Size(model, assembly, t, item);
@@ -400,8 +403,38 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>Площадь поверхности экземпляра, м² (для узла — сумма тел всех деталей).</summary>
-        private double Area(Component2 comp)
+        /// <summary>
+        /// Площадь поверхности под покраску, м². Считается по документу самой модели: масса-свойство сборки,
+        /// которому скармливают тела компонента, возвращает площадь всего документа (боевая проверка 17.09.2026 —
+        /// у трёх разных деталей выходило одно и то же число).
+        /// </summary>
+        /// <summary>Плотность материала детали, кг/м³; 0 — не определена.</summary>
+        private static double Density(ModelDoc2 model)
         {
+            try
+            {
+                MassProperty mp = model.Extension.CreateMassProperty() as MassProperty;
+                return mp != null && mp.Density > 0 ? mp.Density : 0;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Ведомость ЛЗК: плотность материала", ex);
+                return 0;
+            }
+        }
+
+        private double Area(ModelDoc2 model, Component2 comp)
+        {
+            try
+            {
+                MassProperty mp = model.Extension.CreateMassProperty() as MassProperty;
+                if (mp != null && mp.SurfaceArea > 0) return mp.SurfaceArea;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Ведомость ЛЗК: площадь модели " + (model != null ? model.GetPathName() : ""), ex);
+            }
+            // Запасной путь — тела компонента в контексте сборки.
             try
             {
                 List<object> bodies = new List<object>();

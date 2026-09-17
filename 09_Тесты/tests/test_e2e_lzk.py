@@ -84,6 +84,20 @@ class Lzk(SwTestCase):
         ops = {main.cell(r, 3).value: main.cell(r, 9).value for r in rows}
         self.assertEqual("Механическая сборка", ops["ПРТИ.468211.110"], "операции подсборки по признакам модели")
         self.assertTrue(all(ops.values()), f"у каждой строки операции или «?»: {ops}")
+        # З-1: красится прокат; лист из стали — прокат, значит и резка, и покраска.
+        self.assertIn("Покраска", ops["ПРТИ.468211.101"], f"стальной лист красится: {ops['ПРТИ.468211.101']}")
+        self.assertNotIn("Покраска", ops["ПРТИ.468211.110"], "механическая сборка целиком не красится")
+        paint = wb["Покраска"]
+        self.assertEqual("Покраска (на одно изделие)", paint["A1"].value, "название листа")
+        self.assertEqual("№", paint["A3"].value, "шапка таблицы")
+        painted = [paint.cell(r, 2).value for r in range(4, paint.max_row + 1) if paint.cell(r, 1).value]
+        self.assertIn("ПРТИ.468211.101", painted, f"лист в покраске: {painted}")
+        areas = [paint.cell(r, 4).value for r in range(4, paint.max_row + 1) if paint.cell(r, 1).value]
+        self.assertTrue(all(isinstance(a, (int, float)) and a > 0 for a in areas), f"площадь каждой единицы: {areas}")
+        self.assertEqual(len(set(areas)), len(areas), f"площади разных деталей различаются: {areas}")
+        bought = wb["Покупные"]
+        codes = [bought.cell(r, 4).value for r in range(4, bought.max_row + 1) if bought.cell(r, 1).value]
+        self.assertNotIn("?", codes, f"нет кода — ячейка пустая, а не «?»: {codes}")
         sizes = [main.cell(r, 6).value for r in rows]
         self.assertTrue(all(sizes), f"габарит у каждой строки: {sizes}")
         self.assertEqual(int(issues), int(str(main["G4"].value).split()[0]) if main["G4"].value != "нет" else 0,

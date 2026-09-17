@@ -20,7 +20,8 @@ def build():
         shutil.copy2(paths.ADDIN_DIR / name, BIN / name)
     sources = sorted(str(p) for p in UNIT_DIR.glob("*.cs"))
     cmd = [str(paths.CSC), "/nologo", "/target:exe", "/platform:anycpu", "/codepage:65001", f"/out:{EXE}"]
-    cmd += [f"/r:{BIN / name}" for name in REFS] + ["/r:System.dll", "/r:System.Xml.dll", "/r:System.Core.dll"] + sources
+    cmd += [f"/r:{BIN / name}" for name in REFS] + ["/r:System.dll", "/r:System.Xml.dll", "/r:System.Core.dll",
+                                                    "/r:System.IO.Compression.dll", "/r:System.IO.Compression.FileSystem.dll"] + sources
     proc = subprocess.run(cmd, capture_output=True)
     if proc.returncode != 0:
         raise RuntimeError("Сборка ESKD.Tests.exe не удалась:\n" +

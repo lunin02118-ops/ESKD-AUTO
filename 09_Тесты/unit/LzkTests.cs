@@ -64,8 +64,9 @@ namespace ESKD.Tests
                 LzkOperations.Join(LzkOperations.Suggest(new ModelTraits { IsSheetMetal = true, HasBends = true })), "лист со сгибами");
             Assert.AreEqual("Лазерная резка трубы",
                 LzkOperations.Join(LzkOperations.Suggest(new ModelTraits { IsStructuralMember = true })), "профиль");
-            Assert.AreEqual("Сварная сборка",
-                LzkOperations.Join(LzkOperations.Suggest(new ModelTraits { IsAssembly = true, HasWeldBeads = true })), "сварная");
+            Assert.AreEqual("Сварная сборка; Покраска",
+                LzkOperations.Join(LzkOperations.Suggest(new ModelTraits { IsAssembly = true, HasWeldBeads = true })),
+                "сварная: узел красится целиком (З-1)");
             Assert.AreEqual("Механическая сборка",
                 LzkOperations.Join(LzkOperations.Suggest(new ModelTraits { IsAssembly = true })), "механическая");
             Assert.AreEqual(0, LzkOperations.Suggest(new ModelTraits()).Count, "прочая деталь");
@@ -208,7 +209,6 @@ namespace ESKD.Tests
                 Assert.IsFalse(issues.Contains("Строка 2 (И.101): не заполнено «Операции»"), "операции подставлены из модели: " + issues);
                 Assert.IsTrue(issues.Contains("Строка 3 (Болт М8): покупное"), issues);
                 Assert.IsTrue(issues.Contains("нет изготавливаемых моделей (1): И.102"), issues);
-                Assert.IsTrue(issues.Contains("Покупное «Болт М8»: нет кода"), issues);
                 Assert.IsFalse(issues.Contains("Строка 1 (И.100): не заполнено «Материал»"), "у сборки материал не требуется");
 
                 XlsxBook book = XlsxBook.Open(path);
@@ -227,9 +227,11 @@ namespace ESKD.Tests
                 Assert.AreEqual("Итого", paint.Get("C5"), "итог");
                 XlsxSheet bought = book.Sheet("Покупные");
                 Assert.AreEqual("Болт М8", bought.Get("B4"), "по наименованию");
-                Assert.AreEqual("6", bought.Get("F4"), "количество сложено");
-                Assert.AreEqual("?", bought.Get("D4"), "нет кода");
-                Assert.AreEqual("4180-001", bought.Get("D5"), "код");
+                Assert.AreEqual("6", bought.Get("G4"), "количество сложено");
+                Assert.AreEqual("", bought.Get("D4"), "кода 1С нет — ячейка пустая, а не «?»");
+                Assert.AreEqual("шт", bought.Get("E4"), "единица по умолчанию");
+                Assert.AreEqual("796", bought.Get("F4"), "код ОКЕИ");
+                Assert.AreEqual("4180-001", bought.Get("D5"), "код 1С из модели");
 
                 string report = LzkWorkbook.Report(header, path, r, new[] { "SWTools 1.1.109" });
                 Assert.IsTrue(report.Contains("Строк: 3; покраска: 1; покупные: 2"), report);
@@ -239,6 +241,161 @@ namespace ESKD.Tests
             {
                 File.Delete(path);
             }
+        }
+
+        public static void Test_Suggest_paints_rolled_metal_and_welded_units()
+        {
+            string[] sheet = LzkOperations.Suggest(new ModelTraits
+            { IsSheetMetal = true, HasBends = true, Material = "Лист 3,0 ГОСТ 19903-2015 / Ст3сп" }).ToArray();
+            Assert.AreEqual("Лазерная резка листа; Гибка; Покраска", LzkOperations.Join(sheet), "лист красится");
+
+            string[] tube = LzkOperations.Suggest(new ModelTraits
+            { IsStructuralMember = true, Material = "Труба 40х20х1,5 ГОСТ 8645-68" }).ToArray();
+            Assert.AreEqual("Лазерная резка трубы; Покраска", LzkOperations.Join(tube), "профиль красится");
+
+            string[] plastic = LzkOperations.Suggest(new ModelTraits { Material = "Пластик слоистый HPL-1,2 ГОСТ 9590-76" }).ToArray();
+            Assert.AreEqual("", LzkOperations.Join(plastic), "пластик не красится");
+
+            string[] board = LzkOperations.Suggest(new ModelTraits
+            { IsSheetMetal = false, Material = "Плита ЛДСП-16 ГОСТ 32289-2013" }).ToArray();
+            Assert.AreEqual("", LzkOperations.Join(board), "ЛДСП не красится");
+
+            string[] plywood = LzkOperations.Suggest(new ModelTraits { Material = "Фанера ФК-II/III-E1-Ш2-12 ГОСТ 3916.1-96" }).ToArray();
+            Assert.AreEqual("", LzkOperations.Join(plywood), "фанера не красится");
+
+            string[] purchased = LzkOperations.Suggest(new ModelTraits { IsPurchased = true, Material = "Лист 3,0" }).ToArray();
+            Assert.AreEqual("", LzkOperations.Join(purchased), "покупное не красится");
+
+            string[] welded = LzkOperations.Suggest(new ModelTraits { IsAssembly = true, HasWeldBeads = true }).ToArray();
+            Assert.AreEqual("Сварная сборка; Покраска", LzkOperations.Join(welded), "сварной узел красится целиком");
+
+            string[] mechanical = LzkOperations.Suggest(new ModelTraits { IsAssembly = true }).ToArray();
+            Assert.AreEqual("Механическая сборка", LzkOperations.Join(mechanical), "механическая сборка не красится");
+
+            string[] unknown = LzkOperations.Suggest(new ModelTraits { Material = "Композит XYZ" }).ToArray();
+            Assert.AreEqual("", LzkOperations.Join(unknown), "незнакомый материал — решает конструктор");
+
+            // Деталь смоделирована телом: признаков листового металла и сварной конструкции нет, раскрой — по сортаменту.
+            string[] body = LzkOperations.Suggest(new ModelTraits { Material = "Труба 40х20х1,5 ГОСТ 8645-68 / 08пс" }).ToArray();
+            Assert.AreEqual("Лазерная резка трубы; Покраска", LzkOperations.Join(body), "труба без признаков модели");
+            string[] plate = LzkOperations.Suggest(new ModelTraits { Material = "Лист Б-ПН-НО-3,0 ГОСТ 19903-2015" }).ToArray();
+            Assert.AreEqual("Лазерная резка листа; Покраска", LzkOperations.Join(plate), "лист без признаков модели");
+            string[] round = LzkOperations.Suggest(new ModelTraits { Material = "Круг 20 ГОСТ 2590-2006" }).ToArray();
+            Assert.AreEqual("Покраска", LzkOperations.Join(round), "круг лазером не режут — только покраска");
+
+            // Заказ, ещё не оформленный по ЕСКД: «Материал_Строка» пуст, но материал модели задан — решает плотность.
+            string[] steel = LzkOperations.Suggest(new ModelTraits { IsSheetMetal = true, DensityKgM3 = 7850 }).ToArray();
+            Assert.AreEqual("Лазерная резка листа; Покраска", LzkOperations.Join(steel), "сталь по плотности");
+            string[] aluminium = LzkOperations.Suggest(new ModelTraits { DensityKgM3 = 2700 }).ToArray();
+            Assert.AreEqual("Покраска", LzkOperations.Join(aluminium), "алюминий по плотности");
+            string[] plasticByDensity = LzkOperations.Suggest(new ModelTraits { DensityKgM3 = 1200 }).ToArray();
+            Assert.AreEqual("", LzkOperations.Join(plasticByDensity), "пластик по плотности не красится");
+            string[] boardByDensity = LzkOperations.Suggest(new ModelTraits { DensityKgM3 = 800 }).ToArray();
+            Assert.AreEqual("", LzkOperations.Join(boardByDensity), "древесная плита по плотности не красится");
+            string[] nameWins = LzkOperations.Suggest(new ModelTraits { Material = "Плита ЛДСП-16 ГОСТ 32289-2013", DensityKgM3 = 7850 }).ToArray();
+            Assert.AreEqual("", LzkOperations.Join(nameWins), "сортамент важнее плотности");
+        }
+
+        public static void Test_Material_kind_reads_sortament()
+        {
+            Assert.AreEqual(MaterialKind.RolledMetal, LzkMaterials.Kind("Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-2024"), "лист");
+            Assert.AreEqual(MaterialKind.RolledMetal, LzkMaterials.Kind("труба 60х60х2,0 ГОСТ 8639-82"), "регистр");
+            Assert.AreEqual(MaterialKind.RolledMetal, LzkMaterials.Kind("Лист АМг2.М 1,5 ГОСТ 21631-76"), "алюминиевый прокат");
+            Assert.AreEqual(MaterialKind.NonMetal, LzkMaterials.Kind("Кромка ПВХ 2,0х22"), "кромка");
+            Assert.AreEqual(MaterialKind.NonMetal, LzkMaterials.Kind("Полиэтилен 20908-040 ГОСТ 16338-85"), "полиэтилен");
+            Assert.AreEqual(MaterialKind.Unknown, LzkMaterials.Kind(""), "пусто");
+            Assert.AreEqual(MaterialKind.Unknown, LzkMaterials.Kind("Листогиб"), "слово целиком");
+        }
+
+        public static void Test_Unit_splits_okei_code()
+        {
+            string unit, okei;
+            LzkWorkbook.Unit("796 ШТ", out unit, out okei);
+            Assert.AreEqual("шт", unit, "единица");
+            Assert.AreEqual("796", okei, "код ОКЕИ");
+            LzkWorkbook.Unit("", out unit, out okei);
+            Assert.AreEqual("шт", unit, "по умолчанию штуки");
+            Assert.AreEqual("796", okei, "код по умолчанию");
+            LzkWorkbook.Unit("м", out unit, out okei);
+            Assert.AreEqual("м", unit, "метры");
+            Assert.AreEqual("", okei, "код неизвестен");
+        }
+
+        public static void Test_Sheets_are_typeset_and_fonts_are_cyrillic()
+        {
+            string path = CopyTemplate();
+            try
+            {
+                XlsxBook export = XlsxBook.Open(path);
+                Row(export.Sheet("Ведомость"), 7, "1", "И.100", "Рама", "", "", "12,5", "1", "Сварная сборка; Покраска",
+                    @"D:\И\01_3D\И.100.sldasm");
+                export.Save();
+                List<LzkItem> items = new List<LzkItem>
+                {
+                    new LzkItem { Path = @"D:\И\01_3D\И.100.sldasm", Designation = "И.100", Name = "Рама", IsAssembly = true,
+                        IsTop = true, InProduct = true, Quantity = 1, Operations = "Сварная сборка; Покраска", AreaM2 = 2.5 },
+                    new LzkItem { Path = @"D:\Lib\Саморез.sldprt", Name = "Саморез 4,2x16", IsPurchased = true, Quantity = 12 }
+                };
+                LzkWorkbook.Complete(path, new LzkHeader { Product = "И.100 Рама", Date = "17.09.2026 19:30" }, items);
+
+                string styles = Part(path, "xl/styles.xml");
+                Assert.IsFalse(styles.Contains("宋体"), "китайского шрифта в книге нет");
+                Assert.IsTrue(styles.Contains("val=\"Arial\""), "шрифт книги — Arial");
+                Assert.IsTrue(styles.Contains("charset val=\"204\"") || styles.Contains("<charset val=\"204\"/>"), "кириллическая кодировка");
+
+                foreach (string name in new[] { "Покраска (на одно изделие)", "Покупные и стандартные изделия (на одно изделие)" })
+                {
+                    string xml = SheetXml(path, name);
+                    Assert.IsTrue(xml.Contains("<mergeCell"), name + ": заголовок объединён");
+                    Assert.IsTrue(xml.Contains("state=\"frozen\""), name + ": шапка закреплена");
+                    Assert.IsTrue(xml.Contains("fitToWidth=\"1\""), name + ": печать по ширине страницы");
+                    Assert.IsTrue(xml.Contains("customWidth=\"1\""), name + ": ширины колонок заданы");
+                    Assert.IsTrue(xml.Contains("customHeight=\"1\""), name + ": высоты строк заданы");
+                }
+                string workbook = Part(path, "xl/workbook.xml");
+                Assert.IsTrue(workbook.Contains("_xlnm.Print_Titles"), "шапка повторяется на каждой странице");
+                Assert.IsTrue(workbook.Contains("_xlnm.Print_Area"), "область печати");
+
+                XlsxBook book = XlsxBook.Open(path);
+                XlsxSheet paint = book.Sheet("Покраска");
+                Assert.AreEqual("Покраска (на одно изделие)", paint.Get("A1"), "название листа");
+                Assert.IsTrue(paint.Get("A2").Contains("И.100 Рама"), "подзаголовок с изделием: " + paint.Get("A2"));
+                Assert.AreEqual("№", paint.Get("A3"), "шапка таблицы в третьей строке");
+                Assert.AreEqual("И.100", paint.Get("B4"), "первая строка данных");
+                XlsxSheet bought = book.Sheet("Покупные");
+                Assert.AreEqual("Саморез 4,2x16", bought.Get("B4"), "покупное");
+                Assert.AreEqual("", bought.Get("D4"), "код 1С пустой");
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        /// <summary>Содержимое части xlsx как текста.</summary>
+        private static string Part(string path, string part)
+        {
+            using (System.IO.Compression.ZipArchive zip = System.IO.Compression.ZipFile.OpenRead(path))
+            {
+                System.IO.Compression.ZipArchiveEntry entry = zip.GetEntry(part);
+                if (entry == null) throw new FileNotFoundException("Нет части " + part + " в " + path);
+                using (StreamReader reader = new StreamReader(entry.Open()))
+                    return reader.ReadToEnd();
+            }
+        }
+
+        /// <summary>XML листа, на котором встречается образец текста.</summary>
+        private static string SheetXml(string path, string marker)
+        {
+            using (System.IO.Compression.ZipArchive zip = System.IO.Compression.ZipFile.OpenRead(path))
+                foreach (System.IO.Compression.ZipArchiveEntry entry in zip.Entries)
+                {
+                    if (!entry.FullName.StartsWith("xl/worksheets/sheet")) continue;
+                    string xml;
+                    using (StreamReader reader = new StreamReader(entry.Open())) xml = reader.ReadToEnd();
+                    if (xml.Contains(marker)) return xml;
+                }
+            throw new InvalidOperationException("Нет листа с текстом «" + marker + "» в " + path);
         }
 
         public static void Test_Complete_takes_attributes_from_models()
