@@ -336,11 +336,13 @@ def sw_export(output_path: str, export_format: str = "STEP") -> dict:
             return {"success": False, "error": "No active document."}
 
         if not os.path.isabs(output_path):
-            doc_path = model.GetPathName()
+            doc_path = model.GetPathName  # позднее связывание: свойство, как в остальных инструментах
             if not doc_path:
                 return {"success": False, "error": "Активный документ не сохранён — укажите абсолютный путь."}
             output_path = os.path.normpath(os.path.join(os.path.dirname(doc_path), output_path))
-        if not os.path.splitext(output_path)[1]:
+        # В обозначениях есть точки («ПРТИ.468211.102 Стойка»), поэтому расширением считается только известный формат
+        known = {".step", ".stp", ".dxf", ".dwg", ".pdf", ".stl", ".igs", ".iges", ".x_t", ".sldprt", ".sldasm", ".slddrw"}
+        if os.path.splitext(output_path)[1].lower() not in known:
             ext = {"STEP": ".step", "DXF": ".dxf", "PDF": ".pdf", "STL": ".stl",
                    "IGES": ".igs", "IGS": ".igs", "PARASOLID": ".x_t"}.get(export_format.upper())
             if not ext:
