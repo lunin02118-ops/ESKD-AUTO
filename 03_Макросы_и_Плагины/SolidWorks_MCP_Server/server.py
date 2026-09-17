@@ -323,16 +323,30 @@ def sw_get_mass_properties() -> dict:
 
 @mcp.tool()
 def sw_export(output_path: str, export_format: str = "STEP") -> dict:
-    """Exports active model to STEP, DXF, PDF, STL, IGES, Parasolid."""
+    """Exports active model to STEP, DXF, PDF, STL, IGES, Parasolid.
+
+    Относительный путь считается от папки активного документа (структура заказа КТО:
+    из 01_3D — "..\\02_PDF\\<имя>.pdf", "..\\03_ЧПУ\\Лазер_Лист\\<имя>.dxf", "..\\03_ЧПУ\\Труборез\\<имя>.igs").
+    Если у пути нет расширения, оно берётся из export_format.
+    """
     try:
         sw = get_sw_app()
         model = sw.ActiveDoc
         if not model:
             return {"success": False, "error": "No active document."}
-            
+
         if not os.path.isabs(output_path):
-            output_path = os.path.join(WORKSPACE_ROOT, output_path)
-            
+            doc_path = model.GetPathName()
+            if not doc_path:
+                return {"success": False, "error": "Активный документ не сохранён — укажите абсолютный путь."}
+            output_path = os.path.normpath(os.path.join(os.path.dirname(doc_path), output_path))
+        if not os.path.splitext(output_path)[1]:
+            ext = {"STEP": ".step", "DXF": ".dxf", "PDF": ".pdf", "STL": ".stl",
+                   "IGES": ".igs", "IGS": ".igs", "PARASOLID": ".x_t"}.get(export_format.upper())
+            if not ext:
+                return {"success": False, "error": f"Неизвестный формат: {export_format}"}
+            output_path += ext
+
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         
         errors = win32com.client.VARIANT(win32com.client.pythoncom.VT_BYREF | win32com.client.pythoncom.VT_I4, 0)

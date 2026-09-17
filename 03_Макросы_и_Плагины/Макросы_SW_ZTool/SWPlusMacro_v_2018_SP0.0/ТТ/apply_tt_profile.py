@@ -22,8 +22,8 @@ if sys.stdout.encoding != 'utf-8':
 import win32com.client
 import pythoncom
 
-WORKSPACE_ROOT = r"d:\Work\_Инструменты_Конструктора"
-TT_DIR = os.path.join(WORKSPACE_ROOT, "03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0", "ТТ")
+# Профили лежат рядом со скриптом — в выпуске на сервере, в локальной копии и в репозитории одинаково
+TT_DIR = os.path.dirname(os.path.abspath(__file__))
 TT_PROF_FILE = os.path.join(TT_DIR, "TT_Prof.txt")
 
 

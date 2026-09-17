@@ -1,0 +1,72 @@
+Attribute VB_Name = "PDFCreatorPrint_run"
+Option Explicit
+'Public swApp As Object
+Public swApp As SldWorks.SldWorks
+#If VBA7 Then
+Public hwndAW As LongPtr
+Public Declare PtrSafe Function GetActiveWindow _
+  Lib "user32.dll" () As LongPtr
+#Else
+Public hwndAW As Long
+Public Declare Function GetActiveWindow _
+  Lib "user32.dll" () As Long
+#End If
+
+'Public Const swDocNONE = 0
+'Public Const swDocPART = 1
+'Public Const swDocASSEMBLY = 2
+'Public Const swDocDRAWING = 3
+
+'Public Const swSumInfoTitle = 0
+'Public Const swSumInfoSubject = 1
+'Public Const swSumInfoAuthor = 2
+'Public Const swSumInfoKeywords = 3
+'Public Const swSumInfoComment = 4
+'Public Const swSumInfoSavedBy = 5
+'Public Const swSumInfoCreateDate = 6
+'Public Const swSumInfoSaveDate = 7
+'Public Const swSumInfoCreateDate2 = 8
+'Public Const swSumInfoSaveDate2 = 9
+
+'Public Const swMbWarning = 1
+'Public Const swMbInformation = 2
+'Public Const swMbQuestion = 3
+'Public Const swMbStop = 4
+
+'Public Const swMbAbortRetryIgnore = 1
+'Public Const swMbOk = 2
+'Public Const swMbOkCancel = 3
+'Public Const swMbRetryCancel = 4
+'Public Const swMbYesNo = 5
+'Public Const swMbYesNoCancel = 6
+
+'Public Const swMbHitAbort = 1
+'Public Const swMbHitIgnore = 2
+'Public Const swMbHitNo = 3
+'Public Const swMbHitOk = 4
+'Public Const swMbHitRetry = 5
+'Public Const swMbHitYes = 6
+'Public Const swMbHitCancel = 7
+
+'Public Const swBOMPartNumber_DocumentName = 1
+'Public Const swBOMPartNumber_ConfigurationName = 2
+'Public Const swBOMPartNumber_ParentName = 4
+'Public Const swBOMPartNumber_UserSpecified = 8
+
+'Public Const swPageSetupInUse_Application = 1
+
+'Public Const swPageSetupPrinterOrientation = 138
+'Public Const swPageSetupPrinterDrawingColor = 139
+
+'Public Const swPageSetup_AutomaticDrawingColor = 1
+'Public Const swPageSetup_ColorGrey = 2
+'Public Const swPageSetup_BlackAndWhite = 3
+
+'Public Const swPageSetupOrient_Portrait = 1
+'Public Const swPageSetupOrient_Landscape = 2
+
+
+Sub main()
+    PDFCreatorPrint.Show
+End Sub
+

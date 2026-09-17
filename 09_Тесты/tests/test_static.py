@@ -106,6 +106,31 @@ class StaticRepository(StaticTestCase):
         self.assertIn('Replace("%TOOLKIT%", $toolkit)', setup, "установщик не подставляет папку инструментария")
         self.assertNotIn("$layout.DrwAutomation", setup, "поле раскладки, которого нет")
 
+    def test_T0_export_paths_follow_order_structure(self):
+        """ТЗ-03 ред. 8 §4.3, регламент §7.2: выгрузки из чертежа в папке 01_3D ложатся в папки изделия —
+        PDF в 02_PDF (только из чертежей, без листов развёртки), DXF в 03_ЧПУ\\Лазер_Лист; линии сгиба в DXF не удаляются;
+        резервные копии SolidWorks — в существующий каталог %TEMP%."""
+        import xml.etree.ElementTree as ET
+        path = ROOT / "03_Макросы_и_Плагины" / "Drw_System_Automation" / "Drew-Blueprints.xml"
+        root = ET.fromstring(path.read_text(encoding="utf-8-sig"))
+        presets = {}
+        for e in root.iter("ExportSettings"):
+            ft = e.findtext("FileType")
+            if ft:
+                presets.setdefault(ft, []).append(e)
+        for pdf in presets["Pdf"]:
+            self.assertEqual("<Directory>..\\02_PDF\\<Filename>", pdf.findtext("PathPattern"))
+            self.assertEqual(("false", "true", "false"), (pdf.findtext("EnableForAssemblies"), pdf.findtext("EnableForDrawings"),
+                                                          pdf.findtext("EnableForParts")), "PDF только из чертежей")
+            self.assertEqual("true", pdf.findtext("SkipFlatPatternSheetsPdf"), "лист развёртки попадёт в PDF")
+        for dxf in presets["Dxf"]:
+            self.assertEqual("<Directory>..\\03_ЧПУ\\Лазер_Лист\\<Filename>", dxf.findtext("PathPattern"))
+        reg = (ROOT / "01_Настройки_SolidWorks" / "Реестровые_Профили" / "01_SW2025_Корпоративный_Стандарт_ЕСКД.reg").read_bytes().decode("utf-16")
+        self.assertIn('"DXF/DWG Remove Bend Lines For FlatpatternToDXF"=dword:00000000', reg, "линии сгиба удаляются из DXF")
+        self.assertNotIn("TempSW", reg, "опечатка в пути резервных копий")
+        tt = (ROOT / "03_Макросы_и_Плагины" / "Макросы_SW_ZTool" / "SWPlusMacro_v_2018_SP0.0" / "ТТ" / "apply_tt_profile.py").read_text(encoding="utf-8")
+        self.assertNotRegex(tt, r"(?i)[a-z]:\\\\?Work", "зашитый путь ПК разработчика в apply_tt_profile.py")
+
     @tags("smoke")
     def test_T0_installer_batch_is_ascii_and_finds_setup(self):
         """T0: УСТАНОВИТЬ_ЕСКД.bat — только ASCII, путь к Setup находится маской (Д-23), права администратора не

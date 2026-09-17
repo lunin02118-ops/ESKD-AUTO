@@ -49,5 +49,31 @@
    "Master_top.bas.txt": 64,
    "ThisLibrary.cls.txt": 9
   }
+ },
+ "SaveAsPDF/SaveAsPDF.swp": {
+  "sha256": "bc62609735da878ac2bcaaffd72a2f021398f2b824afc2c5c0221af1554c2b0e",
+  "modules": {
+   "API_Printer.bas.txt": 27,
+   "SaveAsPDF.frm.txt": 1624,
+   "SaveAsPDF_run.bas.txt": 132,
+   "SaveAsPDF_top.bas.txt": 63,
+   "ThisLibrary.cls.txt": 9
+  }
+ },
+ "SaveAsPDF/PDFCreator.swp": {
+  "sha256": "01740810bddf5d55fca9e03bf3eee019e37e4b84ed57abf7aabd2108920ac513",
+  "modules": {
+   "PDFCreatorPrint.frm.txt": 271,
+   "PDFCreatorPrint_run.bas.txt": 73,
+   "PDFCreatorPrint_top.bas.txt": 63,
+   "ThisLibrary.cls.txt": 9
+  }
+ },
+ "SaveDRW/SaveDRW.swp": {
+  "sha256": "d2cf1714568ef2bcb9f2b049fabc3f285d0589d727b3b9abcc199255580a0050",
+  "modules": {
+   "SaveDRW_run.bas.txt": 1041,
+   "ThisLibrary.cls.txt": 9
+  }
  }
 }

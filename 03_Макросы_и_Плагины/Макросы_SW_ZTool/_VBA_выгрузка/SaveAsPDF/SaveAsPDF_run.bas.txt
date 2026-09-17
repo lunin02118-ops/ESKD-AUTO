@@ -1,0 +1,131 @@
+Attribute VB_Name = "SaveAsPDF_run"
+Option Explicit
+Public MRun As Integer
+Public MPrint As Boolean
+#If VBA7 Then
+Public hwndAW As LongPtr
+Public Declare PtrSafe Function GetActiveWindow _
+  Lib "user32.dll" () As LongPtr
+#Else
+Public hwndAW As Long
+Public Declare Function GetActiveWindow _
+  Lib "user32.dll" () As Long
+#End If
+
+'Public Const swDocNONE = 0
+'Public Const swDocPART = 1
+'Public Const swDocASSEMBLY = 2
+'Public Const swDocDRAWING = 3
+
+'Public Const swSumInfoTitle = 0
+'Public Const swSumInfoSubject = 1
+'Public Const swSumInfoAuthor = 2
+'Public Const swSumInfoKeywords = 3
+'Public Const swSumInfoComment = 4
+'Public Const swSumInfoSavedBy = 5
+'Public Const swSumInfoCreateDate = 6
+'Public Const swSumInfoSaveDate = 7
+'Public Const swSumInfoCreateDate2 = 8
+'Public Const swSumInfoSaveDate2 = 9
+
+'Public Const swMbWarning = 1
+'Public Const swMbInformation = 2
+'Public Const swMbQuestion = 3
+'Public Const swMbStop = 4
+
+'Public Const swMbAbortRetryIgnore = 1
+'Public Const swMbOk = 2
+'Public Const swMbOkCancel = 3
+'Public Const swMbRetryCancel = 4
+'Public Const swMbYesNo = 5
+'Public Const swMbYesNoCancel = 6
+
+'Public Const swMbHitAbort = 1
+'Public Const swMbHitIgnore = 2
+'Public Const swMbHitNo = 3
+'Public Const swMbHitOk = 4
+'Public Const swMbHitRetry = 5
+'Public Const swMbHitYes = 6
+'Public Const swMbHitCancel = 7
+
+'Public Const swBOMPartNumber_DocumentName = 1
+'Public Const swBOMPartNumber_ConfigurationName = 2
+'Public Const swBOMPartNumber_ParentName = 4
+'Public Const swBOMPartNumber_UserSpecified = 8
+
+'Public Const swRebuildAll = 1
+'Public Const swForceRebuildAll = 2
+'Public Const swUpdateMates = 4
+'Public Const swCurrentSheetDisp = 8
+'Public Const swUpdateDirtyOnly = 16
+
+'Public Const swExportPdfData = 1
+
+'Public Const swExportData_ExportAllSheets = 1
+'Public Const swExportData_ExportCurrentSheet = 2
+'Public Const swExportData_ExportSpecifiedSheets = 3
+
+'Public Const swPDFExportInColor = 323
+'Public Const swPDFExportEmbedFonts = 324
+'Public Const swPDFExportHighQuality = 325
+'Public Const swPDFExportPrintHeaderFooter = 326
+'Public Const swPDFExportUseCurrentPrintLineWeights = 327
+
+'Public Const swSaveAsCurrentVersion = 0
+
+'Public Const swSaveAsOptions_Silent = 1
+
+'Public Const swTiffScreenOrPrintCapture = 6
+'Public Const swTiffImageType = 7
+'Public Const swTiffCompressionScheme = 8
+'Public Const swTiffPrintDPI = 9
+'Public Const swTiffPrintPaperSize = 10
+
+'Public Const swTiffImageBlackAndWhite = 0
+'Public Const swTiffImageRGB = 1
+'Public Const swTiffImageGrayScale = 2
+'Public Const swTiffImageRGBA = 3
+    
+'Public Const swTiffUncompressed = 0
+'Public Const swTiffPackbitsCompression = 1
+'Public Const swTiffGroup4FaxCompression = 2
+    
+'Public Const swDwgPapersUserDefined = 12
+
+'Public Const swTiffPrintDrawingPaperHeight = 8
+'Public Const swTiffPrintDrawingPaperWidth = 9
+
+'Public Const swTiffPrintScaleToFit = 28
+
+'Public Const swDefaultTemplateDrawing = 10
+
+'Public Const swDetailingDimension = 200
+
+'Public Const swDetailingDimensionTextFormat = 1
+
+'Public Const swAnnotationOwner_DrawingTemplate = 2
+
+Sub main()
+MRun = 0
+TestPrinter
+SaveAsPDF.Show '(vbModeless)
+End Sub
+Sub main_wd()
+MRun = 1
+TestPrinter
+SaveAsPDF.Show '(vbModeless)
+End Sub
+Sub main_fd()
+MRun = 2
+TestPrinter
+SaveAsPDF.Show '(vbModeless)
+End Sub
+
+Public Sub TestPrinter()
+If InStr(GetAllPrinters(0), "PDFCreator") > 0 Then
+    MPrint = -1
+Else
+    MPrint = 0
+End If
+End Sub
+

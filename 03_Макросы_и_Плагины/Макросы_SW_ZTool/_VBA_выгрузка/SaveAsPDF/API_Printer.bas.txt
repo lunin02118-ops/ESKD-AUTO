@@ -1,0 +1,26 @@
+Attribute VB_Name = "API_Printer"
+Option Explicit
+
+#If VBA7 Then
+Declare PtrSafe Function GetProfileString Lib "kernel32" Alias "GetProfileStringA" _
+(ByVal lpAppName As String, ByVal lpKeyName As String, ByVal lpDefault As String, _
+ByVal lpReturnedString As String, ByVal nSize As Long) As Long
+#Else
+Declare Function GetProfileString Lib "kernel32" Alias "GetProfileStringA" _
+(ByVal lpAppName As String, ByVal lpKeyName As String, ByVal lpDefault As String, _
+ByVal lpReturnedString As String, ByVal nSize As Long) As Long
+#End If
+
+Public Function GetAllPrinters(Flag As Long) As String
+Dim r As Long, AllPrn As String, CurrPrn As String, Buffer As String
+' читаем принтеры WIN.INI
+Buffer = Space$(1024)
+If Flag = 0 Then ' все принтеры
+r = GetProfileString("PrinterPorts", vbNullString, "", Buffer, Len(Buffer))
+GetAllPrinters = Replace(Left(Buffer, InStr(Buffer, Space$(2)) - 2), Chr(0), vbCrLf)
+Else ' принтер по умолчанию
+r = GetProfileString("Windows", "Device", "", Buffer, Len(Buffer))
+GetAllPrinters = Left(Buffer, InStr(Buffer, ",") - 1)
+
+End If
+End Function

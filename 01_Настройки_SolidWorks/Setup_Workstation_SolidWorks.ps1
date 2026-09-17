@@ -312,8 +312,12 @@ foreach ($folderKey in @("$swRoot\ExtReferences", "$swRoot\ExtFolder")) {
 Write-Ok "Шаблоны свойств и библиотека материалов: $SourceRoot"
 
 # Toolbox — только если найден рядом с инструментарием или в стандартной папке; иначе прежнее значение не трогается
+# Выпуск лежит либо рядом с папкой «_Библиотека проектирования» (локальная схема), либо внутри неё
+# (сетевая схема: ...\_Библиотека проектирования\_инструменты_конструктора) — проверяем оба варианта.
+$sourceParent = Split-Path -Path $SourceRoot -Parent
 $toolbox = @(
-    (Join-Path (Split-Path -Path $SourceRoot -Parent) "_Библиотека проектирования\_Toolbox"),
+    (Join-Path $sourceParent "_Toolbox"),
+    (Join-Path $sourceParent "_Библиотека проектирования\_Toolbox"),
     "C:\SOLIDWORKS Data", "C:\SOLIDWORKS Data 2025"
 ) | Where-Object { (Test-Path (Join-Path $_ "lang\russian\swbrowser.sldedb")) -or (Test-Path (Join-Path $_ "lang\english\swbrowser.sldedb")) } |
     Select-Object -First 1

@@ -223,7 +223,7 @@
           <EnableForParts>false</EnableForParts>
           <FileType>Dxf</FileType>
           <OverwriteExisting>false</OverwriteExisting>
-          <PathPattern>&lt;Directory&gt;&lt;Filename&gt;</PathPattern>
+          <PathPattern>&lt;Directory&gt;..\03_ЧПУ\Лазер_Лист\&lt;Filename&gt;</PathPattern>
           <ExportFlatPatternSheetsOnly>true</ExportFlatPatternSheetsOnly>
           <Name>DXF</Name>
           <BodyExportMode>SingleFile</BodyExportMode>
@@ -233,18 +233,18 @@
         </ExportSettings>
         <ExportSettings>
           <AskForPath>false</AskForPath>
-          <EnableForAssemblies>true</EnableForAssemblies>
+          <EnableForAssemblies>false</EnableForAssemblies>
           <EnableForDrawings>true</EnableForDrawings>
-          <EnableForParts>true</EnableForParts>
+          <EnableForParts>false</EnableForParts>
           <FileType>Pdf</FileType>
           <OverwriteExisting>false</OverwriteExisting>
-          <PathPattern>&lt;Directory&gt;&lt;Filename&gt;</PathPattern>
+          <PathPattern>&lt;Directory&gt;..\02_PDF\&lt;Filename&gt;</PathPattern>
           <ExportFlatPatternSheetsOnly>false</ExportFlatPatternSheetsOnly>
           <Name>PDF</Name>
           <BodyExportMode>SingleFile</BodyExportMode>
           <Id>56133fa6-c6d8-40ec-92dd-d7680bfc1f4e</Id>
           <SheetExportModePdf>AllSheetsToOneFile</SheetExportModePdf>
-          <SkipFlatPatternSheetsPdf>false</SkipFlatPatternSheetsPdf>
+          <SkipFlatPatternSheetsPdf>true</SkipFlatPatternSheetsPdf>
         </ExportSettings>
         <ExportSettings>
           <AskForPath>false</AskForPath>
