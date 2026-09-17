@@ -47,6 +47,7 @@ param (
     [switch]$NonInteractive,
     [switch]$SkipFonts,
     [switch]$SkipDrew,
+    [switch]$SkipProfileReset,
     [switch]$SwInternetBlock,
     [switch]$DrewRussian,
     [switch]$Utf8Output,
@@ -270,18 +271,23 @@ $backupRoot = Join-Path (Split-Path -Path $LocalRoot -Parent) "Backups"
 $backupFailed = Backup-SolidWorksRegistryKeys -BackupRoot $backupRoot -RegistryKeys @("$regKeyUser\SolidWorks\$SwVersion", "$regKeyUser\SolidWorks\AddInsStartup")
 # Сброс к стандартным перед профилем: результат установки не зависит от прежних настроек ПК (решение владельца 15.09.2026).
 # Без удачной резервной копии раздела версии сброс не выполняется — настройки удаляются только с возможностью вернуть.
-try {
-    if ($backupFailed -contains "$regKeyUser\SolidWorks\$SwVersion") { throw "нет резервной копии $regKeyUser\SolidWorks\$SwVersion — сброс отменён" }
-    $reset = Reset-EskdSolidWorksProfile -UserRoot $U -SwVersion $SwVersion
-    if ($reset.Existed) {
-        Write-Ok ("Настройки $SwVersion сброшены к стандартным; сохранены: " + $(if ($reset.Preserved) { $reset.Preserved -join ", " } else { "нечего" }) +
-                  ". Прежние — в $backupRoot")
-    } else {
-        Write-Info "Настроек $SwVersion у пользователя ещё нет — сбрасывать нечего."
+# При указании -SkipProfileReset сброс пропускается, чтобы сохранить индивидуальные настройки конструктора.
+if (-not $SkipProfileReset) {
+    try {
+        if ($backupFailed -contains "$regKeyUser\SolidWorks\$SwVersion") { throw "нет резервной копии $regKeyUser\SolidWorks\$SwVersion — сброс отменён" }
+        $reset = Reset-EskdSolidWorksProfile -UserRoot $U -SwVersion $SwVersion
+        if ($reset.Existed) {
+            Write-Ok ("Настройки $SwVersion сброшены к стандартным; сохранены: " + $(if ($reset.Preserved) { $reset.Preserved -join ", " } else { "нечего" }) +
+                      ". Прежние — в $backupRoot")
+        } else {
+            Write-Info "Настроек $SwVersion у пользователя ещё нет — сбрасывать нечего."
+        }
+    } catch {
+        $failures++
+        Write-Fail "Сброс настроек SolidWorks: $($_.Exception.Message)"
     }
-} catch {
-    $failures++
-    Write-Fail "Сброс настроек SolidWorks: $($_.Exception.Message)"
+} else {
+    Write-Info "Сброс профиля SolidWorks пропущен (-SkipProfileReset)."
 }
 if (Test-Path -LiteralPath $layout.RegProfile) {
     $regText = [System.IO.File]::ReadAllText($layout.RegProfile, [System.Text.Encoding]::Unicode)
@@ -312,25 +318,47 @@ foreach ($folderKey in @("$swRoot\ExtReferences", "$swRoot\ExtFolder")) {
 Write-Ok "Шаблоны свойств и библиотека материалов: $SourceRoot"
 
 # Toolbox — только если найден рядом с инструментарием или в стандартной папке; иначе прежнее значение не трогается
-$toolbox = @(
-    (Join-Path (Split-Path -Path $SourceRoot -Parent) "_Библиотека проектирования\_Toolbox"),
-    "C:\SOLIDWORKS Data", "C:\SOLIDWORKS Data 2025"
-) | Where-Object { (Test-Path (Join-Path $_ "lang\russian\swbrowser.sldedb")) -or (Test-Path (Join-Path $_ "lang\english\swbrowser.sldedb")) } |
+$toolboxCandidates = @((Join-Path (Split-Path -Path $SourceRoot -Parent) "_Библиотека проектирования\_Toolbox"))
+if (-not $sandbox) { $toolboxCandidates += @("C:\SOLIDWORKS Data", "C:\SOLIDWORKS Data 2025") }
+$currentToolbox = [string](Get-RegValue "$swRoot\General" "Toolbox Data Location")
+$toolbox = $toolboxCandidates | Where-Object { (Test-Path (Join-Path $_ "lang\russian\swbrowser.sldedb")) -or (Test-Path (Join-Path $_ "lang\english\swbrowser.sldedb")) } |
     Select-Object -First 1
-if ($toolbox) {
+if (-not $currentToolbox -and $toolbox) {
     Set-Reg "$swRoot\General" "Toolbox Data Location" $toolbox
     if ($machine) { Set-ItemProperty -Path "HKLM:\SOFTWARE\SolidWorks\$SwVersion\General" -Name "Toolbox Data Location" -Value $toolbox -ErrorAction SilentlyContinue }
     Write-Ok "Toolbox: $toolbox"
+} elseif ($currentToolbox) {
+    Write-Info "Toolbox пользователя сохранён: $currentToolbox"
 } else {
     Write-Info "Toolbox рядом с папкой инструментария не найден — путь Toolbox не меняется."
 }
-Set-Reg "$swRoot\Performance" "Use Performance Pipeline 2020" 0 "DWord"
+Set-Reg "$swRoot\Performance" "Use Performance Pipeline 2020" 1 "DWord"
+Set-Reg "$swRoot\Performance" "Use GPU Silhouette Edges" 1 "DWord"
+Set-Reg "$swRoot\General" "Software OGL Alarm" 0 "DWord"
+Set-Reg "$swRoot\General" "Use Software OGL" 0 "DWord"
+Write-Ok "Производительность: аппаратный конвейер и кромки силуэта включены, программный OpenGL отключён."
 
-# RealView для видеокарт этого ПК
+# Аппаратное ускорение, конвейер и RealView для видеокарт этого ПК
 try {
+    $nvWorkarounds = 0x32408 # 205832: RealView + Performance Pipeline
     foreach ($gpu in @(Get-CimInstance Win32_VideoController -ErrorAction Stop | ForEach-Object { $_.Name } | Where-Object { $_ })) {
-        Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\$gpu" "Workarounds" 0x30408 "DWord"
+        Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\$gpu" "Workarounds" $nvWorkarounds "DWord"
+        Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\$gpu" "Workarounds" $nvWorkarounds "DWord"
     }
+    # Универсальные ключи для семейств NVIDIA GeForce
+    Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\GeForce" "Workarounds" $nvWorkarounds "DWord"
+    Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\NVIDIA GeForce" "Workarounds" $nvWorkarounds "DWord"
+    Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\GeForce" "Workarounds" $nvWorkarounds "DWord"
+    Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\NVIDIA GeForce" "Workarounds" $nvWorkarounds "DWord"
+    # Текущий рендерер, если уже инициализирован SolidWorks
+    $curKey = "$U\SolidWorks\AllowList\Current"
+    if (Test-Path -LiteralPath $curKey) {
+        $curVendor = [string](Get-RegValue $curKey "Vendor")
+        if ($curVendor -like "*NVIDIA*") {
+            Set-Reg $curKey "Workarounds" $nvWorkarounds "DWord"
+        }
+    }
+    Write-Ok "AllowList: RealView и аппаратный конвейер графики активированы для GPU."
 } catch { Write-Info "Видеокарта не определена — RealView не настраивается." }
 
 # 4. Очистка устаревших надстроек и вкладок

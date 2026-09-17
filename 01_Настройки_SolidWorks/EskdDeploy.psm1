@@ -273,15 +273,16 @@ function Reset-EskdSolidWorksProfile {
     Сброс настроек пользователя SolidWorks перед импортом корпоративного профиля (решение владельца 15.09.2026): раздел
     HKCU\...\SolidWorks\<версия> удаляется целиком, как «Сброс настроек» SolidWorks Rx, чтобы результат установки не
     зависел от прежнего состояния ПК. Сохраняются только данные пользователя, а не настройки: принятие лицензионного
-    соглашения (Security), списки последних файлов и папок, путь Toolbox и панель быстрого доступа (QAT): SolidWorks 2025
-    при запуске стирает всю панель, если в ней нет его базовых кнопок Btn0..Btn10, и кнопки SWPlus пропадают.
+    соглашения (Security), списки последних файлов и папок, путь Toolbox, панель быстрого доступа (QAT): SolidWorks 2025
+    при запуске стирает всю панель, если в ней нет его базовых кнопок Btn0..Btn10, и кнопки SWPlus пропадают,
+    а также раздел графики и конвейера производительности (Performance), чтобы пользовательские настройки OpenGL не сбрасывались.
     Лицензии, надстройки при запуске и ESKD_Settings лежат вне раздела версии и не затрагиваются. Возвращает сводку: Existed, Preserved.
     #>
     param([Parameter(Mandatory = $true)][string]$UserRoot, [Parameter(Mandatory = $true)][string]$SwVersion)
     if ($UserRoot -notmatch '^HKCU:\\(.+)$') { throw "Сброс только в HKCU: $UserRoot" }
     $sub = $Matches[1].TrimEnd('\') + "\SolidWorks\$SwVersion"
     $hkcu = [Microsoft.Win32.Registry]::CurrentUser
-    $keepTrees = @("Security", "Recent File List", "Recent Folder List", "Recent Macro File List", "User Interface\CommandManager\QAT")
+    $keepTrees = @("Security", "Recent File List", "Recent Folder List", "Recent Macro File List", "User Interface\CommandManager\QAT", "Performance")
     $keepValues = @(@{ Key = "General"; Name = "Toolbox Data Location" })
     $version = $hkcu.OpenSubKey($sub)
     if ($null -eq $version) { return [pscustomobject]@{ Existed = $false; Preserved = @() } }
