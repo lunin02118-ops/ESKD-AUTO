@@ -827,6 +827,15 @@ class StaticRepository(StaticTestCase):
         self.assertEqual(len(materials), len({m.get("matid") for m in materials}), "matid уникальны")
         self.assertEqual(len(materials), len({m.get("name") for m in materials}), "имена уникальны — SolidWorks ищет материал по имени")
 
+        # MProp (SWPlus) читает библиотеку построчно через Split(…, vbCrLf): при переводах строк LF весь файл для него
+        # одна строка, и выбор базы падает с «Несовпадение типов» (З-4). Каждая классификация и материал — на своей строке CRLF.
+        text = Path(paths.MATERIAL_DB).read_bytes().decode("utf-16")
+        self.assertEqual(0, len(re.findall(r"(?<!\r)\n", text)), "в библиотеке переводы строк без CR — MProp не разберёт файл")
+        lines = text.split("\r\n")
+        self.assertEqual(len(materials), sum("material name" in s for s in lines), "каждый материал на отдельной строке")
+        self.assertEqual(len(list(root.iter("classification"))), sum("classification name" in s for s in lines),
+                         "каждая классификация на отдельной строке")
+
         # Аудит 15.09.2026, C1: имена в дереве — по действующим ГОСТ; прежние имена — копиями в группе «99», чтобы старые
         # модели нашли свой материал. У копии те же поля, что у переименованной записи.
         custom_of = lambda m: {p.get("name"): p.get("value") or "" for p in m.findall("custom/prop")}
