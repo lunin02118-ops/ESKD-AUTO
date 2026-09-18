@@ -190,7 +190,8 @@ namespace ESKD.MaterialSync.Sw
                 if (!byKey.TryGetValue(key, out item))
                 {
                     item = Describe(model, path, cfg, model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, traits);
-                    item.AreaM2 = Area(model, comp);
+                    // Деталь — наружная поверхность (у трубы без внутренней стенки); сборка — ниже, по её деталям (З-7).
+                    item.AreaM2 = item.IsAssembly ? double.NaN : PaintArea.Outer(Area(model, comp), item.Material);
                     byKey[key] = item;
                     models[path] = model;
                 }
@@ -223,6 +224,7 @@ namespace ESKD.MaterialSync.Sw
 
             if (!WriteProperties(editable, models)) return false;
             MarkPaintedUnits(instances, top);
+            PaintedAssemblyAreas(instances, top, byKey, traits);
 
             Status("ЕСКД: ведомость ЛЗК — сохранение сборки…");
             int errors = 0, warnings = 0;
@@ -469,6 +471,62 @@ namespace ESKD.MaterialSync.Sw
                 Component2 c = child as Component2;
                 if (c != null) CollectBodies(c, bodies);
             }
+        }
+
+        /// <summary>
+        /// Площадь окрашиваемой сборки (З-7) — сумма наружных площадей её металлических деталей на одну сборку, со всеми
+        /// вложенными узлами. Пластик, древесные плиты и покупные не красятся и не входят; места сварки и касания
+        /// не вычитаются (решение владельца: пренебречь). Раньше бралась полная площадь документа сборки —
+        /// с внутренней поверхностью труб, почти вдвое больше.
+        /// </summary>
+        private static void PaintedAssemblyAreas(List<Instance> instances, LzkItem top, Dictionary<string, LzkItem> byKey,
+            Dictionary<string, ModelTraits> traits)
+        {
+            foreach (LzkItem assembly in byKey.Values.Where(i => i.IsAssembly && LzkOperations.Contains(i.Operations, LzkOperations.Painting)))
+            {
+                if (assembly.IsTop)
+                {
+                    assembly.AreaM2 = Sum(instances.Where(i => !i.Item.IsAssembly).Select(i => i.Item), traits);
+                    continue;
+                }
+                Instance first = instances.FirstOrDefault(i => object.ReferenceEquals(i.Item, assembly));
+                if (first == null) continue;
+                List<LzkItem> parts = new List<LzkItem>();
+                CollectParts(first.Component, byKey, parts);
+                assembly.AreaM2 = Sum(parts, traits);
+            }
+        }
+
+        private static void CollectParts(Component2 parent, Dictionary<string, LzkItem> byKey, List<LzkItem> parts)
+        {
+            object[] children = parent.GetChildren() as object[];
+            if (children == null) return;
+            foreach (object o in children)
+            {
+                Component2 child = o as Component2;
+                if (child == null || !Counts(child)) continue;
+                LzkItem item;
+                if (!byKey.TryGetValue((child.GetPathName() ?? "") + "|" + (child.ReferencedConfiguration ?? ""), out item)) continue;
+                if (item.IsAssembly) CollectParts(child, byKey, parts);
+                else parts.Add(item);
+            }
+        }
+
+        /// <summary>Сумма площадей окрашиваемых деталей; NaN — если ни у одной площадь не определена.</summary>
+        private static double Sum(IEnumerable<LzkItem> parts, Dictionary<string, ModelTraits> traits)
+        {
+            double sum = 0;
+            bool any = false;
+            foreach (LzkItem part in parts)
+            {
+                if (part.IsPurchased || double.IsNaN(part.AreaM2)) continue;
+                ModelTraits t;
+                double density = traits.TryGetValue(part.Path, out t) ? t.DensityKgM3 : 0;
+                if (LzkMaterials.Kind(part.Material, density) == MaterialKind.NonMetal) continue;
+                sum += part.AreaM2;
+                any = true;
+            }
+            return any ? sum : double.NaN;
         }
 
         /// <summary>Узлы с «Покраска» красятся целиком: их детали на лист «Покраска» не выводятся (Т-14б).</summary>
