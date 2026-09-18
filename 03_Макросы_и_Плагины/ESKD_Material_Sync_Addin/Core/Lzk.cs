@@ -615,6 +615,9 @@ namespace ESKD.MaterialSync.Core
             private readonly string _name;
             private readonly int _columns;
 
+            /// <summary>Кегль тела таблицы: столько же, сколько на главном листе ведомости ЛЗК.</summary>
+            private const double BodySize = 10;
+
             public readonly XlsxSheet Sheet;
             public readonly int FirstRow = 4;
             public readonly int Text, Center, Area, Total, TotalNumber, Note;
@@ -627,13 +630,15 @@ namespace ESKD.MaterialSync.Core
                 Sheet = book.AddSheet(name);
                 int titleStyle = book.AddStyle(new XlsxStyle { Bold = true, Size = 12, Horizontal = "left" });
                 int subtitle = book.AddStyle(new XlsxStyle { Gray = true, Size = 9, Horizontal = "left" });
-                int head = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Wrap = true, Horizontal = "center", Fill = HeadFill });
-                Text = book.AddStyle(new XlsxStyle { Border = true, Wrap = true, Horizontal = "left" });
-                Center = book.AddStyle(new XlsxStyle { Border = true, Horizontal = "center" });
-                Area = book.AddStyle(new XlsxStyle { Border = true, Horizontal = "center", NumberFormat = "0.000" });
-                Total = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Horizontal = "right" });
-                TotalNumber = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Horizontal = "center", NumberFormat = "0.000" });
-                Note = book.AddStyle(new XlsxStyle { Gray = true, Horizontal = "left" });
+                // Кегль таблицы — как на главном листе ведомости (10 pt): без него ячейки наследуют
+                // размер шрифта книги SWTools (12 pt), и в одной книге получаются листы разного размера.
+                int head = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Wrap = true, Horizontal = "center", Fill = HeadFill, Size = BodySize });
+                Text = book.AddStyle(new XlsxStyle { Border = true, Wrap = true, Horizontal = "left", Size = BodySize });
+                Center = book.AddStyle(new XlsxStyle { Border = true, Horizontal = "center", Size = BodySize });
+                Area = book.AddStyle(new XlsxStyle { Border = true, Horizontal = "center", NumberFormat = "0.000", Size = BodySize });
+                Total = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Horizontal = "right", Size = BodySize });
+                TotalNumber = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Horizontal = "center", NumberFormat = "0.000", Size = BodySize });
+                Note = book.AddStyle(new XlsxStyle { Gray = true, Horizontal = "left", Size = BodySize });
 
                 Sheet.SetText("A1", title, titleStyle);
                 Sheet.Merge("A1:" + XlsxBook.CellName(_columns, 1));
