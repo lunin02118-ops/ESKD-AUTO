@@ -57,6 +57,9 @@ try {
         Copy-Item -Path (Join-Path (Join-Path $RepoRoot $rel) "*") -Destination $dst -Recurse -Force -Exclude "Backups"
     }
     Remove-Item -LiteralPath (Join-Path $source "01_Настройки_SolidWorks\Реестровые_Профили\Backups") -Recurse -Force -ErrorAction SilentlyContinue
+    # Соседняя папка библиотеки проектирования, как «_Библиотека проектирования\_ крепеж и фурнитура» на NAS
+    $fasteners = Join-Path (Split-Path -Path $source -Parent) "_ крепеж и фурнитура"
+    New-Item -ItemType Directory -Path $fasteners -Force | Out-Null
     foreach ($name in @("Setup_Workstation_SolidWorks.ps1", "EskdDeploy.psm1")) {
         Copy-Item -LiteralPath (Join-Path $RepoRoot "01_Настройки_SolidWorks\$name") -Destination (Join-Path $source "01_Настройки_SolidWorks\$name")
     }
@@ -114,10 +117,7 @@ try {
     Expect "кнопка MProp — локальная копия" (Read-Value "$swKey\User Defined Macros\01 - Macro Folder" "Source Path") (Join-Path $localSwPlus "MProp\MProp.swp")
     Expect "шаблон детали по умолчанию — источник" (Read-Value "$swKey\Document Templates" "Default Part template") (Join-Path $source "02_Шаблоны_и_Форматки\Шаблоны документов\Деталь.prtdot")
     Expect "Toolbox не подставлен из профиля" (Read-Value "$swKey\General" "Toolbox Data Location") $null
-    # Библиотека проектирования: папка крепежа рядом с инструментарием, а если её нет — ключ не пишется
-    $parent = Split-Path -Path $source -Parent
-    $fasteners = @((Join-Path $parent "_ крепеж и фурнитура"), (Join-Path $parent "_Библиотека проектирования\_ крепеж и фурнитура")) |
-        Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    # Библиотека проектирования: папка крепежа рядом с инструментарием (как на NAS) — в «Расположение файлов»
     Expect "библиотека проектирования — крепёж и фурнитура" (Read-Value $ext "Content Manager Folders") $fasteners
     $dll = Join-Path $local "$addinRel\ESKD_Material_Sync_v5.dll"
     Expect "CodeBase надстройки — локальная копия" (Read-Value "$sandbox\Classes\CLSID\{B64E6875-B101-4D5C-B245-FF8D50772E25}\InprocServer32" "CodeBase") ("file:///" + $dll.Replace('\', '/'))
