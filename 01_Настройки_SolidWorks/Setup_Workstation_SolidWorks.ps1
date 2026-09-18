@@ -329,6 +329,21 @@ if ($toolbox) {
 } else {
     Write-Info "Toolbox рядом с папкой инструментария не найден — путь Toolbox не меняется."
 }
+# Библиотека проектирования — крепёж и фурнитура с NAS (замечание владельца 18.09.2026). В «Расположении файлов»
+# это пункт «Библиотека проектирования»: API swFileLocationsDesignLibrary (38), в реестре — «Content Manager Folders».
+# Ищется так же, как Toolbox: рядом с инструментарием или внутри «_Библиотека проектирования».
+$designLibrary = @(
+    (Join-Path $sourceParent "_ крепеж и фурнитура"),
+    (Join-Path $sourceParent "_Библиотека проектирования\_ крепеж и фурнитура")
+) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if ($designLibrary) {
+    foreach ($folderKey in @("$swRoot\ExtReferences", "$swRoot\ExtFolder")) {
+        Set-Reg $folderKey "Content Manager Folders" $designLibrary
+    }
+    Write-Ok "Библиотека проектирования: $designLibrary"
+} else {
+    Write-Info "Папка «_ крепеж и фурнитура» рядом с инструментарием не найдена — библиотека проектирования не меняется."
+}
 Set-Reg "$swRoot\Performance" "Use Performance Pipeline 2020" 0 "DWord"
 
 # RealView для видеокарт этого ПК

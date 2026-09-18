@@ -114,6 +114,11 @@ try {
     Expect "кнопка MProp — локальная копия" (Read-Value "$swKey\User Defined Macros\01 - Macro Folder" "Source Path") (Join-Path $localSwPlus "MProp\MProp.swp")
     Expect "шаблон детали по умолчанию — источник" (Read-Value "$swKey\Document Templates" "Default Part template") (Join-Path $source "02_Шаблоны_и_Форматки\Шаблоны документов\Деталь.prtdot")
     Expect "Toolbox не подставлен из профиля" (Read-Value "$swKey\General" "Toolbox Data Location") $null
+    # Библиотека проектирования: папка крепежа рядом с инструментарием, а если её нет — ключ не пишется
+    $parent = Split-Path -Path $source -Parent
+    $fasteners = @((Join-Path $parent "_ крепеж и фурнитура"), (Join-Path $parent "_Библиотека проектирования\_ крепеж и фурнитура")) |
+        Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    Expect "библиотека проектирования — крепёж и фурнитура" (Read-Value $ext "Content Manager Folders") $fasteners
     $dll = Join-Path $local "$addinRel\ESKD_Material_Sync_v5.dll"
     Expect "CodeBase надстройки — локальная копия" (Read-Value "$sandbox\Classes\CLSID\{B64E6875-B101-4D5C-B245-FF8D50772E25}\InprocServer32" "CodeBase") ("file:///" + $dll.Replace('\', '/'))
     Expect "автозагрузка надстройки" (Read-Value "$sandbox\SolidWorks\AddInsStartup\{B64E6875-B101-4D5C-B245-FF8D50772E25}" "(default)") 1
