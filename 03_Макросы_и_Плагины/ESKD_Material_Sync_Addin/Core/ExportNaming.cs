@@ -163,7 +163,7 @@ namespace ESKD.MaterialSync.Core
             return path;
         }
 
-        /// <summary>Имя файла выдачи: «_Выдано_&lt;дата&gt;.txt» пишет кнопка «Выдать в производство».</summary>
+        /// <summary>Имя файла выдачи: «_Выдано_&lt;дата&gt;.txt» пишет кнопка «Готово к производству» в папке изделия.</summary>
         public const string IssuedPrefix = "_Выдано_";
 
         /// <summary>

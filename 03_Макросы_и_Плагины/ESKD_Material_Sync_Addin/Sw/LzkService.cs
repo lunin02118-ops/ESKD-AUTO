@@ -258,7 +258,7 @@ namespace ESKD.MaterialSync.Sw
             return true;
         }
 
-        /// <summary>Нормативы и бланки — вверх по папкам от изделия, как у сводной (Т-13); нет — значения по умолчанию.</summary>
+        /// <summary>Нормативы и бланки — вверх по папкам от изделия (Т-13); нет — значения по умолчанию.</summary>
         private void ReadReferences()
         {
             string normsPath = Norms.FindUp(_productFolder);

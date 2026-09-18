@@ -369,7 +369,7 @@ namespace ESKD.MaterialSync.Sw
             string text = "Ревизия " + revision + " записана." + Environment.NewLine +
                 "Журнал «" + ChangeLog.FileName + "»: строка " + line + "." + Environment.NewLine +
                 "Выгрузка: " + exported + Environment.NewLine + Environment.NewLine +
-                "Ведомость изделия могла устареть — пересоберите её кнопкой «Ведомость ЛЗК», если менялась модель.";
+                "Если менялась модель, книга ЛЗК могла устареть — пересоберите её кнопкой «Ведомость ЛЗК» и снова нажмите «Готово к производству».";
             MessageBox.Show(text, "ЕСКД: новая ревизия", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
