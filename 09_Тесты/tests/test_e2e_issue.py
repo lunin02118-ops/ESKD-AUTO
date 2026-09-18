@@ -132,7 +132,8 @@ class Issue(SwTestCase):
         self.assertEqual(["Лист 1 Заготовки", "Лист 2 Сварка", "Лист 3 Покраска", "Лист 4 Покупные",
                           "Лист 5 Расход", "Цвета", "Комплект"], sheets, f"листы сводной: {sheets}")
         self.assertEqual([], list(order.glob("_Выдано_*.txt")), "черновик не пишет отчёт выдачи")
-        self.assertFalse((order.parent.parent / "04_ПРОИЗВОДСТВО").exists(), "папка производства не создана")
+        for name in ("_Производство", "04_ПРОИЗВОДСТВО"):
+            self.assertFalse((order.parent.parent / name).exists(), f"папка производства не создана: {name}")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_X02_summary_counts_stock_and_paint_by_norms(self):
@@ -169,7 +170,8 @@ class Issue(SwTestCase):
         self.assertTrue(status.startswith("error|"), status)
         self.assertIn("пометками", status, status)
         self.assertEqual([], list(order.glob("_Выдано_*.txt")), "отчёт выдачи не написан")
-        self.assertFalse((order.parent.parent / "04_ПРОИЗВОДСТВО").exists(), "в производство ничего не скопировано")
+        for name in ("_Производство", "04_ПРОИЗВОДСТВО"):
+            self.assertFalse((order.parent.parent / name).exists(), f"в производство ничего не скопировано: {name}")
 
         # Ведомость без пометок — остаётся проверка изделия, и она у сырой фикстуры даёт «ЗАМЕЧАНИЯ».
         self._workbook(product / f"Ведомость_{CIPHER}.xlsx")

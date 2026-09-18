@@ -25,6 +25,12 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>«ok|сводная|изделий|файлов|отчёт» или «error|текст» — для автотестов (Т-9).</summary>
         public static string LastOutcome = "";
 
+        /// <summary>
+        /// Папка производства рядом с корнем заказов. На NAS она называется «_Производство»
+        /// (ТЗ-02: `04_ПРОИЗВОДСТВО` = `…\_Производство`), поэтому ищем оба имени и никогда
+        /// не заводим второе: цех смотрит в одну папку, а не в две похожие.
+        /// </summary>
+        public static readonly string[] ProductionFolders = { "_Производство", "04_ПРОИЗВОДСТВО" };
         public const string ProductionFolder = "04_ПРОИЗВОДСТВО";
         public const string SectionFolder = ProductLocator.SectionFolder;
         /// <summary>Папки выдачи по образцу 85_Т (Т-41).</summary>
@@ -361,11 +367,13 @@ namespace ESKD.MaterialSync.Sw
         {
             for (string current = order; !string.IsNullOrEmpty(current); current = Path.GetDirectoryName(current))
             {
-                string candidate = Path.Combine(current, ProductionFolder);
-                if (Directory.Exists(candidate)) return candidate;
+                foreach (string name in ProductionFolders)
+                    if (Directory.Exists(Path.Combine(current, name))) return Path.Combine(current, name);
+                // Папки производства ещё нет: заводим её там, где лежит корень заказов, — рядом с «_Заявки».
                 foreach (string root in ProductLocator.OrderRoots)
                     if (Directory.Exists(Path.Combine(current, root)))
                     {
+                        string candidate = Path.Combine(current, ProductionFolder);
                         Directory.CreateDirectory(candidate);
                         return candidate;
                     }
