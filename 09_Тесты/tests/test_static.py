@@ -836,6 +836,16 @@ class StaticRepository(StaticTestCase):
         self.assertEqual(len(list(root.iter("classification"))), sum("classification name" in s for s in lines),
                          "каждая классификация на отдельной строке")
 
+        # З-5: материал с внешним видом, которого нет в SolidWorks 2025, не назначается вовсе — «Применить» молча
+        # ничего не делает (так было у всех ЛДСП, МДФ, фанеры, кромки, HPL и полимеров). Пути сверяются с установленным SW.
+        appearances = Path(r"C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\data\graphics\Materials")
+        if appearances.is_dir():
+            shaders = {s.get("path") for s in root.iter("pwshader2")}
+            self.assertEqual(set(), {p for p in shaders if not (appearances / p.lstrip("\\")).is_file()},
+                             "внешние виды материалов, которых нет в SolidWorks 2025")
+        self.assertEqual([], [m.get("name") for m in materials if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", ET.tostring(m, encoding="unicode"))],
+                         "управляющие символы в записи материала (\\t, \\f в путях)")
+
         # Аудит 15.09.2026, C1: имена в дереве — по действующим ГОСТ; прежние имена — копиями в группе «99», чтобы старые
         # модели нашли свой материал. У копии те же поля, что у переименованной записи.
         custom_of = lambda m: {p.get("name"): p.get("value") or "" for p in m.findall("custom/prop")}
