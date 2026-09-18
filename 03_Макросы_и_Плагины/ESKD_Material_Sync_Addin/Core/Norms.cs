@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -74,6 +74,34 @@ namespace ESKD.MaterialSync.Core
             double value;
             return double.TryParse(cleaned.Substring(0, end), NumberStyles.Float, CultureInfo.InvariantCulture, out value)
                 ? value : 0;
+        }
+
+        /// <summary>
+        /// Значения ТЗ-02 Т-13 — только для книги ЛЗК, когда справочника нет: калькулятор «Расход» всё равно
+        /// должен считать, а лист «Нормы» книги показывает, что взяты значения по умолчанию, и правится под заказ.
+        /// </summary>
+        public static Norms Defaults()
+        {
+            Norms norms = new Norms("");
+            string[,] values =
+            {
+                { "Труба.Хлыст", "6000" }, { "Труба.Захват", "200" }, { "Труба.Торцовка", "20" }, { "Труба.Рез", "0.5" },
+                { "Труба.Деловой", "500" }, { "Лист.Формат", "1250x2500" }, { "Лист.Отход", "1.15" },
+                { "Краска.Норма", "140" }, { "Краска.Потери", "15" }, { "Краска.Тара", "25" }
+            };
+            for (int i = 0; i < values.GetLength(0); i++) norms._values[values[i, 0]] = values[i, 1];
+            return norms;
+        }
+
+        /// <summary>
+        /// Справочник, найденный вверх по папкам от <paramref name="folder"/> (он лежит рядом с корнем заказов, Т-13);
+        /// пустая строка — не найден.
+        /// </summary>
+        public static string FindUp(string folder)
+        {
+            for (string current = folder; !string.IsNullOrEmpty(current); current = System.IO.Path.GetDirectoryName(current))
+                if (File.Exists(PathIn(current))) return PathIn(current);
+            return "";
         }
 
         /// <summary>Путь справочника рядом с библиотекой материалов или в указанной папке.</summary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using ESKD.MaterialSync.Core;
@@ -28,17 +28,42 @@ namespace ESKD.Tests
             string dir = Path.Combine(Path.GetTempPath(), "eskd_lzk_" + Guid.NewGuid().ToString("N"));
             try
             {
-                Assert.AreEqual(Path.Combine(dir, "Ведомость_А_Б.xlsx"), LzkNaming.WorkbookPath(dir, "А/Б"), "недопустимый символ");
+                Assert.AreEqual(Path.Combine(dir, "04_Сопроводительная документация", "ЛЗК_А_Б.xlsx"), LzkNaming.WorkbookPath(dir, "А/Б"),
+                    "книга ЛЗК — в сопроводительной документации, недопустимый символ заменён");
+                Assert.AreEqual(Path.Combine(dir, "Ведомость_А_Б.xlsx"), LzkNaming.LegacyWorkbookPath(dir, "А/Б"), "старый образец");
                 Assert.AreEqual(Path.Combine(dir, "_Ведомость.txt"), LzkNaming.ReportPath(dir), "отчёт");
                 DateTime stamp = new DateTime(2026, 9, 17, 15, 4, 0);
                 string first = LzkNaming.ArchivePath(dir, "Ш", stamp);
-                Assert.AreEqual(Path.Combine(dir, "_Аннулировано", "Ведомость_Ш_2026-09-17_1504.xlsx"), first, "архив");
+                Assert.AreEqual(Path.Combine(dir, "_Аннулировано", "ЛЗК_Ш_2026-09-17_1504.xlsx"), first, "архив");
+                Assert.AreEqual(Path.Combine(dir, "_Аннулировано", "Ведомость_Ш_2026-09-17_1504.xlsx"),
+                    LzkNaming.ArchivePath(dir, "Ш", stamp, true), "архив старого образца");
                 Directory.CreateDirectory(Path.GetDirectoryName(first));
                 File.WriteAllText(first, "");
-                Assert.AreEqual(Path.Combine(dir, "_Аннулировано", "Ведомость_Ш_2026-09-17_1504_2.xlsx"),
+                Assert.AreEqual(Path.Combine(dir, "_Аннулировано", "ЛЗК_Ш_2026-09-17_1504_2.xlsx"),
                     LzkNaming.ArchivePath(dir, "Ш", stamp), "второй архив в ту же минуту");
                 Assert.IsTrue(LzkNaming.IsInside(Path.Combine(dir, "01_3D", "a.sldprt"), dir), "внутри");
                 Assert.IsFalse(LzkNaming.IsInside(dir + "2\\a.sldprt", dir), "соседняя папка с тем же началом");
+            }
+            finally
+            {
+                if (Directory.Exists(dir)) Directory.Delete(dir, true);
+            }
+        }
+
+        public static void Test_FindWorkbook_prefers_new_book_then_legacy()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "eskd_lzk_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(dir);
+                Assert.AreEqual("", LzkNaming.FindWorkbook(dir, "Ш"), "ничего нет");
+                File.WriteAllText(LzkNaming.LegacyWorkbookPath(dir, "Ш"), "");
+                Assert.AreEqual(LzkNaming.LegacyWorkbookPath(dir, "Ш"), LzkNaming.FindWorkbook(dir, "Ш"), "старый образец");
+                Assert.IsTrue(LzkNaming.IsLegacy(LzkNaming.FindWorkbook(dir, "Ш")), "признак старого образца");
+                Directory.CreateDirectory(Path.Combine(dir, LzkNaming.DocsFolder));
+                File.WriteAllText(LzkNaming.WorkbookPath(dir, "Ш"), "");
+                Assert.AreEqual(LzkNaming.WorkbookPath(dir, "Ш"), LzkNaming.FindWorkbook(dir, "Ш"), "новая книга важнее");
+                Assert.IsFalse(LzkNaming.IsLegacy(LzkNaming.FindWorkbook(dir, "Ш")), "новый образец");
             }
             finally
             {
@@ -221,17 +246,19 @@ namespace ESKD.Tests
                 Assert.AreEqual("Иванов", main.Get("G2"), "шапка составил");
                 Assert.AreEqual(r.Issues.Count + " (см. _Ведомость.txt)", main.Get("G4"), "шапка замечания");
 
-                XlsxSheet paint = book.Sheet("Покраска");
-                Assert.AreEqual("И.100", paint.Get("B4"), "окрашиваемый узел");
-                Assert.AreEqual("2.5", paint.Get("D4"), "площадь");
-                Assert.AreEqual("Итого", paint.Get("C5"), "итог");
-                XlsxSheet bought = book.Sheet("Покупные");
-                Assert.AreEqual("Болт М8", bought.Get("B4"), "по наименованию");
-                Assert.AreEqual("6", bought.Get("G4"), "количество сложено");
-                Assert.AreEqual("", bought.Get("D4"), "кода 1С нет — ячейка пустая, а не «?»");
-                Assert.AreEqual("шт", bought.Get("E4"), "единица по умолчанию");
-                Assert.AreEqual("796", bought.Get("F4"), "код ОКЕИ");
-                Assert.AreEqual("4180-001", bought.Get("D5"), "код 1С из модели");
+                XlsxSheet paint = book.Sheet("Покрасочный");
+                Assert.AreEqual("И.100", paint.Get("B6"), "окрашиваемый узел");
+                Assert.AreEqual("2.5", paint.Get("D6"), "площадь");
+                Assert.AreEqual("E6*Тираж", paint.Formula("F6"), "всего на заказ — формулой от тиража");
+                Assert.AreEqual("Итого", paint.Get("D7"), "итог");
+                XlsxSheet kit = book.Sheet("Комплектовочный");
+                Assert.AreEqual("Покупные и стандартные изделия, материалы", kit.Get("A6"), "раздел покупных");
+                Assert.AreEqual("Болт М8", kit.Get("C7"), "по наименованию");
+                Assert.AreEqual("6", kit.Get("F7"), "количество сложено");
+                Assert.AreEqual("", kit.Get("D7"), "кода 1С нет — ячейка пустая, а не «?»");
+                Assert.AreEqual("шт", kit.Get("E7"), "единица по умолчанию");
+                Assert.AreEqual("4180-001", kit.Get("D8"), "код 1С из модели");
+                Assert.AreEqual("F7*Тираж", kit.Formula("G7"), "всего на заказ");
 
                 string report = LzkWorkbook.Report(header, path, r, new[] { "SWTools 1.1.109" });
                 Assert.IsTrue(report.Contains("Строк: 3; покраска: 1; покупные: 2"), report);
@@ -343,7 +370,7 @@ namespace ESKD.Tests
                 Assert.IsTrue(styles.Contains("val=\"Arial\""), "шрифт книги — Arial");
                 Assert.IsTrue(styles.Contains("charset val=\"204\"") || styles.Contains("<charset val=\"204\"/>"), "кириллическая кодировка");
 
-                foreach (string name in new[] { "Покраска (на одно изделие)", "Покупные и стандартные изделия (на одно изделие)" })
+                foreach (string name in new[] { "Покрасочный участок", "Комплектовочный участок", "Расход материалов на заказ" })
                 {
                     string xml = SheetXml(path, name);
                     Assert.IsTrue(xml.Contains("<mergeCell"), name + ": заголовок объединён");
@@ -355,16 +382,24 @@ namespace ESKD.Tests
                 string workbook = Part(path, "xl/workbook.xml");
                 Assert.IsTrue(workbook.Contains("_xlnm.Print_Titles"), "шапка повторяется на каждой странице");
                 Assert.IsTrue(workbook.Contains("_xlnm.Print_Area"), "область печати");
+                Assert.IsTrue(workbook.Contains("fullCalcOnLoad=\"1\""), "пересчёт при открытии");
 
                 XlsxBook book = XlsxBook.Open(path);
-                XlsxSheet paint = book.Sheet("Покраска");
-                Assert.AreEqual("Покраска (на одно изделие)", paint.Get("A1"), "название листа");
+                Assert.AreEqual("Паспорт|Ведомость|Заготовительный|Сварочный|Покрасочный|Комплектовочный|Расход|Нормы",
+                    string.Join("|", book.SheetNames), "листы книги");
+                XlsxSheet paint = book.Sheet("Покрасочный");
+                Assert.AreEqual("Покрасочный участок", paint.Get("A1"), "название листа");
                 Assert.IsTrue(paint.Get("A2").Contains("И.100 Рама"), "подзаголовок с изделием: " + paint.Get("A2"));
-                Assert.AreEqual("№", paint.Get("A3"), "шапка таблицы в третьей строке");
-                Assert.AreEqual("И.100", paint.Get("B4"), "первая строка данных");
-                XlsxSheet bought = book.Sheet("Покупные");
-                Assert.AreEqual("Саморез 4,2x16", bought.Get("B4"), "покупное");
-                Assert.AreEqual("", bought.Get("D4"), "код 1С пустой");
+                Assert.AreEqual("Тираж", paint.Formula("C3"), "тираж в шапке — из паспорта");
+                Assert.AreEqual("№", paint.Get("A5"), "шапка таблицы в пятой строке");
+                Assert.AreEqual("И.100", paint.Get("B6"), "главная сборка красится целиком");
+                XlsxSheet welding = book.Sheet("Сварочный");
+                Assert.AreEqual("И.100", welding.Get("B6"), "главная сборка сваривается");
+                XlsxSheet kit = book.Sheet("Комплектовочный");
+                Assert.AreEqual("Саморез 4,2x16", kit.Get("C7"), "покупное");
+                Assert.AreEqual("", kit.Get("D7"), "код 1С пустой");
+                XlsxSheet blank = book.Sheet("Заготовительный");
+                Assert.AreEqual("Единиц для этого участка в изделии нет", blank.Get("A6"), "пустой участок");
             }
             finally
             {

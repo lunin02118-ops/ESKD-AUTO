@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -12,6 +12,8 @@ namespace ESKD.MaterialSync.Core
     public static class LzkNaming
     {
         public const string ModelsFolder = "01_3D";
+        /// <summary>ТЗ-04 Р4-3: книга ЛЗК лежит в сопроводительной документации изделия.</summary>
+        public const string DocsFolder = "04_Сопроводительная документация";
         public const string ArchiveFolder = "_Аннулировано";
         public const string ReportName = "_Ведомость.txt";
 
@@ -42,12 +44,47 @@ namespace ESKD.MaterialSync.Core
             return SafeFileName(Path.GetFileNameWithoutExtension(assemblyPath) ?? "Изделие");
         }
 
-        /// <summary>Начало имени ведомости изделия: по нему её находят и снимок эталона, и проверка.</summary>
-        public const string WorkbookPrefix = "Ведомость_";
+        /// <summary>Начало имени книги ЛЗК изделия: по нему её находят и снимок эталона, и проверка.</summary>
+        public const string WorkbookPrefix = "ЛЗК_";
+        /// <summary>Ведомость до ТЗ-04 — в корне папки изделия; читается, пока изделие не пересобрано.</summary>
+        public const string LegacyWorkbookPrefix = "Ведомость_";
 
         public static string WorkbookPath(string productFolder, string cipher)
         {
-            return Path.Combine(productFolder, WorkbookPrefix + SafeFileName(cipher) + ".xlsx");
+            return Path.Combine(productFolder, DocsFolder, WorkbookPrefix + SafeFileName(cipher) + ".xlsx");
+        }
+
+        public static string LegacyWorkbookPath(string productFolder, string cipher)
+        {
+            return Path.Combine(productFolder, LegacyWorkbookPrefix + SafeFileName(cipher) + ".xlsx");
+        }
+
+        /// <summary>
+        /// Книга изделия, которая есть на диске: ЛЗК в «04_Сопроводительная документация», иначе ведомость старого
+        /// образца в корне (по шифру, затем любая); пусто — ни одной.
+        /// </summary>
+        public static string FindWorkbook(string productFolder, string cipher)
+        {
+            if (string.IsNullOrEmpty(productFolder) || !Directory.Exists(productFolder)) return "";
+            string path = WorkbookPath(productFolder, cipher);
+            if (File.Exists(path)) return path;
+            string docs = Path.Combine(productFolder, DocsFolder);
+            string any = Directory.Exists(docs) ? Directory.GetFiles(docs, WorkbookPrefix + "*.xlsx").FirstOrDefault(NotLock) : null;
+            if (any != null) return any;
+            path = LegacyWorkbookPath(productFolder, cipher);
+            if (File.Exists(path)) return path;
+            return Directory.GetFiles(productFolder, LegacyWorkbookPrefix + "*.xlsx").FirstOrDefault(NotLock) ?? "";
+        }
+
+        /// <summary>Книга старого образца (до ТЗ-04): без паспорта, участков и калькулятора.</summary>
+        public static bool IsLegacy(string workbookPath)
+        {
+            return (Path.GetFileName(workbookPath) ?? "").StartsWith(LegacyWorkbookPrefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool NotLock(string path)
+        {
+            return !(Path.GetFileName(path) ?? "").StartsWith("~$", StringComparison.Ordinal);
         }
 
         public static string ReportPath(string productFolder)
@@ -58,8 +95,15 @@ namespace ESKD.MaterialSync.Core
         /// <summary>Куда убрать прежнюю ведомость: _Аннулировано\Ведомость_&lt;шифр&gt;_&lt;дата_время&gt;.xlsx (без затирания).</summary>
         public static string ArchivePath(string productFolder, string cipher, DateTime stamp)
         {
+            return ArchivePath(productFolder, cipher, stamp, false);
+        }
+
+        /// <summary>legacy — ведомость старого образца: _Аннулировано\Ведомость_&lt;шифр&gt;_&lt;дата_время&gt;.xlsx.</summary>
+        public static string ArchivePath(string productFolder, string cipher, DateTime stamp, bool legacy)
+        {
             string dir = Path.Combine(productFolder, ArchiveFolder);
-            string stem = "Ведомость_" + SafeFileName(cipher) + "_" + stamp.ToString("yyyy-MM-dd_HHmm", CultureInfo.InvariantCulture);
+            string stem = (legacy ? LegacyWorkbookPrefix : WorkbookPrefix) + SafeFileName(cipher) + "_" +
+                stamp.ToString("yyyy-MM-dd_HHmm", CultureInfo.InvariantCulture);
             string path = Path.Combine(dir, stem + ".xlsx");
             for (int i = 2; File.Exists(path); i++) path = Path.Combine(dir, stem + "_" + i + ".xlsx");
             return path;
@@ -335,11 +379,18 @@ namespace ESKD.MaterialSync.Core
         public string Material = "";
         /// <summary>Главная сборка: в таблице её нет (SWTools выводит только состав).</summary>
         public bool IsTop;
+        /// <summary>Свойство «Раздел» (раздел спецификации): по нему — категория строки.</summary>
+        public string Section = "";
+        /// <summary>Масса 1 шт., кг, из ведомости SWTools; NaN — не известна.</summary>
+        public double MassKg = double.NaN;
     }
 
     public sealed class LzkHeader
     {
         public string Product = "";
+        public string Cipher = "";
+        public string Name = "";
+        public string Order = "";
         public string Author = "";
         public string Model = "";
         public string Date = "";
@@ -351,23 +402,24 @@ namespace ESKD.MaterialSync.Core
         public int Rows;
         public int PaintRows;
         public int PurchasedRows;
+        /// <summary>Строк на листах участков.</summary>
+        public readonly Dictionary<string, int> SectionRows = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         public readonly List<string> Issues = new List<string>();
+        /// <summary>Пояснения в отчёт, не замечания: на итог проверки изделия не влияют.</summary>
+        public readonly List<string> Notes = new List<string>();
         public readonly List<string> Errors = new List<string>();
     }
 
     /// <summary>
-    /// Дописывание ведомости, выгруженной SWTools по шаблону «Ведомость_ЛЗК.xlsx»: шапка, пометки «?», листы «Покраска»
-    /// и «Покупные» (ТЗ-02 Т-35…Т-37). Колонки основной таблицы находятся по именованным диапазонам шаблона.
+    /// Дописывание ведомости, выгруженной SWTools по шаблону «Ведомость_ЛЗК.xlsx»: шапка, пометки «?» (ТЗ-02 Т-35…Т-37)
+    /// и живая книга ЛЗК — паспорт, участки, расход, нормы (ТЗ-04, <see cref="LzkBook"/>). Колонки основной таблицы
+    /// находятся по именованным диапазонам шаблона.
     /// </summary>
     public static class LzkWorkbook
     {
         public const string Mark = "?";
-        public const string PaintSheet = "Покраска";
-        public const string PurchasedSheet = "Покупные";
         /// <summary>Шрифт книги: есть на каждом рабочем месте, в таблице читается лучше Times New Roman.</summary>
         public const string FontFace = "Arial";
-        /// <summary>Разделитель ключа группировки: в реквизитах такого символа нет.</summary>
-        private const string Key = "\u0001";
 
         public static readonly string[] RequiredNames =
         {
@@ -375,6 +427,11 @@ namespace ESKD.MaterialSync.Core
         };
 
         public static LzkResult Complete(string xlsxPath, LzkHeader header, IList<LzkItem> items)
+        {
+            return Complete(xlsxPath, header, items, null);
+        }
+
+        public static LzkResult Complete(string xlsxPath, LzkHeader header, IList<LzkItem> items, LzkBook.Options options)
         {
             LzkResult result = new LzkResult();
             items = items ?? new List<LzkItem>();
@@ -405,10 +462,18 @@ namespace ESKD.MaterialSync.Core
                 return result;
             }
 
-            Dictionary<string, LzkItem> byPath = new Dictionary<string, LzkItem>(StringComparer.OrdinalIgnoreCase);
+            // У исполнений одного файла путь общий: строка SWTools сопоставляется конфигурации по обозначению,
+            // затем по количеству (иначе обе строки «Укосины» 00 и 01 получали бы реквизиты первой).
+            Dictionary<string, List<LzkItem>> byPath = new Dictionary<string, List<LzkItem>>(StringComparer.OrdinalIgnoreCase);
             foreach (LzkItem item in items)
-                if (!byPath.ContainsKey(item.Path)) byPath[item.Path] = item;
+            {
+                List<LzkItem> list;
+                if (!byPath.TryGetValue(item.Path, out list)) byPath[item.Path] = list = new List<LzkItem>();
+                list.Add(item);
+            }
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<LzkItem> used = new HashSet<LzkItem>();
+            List<LzkBook.MainRow> mainRows = new List<LzkBook.MainRow>();
 
             foreach (int row in main.RowNumbers.Where(r => r > headerRow))
             {
@@ -418,9 +483,9 @@ namespace ESKD.MaterialSync.Core
                 result.Rows++;
                 string label = "Строка " + main.Get(col["Номер"], row).Trim() + " (" +
                     (designation.Length > 0 ? designation : main.Get(col["Наименование"], row).Trim()) + ")";
-                LzkItem item;
-                byPath.TryGetValue(path, out item);
+                LzkItem item = Match(byPath, path, designation, LzkOperations.ParseNumber(main.Get(col["Количество"], row)), used);
                 if (path.Length > 0) seen.Add(path);
+                mainRows.Add(new LzkBook.MainRow { Row = row, Item = item });
                 if (item != null)
                 {
                     // Реквизиты ЕСКД — из свойств модели: разбор имён файлов в SWTools зависит от его настроек.
@@ -440,6 +505,7 @@ namespace ESKD.MaterialSync.Core
 
                 if (!assembly) Require(main, col["Материал_Строка"], row, label, "Материал", result);
                 double mass = LzkOperations.ParseNumber(main.Get(col["МассаЕдКг"], row));
+                if (item != null && !double.IsNaN(mass) && mass > 0) item.MassKg = mass;
                 if (double.IsNaN(mass) || mass <= 0)
                 {
                     main.SetText(XlsxBook.CellName(col["МассаЕдКг"], row), Mark);
@@ -472,8 +538,7 @@ namespace ESKD.MaterialSync.Core
 
             // Шаблон SWTools собран из китайского образца: без этого вся книга печатается шрифтом 宋体.
             book.NormalizeFonts(FontFace);
-            result.PaintRows = WritePaint(book, items, header);
-            result.PurchasedRows = WritePurchased(book, items, header);
+            LzkBook.Write(book, sheetName, col, headerRow, mainRows, items, header, options, result);
 
             if (header != null)
             {
@@ -513,87 +578,19 @@ namespace ESKD.MaterialSync.Core
             target.SetText(cell, value);
         }
 
-        private static int WritePaint(XlsxBook book, IList<LzkItem> items, LzkHeader header)
+        /// <summary>Модель строки SWTools: по пути, при нескольких конфигурациях — по обозначению, затем по количеству.</summary>
+        private static LzkItem Match(Dictionary<string, List<LzkItem>> byPath, string path, string designation, double quantity,
+            HashSet<LzkItem> used)
         {
-            List<LzkItem> painted = items
-                .Where(i => !i.IsPurchased && !i.InsidePaintedUnit && LzkOperations.Contains(i.Operations, LzkOperations.Painting))
-                .ToList();
-            string[] titles = { "№", "Обозначение", "Наименование", "Площадь 1 шт., м²", "Кол-во, шт.", "Площадь всего, м²" };
-            double[] widths = { 5, 24, 40, 14, 11, 15 };
-            Layout layout = new Layout(book, PaintSheet, "Покраска (на одно изделие)", header, titles, widths);
-            int row = layout.FirstRow;
-            double total = 0;
-            foreach (LzkItem i in painted)
-            {
-                layout.Sheet.SetNumber(XlsxBook.CellName(1, row), row - layout.FirstRow + 1, layout.Center);
-                layout.Sheet.SetText(XlsxBook.CellName(2, row), i.Designation, layout.Text);
-                layout.Sheet.SetText(XlsxBook.CellName(3, row), i.Name, layout.Text);
-                if (double.IsNaN(i.AreaM2))
-                {
-                    layout.Sheet.SetText(XlsxBook.CellName(4, row), Mark, layout.Center);
-                    layout.Sheet.SetText(XlsxBook.CellName(6, row), Mark, layout.Center);
-                }
-                else
-                {
-                    double area = Math.Round(i.AreaM2, 3);
-                    layout.Sheet.SetNumber(XlsxBook.CellName(4, row), area, layout.Area);
-                    layout.Sheet.SetNumber(XlsxBook.CellName(6, row), Math.Round(area * i.Quantity, 3), layout.Area);
-                    total += area * i.Quantity;
-                }
-                layout.Sheet.SetNumber(XlsxBook.CellName(5, row), i.Quantity, layout.Center);
-                row++;
-            }
-            if (painted.Count == 0)
-            {
-                layout.Sheet.SetText(XlsxBook.CellName(1, row), "Окрашиваемых единиц нет: операция «Покраска» не назначена ни одной единице", layout.Note);
-                layout.Sheet.Merge("A" + row + ":" + XlsxBook.CellName(titles.Length, row));
-            }
-            else
-            {
-                layout.Sheet.SetText(XlsxBook.CellName(3, row), "Итого", layout.Total);
-                layout.Sheet.SetText(XlsxBook.CellName(4, row), "", layout.Total);
-                layout.Sheet.SetText(XlsxBook.CellName(5, row), "", layout.Total);
-                layout.Sheet.SetNumber(XlsxBook.CellName(6, row), Math.Round(total, 3), layout.TotalNumber);
-            }
-            layout.Finish(row);
-            return painted.Count;
-        }
-
-        private static int WritePurchased(XlsxBook book, IList<LzkItem> items, LzkHeader header)
-        {
-            var groups = items.Where(i => i.IsPurchased)
-                .GroupBy(i => (i.Designation + Key + i.Name + Key + i.Code).ToLowerInvariant())
-                .Select(g => new { First = g.First(), Quantity = g.Sum(i => i.Quantity) })
-                .OrderBy(g => g.First.Name, StringComparer.CurrentCultureIgnoreCase)
-                .ToList();
-            string[] titles = { "№", "Наименование", "Обозначение", "Код 1С", "Ед. изм.", "ОКЕИ", "Кол-во" };
-            double[] widths = { 5, 44, 26, 12, 10, 8, 10 };
-            Layout layout = new Layout(book, PurchasedSheet,
-                "Покупные и стандартные изделия (на одно изделие)", header, titles, widths);
-            int row = layout.FirstRow;
-            foreach (var g in groups)
-            {
-                LzkItem i = g.First;
-                string unit, okei;
-                Unit(i.Unit, out unit, out okei);
-                layout.Sheet.SetNumber(XlsxBook.CellName(1, row), row - layout.FirstRow + 1, layout.Center);
-                layout.Sheet.SetText(XlsxBook.CellName(2, row), i.Name.Length > 0 ? i.Name : System.IO.Path.GetFileNameWithoutExtension(i.Path), layout.Text);
-                layout.Sheet.SetText(XlsxBook.CellName(3, row), i.Designation, layout.Text);
-                // Код 1С — из справочника снабжения (ТЗ-02 Т-14а). Справочника нет — ячейка пустая: это не забытый
-                // реквизит конструктора, замечанием в отчёт не идёт.
-                layout.Sheet.SetText(XlsxBook.CellName(4, row), i.Code.Trim(), layout.Center);
-                layout.Sheet.SetText(XlsxBook.CellName(5, row), unit, layout.Center);
-                layout.Sheet.SetText(XlsxBook.CellName(6, row), okei, layout.Center);
-                layout.Sheet.SetNumber(XlsxBook.CellName(7, row), g.Quantity, layout.Center);
-                row++;
-            }
-            if (groups.Count == 0)
-            {
-                layout.Sheet.SetText(XlsxBook.CellName(1, row), "Покупных и стандартных изделий в составе нет", layout.Note);
-                layout.Sheet.Merge("A" + row + ":" + XlsxBook.CellName(titles.Length, row));
-            }
-            layout.Finish(row);
-            return groups.Count;
+            List<LzkItem> list;
+            if (path.Length == 0 || !byPath.TryGetValue(path, out list) || list.Count == 0) return null;
+            LzkItem found = list.FirstOrDefault(i => !used.Contains(i) && designation.Length > 0 &&
+                    string.Equals(i.Designation, designation, StringComparison.OrdinalIgnoreCase))
+                ?? list.FirstOrDefault(i => !used.Contains(i) && !double.IsNaN(quantity) && i.Quantity == (int)Math.Round(quantity))
+                ?? list.FirstOrDefault(i => !used.Contains(i))
+                ?? list[0];
+            used.Add(found);
+            return found;
         }
 
         /// <summary>«796 ШТ», «шт» → единица и код ОКЕИ; по умолчанию штуки (ТЗ-02 Т-14а).</summary>
@@ -605,73 +602,6 @@ namespace ESKD.MaterialSync.Core
             unit = (m.Success ? m.Groups[2].Value : raw).Trim().ToLowerInvariant();
             if (unit.Length == 0) unit = "шт";
             if (okei.Length == 0 && unit == "шт") okei = "796";
-        }
-
-        /// <summary>Вёрстка листа ведомости: название, подзаголовок, шапка, стили строк, печать.</summary>
-        private sealed class Layout
-        {
-            private const string HeadFill = "FFF2F2F2";
-            private readonly XlsxBook _book;
-            private readonly string _name;
-            private readonly int _columns;
-
-            /// <summary>Кегль тела таблицы: столько же, сколько на главном листе ведомости ЛЗК.</summary>
-            private const double BodySize = 10;
-
-            public readonly XlsxSheet Sheet;
-            public readonly int FirstRow = 4;
-            public readonly int Text, Center, Area, Total, TotalNumber, Note;
-
-            public Layout(XlsxBook book, string name, string title, LzkHeader header, string[] titles, double[] widths)
-            {
-                _book = book;
-                _name = name;
-                _columns = titles.Length;
-                Sheet = book.AddSheet(name);
-                int titleStyle = book.AddStyle(new XlsxStyle { Bold = true, Size = 12, Horizontal = "left" });
-                int subtitle = book.AddStyle(new XlsxStyle { Gray = true, Size = 9, Horizontal = "left" });
-                // Кегль таблицы — как на главном листе ведомости (10 pt): без него ячейки наследуют
-                // размер шрифта книги SWTools (12 pt), и в одной книге получаются листы разного размера.
-                int head = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Wrap = true, Horizontal = "center", Fill = HeadFill, Size = BodySize });
-                Text = book.AddStyle(new XlsxStyle { Border = true, Wrap = true, Horizontal = "left", Size = BodySize });
-                Center = book.AddStyle(new XlsxStyle { Border = true, Horizontal = "center", Size = BodySize });
-                Area = book.AddStyle(new XlsxStyle { Border = true, Horizontal = "center", NumberFormat = "0.000", Size = BodySize });
-                Total = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Horizontal = "right", Size = BodySize });
-                TotalNumber = book.AddStyle(new XlsxStyle { Bold = true, Border = true, Horizontal = "center", NumberFormat = "0.000", Size = BodySize });
-                Note = book.AddStyle(new XlsxStyle { Gray = true, Horizontal = "left", Size = BodySize });
-
-                Sheet.SetText("A1", title, titleStyle);
-                Sheet.Merge("A1:" + XlsxBook.CellName(_columns, 1));
-                Sheet.SetRowHeight(1, 22);
-                Sheet.SetText("A2", Subtitle(header), subtitle);
-                Sheet.Merge("A2:" + XlsxBook.CellName(_columns, 2));
-                for (int c = 0; c < titles.Length; c++)
-                {
-                    Sheet.SetText(XlsxBook.CellName(c + 1, 3), titles[c], head);
-                    Sheet.SetColumnWidth(c + 1, widths[c]);
-                }
-                Sheet.SetRowHeight(3, 30);
-            }
-
-            private static string Subtitle(LzkHeader header)
-            {
-                if (header == null) return "";
-                string product = (header.Product ?? "").Trim();
-                string date = (header.Date ?? "").Trim();
-                return (product.Length > 0 ? "Изделие: " + product : "") +
-                    (product.Length > 0 && date.Length > 0 ? ";  " : "") +
-                    (date.Length > 0 ? "сформировано " + date : "");
-            }
-
-            /// <summary>Закрепление шапки, область печати и повтор шапки на каждой странице.</summary>
-            public void Finish(int lastRow)
-            {
-                Sheet.FreezeRowsAbove("A" + FirstRow);
-                Sheet.FitToWidth();
-                string lastColumn = XlsxBook.CellName(_columns, 1);
-                lastColumn = lastColumn.Substring(0, lastColumn.Length - 1);
-                _book.SetPrintNames(_name, "$A$1:$" + lastColumn + "$" + Math.Max(lastRow, FirstRow), 3);
-            }
         }
 
         /// <summary>Текст отчёта _Ведомость.txt.</summary>
@@ -686,10 +616,17 @@ namespace ESKD.MaterialSync.Core
             if (result != null)
             {
                 sb.AppendLine(string.Format("Строк: {0}; покраска: {1}; покупные: {2}", result.Rows, result.PaintRows, result.PurchasedRows));
+                if (result.SectionRows.Count > 0)
+                    sb.AppendLine("Участки: " + string.Join("; ", result.SectionRows.Select(kv => kv.Key + " — " + kv.Value).ToArray()));
                 sb.AppendLine();
                 foreach (string e in result.Errors) sb.AppendLine("ОШИБКА: " + e);
                 if (result.Issues.Count == 0 && result.Errors.Count == 0) sb.AppendLine("Замечаний нет.");
                 else foreach (string i in result.Issues) sb.AppendLine("? " + i);
+                if (result.Notes.Count > 0)
+                {
+                    sb.AppendLine();
+                    foreach (string n in result.Notes) sb.AppendLine("  " + n);
+                }
             }
             if (notes != null)
             {

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -25,6 +25,10 @@ namespace ESKD.MaterialSync.Sw
         private readonly Dictionary<string, Image> _previews = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
         private readonly PictureBox _preview = new PictureBox();
         private readonly Label _previewCaption = new Label();
+        private readonly LzkInputs _inputs;
+        private readonly NumericUpDown _quantity = new NumericUpDown();
+        private readonly DateTimePicker _deadline = new DateTimePicker();
+        private readonly TextBox _color = new TextBox();
 
         public Dictionary<string, string> Result { get; private set; }
 
@@ -35,8 +39,16 @@ namespace ESKD.MaterialSync.Sw
 
         /// <param name="thumbnail">Эскиз модели по пути (до 256 px) или null; вызывается в фоновом потоке.</param>
         public LzkOperationsForm(IList<LzkItem> items, IDictionary<string, ModelTraits> traits, Func<string, Image> thumbnail)
+            : this(items, traits, thumbnail, null)
+        {
+        }
+
+        /// <param name="inputs">Тираж, срок, цвет книги ЛЗК (ТЗ-04 К-4): подставляются прошлые, по «Сформировать» пишутся обратно.</param>
+        public LzkOperationsForm(IList<LzkItem> items, IDictionary<string, ModelTraits> traits, Func<string, Image> thumbnail,
+            LzkInputs inputs)
         {
             _thumbnail = thumbnail;
+            _inputs = inputs;
             _items = items.OrderBy(i => i.IsAssembly ? 0 : 1).ThenBy(i => i.Designation, StringComparer.CurrentCultureIgnoreCase).ToList();
             Result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -55,6 +67,36 @@ namespace ESKD.MaterialSync.Sw
                 Text = "Отметьте операции изготовления. Строки «(авто)» заполнены по модели — проверьте их. " +
                        "Выбор записывается в свойство «Операции» моделей изделия и сохраняется."
             };
+
+            FlowLayoutPanel order = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 36,
+                Padding = new Padding(8, 4, 8, 0),
+                WrapContents = false,
+                Visible = inputs != null
+            };
+            if (inputs != null)
+            {
+                _quantity.Minimum = 1;
+                _quantity.Maximum = 100000;
+                _quantity.Width = 80;
+                _quantity.Value = Math.Max(1, Math.Min(100000, inputs.Quantity));
+                _deadline.Format = DateTimePickerFormat.Short;
+                _deadline.ShowCheckBox = true;
+                _deadline.Width = 130;
+                _deadline.Value = inputs.Deadline ?? DateTime.Today.AddDays(30);
+                _deadline.Checked = inputs.Deadline.HasValue;
+                _color.Width = 140;
+                _color.Text = inputs.Color;
+                order.Controls.Add(Caption("Изделий в заказе:"));
+                order.Controls.Add(_quantity);
+                order.Controls.Add(Caption("   Срок отгрузки:"));
+                order.Controls.Add(_deadline);
+                order.Controls.Add(Caption("   Цвет покраски (RAL):"));
+                order.Controls.Add(_color);
+                order.Controls.Add(Caption("   — их можно поменять и в книге, лист «Паспорт»."));
+            }
 
             _grid.Dock = DockStyle.Fill;
             _grid.AllowUserToAddRows = false;
@@ -139,6 +181,7 @@ namespace ESKD.MaterialSync.Sw
 
             Controls.Add(_grid);
             Controls.Add(side);
+            Controls.Add(order);
             Controls.Add(hint);
             Controls.Add(bottom);
 
@@ -265,6 +308,11 @@ namespace ESKD.MaterialSync.Sw
             _previews.Clear();
         }
 
+        private static Label Caption(string text)
+        {
+            return new Label { Text = text, AutoSize = true, Padding = new Padding(0, 6, 0, 0) };
+        }
+
         private static DataGridViewTextBoxColumn TextColumn(string header, int width)
         {
             return new DataGridViewTextBoxColumn { HeaderText = header, Width = width, ReadOnly = true, SortMode = DataGridViewColumnSortMode.NotSortable };
@@ -292,6 +340,12 @@ namespace ESKD.MaterialSync.Sw
                 string list = string.Join("\n", empty.Take(15).ToArray()) + (empty.Count > 15 ? "\n…" : "");
                 if (MessageBox.Show(this, "Без операций (в ведомости будет «?»):\n\n" + list + "\n\nПродолжить?", Text,
                         MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return;
+            }
+            if (_inputs != null)
+            {
+                _inputs.Quantity = (int)_quantity.Value;
+                _inputs.Deadline = _deadline.Checked ? (DateTime?)_deadline.Value.Date : null;
+                _inputs.Color = _color.Text.Trim();
             }
             DialogResult = DialogResult.OK;
             Close();

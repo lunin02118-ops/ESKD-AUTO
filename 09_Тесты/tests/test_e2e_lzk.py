@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""E2E, группа L — кнопка «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37): операции, габарит, выгрузка SWTools без окна, листы."""
+"""E2E, группа L — кнопка «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37, ТЗ-04): операции, габарит, выгрузка SWTools без окна,
+живая книга ЛЗК — паспорт, участки, расход, нормы — в «04_Сопроводительная документация» изделия."""
 import time
 import unittest
 import winreg
@@ -13,6 +14,9 @@ PRODUCT = "И01_ПРТИ.468211.100_Кондуктор"
 ASM = "ПРТИ.468211.100 СБ Кондуктор сварочный.sldasm"
 SHEET_PART = "ПРТИ.468211.101 Пластина опорная.sldprt"
 SUBASSEMBLY = "ПРТИ.468211.110 СБ Узел опоры.sldasm"
+DOCS = "04_Сопроводительная документация"
+BOOK = "ЛЗК_ПРТИ.468211.100.xlsx"
+SHEETS = ["Паспорт", "Ведомость", "Заготовительный", "Сварочный", "Покрасочный", "Комплектовочный", "Расход", "Нормы"]
 TIMEOUT = 600
 
 
@@ -54,7 +58,7 @@ class Lzk(SwTestCase):
 
     @tags("smoke")
     def test_L01_builds_workbook_with_sheets(self):
-        """L01: ведомость Ведомость_<шифр>.xlsx в папке изделия — три листа, шапка, отчёт; «Операции» и «Габарит» в модели."""
+        """L01: книга ЛЗК_<шифр>.xlsx в «04_Сопроводительная документация» — паспорт, участки, расход, нормы; «Операции» и «Габарит» в модели."""
         import openpyxl
 
         product, asm = self._product()
@@ -63,14 +67,14 @@ class Lzk(SwTestCase):
         status = self._build()
         self.assertTrue(status.startswith("ok|"), status)
         _, path, row_count, issues = status.split("|")
-        workbook = product / "Ведомость_ПРТИ.468211.100.xlsx"
+        workbook = product / DOCS / BOOK
         self.assertEqual(str(workbook).lower(), path.lower(), "имя и место ведомости")
         self.assertTrue(workbook.is_file(), "файл ведомости")
         self.assertTrue((product / "_Ведомость.txt").is_file(), "отчёт")
         self.assertGreater(int(row_count), 5, "строк в ведомости")
 
         wb = openpyxl.load_workbook(workbook)
-        self.assertEqual(["Ведомость", "Покраска", "Покупные"], wb.sheetnames)
+        self.assertEqual(SHEETS, wb.sheetnames)
         main = wb["Ведомость"]
         self.assertTrue(str(main["B2"].value or "").startswith("ПРТИ.468211.100"), main["B2"].value)
         self.assertEqual(ASM, main["B3"].value, "сборка в шапке")
@@ -87,17 +91,25 @@ class Lzk(SwTestCase):
         # З-1: красится прокат; лист из стали — прокат, значит и резка, и покраска.
         self.assertIn("Покраска", ops["ПРТИ.468211.101"], f"стальной лист красится: {ops['ПРТИ.468211.101']}")
         self.assertNotIn("Покраска", ops["ПРТИ.468211.110"], "механическая сборка целиком не красится")
-        paint = wb["Покраска"]
-        self.assertEqual("Покраска (на одно изделие)", paint["A1"].value, "название листа")
-        self.assertEqual("№", paint["A3"].value, "шапка таблицы")
-        painted = [paint.cell(r, 2).value for r in range(4, paint.max_row + 1) if paint.cell(r, 1).value]
+        paint = wb["Покрасочный"]
+        self.assertEqual("Покрасочный участок", paint["A1"].value, "название листа")
+        self.assertEqual("№", paint["A5"].value, "шапка таблицы")
+        self.assertEqual("=Тираж", paint["C3"].value, "тираж в шапке — из паспорта")
+        data = [r for r in range(6, paint.max_row + 1) if isinstance(paint.cell(r, 1).value, (int, float))]
+        painted = [paint.cell(r, 2).value for r in data]
         self.assertIn("ПРТИ.468211.101", painted, f"лист в покраске: {painted}")
-        areas = [paint.cell(r, 4).value for r in range(4, paint.max_row + 1) if paint.cell(r, 1).value]
+        areas = [paint.cell(r, 4).value for r in data]
         self.assertTrue(all(isinstance(a, (int, float)) and a > 0 for a in areas), f"площадь каждой единицы: {areas}")
         self.assertEqual(len(set(areas)), len(areas), f"площади разных деталей различаются: {areas}")
-        bought = wb["Покупные"]
-        codes = [bought.cell(r, 4).value for r in range(4, bought.max_row + 1) if bought.cell(r, 1).value]
+        self.assertTrue(all(str(paint.cell(r, 6).value).endswith("*Тираж") for r in data), "всего на заказ — формулой")
+        kit = wb["Комплектовочный"]
+        codes = [kit.cell(r, 4).value for r in range(6, kit.max_row + 1) if isinstance(kit.cell(r, 1).value, (int, float))]
         self.assertNotIn("?", codes, f"нет кода — ячейка пустая, а не «?»: {codes}")
+        self.assertTrue(str(main.auto_filter.ref or "").startswith("A6:M"), f"фильтр по таблице с категорией: {main.auto_filter.ref}")
+        self.assertTrue(all(main.cell(r, 11).value for r in rows), "категория у каждой строки")
+        self.assertIn("Тираж", wb.defined_names, "имя «Тираж»")
+        self.assertIn("Хлыст", wb.defined_names, "норматив «Хлыст»")
+        self.assertFalse((product / "Ведомость_ПРТИ.468211.100.xlsx").exists(), "в корне изделия ведомости нет")
         sizes = [main.cell(r, 6).value for r in rows]
         self.assertTrue(all(sizes), f"габарит у каждой строки: {sizes}")
         self.assertEqual(int(issues), int(str(main["G4"].value).split()[0]) if main["G4"].value != "нет" else 0,
@@ -109,15 +121,35 @@ class Lzk(SwTestCase):
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_L02_second_run_archives_previous(self):
-        """L02: повторное формирование переносит прежнюю ведомость в _Аннулировано и не спрашивает об операциях."""
+        """L02: повторное формирование переносит прежнюю книгу в _Аннулировано, введённый тираж и нормы сохраняет;
+        ведомость старого образца из корня изделия тоже уходит в _Аннулировано."""
+        import openpyxl
+
         product, asm = self._product()
+        legacy = product / "Ведомость_ПРТИ.468211.100.xlsx"
+        openpyxl.Workbook().save(legacy)
         doc = self.s.open(asm)
         self.s.activate(doc)
         self.assertTrue(self._build().startswith("ok|"))
+        self.assertFalse(legacy.exists(), "ведомость старого образца убрана из корня")
+        self.assertEqual(1, len(list((product / "_Аннулировано").glob("Ведомость_ПРТИ.468211.100_*.xlsx"))), "старый образец в архиве")
+
+        # Начальник производства ввёл тираж и правку нормы — повторная К-4 их не теряет.
+        book = product / DOCS / BOOK
+        wb = openpyxl.load_workbook(book)
+        sheet, cell = next(iter(wb.defined_names["Тираж"].destinations))
+        wb[sheet][cell.replace("$", "")] = 41
+        sheet, cell = next(iter(wb.defined_names["Захват"].destinations))
+        wb[sheet][cell.replace("$", "")] = 600
+        wb.save(book)
         self.assertTrue(self._build().startswith("ok|"))
-        archived = list((product / "_Аннулировано").glob("Ведомость_ПРТИ.468211.100_*.xlsx"))
+        archived = list((product / "_Аннулировано").glob("ЛЗК_ПРТИ.468211.100_*.xlsx"))
         self.assertEqual(1, len(archived), archived)
-        self.assertTrue((product / "Ведомость_ПРТИ.468211.100.xlsx").is_file())
+        wb = openpyxl.load_workbook(book)
+        sheet, cell = next(iter(wb.defined_names["Тираж"].destinations))
+        self.assertEqual(41, wb[sheet][cell.replace("$", "")].value, "тираж сохранён")
+        sheet, cell = next(iter(wb.defined_names["Захват"].destinations))
+        self.assertEqual(600, wb[sheet][cell.replace("$", "")].value, "норма сохранена")
 
     def test_L03_refuses_non_assembly(self):
         """L03: у детали кнопка отказывает без изменений файлов."""

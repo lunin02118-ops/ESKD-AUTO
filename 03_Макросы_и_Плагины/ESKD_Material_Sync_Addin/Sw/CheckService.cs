@@ -371,14 +371,17 @@ namespace ESKD.MaterialSync.Sw
         private static void Workbook(string productFolder, string assemblyPath, CheckReport report)
         {
             string cipher = LzkNaming.Cipher(productFolder, assemblyPath);
-            string path = LzkNaming.WorkbookPath(productFolder, cipher);
-            string name = Path.GetFileName(path);
-            if (!File.Exists(path))
+            string path = LzkNaming.FindWorkbook(productFolder, cipher);
+            string name = Path.GetFileName(path.Length > 0 ? path : LzkNaming.WorkbookPath(productFolder, cipher));
+            if (path.Length == 0)
             {
                 report.Add(CheckRules.Workbook, CheckRules.LevelOf(CheckRules.Workbook), name,
-                    "нет ведомости изделия: нажмите «Ведомость ЛЗК»");
+                    "нет книги ЛЗК изделия: нажмите «Ведомость ЛЗК»");
                 return;
             }
+            if (LzkNaming.IsLegacy(path))
+                report.Add(CheckRules.Workbook, CheckRules.LevelOf(CheckRules.Workbook), name,
+                    "ведомость старого образца (без участков и калькулятора): нажмите «Ведомость ЛЗК»");
             string reportPath = LzkNaming.ReportPath(productFolder);
             if (File.Exists(reportPath))
             {

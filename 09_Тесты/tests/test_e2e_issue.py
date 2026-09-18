@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
-"""E2E, группы X и Y — кнопки «Выдать в производство» (ТЗ-02 Т-38…Т-43) и «Закрыть заказ» (Т-44…Т-47).
+"""E2E, группы R и Y — кнопки «Готово к производству» (ТЗ-04 Р4-8) и «Закрыть заказ» (ТЗ-02 Т-44…Т-47).
 
-Ведомость изделия здесь собирается вручную (openpyxl): SWTools на стенде может быть не установлен,
-а К-5 читает ведомость как файл — ей всё равно, кто её написал, лишь бы были именованные диапазоны
-шаблона ЛЗК. Нормативы кладём рядом с корнем заказов, как на NAS.
+Окна «Выдать в производство» на заказ больше нет: изделие отмечается готовым по одному, отчёт _Выдано лежит
+в папке изделия, PDF листов участков делает Excel из книги ЛЗК. Книги здесь собираются вручную (openpyxl) —
+кнопка читает их как файлы.
 """
 import shutil
 import unittest
 from pathlib import Path
 
 import openpyxl
-from openpyxl.workbook.defined_name import DefinedName
 
 from eskd_e2e import com, paths
 from eskd_e2e.testing import SwTestCase
@@ -19,34 +18,14 @@ PRODUCT = "И01_ПРТИ.468211.100"
 CIPHER = "ПРТИ.468211.100"
 ASM = "ПРТИ.468211.100 СБ Кондуктор сварочный.sldasm"
 ORDER = "2026-010 Стенд"
-
-NAMES = ["Номер", "Обозначение", "Наименование", "Материал_Строка", "Габарит", "МассаЕдКг",
-         "Количество", "Операции", "Путь"]
-NORMS = [("Труба.Хлыст", "6000"), ("Труба.Захват", "200"), ("Труба.Торцовка", "20"), ("Труба.Рез", "0,5"),
-         ("Труба.Деловой", "500"), ("Лист.Формат", "1250x2500"), ("Лист.Отход", "1,15"),
-         ("Краска.Норма", "140"), ("Краска.Потери", "15"), ("Краска.Тара", "25")]
-
-# Строки ведомости: обозначение, наименование, материал, габарит, масса, кол-во, операции, файл.
-ROWS = [
-    ("ПРТИ.468211.101", "Пластина опорная", "Ст3сп ГОСТ 380-2005", "200x120x6", 1.13, 2,
-     "Лазерный раскрой; Покраска", "01_3D/ПРТИ.468211.101 Пластина опорная.sldprt"),
-    ("ПРТИ.468211.102", "Стойка", "Труба 50х25х1.5 ГОСТ 8645-68", "L=1996", 2.4, 4,
-     "Труборез; Сварка; Покраска", "01_3D/ПРТИ.468211.102 Стойка.sldprt"),
-    ("ПРТИ.468211.100", "Кондуктор сварочный", "", "", 12.5, 1, "Сварка; Покраска",
-     "01_3D/" + ASM),
-]
-
-
-def numbers(row):
-    """Числа строки книги: openpyxl отдаёт их то int, то float — сравниваем по целой части."""
-    return [int(c) for c in row if isinstance(c, (int, float)) and float(c).is_integer()]
+DOCS = "04_Сопроводительная документация"
 
 
 class Issue(SwTestCase):
 
     # ------------------------------------------------------------------ фикстура заказа
-    def _order(self, marks=False, norms=True, issued=False):
-        """Заказ с одним изделием, ведомостью и справочником нормативов; возвращает (заказ, изделие, сборка)."""
+    def _order(self, issued=False):
+        """Заказ с одним изделием; возвращает (заказ, изделие, сборка)."""
         short = self._case_name().split("_")[1]
         subdir = f"{short}/_Заявки/{ORDER}/02_Металл/{PRODUCT}/01_3D"
         models = self.s.run_dir / subdir
@@ -57,134 +36,76 @@ class Issue(SwTestCase):
                 self.s.workspace_copy(src, subdir=subdir)
         product = models.parent
         order = product.parent.parent
-        self._workbook(product / f"Ведомость_{CIPHER}.xlsx", marks=marks)
-        if norms:
-            self._norms(self.s.run_dir / short / "Нормативы_производства.xlsx")
         if issued:
-            (order / "_Выдано_2026-09-10_0900.txt").write_text(
-                "Выдано в производство\nЗаказ: " + ORDER + "\n", encoding="utf-8")
+            (product / "_Выдано_2026-09-10_0900.txt").write_text(
+                "Готово к производству\nИзделие: " + CIPHER + "\n", encoding="utf-8")
         return order, product, models / ASM
 
-    def _workbook(self, path, marks=False):
-        """Ведомость по шаблону ЛЗК: главный лист с именованными диапазонами, «Покраска» и «Покупные»."""
+    def _book(self, path):
+        """Книга ЛЗК нового образца: паспорт с именем «Тираж» и лист участка."""
+        from openpyxl.workbook.defined_name import DefinedName
+
+        path.parent.mkdir(parents=True, exist_ok=True)
         book = openpyxl.Workbook()
-        main = book.active
-        main.title = "Ведомость"
-        main.append(["Ведомость ЛЗК"])
-        main.append([])
-        main.append(["№", "Обозначение", "Наименование", "Материал", "Габарит", "Масса, кг",
-                     "Кол-во", "Операции", "Путь"])
-        for n, row in enumerate(ROWS, start=1):
-            designation, name, material, size, mass, quantity, operations, file = row
-            main.append([n, designation, name, "?" if marks and n == 1 else material,
-                         size, mass, quantity, operations, file])
-        for column, named in zip("ABCDEFGHI", NAMES):
-            book.defined_names.add(DefinedName(named, attr_text=f"'Ведомость'!${column}$3"))
-
-        paint = book.create_sheet("Покраска")
-        paint.append(["Покраска (на одно изделие)"])
-        paint.append([])
-        paint.append(["№", "Обозначение", "Наименование", "Площадь, м²", "Кол-во"])
-        paint.append([1, "ПРТИ.468211.101", "Пластина опорная", 0.5, 2])
-        paint.append([2, "ПРТИ.468211.102", "Стойка", 0.42, 4])
-
-        purchased = book.create_sheet("Покупные")
-        purchased.append(["Покупные изделия"])
-        purchased.append([])
-        purchased.append(["№", "Наименование", "Обозначение", "Код 1С", "Ед.", "ОКЕИ", "Кол-во"])
-        purchased.append([1, "Болт М10х40", "ГОСТ 7798-70", "00-00012345", "шт", "796", 8])
+        passport = book.active
+        passport.title = "Паспорт"
+        passport["A9"] = "Изделий в заказе, шт."
+        passport["B9"] = 1
+        book.defined_names.add(DefinedName("Тираж", attr_text="'Паспорт'!$B$9"))
+        blank = book.create_sheet("Заготовительный")
+        blank["A1"] = "Заготовительный участок"
+        blank["A6"] = 1
         book.save(path)
         return path
 
-    def _norms(self, path):
-        book = openpyxl.Workbook()
-        sheet = book.active
-        sheet.title = "Нормативы"
-        sheet.append(["Ключ", "Значение"])
-        for key, value in NORMS:
-            sheet.append([key, value])
-        book.save(path)
-        return path
-
-    def _issue(self, order, number="2026-010", quantities="", color="RAL 7035 шагрень", draft=1):
-        com.call(self.s.eskd(), "IssueProductionSilent", str(order), number, quantities, color, draft)
-        return str(com.call(self.s.eskd(), "IssueStatus"))
+    def _ready(self, asm):
+        doc = self.s.open(asm)
+        self.s.activate(doc)
+        com.call(self.s.eskd(), "ReadyForProductionSilent")
+        return str(com.call(self.s.eskd(), "ReadyStatus"))
 
     def _close(self, order, archive):
         com.call(self.s.eskd(), "CloseOrderSilent", str(order), str(archive))
         return str(com.call(self.s.eskd(), "CloseOrderStatus"))
 
-    # ------------------------------------------------------------------ X: выдача в производство
-    def test_X01_draft_builds_workbook_and_touches_nothing_else(self):
-        """X01: черновик сводной собирает книгу в папке заказа; в производство ничего не уходит (Т-38)."""
-        order, product, _ = self._order()
-        status = self._issue(order)
-        self.assertTrue(status.startswith("ok|"), status)
-        _, path, products, files, mode = status.split("|")
-        self.assertEqual("черновик", mode, status)
-        self.assertEqual("1", products, status)
-        self.assertEqual("0", files, "в черновике ничего не копируется")
+    def _nothing_issued(self, product):
+        self.assertEqual([], list(product.glob("_Выдано_*.txt")), "отметка «готово» не написана")
+        self.assertEqual([], list((product / "02_PDF").glob("ЛЗК_*.pdf")) if (product / "02_PDF").exists() else [],
+                         "PDF листов участков не сделаны")
 
-        book = Path(path)
-        self.assertTrue(book.is_file(), f"сводная собрана: {path}")
-        self.assertEqual(order, book.parent, "книга лежит в папке заказа")
-        sheets = openpyxl.load_workbook(book).sheetnames
-        self.assertEqual(["Лист 1 Заготовки", "Лист 2 Сварка", "Лист 3 Покраска", "Лист 4 Покупные",
-                          "Лист 5 Расход", "Цвета", "Комплект"], sheets, f"листы сводной: {sheets}")
-        self.assertEqual([], list(order.glob("_Выдано_*.txt")), "черновик не пишет отчёт выдачи")
-        for name in ("_Производство", "04_ПРОИЗВОДСТВО"):
-            self.assertFalse((order.parent.parent / name).exists(), f"папка производства не создана: {name}")
-        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
-
-    def test_X02_summary_counts_stock_and_paint_by_norms(self):
-        """X02: тираж умножается, заготовки сводятся по сортаменту, хлысты и краска — по нормативам (Т-40)."""
-        order, _, _ = self._order()
-        status = self._issue(order, quantities=f"{PRODUCT}=2")
-        self.assertTrue(status.startswith("ok|"), status)
-        book = openpyxl.load_workbook(Path(status.split("|")[1]))
-
-        blanks = [[c.value for c in row] for row in book["Лист 1 Заготовки"].iter_rows()]
-        stoika = next(r for r in blanks if any(str(c or "").startswith("ПРТИ.468211.102") for c in r))
-        self.assertIn(8, numbers(stoika), f"4 стойки × 2 изделия = 8: {stoika}")
-
-        consumption = [[c.value for c in row] for row in book["Лист 5 Расход"].iter_rows()]
-        tube = next(r for r in consumption if any("50х25" in str(c or "") for c in r))
-        # 8 стоек по 1996 мм: по две на хлыст зоны реза 5800 мм — 4 хлыста.
-        self.assertIn(4, numbers(tube), f"хлысты по CutPlan: {tube}")
-        self.assertTrue(any("%" in str(c or "") for c in tube), f"КИМ в строке расхода: {tube}")
-        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
-
-    def test_X03_missing_norms_stop_issue_with_explanation(self):
-        """X03: без справочника нормативов кнопка отказывает и ничего не собирает (Т-13)."""
-        order, _, _ = self._order(norms=False)
-        status = self._issue(order)
+    # ------------------------------------------------------------------ R: готово к производству
+    def test_R01_without_book_asks_for_lzk(self):
+        """R01: у изделия нет книги ЛЗК — кнопка просит сначала «Ведомость ЛЗК» и ничего не пишет."""
+        _, product, asm = self._order()
+        status = self._ready(asm)
         self.assertTrue(status.startswith("error|"), status)
-        self.assertIn("Нормативы_производства.xlsx", status, status)
-        self.assertIn("встроенных нормативов", status, "объяснено, почему нельзя продолжать")
-        self.assertEqual([], list(order.glob("*Сводная_заявка*.xlsx")), "книга не собрана")
+        self.assertIn("Ведомость ЛЗК", status, status)
+        self._nothing_issued(product)
 
-    def test_X04_marked_workbook_and_unchecked_product_stop_full_issue(self):
-        """X04: полная выдача требует ведомость без пометок и К-3 = ГОТОВО; иначе отказ без копирования (Т-39)."""
-        order, product, _ = self._order(marks=True)
-        status = self._issue(order, draft=0)
+    def test_R02_legacy_book_must_be_rebuilt(self):
+        """R02: ведомость старого образца (в корне изделия, без участков) — кнопка просит пересобрать книгу."""
+        _, product, asm = self._order()
+        openpyxl.Workbook().save(product / f"Ведомость_{CIPHER}.xlsx")
+        status = self._ready(asm)
         self.assertTrue(status.startswith("error|"), status)
-        self.assertIn("пометками", status, status)
-        self.assertEqual([], list(order.glob("_Выдано_*.txt")), "отчёт выдачи не написан")
-        for name in ("_Производство", "04_ПРОИЗВОДСТВО"):
-            self.assertFalse((order.parent.parent / name).exists(), f"в производство ничего не скопировано: {name}")
+        self.assertIn("старого образца", status, status)
+        self._nothing_issued(product)
 
-        # Ведомость без пометок — остаётся проверка изделия, и она у сырой фикстуры даёт «ЗАМЕЧАНИЯ».
-        self._workbook(product / f"Ведомость_{CIPHER}.xlsx")
-        status = self._issue(order, draft=0)
+    def test_R03_unchecked_product_is_not_ready(self):
+        """R03: книга есть, но проверка изделия не «ГОТОВО» — отказ с причиной, PDF и отметки нет."""
+        _, product, asm = self._order()
+        self._book(product / DOCS / f"ЛЗК_{CIPHER}.xlsx")
+        status = self._ready(asm)
         self.assertTrue(status.startswith("error|"), status)
         self.assertIn("ГОТОВО", status, f"названа причина отказа: {status}")
-        self.assertEqual([], list(order.glob("_Выдано_*.txt")), "отчёт выдачи не написан")
+        self._nothing_issued(product)
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
-    def test_X05_order_issue_report_protects_documents_of_every_product(self):
-        """X05: отчёт выдачи лежит в папке заказа (Т-42) — выгрузка изделия видит документ выданным (Т-30)."""
-        order, product, asm = self._order()
-        (order / "_Выдано_2026-09-11_1200.txt").write_text(
-            "\n".join(["Выдано в производство", "", "Документы изделий:", "  ab12  " + ASM, ""]), encoding="utf-8")
+    def test_R04_product_ready_report_protects_its_documents(self):
+        """R04: отметка «готово» лежит в папке изделия — выгрузка видит документ выданным (Т-30)."""
+        _, product, asm = self._order()
+        (product / "_Выдано_2026-09-11_1200.txt").write_text(
+            "\n".join(["Готово к производству", "", "Документы изделия:", "  ab12  " + ASM, ""]), encoding="utf-8")
         doc = self.s.open(asm)
         self.s.activate(doc)
         com.call(self.s.eskd(), "ExportProductSilent")
@@ -192,7 +113,7 @@ class Issue(SwTestCase):
         self.assertTrue(status.startswith("ok|"), status)
         text = Path(status.split("|")[3]).read_text(encoding="utf-8-sig")
         self.assertIn("документ выдан в производство, оформите новую ревизию", text,
-                      "отчёт заказа читается так же, как отчёт в папке изделия")
+                      "отметка в папке изделия защищает выданный документ")
 
     # ------------------------------------------------------------------ Y: закрытие заказа
     def test_Y01_close_packs_order_and_moves_it_to_archive(self):
@@ -235,7 +156,7 @@ class Issue(SwTestCase):
         self.assertTrue(status.startswith("error|"), status)
         self.assertIn("не выдавался", status, status)
 
-        (order / "_Выдано_2026-09-10_0900.txt").write_text("Выдано в производство\n", encoding="utf-8")
+        (product / "_Выдано_2026-09-10_0900.txt").write_text("Готово к производству\n", encoding="utf-8")
         doc = self.s.open(asm)
         self.s.activate(doc)
         status = self._close(order, archive)

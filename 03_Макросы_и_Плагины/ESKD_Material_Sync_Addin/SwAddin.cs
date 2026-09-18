@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -134,7 +134,7 @@ namespace ESKD.MaterialSync
             int bch = group.AddCommandItem2("Деталь БЧ", -1, "Установить или снять признак безчертёжной детали (ГОСТ Р 2.109-2023)",
                 "Деталь БЧ", 2, "ToggleDrawingless", "EnableBchCommand", CommandUserIds[3], buttons);
             int lzk = group.AddCommandItem2("Ведомость ЛЗК", -1,
-                "Операции, габариты, выгрузка SWTools, листы «Покраска» и «Покупные» — Ведомость_<шифр>.xlsx в папке изделия",
+                "Операции, тираж и срок, выгрузка SWTools — книга ЛЗК с участками и калькулятором расхода в «04_Сопроводительная документация» изделия",
                 "Ведомость ЛЗК", 3, "BuildLzk", "EnableLzkCommand", CommandUserIds[4], buttons);
             int check = group.AddCommandItem2("Проверить изделие", -1,
                 "Состав, перестроение, реквизиты, чертежи и ведомость — отчёт _Проверка.txt с итогом ГОТОВО, ЗАМЕЧАНИЯ или БРАК",
@@ -156,11 +156,12 @@ namespace ESKD.MaterialSync
             int snapshot = group.AddCommandItem2("Снимок эталона", -1,
                 "Сложить нынешнее состояние эталона в _Версии и записать строку в Изменения.xlsx",
                 "Снимок эталона", 9, "EtalonSnapshot", "EnableEtalonCommand", CommandUserIds[10], buttons);
-            // Выдача и закрытие заказа — работа Начальника КТО: документ для них не нужен, поэтому
+            // «Готово к производству» — на одно изделие (ТЗ-04 Р4-8): работает на открытой главной сборке.
+            // Закрытие заказа — работа Начальника КТО: документ для него не нужен, поэтому
             // кнопки доступны и без открытой модели (Т-38, Т-44), а на вкладке стоят последними.
-            int issue = group.AddCommandItem2("Выдать в производство", -1,
-                "Собрать сводную заявку по заказу и скопировать документы в 04_ПРОИЗВОДСТВО",
-                "Выдать в производство", 10, "IssueProduction", "EnableIssueCommand", CommandUserIds[11], buttons);
+            int issue = group.AddCommandItem2("Готово к производству", -1,
+                "Проверить изделие, сделать PDF листов участков и расхода из книги ЛЗК и отметить изделие готовым — отчёт _Выдано в папке изделия",
+                "Готово к производству", 10, "ReadyForProduction", "EnableReadyCommand", CommandUserIds[11], buttons);
             int close = group.AddCommandItem2("Закрыть заказ", -1,
                 "Собрать комплекты изделий, сдать заказ в архив Y: и убрать папку в _Сдано",
                 "Закрыть заказ", 11, "CloseOrder", "EnableCloseCommand", CommandUserIds[12], buttons);
@@ -196,7 +197,7 @@ namespace ESKD.MaterialSync
                     // только в меню, на вкладку идут «Выгрузить в производство» (ids[6]) и у сборки
                     // «Сделать независимым» (ids[7]) — в том порядке, в каком идёт работа над изделием.
                     // «Новая ревизия» (ids[8]) живёт там, где живёт ревизия: на чертеже и на БЧ-детали (Т-48).
-                    // «Выдать в производство» (ids[10]) и «Закрыть заказ» (ids[11]) заказом заведуют целиком,
+                    // «Готово к производству» (ids[10]) и «Закрыть заказ» (ids[11]) завершают работу над изделием и заказом,
                     // поэтому стоят на вкладке сборки в конце — там, где работа над изделием заканчивается.
                     int[] wanted = part ? new[] { ids[0], ids[1], ids[2], ids[6], ids[8] }
                         : assembly ? new[] { ids[0], ids[1], ids[7], ids[3], ids[4], ids[6], ids[10], ids[11] }
@@ -294,7 +295,7 @@ namespace ESKD.MaterialSync
         {
             "Настройки ЕСКД", "Синхронизировать", "Деталь БЧ", "Ведомость ЛЗК", "Проверить изделие", "Отчёт проверки",
             "Выгрузить в производство", "Сделать независимым", "Новая ревизия", "Снимок эталона",
-            "Выдать в производство", "Закрыть заказ"
+            "Готово к производству", "Закрыть заказ"
         };
         private int[] _commandIds;
 
@@ -749,29 +750,29 @@ namespace ESKD.MaterialSync
             return EtalonService.LastOutcome;
         }
 
-        // --------------------------------------------------------------- К-5 «Выдать в производство» (Т-38…Т-43)
+        // --------------------------------------------------------------- К-5 «Готово к производству» (ТЗ-04 Р4-8)
 
-        /// <summary>Кнопка живёт без открытого документа: заказ выбирают в окне (Т-38).</summary>
-        public int EnableIssueCommand()
+        /// <summary>Кнопка на вкладке сборки; без открытой сборки объясняет, что открыть.</summary>
+        public int EnableReadyCommand()
         {
             return 1;
         }
 
-        public void IssueProduction()
+        public void ReadyForProduction()
         {
-            IssueService.Run(_app, true, "", "", "", "", false);
+            ReadyService.Run(_app, true);
         }
 
-        /// <summary>Выдача без окон (Т-9): папка заказа, № заявки, «И01_…=2;…», цвет по умолчанию, черновик.</summary>
-        public void IssueProductionSilent(string orderFolder, string number, string quantities, string color, int draft)
+        /// <summary>Без окон (автотесты): активная главная сборка изделия.</summary>
+        public void ReadyForProductionSilent()
         {
-            IssueService.Run(_app, false, orderFolder, number, quantities, color, draft != 0);
+            ReadyService.Run(_app, false);
         }
 
-        /// <summary>«ok|сводная|изделий|файлов|отчёт» или «error|текст».</summary>
-        public string IssueStatus()
+        /// <summary>«ok|отчёт|pdf|папка изделия» или «error|текст».</summary>
+        public string ReadyStatus()
         {
-            return IssueService.LastOutcome;
+            return ReadyService.LastOutcome;
         }
 
         // --------------------------------------------------------------- К-6 «Закрыть заказ» (Т-44…Т-47)

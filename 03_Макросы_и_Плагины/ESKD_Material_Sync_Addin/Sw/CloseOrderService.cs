@@ -49,10 +49,11 @@ namespace ESKD.MaterialSync.Sw
                     Fail(app, interactive, "Не найдена папка заказа: откройте документ заказа или укажите папку.");
                     return false;
                 }
-                if (Directory.GetFiles(order, ExportNaming.IssuedPrefix + "*.txt").Length == 0)
+                // Отметка «Готово к производству» лежит в папке изделия (ТЗ-04 Р4-8), у старых заказов — в папке заказа.
+                if (Directory.GetFiles(order, ExportNaming.IssuedPrefix + "*.txt", SearchOption.AllDirectories).Length == 0)
                 {
                     Fail(app, interactive, "Заказ «" + Path.GetFileName(order) + "» не выдавался в производство: " +
-                        "нет ни одного «" + ExportNaming.IssuedPrefix + "…txt». Закрывать нечего.");
+                        "ни одно изделие не отмечено «Готово к производству» (нет «" + ExportNaming.IssuedPrefix + "…txt»). Закрывать нечего.");
                     return false;
                 }
                 string open = OpenInside(app, order);

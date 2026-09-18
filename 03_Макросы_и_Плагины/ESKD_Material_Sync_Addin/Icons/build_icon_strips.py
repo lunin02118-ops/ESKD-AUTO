@@ -5,7 +5,7 @@
 0 — «Настройки ЕСКД», 1 — «Синхронизировать», 2 — «Деталь БЧ», 3 — «Ведомость ЛЗК»,
 4 — «Проверить изделие», 5 — «Отчёт проверки», 6 — «Выгрузить в производство»,
 7 — «Сделать независимым», 8 — «Новая ревизия», 9 — «Снимок эталона»,
-10 — «Выдать в производство», 11 — «Закрыть заказ». Первые два изображения
+10 — «Готово к производству», 11 — «Закрыть заказ». Первые два изображения
 берутся из прежних полос,
 остальные рисуются здесь.
 Запуск: python build_icon_strips.py (нужен Pillow).
@@ -256,35 +256,40 @@ def draw_snapshot(size):
     return img
 
 
-def draw_issue(size):
-    """Ящик со стрелкой наружу: заявка и документы уходят из КТО в цех."""
+def draw_ready(size):
+    """Лист с зелёным кружком-галочкой: изделие проверено, листы участков готовы, можно в цех (ТЗ-04)."""
     img = Image.new("RGB", (size, size), WHITE)
     px = img.load()
-    left, right = (1, 9) if size == 16 else (2, 14)
-    top, bottom = (5, 14) if size == 16 else (7, 21)
+    left, right = (1, 10) if size == 16 else (2, 15)
+    top, bottom = (1, 13) if size == 16 else (1, 20)
     for x in range(left, right + 1):
         for y in range(top, bottom + 1):
-            px[x, y] = BORDER if x in (left, right) or y in (top, bottom) else PLATE
-    # крышка ящика
-    lid = top + (3 if size == 16 else 4)
-    for x in range(left + 1, right):
-        px[x, lid] = GRID
-    # стрелка вправо-вверх: документы уезжают
+            px[x, y] = BORDER if x in (left, right) or y in (top, bottom) else SHEET
+    step = 3 if size == 16 else 4
+    y = top + step
+    while y < bottom - 1:
+        for x in range(left + 2, right - 1):
+            px[x, y] = GRID
+        y += step
+    # кружок справа внизу
+    r = 4.6 if size == 16 else 6.8
+    cx, cy = (size - 1 - r, size - 1 - r)
+    for x in range(size):
+        for y in range(size):
+            if (x - cx) ** 2 + (y - cy) ** 2 <= r * r:
+                px[x, y] = CHECK
+    # белая галочка в кружке
+    x0, y0 = (int(cx - r * 0.55), int(cy))
+    short_leg, long_leg = (2, 4) if size == 16 else (3, 6)
     thickness = 1 if size == 16 else 2
-    y0 = top - (3 if size == 16 else 5)
-    for i in range(5 if size == 16 else 8):
-        for t2 in range(thickness):
-            x = right - 1 + i
-            if x < size and 0 <= y0 + t2 < size:
-                px[x, y0 + t2] = ARROW
-    head = 3 if size == 16 else 5
-    tip = min(size - 1, right - 1 + (5 if size == 16 else 8))
-    for i in range(head):
-        for t2 in range(thickness):
-            for dy in (-i, i):
-                x, y = tip - i, y0 + dy + t2
-                if 0 <= x < size and 0 <= y < size:
-                    px[x, y] = ARROW
+    for i in range(short_leg):
+        for t in range(thickness):
+            px[x0 + i, y0 + i - t] = WHITE
+    for i in range(long_leg):
+        for t in range(thickness):
+            x, yy = x0 + short_leg - 1 + i, y0 + short_leg - 1 - i - t
+            if 0 <= x < size and 0 <= yy < size:
+                px[x, yy] = WHITE
     return img
 
 
@@ -327,7 +332,7 @@ def build(name, size):
     parts = tiles(path, size, min(existing, 2)) + [draw_bch(size), draw_lzk(size), draw_check(size), draw_report(size),
                                                    draw_export(size), draw_independent(size),
                                                    draw_revision(size), draw_snapshot(size),
-                                                   draw_issue(size), draw_close(size)]
+                                                   draw_ready(size), draw_close(size)]
     out = Image.new("RGB", (size * len(parts), size), WHITE)
     for i, tile in enumerate(parts):
         out.paste(tile, (i * size, 0))

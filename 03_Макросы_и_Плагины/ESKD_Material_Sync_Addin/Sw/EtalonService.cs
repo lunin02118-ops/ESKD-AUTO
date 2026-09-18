@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -28,7 +28,7 @@ namespace ESKD.MaterialSync.Sw
 
         public const string VersionsFolder = "_Версии";
         /// <summary>Что входит в снимок: модели, PDF, программы ЧПУ и ведомость изделия.</summary>
-        public static readonly string[] Folders = { LzkNaming.ModelsFolder, ExportNaming.PdfFolder, ExportNaming.CncFolder };
+        public static readonly string[] Folders = { LzkNaming.ModelsFolder, ExportNaming.PdfFolder, ExportNaming.CncFolder, LzkNaming.DocsFolder };
 
         public static bool Run(ISldWorks app, bool interactive)
         {
@@ -155,7 +155,7 @@ namespace ESKD.MaterialSync.Sw
                     state[Relative(productFolder, file)] = Checksum(file);
             }
             foreach (string book in Directory.Exists(productFolder)
-                ? Directory.GetFiles(productFolder, LzkNaming.WorkbookPrefix + "*.xlsx")
+                ? Directory.GetFiles(productFolder, LzkNaming.LegacyWorkbookPrefix + "*.xlsx")
                 : new string[0])
                 state[Relative(productFolder, book)] = Checksum(book);
             return state;

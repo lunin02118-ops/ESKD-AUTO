@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -16,9 +16,10 @@ using SolidWorks.Interop.swconst;
 namespace ESKD.MaterialSync.Sw
 {
     /// <summary>
-    /// Кнопка К-4 «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37): окно «Операции» → запись «Операции» и «Габарит» в новые модели
-    /// изделия → сохранение сборки → SWTools без окна по пресету «ЛЗК» → листы «Покраска», «Покупные», шапка и пометки
-    /// → Ведомость_&lt;шифр&gt;.xlsx в папке изделия (прежняя — в _Аннулировано) и отчёт _Ведомость.txt.
+    /// Кнопка К-4 «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37, ТЗ-04): окно «Операции» с тиражом, сроком и цветом → запись «Операции»
+    /// и «Габарит» в новые модели изделия → сохранение сборки → SWTools без окна по пресету «ЛЗК» → живая книга:
+    /// паспорт, участки, расход, нормы → ЛЗК_&lt;шифр&gt;.xlsx в «04_Сопроводительная документация» изделия (прежняя —
+    /// в _Аннулировано, введённое в ней переносится) и отчёт _Ведомость.txt.
     /// SWTools ждётся таймером в потоке SolidWorks: синхронное ожидание заблокировало бы надстройку SWTools,
     /// которая читает модель в этом же потоке.
     /// </summary>
@@ -36,6 +37,9 @@ namespace ESKD.MaterialSync.Sw
         private string _productFolder;
         private string _cipher;
         private string _workbookPath;
+        private string _legacyPath;
+        private LzkInputs _inputs;
+        private readonly LzkBook.Options _options = new LzkBook.Options();
         private string _tempWorkbook;
         private string _resultPath;
         private readonly List<LzkItem> _items = new List<LzkItem>();
@@ -140,13 +144,19 @@ namespace ESKD.MaterialSync.Sw
             _productFolder = LzkNaming.ProductFolder(_assemblyPath);
             _cipher = LzkNaming.Cipher(_productFolder, _assemblyPath);
             _workbookPath = LzkNaming.WorkbookPath(_productFolder, _cipher);
+            _legacyPath = LzkNaming.LegacyWorkbookPath(_productFolder, _cipher);
             if (!string.Equals(Path.GetFileName(Path.GetDirectoryName(_assemblyPath)), LzkNaming.ModelsFolder, StringComparison.OrdinalIgnoreCase))
-                _notes.Add("Сборка лежит не в папке «01_3D»: ведомость записана рядом со сборкой.");
-            if (FileLocked(_workbookPath))
-            {
-                Info("Файл " + Path.GetFileName(_workbookPath) + " открыт в Excel. Закройте его и повторите.", MessageBoxIcon.Information);
-                return false;
-            }
+                _notes.Add("Сборка лежит не в папке «01_3D»: книга ЛЗК записана в «" + LzkNaming.DocsFolder + "» рядом со сборкой.");
+            foreach (string busy in new[] { _workbookPath, _legacyPath })
+                if (FileLocked(busy))
+                {
+                    Info("Файл " + Path.GetFileName(busy) + " открыт в Excel. Закройте его и повторите.", MessageBoxIcon.Information);
+                    return false;
+                }
+            // Введённое в прежней книге (тираж, срок, цвет, нормы, указания) переносится в новую.
+            _inputs = LzkInputs.Read(File.Exists(_workbookPath) ? _workbookPath : "");
+            _options.Inputs = _inputs;
+            ReadReferences();
 
             Status("ЕСКД: ведомость ЛЗК — чтение состава изделия…");
             AssemblyDoc asm = (AssemblyDoc)_doc;
@@ -204,7 +214,7 @@ namespace ESKD.MaterialSync.Sw
             if (interactive && editable.Count > 0)
             {
                 Dictionary<string, string> chosen;
-                using (LzkOperationsForm form = new LzkOperationsForm(editable, traits, path => ShellThumbnail.Get(path, 256)))
+                using (LzkOperationsForm form = new LzkOperationsForm(editable, traits, path => ShellThumbnail.Get(path, 256), _inputs))
                 {
                     if (form.ShowDialog(Owner()) != DialogResult.OK) return false;
                     chosen = form.Result;
@@ -237,12 +247,47 @@ namespace ESKD.MaterialSync.Sw
             _header = new LzkHeader
             {
                 Product = _cipher + (top.Name.Length > 0 ? " " + top.Name : ""),
+                Cipher = _cipher,
+                Name = top.Name,
+                Order = OrderName(),
                 Author = _settings.Author ?? "",
                 Model = Path.GetFileName(_assemblyPath),
                 Date = DateTime.Now.ToString("dd.MM.yyyy HH:mm"),
                 Checksum = Checksum(_assemblyPath)
             };
             return true;
+        }
+
+        /// <summary>Нормативы и бланки — вверх по папкам от изделия, как у сводной (Т-13); нет — значения по умолчанию.</summary>
+        private void ReadReferences()
+        {
+            string normsPath = Norms.FindUp(_productFolder);
+            string problem = "";
+            Norms norms = normsPath.Length > 0 ? Norms.Read(normsPath, out problem) : null;
+            if (norms == null)
+            {
+                norms = Norms.Defaults();
+                _notes.Add(problem.Length > 0 ? problem + " Нормы в книге — по умолчанию."
+                    : "Справочник «" + Norms.FileName + "» не найден — нормы в книге по умолчанию (лист «Нормы» правится под заказ).");
+            }
+            _options.Norms = norms;
+            _options.Blanks = LzkBlanks.Read(LzkBlanks.FindUp(_productFolder), out problem);
+            if (problem.Length > 0) _notes.Add(problem);
+        }
+
+        /// <summary>Заказ — имя папки заказа изделия; вне структуры заказов — пусто.</summary>
+        private string OrderName()
+        {
+            try
+            {
+                string order = ProductLocator.Locate(_assemblyPath).OrderFolder;
+                return string.IsNullOrEmpty(order) ? "" : Path.GetFileName(order.TrimEnd(Path.DirectorySeparatorChar, '/'));
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Ведомость ЛЗК: папка заказа", ex);
+                return "";
+            }
         }
 
         private IWin32Window Owner()
@@ -290,7 +335,8 @@ namespace ESKD.MaterialSync.Sw
                 Designation = Prop(w, active, "Обозначение"),
                 Name = Prop(w, active, "Наименование"),
                 Operations = Prop(w, active, LzkOperations.PropertyName),
-                Code = Prop(w, active, "Код_Продукции")
+                Code = Prop(w, active, "Код_Продукции"),
+                Section = Prop(w, active, "Раздел")
             };
             if (item.Code.Length == 0) item.Code = Prop(w, active, "Справочный_номер");
             item.Unit = Prop(w, active, "ЕдИзм");
@@ -584,6 +630,7 @@ namespace ESKD.MaterialSync.Sw
                     return false;
                 }
                 if (object.ReferenceEquals(kv.Value, _doc)) continue;
+                CleanPreview(kv.Value);
                 int errors = 0, warnings = 0;
                 if (!kv.Value.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
                 {
@@ -771,8 +818,8 @@ namespace ESKD.MaterialSync.Sw
             {
                 if (problem.Length == 0 && File.Exists(_tempWorkbook))
                 {
-                    Status("ЕСКД: ведомость ЛЗК — покраска, покупные, проверка…");
-                    result = LzkWorkbook.Complete(_tempWorkbook, _header, _items);
+                    Status("ЕСКД: ведомость ЛЗК — паспорт, участки, расход, проверка…");
+                    result = LzkWorkbook.Complete(_tempWorkbook, _header, _items, _options);
                     if (result.Errors.Count > 0) problem = string.Join("\n", result.Errors.ToArray());
                 }
                 else if (problem.Length == 0)
@@ -787,8 +834,17 @@ namespace ESKD.MaterialSync.Sw
                         string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_workbookPath));
                         Directory.CreateDirectory(Path.GetDirectoryName(archive));
                         File.Move(_workbookPath, archive);
-                        _notes.Add("Прежняя ведомость перенесена: " + archive);
+                        _notes.Add("Прежняя книга ЛЗК перенесена: " + archive);
                     }
+                    // Ведомость старого образца (в корне изделия) заменяется книгой ЛЗК — два документа об одном не нужны.
+                    if (File.Exists(_legacyPath))
+                    {
+                        string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_legacyPath), true);
+                        Directory.CreateDirectory(Path.GetDirectoryName(archive));
+                        File.Move(_legacyPath, archive);
+                        _notes.Add("Ведомость старого образца перенесена: " + archive);
+                    }
+                    Directory.CreateDirectory(Path.GetDirectoryName(_workbookPath));
                     File.Copy(_tempWorkbook, _workbookPath, false);
                 }
                 if (outcome != null && outcome.Version.Length > 0) _notes.Add("SWTools " + outcome.Version);
@@ -821,9 +877,10 @@ namespace ESKD.MaterialSync.Sw
                 return;
             }
             Status("ЕСКД: ведомость ЛЗК сохранена — " + Path.GetFileName(_workbookPath) + (issues > 0 ? ", замечаний " + issues : ""));
-            string text = string.Format("Ведомость сохранена:\n{0}\n\nСтрок: {1}; покраска: {2}; покупные: {3}.\n{4}\n\nОткрыть ведомость?",
+            string text = string.Format("Книга ЛЗК сохранена:\n{0}\n\nСтрок: {1}; покраска: {2}; покупные: {3}; изделий в заказе: {5}.\n{4}\n\nОткрыть книгу?",
                 _workbookPath, result.Rows, result.PaintRows, result.PurchasedRows,
-                issues == 0 ? "Замечаний нет." : "Замечаний: " + issues + " — пометки «?» в ведомости, список в " + LzkNaming.ReportName + ".");
+                issues == 0 ? "Замечаний нет." : "Замечаний: " + issues + " — пометки «?» в ведомости, список в " + LzkNaming.ReportName + ".",
+                _inputs != null ? _inputs.Quantity : 1);
             if (MessageBox.Show(text, "ЕСКД: Ведомость ЛЗК", MessageBoxButtons.YesNo,
                     issues == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning) == DialogResult.Yes)
             {
@@ -860,6 +917,39 @@ namespace ESKD.MaterialSync.Sw
             if (_process != null) _process.Dispose();
             _process = null;
             if (object.ReferenceEquals(_running, this)) _running = null;
+        }
+
+        private static readonly swUserPreferenceToggle_e[] HiddenInPreview =
+        {
+            swUserPreferenceToggle_e.swDisplaySketches, swUserPreferenceToggle_e.swDisplayPlanes, swUserPreferenceToggle_e.swDisplayAxes,
+            swUserPreferenceToggle_e.swDisplayTemporaryAxes, swUserPreferenceToggle_e.swDisplayOrigins,
+            swUserPreferenceToggle_e.swDisplayCoordSystems, swUserPreferenceToggle_e.swDisplayCurves,
+            swUserPreferenceToggle_e.swDisplayReferencePoints, swUserPreferenceToggle_e.swDisplayReferencePoints2,
+            swUserPreferenceToggle_e.swDisplayAnnotations, swUserPreferenceToggle_e.swDisplayAllAnnotations,
+            swUserPreferenceToggle_e.swDisplayReferenceTriad, swUserPreferenceToggle_e.swDisplayArcCenterPoints,
+            swUserPreferenceToggle_e.swDisplayEntityPoints, swUserPreferenceToggle_e.swDisplayVirtualSharps,
+            swUserPreferenceToggle_e.swDisplayLights, swUserPreferenceToggle_e.swDisplayCameras
+        };
+
+        /// <summary>
+        /// Чистый эскиз в файле модели (ТЗ-04, «Эскизы»): SolidWorks сохраняет в файл картинку вида, и эскизы, плоскости,
+        /// оси и начала координат попадают в эскизы ведомости. У модели без открытого окна они скрываются, вид —
+        /// изометрия во весь экран. Модели, открытые пользователем в окне, не трогаются: у него на глазах вид не меняется.
+        /// </summary>
+        private static void CleanPreview(ModelDoc2 model)
+        {
+            try
+            {
+                if (model.Visible) return;
+                foreach (swUserPreferenceToggle_e t in HiddenInPreview)
+                    model.Extension.SetUserPreferenceToggle((int)t, (int)swUserPreferenceOption_e.swDetailingNoOptionSpecified, false);
+                model.ShowNamedView2("", (int)swStandardViews_e.swIsometricView);
+                model.ViewZoomtofit2();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Ведомость ЛЗК: чистый эскиз " + DocInfo.TitleOf(model), ex);
+            }
         }
 
         private static bool FileLocked(string path)

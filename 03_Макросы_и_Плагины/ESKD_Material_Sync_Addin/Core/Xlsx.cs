@@ -370,20 +370,259 @@ namespace ESKD.MaterialSync.Core
 
         public void SetPrintNames(string sheetName, string printArea, int repeatRow)
         {
-            XElement sheets = _workbook.Root.Element(Main + "sheets");
-            List<XElement> list = sheets.Elements(Main + "sheet").ToList();
-            int index = list.FindIndex(s => string.Equals((string)s.Attribute("name"), sheetName, StringComparison.OrdinalIgnoreCase));
+            int index = SheetIndex(sheetName);
             if (index < 0) return;
-            XElement names = _workbook.Root.Element(Main + "definedNames");
-            if (names == null)
-            {
-                names = new XElement(Main + "definedNames");
-                sheets.AddAfterSelf(names);
-            }
-            string quoted = "'" + sheetName.Replace("'", "''") + "'";
+            XElement names = WorkbookSection("definedNames");
+            string quoted = Quote(sheetName);
             Define(names, index, "_xlnm.Print_Area", quoted + "!" + printArea);
             if (repeatRow > 0)
                 Define(names, index, "_xlnm.Print_Titles", quoted + "!$" + repeatRow + ":$" + repeatRow);
+        }
+
+        // Порядок дочерних элементов книги задан схемой, как и у листа.
+        private static readonly string[] WorkbookOrder =
+        {
+            "fileVersion", "fileSharing", "workbookPr", "workbookProtection", "bookViews", "sheets", "functionGroups",
+            "externalReferences", "definedNames", "calcPr", "oleSize", "customWorkbookViews", "pivotCaches", "smartTagPr",
+            "smartTagTypes", "webPublishing", "fileRecoveryPr", "webPublishObjects", "extLst"
+        };
+
+        private XElement WorkbookSection(string name)
+        {
+            XElement existing = _workbook.Root.Element(Main + name);
+            if (existing != null) return existing;
+            XElement created = new XElement(Main + name);
+            int index = Array.IndexOf(WorkbookOrder, name);
+            XElement after = _workbook.Root.Elements()
+                .LastOrDefault(e => Array.IndexOf(WorkbookOrder, e.Name.LocalName) >= 0 && Array.IndexOf(WorkbookOrder, e.Name.LocalName) < index);
+            if (after != null) after.AddAfterSelf(created);
+            else _workbook.Root.AddFirst(created);
+            return created;
+        }
+
+        private static string Quote(string sheetName)
+        {
+            return "'" + (sheetName ?? "").Replace("'", "''") + "'";
+        }
+
+        private int SheetIndex(string sheetName)
+        {
+            return _workbook.Root.Element(Main + "sheets").Elements(Main + "sheet").ToList()
+                .FindIndex(s => string.Equals((string)s.Attribute("name"), sheetName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// Имя книги на одну ячейку, например «Тираж» → 'Паспорт'!$B$9: формулы других листов ссылаются на имя,
+        /// а не на адрес, и не ломаются, если строку в «Паспорте» передвинут.
+        /// </summary>
+        public void DefineName(string name, string sheetName, string cell)
+        {
+            int column, row;
+            ParseCell(cell, out column, out row);
+            string letters = CellName(column, 1);
+            letters = letters.Substring(0, letters.Length - 1);
+            XElement names = WorkbookSection("definedNames");
+            names.Elements(Main + "definedName")
+                .Where(n => n.Attribute("localSheetId") == null && string.Equals((string)n.Attribute("name"), name, StringComparison.Ordinal))
+                .Remove();
+            names.Add(new XElement(Main + "definedName", new XAttribute("name", name),
+                Quote(sheetName) + "!$" + letters + "$" + row.ToString(CultureInfo.InvariantCulture)));
+        }
+
+        /// <summary>Пересчитать формулы при открытии: книга пишется без Excel, значений формул в файле нет.</summary>
+        public void RecalculateOnOpen()
+        {
+            WorkbookSection("calcPr").SetAttributeValue("fullCalcOnLoad", 1);
+        }
+
+        /// <summary>Автофильтр по диапазону с шапкой (A6:M40): сортировка и отбор строк в Excel.</summary>
+        public void SetAutoFilter(string sheetName, string range)
+        {
+            XlsxSheet sheet = Sheet(sheetName);
+            int index = SheetIndex(sheetName);
+            if (sheet == null || index < 0) return;
+            sheet.AutoFilter(range);
+            string[] ends = range.Split(':');
+            int c1, r1, c2, r2;
+            ParseCell(ends[0], out c1, out r1);
+            ParseCell(ends.Length > 1 ? ends[1] : ends[0], out c2, out r2);
+            string absolute = "$" + Letters(c1) + "$" + r1 + ":$" + Letters(c2) + "$" + r2;
+            XElement names = WorkbookSection("definedNames");
+            Define(names, index, "_xlnm._FilterDatabase", Quote(sheetName) + "!" + absolute);
+            names.Elements(Main + "definedName")
+                .Where(n => (string)n.Attribute("name") == "_xlnm._FilterDatabase" && (int?)n.Attribute("localSheetId") == index)
+                .ToList().ForEach(n => n.SetAttributeValue("hidden", 1));
+        }
+
+        private static string Letters(int column)
+        {
+            string name = CellName(column, 1);
+            return name.Substring(0, name.Length - 1);
+        }
+
+        /// <summary>
+        /// Переставить лист на место <paramref name="position"/> (0 — первый). Ссылки имён уровня листа
+        /// (область печати, шапка, фильтр) хранят номер листа — они переписываются вслед за листами.
+        /// </summary>
+        public void MoveSheet(string sheetName, int position)
+        {
+            XElement sheets = _workbook.Root.Element(Main + "sheets");
+            List<XElement> list = sheets.Elements(Main + "sheet").ToList();
+            int from = SheetIndex(sheetName);
+            if (from < 0) return;
+            position = Math.Max(0, Math.Min(position, list.Count - 1));
+            if (from == position) return;
+            List<XElement> reordered = new List<XElement>(list);
+            XElement moved = reordered[from];
+            reordered.RemoveAt(from);
+            reordered.Insert(position, moved);
+            Dictionary<int, int> map = new Dictionary<int, int>();
+            for (int i = 0; i < reordered.Count; i++) map[list.IndexOf(reordered[i])] = i;
+            sheets.ReplaceNodes(reordered.Select(e => new XElement(e)).ToArray());
+            XElement names = _workbook.Root.Element(Main + "definedNames");
+            if (names != null)
+                foreach (XElement n in names.Elements(Main + "definedName"))
+                {
+                    int? local = (int?)n.Attribute("localSheetId");
+                    if (local.HasValue && map.ContainsKey(local.Value)) n.SetAttributeValue("localSheetId", map[local.Value]);
+                }
+            XElement view = _workbook.Root.Element(Main + "bookViews") == null ? null
+                : _workbook.Root.Element(Main + "bookViews").Element(Main + "workbookView");
+            if (view != null)
+            {
+                int? active = (int?)view.Attribute("activeTab");
+                if (active.HasValue && map.ContainsKey(active.Value)) view.SetAttributeValue("activeTab", map[active.Value]);
+                view.SetAttributeValue("firstSheet", 0);
+            }
+        }
+
+        /// <summary>Лист, на котором открывается книга; выделение вкладки снимается с остальных (иначе Excel их группирует).</summary>
+        public void SetActiveSheet(string sheetName)
+        {
+            int index = SheetIndex(sheetName);
+            if (index < 0) return;
+            XElement views = WorkbookSection("bookViews");
+            XElement view = views.Element(Main + "workbookView");
+            if (view == null)
+            {
+                view = new XElement(Main + "workbookView");
+                views.Add(view);
+            }
+            view.SetAttributeValue("activeTab", index);
+            foreach (string name in SheetNames)
+            {
+                XlsxSheet sheet = Sheet(name);
+                if (sheet != null) sheet.SelectTab(string.Equals(name, sheetName, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
+        private static readonly XNamespace Drawing = "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing";
+        private static readonly XNamespace DrawingMain = "http://schemas.openxmlformats.org/drawingml/2006/main";
+        private const long EmuPerPixel = 9525;
+        private const long EmuPerPoint = 12700;
+
+        /// <summary>
+        /// Эскизы SWTools привязаны от своей ячейки до угла следующей: Excel считает такой рисунок вылезающим
+        /// из строки и при сортировке оставляет его на месте — эскизы перепутываются со строками (проверка
+        /// 18.09.2026: 20 из 20). Рисунок вписывается внутрь своей ячейки с сохранением пропорций — тогда
+        /// «перемещать вместе с ячейками» работает и при сортировке. Возвращает число пересаженных рисунков.
+        /// </summary>
+        public int FitPicturesToCells(string sheetName)
+        {
+            XlsxSheet sheet = Sheet(sheetName);
+            if (sheet == null) return 0;
+            string relsPart = RelsOf(sheet.Part);
+            if (!_parts.ContainsKey(relsPart)) return 0;
+            XElement drawingRel = Load(relsPart).Root.Elements(PackageRel + "Relationship")
+                .FirstOrDefault(r => ((string)r.Attribute("Type") ?? "").EndsWith("/drawing", StringComparison.Ordinal));
+            if (drawingRel == null) return 0;
+            string drawingPart = Resolve(sheet.Part, (string)drawingRel.Attribute("Target"));
+            if (!_parts.ContainsKey(drawingPart)) return 0;
+            XDocument drawing = Load(drawingPart);
+            Dictionary<string, string> images = new Dictionary<string, string>();
+            string drawingRels = RelsOf(drawingPart);
+            if (_parts.ContainsKey(drawingRels))
+                foreach (XElement r in Load(drawingRels).Root.Elements(PackageRel + "Relationship"))
+                    images[(string)r.Attribute("Id")] = Resolve(drawingPart, (string)r.Attribute("Target"));
+            int moved = 0;
+            foreach (XElement anchor in drawing.Root.Elements(Drawing + "twoCellAnchor").ToList())
+            {
+                XElement pic = anchor.Element(Drawing + "pic");
+                XElement from = anchor.Element(Drawing + "from");
+                XElement to = anchor.Element(Drawing + "to");
+                if (pic == null || from == null || to == null) continue;
+                int col = (int)from.Element(Drawing + "col");
+                int row = (int)from.Element(Drawing + "row");
+                long cellWidth = (long)(sheet.ColumnWidthPixels(col + 1) * EmuPerPixel);
+                long cellHeight = (long)(sheet.RowHeightPoints(row + 1) * EmuPerPoint);
+                // Поле по 2 px с каждой стороны и запас 5 %: оценка ширины колонки в пикселях приблизительна.
+                long margin = 2 * EmuPerPixel;
+                long boxW = (long)((cellWidth - 2 * margin) * 0.95), boxH = (long)((cellHeight - 2 * margin) * 0.95);
+                if (boxW <= 0 || boxH <= 0) continue;
+                double imgW = 4, imgH = 3;
+                XElement blip = pic.Descendants(DrawingMain + "blip").FirstOrDefault();
+                string embed = blip == null ? null : (string)blip.Attribute(Rel + "embed");
+                string image;
+                if (embed != null && images.TryGetValue(embed, out image)) PngSize(image, ref imgW, ref imgH);
+                double scale = Math.Min(boxW / imgW, boxH / imgH);
+                long w = (long)(imgW * scale), h = (long)(imgH * scale);
+                long left = margin + (cellWidth - 2 * margin - w) / 2, top = margin + (cellHeight - 2 * margin - h) / 2;
+                SetAnchor(from, col, left, row, top);
+                SetAnchor(to, col, left + w, row, top + h);
+                anchor.SetAttributeValue("editAs", "twoCell");
+                XElement ext = pic.Descendants(DrawingMain + "ext").FirstOrDefault();
+                if (ext != null)
+                {
+                    ext.SetAttributeValue("cx", w);
+                    ext.SetAttributeValue("cy", h);
+                }
+                moved++;
+            }
+            if (moved > 0) Store(drawingPart, drawing);
+            return moved;
+        }
+
+        private static void SetAnchor(XElement point, int col, long colOff, int row, long rowOff)
+        {
+            point.SetElementValue(Drawing + "col", col);
+            point.SetElementValue(Drawing + "colOff", colOff);
+            point.SetElementValue(Drawing + "row", row);
+            point.SetElementValue(Drawing + "rowOff", rowOff);
+        }
+
+        /// <summary>Размер PNG из заголовка IHDR; не PNG — размеры не меняются.</summary>
+        private void PngSize(string part, ref double width, ref double height)
+        {
+            byte[] data;
+            if (!_parts.TryGetValue(part, out data) || data.Length < 24 || data[1] != 'P' || data[2] != 'N' || data[3] != 'G') return;
+            int w = (data[16] << 24) | (data[17] << 16) | (data[18] << 8) | data[19];
+            int h = (data[20] << 24) | (data[21] << 16) | (data[22] << 8) | data[23];
+            if (w > 0 && h > 0)
+            {
+                width = w;
+                height = h;
+            }
+        }
+
+        private static string RelsOf(string part)
+        {
+            int slash = part.LastIndexOf('/');
+            return part.Substring(0, slash + 1) + "_rels/" + part.Substring(slash + 1) + ".rels";
+        }
+
+        /// <summary>Относительная ссылка части («../drawings/drawing1.xml») → путь в архиве.</summary>
+        private static string Resolve(string fromPart, string target)
+        {
+            target = (target ?? "").Replace('\\', '/');
+            if (target.StartsWith("/")) return target.Substring(1);
+            List<string> segments = fromPart.Split('/').ToList();
+            segments.RemoveAt(segments.Count - 1);
+            foreach (string s in target.Split('/'))
+            {
+                if (s == "..") { if (segments.Count > 0) segments.RemoveAt(segments.Count - 1); }
+                else if (s != "." && s.Length > 0) segments.Add(s);
+            }
+            return string.Join("/", segments.ToArray());
         }
 
         private static void Define(XElement names, int sheetIndex, string name, string value)
@@ -591,15 +830,118 @@ namespace ESKD.MaterialSync.Core
             Changed = true;
         }
 
+        /// <summary>Формула без кэша значения (<see cref="XlsxBook.RecalculateOnOpen"/>): английские имена функций, «;» не годится — «,».</summary>
+        public void SetFormula(string cell, string formula, int style = -1)
+        {
+            XElement c = Find(cell, true);
+            c.RemoveNodes();
+            c.SetAttributeValue("t", null);
+            if (style >= 0) c.SetAttributeValue("s", style);
+            string text = (formula ?? "").Trim();
+            if (text.StartsWith("=")) text = text.Substring(1);
+            c.Add(new XElement(XlsxBook.Main + "f", text));
+            Changed = true;
+        }
+
+        /// <summary>Формула ячейки (без «=») или пустая строка.</summary>
+        public string Formula(string cell)
+        {
+            XElement c = Find(cell, false);
+            XElement f = c == null ? null : c.Element(XlsxBook.Main + "f");
+            return f == null ? "" : f.Value;
+        }
+
+        /// <summary>Индекс стиля ячейки; -1 — ячейки нет или стиль по умолчанию.</summary>
+        public int StyleOf(string cell)
+        {
+            XElement c = Find(cell, false);
+            int? s = c == null ? null : (int?)c.Attribute("s");
+            return s ?? -1;
+        }
+
+        /// <summary>Только целое число не меньше <paramref name="min"/> (ячейка ввода тиража).</summary>
+        public void ValidateWholeNumber(string cell, int min, string message)
+        {
+            XElement list = Section("dataValidations");
+            list.Elements(XlsxBook.Main + "dataValidation").Where(v => (string)v.Attribute("sqref") == cell).Remove();
+            list.Add(new XElement(XlsxBook.Main + "dataValidation", new XAttribute("type", "whole"),
+                new XAttribute("operator", "greaterThanOrEqual"), new XAttribute("allowBlank", 1),
+                new XAttribute("showErrorMessage", 1), new XAttribute("errorTitle", "Недопустимое значение"),
+                new XAttribute("error", message ?? ""), new XAttribute("sqref", cell),
+                new XElement(XlsxBook.Main + "formula1", min.ToString(CultureInfo.InvariantCulture))));
+            list.SetAttributeValue("count", list.Elements(XlsxBook.Main + "dataValidation").Count());
+            Changed = true;
+        }
+
+        internal void AutoFilter(string range)
+        {
+            Section("autoFilter").SetAttributeValue("ref", range);
+            Changed = true;
+        }
+
+        /// <summary>Выделить вкладку листа или снять выделение.</summary>
+        internal void SelectTab(bool selected)
+        {
+            XElement views = Document.Root.Element(XlsxBook.Main + "sheetViews");
+            XElement view = views == null ? null : views.Element(XlsxBook.Main + "sheetView");
+            if (!selected)
+            {
+                if (view != null && view.Attribute("tabSelected") != null)
+                {
+                    view.SetAttributeValue("tabSelected", null);
+                    Changed = true;
+                }
+                return;
+            }
+            if (view == null)
+            {
+                views = Section("sheetViews");
+                view = new XElement(XlsxBook.Main + "sheetView", new XAttribute("workbookViewId", 0));
+                views.Add(view);
+            }
+            view.SetAttributeValue("tabSelected", 1);
+            Changed = true;
+        }
+
+        /// <summary>Ширина колонки в пикселях (шрифт по умолчанию, 7 px на знак).</summary>
+        internal double ColumnWidthPixels(int column)
+        {
+            XElement cols = Document.Root.Element(XlsxBook.Main + "cols");
+            if (cols != null)
+                foreach (XElement c in cols.Elements(XlsxBook.Main + "col"))
+                    if ((int)c.Attribute("min") <= column && column <= (int)c.Attribute("max"))
+                        return (double?)c.Attribute("width") * 7 ?? 64;
+            XElement format = Document.Root.Element(XlsxBook.Main + "sheetFormatPr");
+            double? width = format == null ? null : (double?)format.Attribute("defaultColWidth");
+            return width.HasValue ? width.Value * 7 : 64;
+        }
+
+        /// <summary>Высота строки в пунктах: своя, иначе по умолчанию листа, иначе 15.</summary>
+        internal double RowHeightPoints(int row)
+        {
+            XElement node = _data.Elements(XlsxBook.Main + "row").FirstOrDefault(r => (int)r.Attribute("r") == row);
+            double? height = node == null ? null : (double?)node.Attribute("ht");
+            if (height.HasValue) return height.Value;
+            XElement format = Document.Root.Element(XlsxBook.Main + "sheetFormatPr");
+            double? fallback = format == null ? null : (double?)format.Attribute("defaultRowHeight");
+            return fallback ?? 15;
+        }
+
         /// <summary>A4, книжная, вписать в одну страницу по ширине.</summary>
         public void FitToWidth()
+        {
+            FitToWidth(false);
+        }
+
+        /// <summary>A4, книжная или альбомная, вписать в одну страницу по ширине.</summary>
+        public void FitToWidth(bool landscape)
         {
             XElement properties = Section("sheetPr");
             properties.Elements(XlsxBook.Main + "pageSetUpPr").Remove();
             properties.Add(new XElement(XlsxBook.Main + "pageSetUpPr", new XAttribute("fitToPage", 1)));
             XElement setup = Section("pageSetup");
             setup.SetAttributeValue("paperSize", 9);
-            setup.SetAttributeValue("orientation", "portrait");
+            setup.SetAttributeValue("orientation", landscape ? "landscape" : "portrait");
             setup.SetAttributeValue("fitToWidth", 1);
             setup.SetAttributeValue("fitToHeight", 0);
             Changed = true;
