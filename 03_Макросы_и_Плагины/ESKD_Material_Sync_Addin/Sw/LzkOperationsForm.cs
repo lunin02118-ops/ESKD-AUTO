@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Threading;
 using System.Windows.Forms;
 using ESKD.MaterialSync.Core;
 
@@ -10,23 +11,38 @@ namespace ESKD.MaterialSync.Sw
     /// <summary>
     /// Окно «Операции» кнопки «Ведомость ЛЗК» (ТЗ-02 Т-36): строка на модель изделия, колонка на операцию.
     /// У моделей без свойства «Операции» галочки предложены по признакам модели — строка помечена «(авто)».
+    /// Слева в строке — миниатюра модели, справа — крупный эскиз выделенной строки (З-6): по одним шифрам
+    /// расцеховку проверять трудно. Миниатюры грузятся в фоне и окно не задерживают.
     /// </summary>
     public sealed class LzkOperationsForm : Form
     {
-        private const int FirstOperationColumn = 3;
+        private const int FirstOperationColumn = 4;
+        private const int ThumbSize = 64;
+        private const int PreviewSize = 256;
         private readonly DataGridView _grid = new DataGridView();
         private readonly List<LzkItem> _items;
+        private readonly Func<string, Image> _thumbnail;
+        private readonly Dictionary<string, Image> _previews = new Dictionary<string, Image>(StringComparer.OrdinalIgnoreCase);
+        private readonly PictureBox _preview = new PictureBox();
+        private readonly Label _previewCaption = new Label();
 
         public Dictionary<string, string> Result { get; private set; }
 
         public LzkOperationsForm(IList<LzkItem> items, IDictionary<string, ModelTraits> traits)
+            : this(items, traits, null)
         {
+        }
+
+        /// <param name="thumbnail">Эскиз модели по пути (до 256 px) или null; вызывается в фоновом потоке.</param>
+        public LzkOperationsForm(IList<LzkItem> items, IDictionary<string, ModelTraits> traits, Func<string, Image> thumbnail)
+        {
+            _thumbnail = thumbnail;
             _items = items.OrderBy(i => i.IsAssembly ? 0 : 1).ThenBy(i => i.Designation, StringComparer.CurrentCultureIgnoreCase).ToList();
             Result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             Text = "ЕСКД: Ведомость ЛЗК — операции";
             StartPosition = FormStartPosition.CenterParent;
-            Size = new Size(1000, 600);
+            Size = new Size(1300, 700);
             MinimumSize = new Size(700, 350);
             Font = new Font("Segoe UI", 9f);
             ShowInTaskbar = false;
@@ -50,7 +66,19 @@ namespace ESKD.MaterialSync.Sw
             _grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize;
             _grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.True;
             _grid.BackgroundColor = SystemColors.Window;
+            _grid.RowTemplate.Height = ThumbSize + 4;
 
+            DataGridViewImageColumn sketch = new DataGridViewImageColumn
+            {
+                HeaderText = "Эскиз",
+                Width = ThumbSize + 8,
+                ImageLayout = DataGridViewImageCellLayout.Zoom,
+                ReadOnly = true,
+                SortMode = DataGridViewColumnSortMode.NotSortable
+            };
+            // Без этого пустая клетка рисует значок «нет картинки» — красный крест.
+            sketch.DefaultCellStyle.NullValue = null;
+            _grid.Columns.Add(sketch);
             _grid.Columns.Add(TextColumn("Обозначение", 160));
             _grid.Columns.Add(TextColumn("Наименование", 220));
             _grid.Columns.Add(TextColumn("", 50));
@@ -67,18 +95,19 @@ namespace ESKD.MaterialSync.Sw
                 bool auto = string.IsNullOrWhiteSpace(item.Operations);
                 List<string> chosen = auto ? LzkOperations.Suggest(t) : LzkOperations.Parse(item.Operations);
                 object[] values = new object[FirstOperationColumn + LzkOperations.All.Length];
-                values[0] = item.Designation;
-                values[1] = item.Name.Length > 0 ? item.Name : System.IO.Path.GetFileNameWithoutExtension(item.Path);
-                values[2] = auto ? "(авто)" : "";
+                values[0] = null;
+                values[1] = item.Designation;
+                values[2] = item.Name.Length > 0 ? item.Name : System.IO.Path.GetFileNameWithoutExtension(item.Path);
+                values[3] = auto ? "(авто)" : "";
                 for (int i = 0; i < LzkOperations.All.Length; i++)
                     values[FirstOperationColumn + i] = chosen.Contains(LzkOperations.All[i]);
                 int row = _grid.Rows.Add(values);
                 _grid.Rows[row].Tag = item;
-                _grid.Rows[row].Cells[0].ToolTipText = item.Path;
+                _grid.Rows[row].Cells[1].ToolTipText = item.Path;
                 if (auto) _grid.Rows[row].DefaultCellStyle.BackColor = Color.FromArgb(255, 248, 225);
                 // Операции, которых нет в списке (введены вручную), сохраняются как есть.
                 List<string> extra = chosen.Where(o => Array.IndexOf(LzkOperations.All, o) < 0).ToList();
-                if (extra.Count > 0) _grid.Rows[row].Cells[2].ToolTipText = "Также: " + string.Join("; ", extra.ToArray());
+                if (extra.Count > 0) _grid.Rows[row].Cells[3].ToolTipText = "Также: " + string.Join("; ", extra.ToArray());
             }
 
             FlowLayoutPanel bottom = new FlowLayoutPanel
@@ -96,9 +125,144 @@ namespace ESKD.MaterialSync.Sw
             AcceptButton = ok;
             CancelButton = cancel;
 
+            Panel side = new Panel { Dock = DockStyle.Right, Width = PreviewSize + 24, Padding = new Padding(8) };
+            _preview.Dock = DockStyle.Top;
+            _preview.Height = PreviewSize;
+            _preview.SizeMode = PictureBoxSizeMode.Zoom;
+            _preview.BackColor = Color.White;
+            _preview.BorderStyle = BorderStyle.FixedSingle;
+            _previewCaption.Dock = DockStyle.Top;
+            _previewCaption.Height = 52;
+            _previewCaption.Padding = new Padding(0, 6, 0, 0);
+            side.Controls.Add(_previewCaption);
+            side.Controls.Add(_preview);
+
             Controls.Add(_grid);
+            Controls.Add(side);
             Controls.Add(hint);
             Controls.Add(bottom);
+
+            _grid.SelectionChanged += delegate { ShowPreview(_grid.CurrentRow); };
+            _grid.CellMouseEnter += delegate(object sender, DataGridViewCellEventArgs e)
+            {
+                if (e.RowIndex >= 0) ShowPreview(_grid.Rows[e.RowIndex]);
+            };
+            _grid.MouseLeave += delegate { ShowPreview(_grid.CurrentRow); };
+            // Исполнения одного файла — отдельные строки, а «Операции» у файла общие: галочка переносится во все его строки.
+            _grid.CurrentCellDirtyStateChanged += delegate
+            {
+                if (_grid.IsCurrentCellDirty && _grid.CurrentCell is DataGridViewCheckBoxCell) _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+            };
+            _grid.CellValueChanged += OnOperationChanged;
+            Shown += delegate { LoadThumbnails(); };
+            FormClosed += delegate { DisposePreviews(); };
+        }
+
+        private bool _mirroring;
+
+        private void OnOperationChanged(object sender, DataGridViewCellEventArgs e)
+        {
+            if (_mirroring || e.RowIndex < 0 || e.ColumnIndex < FirstOperationColumn) return;
+            LzkItem item = _grid.Rows[e.RowIndex].Tag as LzkItem;
+            if (item == null) return;
+            object value = _grid.Rows[e.RowIndex].Cells[e.ColumnIndex].Value;
+            _mirroring = true;
+            try
+            {
+                foreach (DataGridViewRow row in _grid.Rows)
+                {
+                    LzkItem other = row.Tag as LzkItem;
+                    if (row.Index != e.RowIndex && other != null && string.Equals(other.Path, item.Path, StringComparison.OrdinalIgnoreCase))
+                        row.Cells[e.ColumnIndex].Value = value;
+                }
+            }
+            finally
+            {
+                _mirroring = false;
+            }
+        }
+
+        /// <summary>Крупный эскиз и подпись строки — справа от таблицы.</summary>
+        private void ShowPreview(DataGridViewRow row)
+        {
+            LzkItem item = row != null ? row.Tag as LzkItem : null;
+            if (item == null)
+            {
+                _preview.Image = null;
+                _previewCaption.Text = "";
+                return;
+            }
+            Image image;
+            bool loaded = _previews.TryGetValue(item.Path, out image);
+            _preview.Image = image;
+            _previewCaption.Text = (item.Designation + " " + item.Name).Trim() +
+                (loaded && image == null ? Environment.NewLine + "Эскиза в файле нет" : "");
+        }
+
+        /// <summary>
+        /// Миниатюры читаются в отдельном STA-потоке (обработчик миниатюр Windows — COM), по одной на модель,
+        /// и подставляются в строки по мере готовности; закрытое окно дальнейшие картинки не принимает.
+        /// </summary>
+        private void LoadThumbnails()
+        {
+            if (_thumbnail == null) return;
+            List<string> paths = _items.Select(i => i.Path).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+            Thread worker = new Thread(delegate()
+            {
+                foreach (string path in paths)
+                {
+                    if (IsDisposed) return;
+                    Image image = null;
+                    try
+                    {
+                        image = _thumbnail(path);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error("Эскиз " + path, ex);
+                    }
+                    string p = path;
+                    Image img = image;
+                    try
+                    {
+                        BeginInvoke(new MethodInvoker(delegate { PutThumbnail(p, img); }));
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // Окно уже закрыто — картинка никому не нужна.
+                        if (img != null) img.Dispose();
+                        return;
+                    }
+                }
+            });
+            worker.IsBackground = true;
+            worker.SetApartmentState(ApartmentState.STA);
+            worker.Start();
+        }
+
+        private void PutThumbnail(string path, Image image)
+        {
+            if (IsDisposed)
+            {
+                if (image != null) image.Dispose();
+                return;
+            }
+            _previews[path] = image;
+            foreach (DataGridViewRow row in _grid.Rows)
+            {
+                LzkItem item = row.Tag as LzkItem;
+                if (item != null && string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase)) row.Cells[0].Value = image;
+            }
+            ShowPreview(_grid.CurrentRow);
+        }
+
+        private void DisposePreviews()
+        {
+            _preview.Image = null;
+            foreach (DataGridViewRow row in _grid.Rows) row.Cells[0].Value = null;
+            foreach (Image image in _previews.Values)
+                if (image != null) image.Dispose();
+            _previews.Clear();
         }
 
         private static DataGridViewTextBoxColumn TextColumn(string header, int width)

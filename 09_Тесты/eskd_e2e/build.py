@@ -104,6 +104,14 @@ def add_configuration(doc, name):
         raise RuntimeError(f"Не создана конфигурация {name}")
 
 
+def add_derived_configuration(doc, name, parent):
+    """Производная конфигурация name от parent (как «01» под «00» у «Укосины» NC3-7R)."""
+    manager = com.dyn(doc.ConfigurationManager)
+    cfg = manager.AddConfiguration2(name, "", "", 0, parent, "", True)
+    if cfg is None:
+        raise RuntimeError(f"Не создана производная конфигурация {name} от {parent}")
+
+
 def show_configuration(doc, name):
     doc.ShowConfiguration2(name)
 

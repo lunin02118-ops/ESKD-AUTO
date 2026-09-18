@@ -126,6 +126,17 @@ class ModelNames(SwTestCase):
         self.assertEqual("ПРТИ.468211.103-02", V(disk, "Обозначение", "02"))
         self.assertEqual("2", V(disk, "Исполнение", "01"))
 
+    def test_M06b_derived_configuration_is_an_execution(self):
+        """M06b: производная конфигурация «03» от «00» — исполнение -03, а не базовое (замечание 18.09.2026, «Укосина» NC3-7R.02.000)."""
+        path, doc = self.open_copy(A03)
+        build.add_derived_configuration(doc, "03", "00")
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual("ПРТИ.468211.103", V(disk, "Обозначение", "00"))
+        self.assertEqual("ПРТИ.468211.103-03", V(disk, "Обозначение", "03"))
+        self.assertEqual("2", V(disk, "Исполнение", "03"))
+
     def test_M06_mass_in_every_configuration(self):
         """M06: масса для графы 5 у каждого исполнения — «Масса_ФБ» в «00», «01», «02» выражением MProp (эталон A-03: 0.13; 0.19; 0.25 кг)."""
         path, doc = self.open_copy(A03)

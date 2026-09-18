@@ -201,7 +201,11 @@ namespace ESKD.MaterialSync.Sw
                 {
                     string execution;
                     bool isBase;
-                    bool recognized = DesignationParser.ExtractExecutionFromConfigName(RootConfigurationName(doc, cfg), out execution, out isBase);
+                    // Исполнение — по имени самой конфигурации: производная «01» от «00» — это исполнение -01, а не базовое
+                    // (замечание владельца 18.09.2026, «Укосина»). Корневая — только если своё имя не читается как исполнение
+                    // («00SM-FLAT-PATTERN» разбирается сам, «Покраска» под «01» берёт номер у «01»).
+                    bool recognized = DesignationParser.ExtractExecutionFromConfigName(cfg, out execution, out isBase) ||
+                        DesignationParser.ExtractExecutionFromConfigName(RootConfigurationName(doc, cfg), out execution, out isBase);
                     string cfgCurrent = w.Raw(cfg, number);
                     string cfgExpected;
                     if (recognized)

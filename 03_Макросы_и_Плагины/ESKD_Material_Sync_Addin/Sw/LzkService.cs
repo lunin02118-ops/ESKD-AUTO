@@ -182,12 +182,16 @@ namespace ESKD.MaterialSync.Sw
                     _notes.Add("Модель не загружена, пропущена: " + path);
                     continue;
                 }
+                // Строка ведомости — модель в конкретной конфигурации: у исполнений одного файла свои обозначения
+                // и количества («Укосина» 00 и 01 — NC3-7R.02.000 и NC3-7R.02.000-01).
+                string cfg = comp.ReferencedConfiguration ?? "";
+                string key = path + "|" + cfg;
                 LzkItem item;
-                if (!byKey.TryGetValue(path, out item))
+                if (!byKey.TryGetValue(key, out item))
                 {
-                    item = Describe(model, path, comp.ReferencedConfiguration ?? "", model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, traits);
+                    item = Describe(model, path, cfg, model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, traits);
                     item.AreaM2 = Area(model, comp);
-                    byKey[path] = item;
+                    byKey[key] = item;
                     models[path] = model;
                 }
                 item.Quantity++;
@@ -199,7 +203,7 @@ namespace ESKD.MaterialSync.Sw
             if (interactive && editable.Count > 0)
             {
                 Dictionary<string, string> chosen;
-                using (LzkOperationsForm form = new LzkOperationsForm(editable, traits))
+                using (LzkOperationsForm form = new LzkOperationsForm(editable, traits, path => ShellThumbnail.Get(path, 256)))
                 {
                     if (form.ShowDialog(Owner()) != DialogResult.OK) return false;
                     chosen = form.Result;
@@ -272,7 +276,8 @@ namespace ESKD.MaterialSync.Sw
         private LzkItem Describe(ModelDoc2 model, string path, string cfg, bool assembly, Dictionary<string, ModelTraits> traits)
         {
             PropertyWriter w = new PropertyWriter(model, true);
-            string active = w.ActiveConfigurationName();
+            // Свойства — той конфигурации, что стоит в изделии, а не активной в модели: у исполнения своё обозначение.
+            string active = cfg.Length > 0 && w.ConfigurationNames().Contains(cfg) ? cfg : w.ActiveConfigurationName();
             LzkItem item = new LzkItem
             {
                 Path = path,
