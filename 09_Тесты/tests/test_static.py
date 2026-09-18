@@ -823,7 +823,7 @@ class StaticRepository(StaticTestCase):
         raw = Path(paths.MATERIAL_DB).read_bytes().decode("utf-16").replace('encoding="UTF-16"', 'encoding="UTF-8"')
         root = ET.fromstring(raw.encode("utf-8"))
         materials = list(root.iter("material"))
-        self.assertEqual(124, len(materials), "число записей библиотеки: 114 и 10 копий прежних имён")
+        self.assertEqual(128, len(materials), "число записей библиотеки: 118 и 10 копий прежних имён")
         self.assertEqual(len(materials), len({m.get("matid") for m in materials}), "matid уникальны")
         self.assertEqual(len(materials), len({m.get("name") for m in materials}), "имена уникальны — SolidWorks ищет материал по имени")
 
