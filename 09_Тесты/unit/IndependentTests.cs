@@ -18,8 +18,6 @@ namespace ESKD.Tests
             Assert.AreEqual(Path.Combine(models, "Стойка.sldasm"),
                 IndependentNaming.TargetPath(models, "", "", @"Y:\02_БАЗА\Стойка.sldasm"),
                 "обозначения нет — имя от исходного файла, расширение сохраняется");
-            Assert.AreEqual(Path.Combine(Product, IndependentNaming.ReportName), IndependentNaming.ReportPath(Product),
-                "отчёт — в папке изделия");
             Assert.AreEqual(Path.Combine(models, "ТС-52.00.01.004 Стойка.slddrw"),
                 IndependentNaming.DrawingOf(Path.Combine(models, "ТС-52.00.01.004 Стойка.sldprt")),
                 "чертёж лежит рядом с моделью");

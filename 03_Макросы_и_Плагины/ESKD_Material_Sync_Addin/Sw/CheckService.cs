@@ -24,6 +24,9 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>«ok|итог|брак|замечаний|путь отчёта» или «error|текст» — для автотестов и пакетного запуска (Т-9).</summary>
         public static string LastOutcome = "";
 
+        /// <summary>Находки последней проверки: «Готово к производству» показывает их, если изделие не готово.</summary>
+        public static CheckReport LastReport;
+
         private sealed class Node
         {
             public string Path = "";
@@ -36,6 +39,7 @@ namespace ESKD.MaterialSync.Sw
         public static bool Run(ISldWorks app, bool interactive)
         {
             LastOutcome = "";
+            LastReport = null;
             ModelDoc2 doc = null;
             try
             {
@@ -85,6 +89,8 @@ namespace ESKD.MaterialSync.Sw
                     report.Checksums.Add(new KeyValuePair<string, string>(Path.GetFileName(node.Path), Checksum(node.Path)));
 
                 string path = Write(productFolder, report);
+                LastReport = report;
+                Notices.Remember(Notices.FromCheck(report));
                 LastOutcome = string.Join("|", new[]
                 {
                     "ok", CheckRules.OutcomeName(report.Outcome), report.Count(CheckLevel.Defect).ToString(),
@@ -382,19 +388,24 @@ namespace ESKD.MaterialSync.Sw
             if (LzkNaming.IsLegacy(path))
                 report.Add(CheckRules.Workbook, CheckRules.LevelOf(CheckRules.Workbook), name,
                     "ведомость старого образца (без участков и калькулятора): нажмите «Ведомость ЛЗК»");
-            string reportPath = LzkNaming.ReportPath(productFolder);
-            if (File.Exists(reportPath))
-            {
-                string text = File.ReadAllText(reportPath, Encoding.UTF8);
-                if (text.IndexOf("Замечаний нет", StringComparison.Ordinal) < 0)
-                    report.Add(CheckRules.Workbook, CheckRules.LevelOf(CheckRules.Workbook), name,
-                        "в ведомости есть пометки: см. " + LzkNaming.ReportName);
-            }
             try
             {
                 using (XlsxBook book = XlsxBook.Open(path))
                 {
                     string sheet, cell;
+                    // Пометки «?» книга держит в шапке ведомости: «нет» или их число (отчёта _Ведомость.txt больше нет).
+                    if (book.TryResolveName("Шапка_Замечания", out sheet, out cell))
+                    {
+                        string marks = (book.Sheet(sheet).Get(cell) ?? "").Trim();
+                        if (marks.Length > 0 && marks != "нет")
+                        {
+                            // В шапке — «3 (пометки «?» в таблице)», у книг до 18.09 — «3 (см. _Ведомость.txt)»: нужно число.
+                            string count = new string(marks.TakeWhile(char.IsDigit).ToArray());
+                            report.Add(CheckRules.Workbook, CheckRules.LevelOf(CheckRules.Workbook), name,
+                                "в книге ЛЗК пометок «?»: " + (count.Length > 0 ? count : marks) +
+                                ": нажмите «Ведомость ЛЗК» — окно покажет, чего не хватает");
+                        }
+                    }
                     if (!book.TryResolveName("Шапка_КонтрольнаяСумма", out sheet, out cell)) return;
                     string written = (book.Sheet(sheet).Get(cell) ?? "").Trim();
                     string current = "SHA-256 " + Checksum(assemblyPath);
@@ -519,17 +530,24 @@ namespace ESKD.MaterialSync.Sw
 
         private static void Show(ISldWorks app, CheckReport report, string path)
         {
-            string text = CheckRules.OutcomeName(report.Outcome) + Environment.NewLine + Environment.NewLine +
-                (report.Findings.Count == 0
-                    ? "Замечаний нет."
-                    : string.Join(Environment.NewLine, report.Findings.Take(15).Select(f => f.ToString()).ToArray()) +
-                      (report.Findings.Count > 15 ? Environment.NewLine + "…" : "")) +
-                Environment.NewLine + Environment.NewLine + "Отчёт: " + path +
-                Environment.NewLine + Environment.NewLine + "Открыть отчёт?";
-            DialogResult answer = MessageBox.Show(text, "ЕСКД: проверка изделия", MessageBoxButtons.YesNo,
-                report.Outcome == CheckLevel.Defect ? MessageBoxIcon.Error
-                    : report.Outcome == CheckLevel.Issue ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
-            if (answer == DialogResult.Yes) Open(path);
+            string details = "Изделие " + report.Product + " · сборка " + report.Assembly + Environment.NewLine +
+                (report.Findings.Count == 0 ? "Изделие можно выдавать в производство." :
+                    "Критично: " + report.Count(CheckLevel.Defect) + ", замечаний: " + report.Count(CheckLevel.Issue) + ".");
+            NoticeForm.Present(app, "ЕСКД: проверка изделия", "Итог: " + CheckRules.OutcomeName(report.Outcome), details,
+                Notices.FromCheck(report), report.Findings.Count == 0 ? (NoticeLevel?)null : Notices.FromCheck(report.Outcome));
+        }
+
+        /// <summary>Прежняя проверка — тем же окном, что и новая: находки читаются из `_Проверка.txt`.</summary>
+        private static void ShowSaved(ISldWorks app, string reportText)
+        {
+            List<Notice> notices = Notices.ParseCheckReport(reportText);
+            string outcome = CheckRules.OutcomeOf(reportText);
+            string details = string.Join(Environment.NewLine, (reportText ?? "").Split('\n')
+                .Select(l => l.Trim()).Where(l => l.StartsWith("Изделие:", StringComparison.Ordinal) ||
+                                                  l.StartsWith("Проверил:", StringComparison.Ordinal))
+                .ToArray());
+            NoticeForm.Present(app, "ЕСКД: отчёт проверки", "Прежняя проверка: " + outcome, details, notices,
+                notices.Count == 0 ? (NoticeLevel?)null : Notices.Max(notices));
         }
 
         /// <summary>
@@ -561,7 +579,7 @@ namespace ESKD.MaterialSync.Sw
                 {
                     "ok", CheckRules.OutcomeOf(File.ReadAllText(path, Encoding.UTF8)), "", "", path
                 });
-                if (interactive) Open(path);
+                if (interactive) ShowSaved(app, File.ReadAllText(path, Encoding.UTF8));
                 return true;
             }
             catch (Exception ex)
@@ -569,18 +587,6 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Проверка изделия: показ отчёта", ex);
                 Fail(app, interactive, "Отчёт не открылся: " + ex.Message);
                 return false;
-            }
-        }
-
-        private static void Open(string path)
-        {
-            try
-            {
-                System.Diagnostics.Process.Start(path);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Проверка изделия: открытие отчёта " + path, ex);
             }
         }
 

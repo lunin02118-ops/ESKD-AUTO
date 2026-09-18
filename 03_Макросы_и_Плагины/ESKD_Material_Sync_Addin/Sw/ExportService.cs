@@ -101,7 +101,8 @@ namespace ESKD.MaterialSync.Sw
                     "ok", log.Files.Count.ToString(CultureInfo.InvariantCulture),
                     log.Skipped.Count.ToString(CultureInfo.InvariantCulture), reportPath
                 });
-                if (interactive) Show(log, reportPath);
+                Notices.Remember(Notices.FromExport(log.Skipped));
+                if (interactive) Show(app, log, productFolder);
                 Status(app, "");
                 return true;
             }
@@ -499,16 +500,17 @@ namespace ESKD.MaterialSync.Sw
             return path;
         }
 
-        private static void Show(ExportLog log, string path)
+        private static void Show(ISldWorks app, ExportLog log, string productFolder)
         {
-            string text = "Выгружено файлов: " + log.Files.Count + Environment.NewLine +
-                "Пропущено: " + log.Skipped.Count + Environment.NewLine + Environment.NewLine +
-                (log.Skipped.Count == 0
-                    ? "Пропусков нет."
-                    : string.Join(Environment.NewLine, log.Skipped.Take(15).ToArray())) +
-                Environment.NewLine + Environment.NewLine + "Отчёт: " + path;
-            MessageBox.Show(text, "ЕСКД: выгрузка для производства", MessageBoxButtons.OK,
-                log.Skipped.Count > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+            List<Notice> notices = Notices.FromExport(log.Skipped);
+            NoticeLevel worst = Notices.Max(notices);
+            string headline = worst == NoticeLevel.Critical ? "Выгружено не всё" : "Выгрузка готова";
+            string details = "Выгружено файлов: " + log.Files.Count + ", пропущено: " + log.Skipped.Count + Environment.NewLine +
+                "PDF — в «02_PDF», DXF — в «03_ЧПУ\\Лазер_Лист», IGS — в «03_ЧПУ\\Труборез».";
+            string folder = productFolder;
+            NoticeForm.Present(app, "ЕСКД: выгрузка для производства", headline, details, notices,
+                worst == NoticeLevel.Info ? (NoticeLevel?)null : worst,
+                new NoticeButton("Открыть папку изделия", () => System.Diagnostics.Process.Start("explorer.exe", "\"" + folder + "\"")));
         }
 
         private static void Fail(ISldWorks app, bool interactive, string text)

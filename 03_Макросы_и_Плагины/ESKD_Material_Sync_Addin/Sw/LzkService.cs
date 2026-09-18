@@ -10,6 +10,7 @@ using System.Text;
 using System.Windows.Forms;
 using ESKD.MaterialSync.Core;
 using Microsoft.Win32;
+using Environment = System.Environment;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
@@ -43,7 +44,7 @@ namespace ESKD.MaterialSync.Sw
         private string _tempWorkbook;
         private string _resultPath;
         private readonly List<LzkItem> _items = new List<LzkItem>();
-        private readonly List<string> _notes = new List<string>();
+        private readonly List<Notice> _notes = new List<Notice>();
         private Process _process;
         private Timer _timer;
         private DateTime _started;
@@ -146,7 +147,8 @@ namespace ESKD.MaterialSync.Sw
             _workbookPath = LzkNaming.WorkbookPath(_productFolder, _cipher);
             _legacyPath = LzkNaming.LegacyWorkbookPath(_productFolder, _cipher);
             if (!string.Equals(Path.GetFileName(Path.GetDirectoryName(_assemblyPath)), LzkNaming.ModelsFolder, StringComparison.OrdinalIgnoreCase))
-                _notes.Add("Сборка лежит не в папке «01_3D»: книга ЛЗК записана в «" + LzkNaming.DocsFolder + "» рядом со сборкой.");
+                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_assemblyPath),
+                    "сборка лежит не в папке «01_3D»: книга ЛЗК записана в «" + LzkNaming.DocsFolder + "» рядом со сборкой"));
             foreach (string busy in new[] { _workbookPath, _legacyPath })
                 if (FileLocked(busy))
                 {
@@ -189,7 +191,8 @@ namespace ESKD.MaterialSync.Sw
                 ModelDoc2 model = comp.GetModelDoc2() as ModelDoc2;
                 if (model == null)
                 {
-                    _notes.Add("Модель не загружена, пропущена: " + path);
+                    _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(path), "модель не загружена — в книгу не попала",
+                        "Откройте сборку полностью (не облегчённой) и пересоберите книгу"));
                     continue;
                 }
                 // Строка ведомости — модель в конкретной конфигурации: у исполнений одного файла свои обозначения
@@ -267,12 +270,14 @@ namespace ESKD.MaterialSync.Sw
             if (norms == null)
             {
                 norms = Norms.Defaults();
-                _notes.Add(problem.Length > 0 ? problem + " Нормы в книге — по умолчанию."
-                    : "Справочник «" + Norms.FileName + "» не найден — нормы в книге по умолчанию (лист «Нормы» правится под заказ).");
+                _notes.Add(problem.Length > 0
+                    ? Notices.Of(NoticeLevel.Warning, Norms.FileName, problem + " Нормы в книге — по умолчанию.", "Поправьте справочник нормативов")
+                    : Notices.Of(NoticeLevel.Info, Norms.FileName, "справочник не найден — нормы в книге по умолчанию",
+                        "Лист «Нормы» правится под заказ"));
             }
             _options.Norms = norms;
             _options.Blanks = LzkBlanks.Read(LzkBlanks.FindUp(_productFolder), out problem);
-            if (problem.Length > 0) _notes.Add(problem);
+            if (problem.Length > 0) _notes.Add(Notices.Of(NoticeLevel.Warning, LzkBlanks.FileName, problem, "Поправьте справочник бланков"));
         }
 
         /// <summary>Заказ — имя папки заказа изделия; вне структуры заказов — пусто.</summary>
@@ -834,7 +839,7 @@ namespace ESKD.MaterialSync.Sw
                         string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_workbookPath));
                         Directory.CreateDirectory(Path.GetDirectoryName(archive));
                         File.Move(_workbookPath, archive);
-                        _notes.Add("Прежняя книга ЛЗК перенесена: " + archive);
+                        _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_workbookPath), "прежняя книга перенесена в «" + LzkNaming.ArchiveFolder + "»: " + Path.GetFileName(archive)));
                     }
                     // Ведомость старого образца (в корне изделия) заменяется книгой ЛЗК — два документа об одном не нужны.
                     if (File.Exists(_legacyPath))
@@ -842,15 +847,12 @@ namespace ESKD.MaterialSync.Sw
                         string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_legacyPath), true);
                         Directory.CreateDirectory(Path.GetDirectoryName(archive));
                         File.Move(_legacyPath, archive);
-                        _notes.Add("Ведомость старого образца перенесена: " + archive);
+                        _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_legacyPath), "ведомость старого образца перенесена в «" + LzkNaming.ArchiveFolder + "»"));
                     }
                     Directory.CreateDirectory(Path.GetDirectoryName(_workbookPath));
                     File.Copy(_tempWorkbook, _workbookPath, false);
                 }
-                if (outcome != null && outcome.Version.Length > 0) _notes.Add("SWTools " + outcome.Version);
-                string report = LzkWorkbook.Report(_header, problem.Length == 0 ? _workbookPath : "(не создан)",
-                    result, problem.Length == 0 ? _notes : new[] { "ОШИБКА: " + problem }.Concat(_notes));
-                File.WriteAllText(LzkNaming.ReportPath(_productFolder), report, new UTF8Encoding(true));
+                if (outcome != null && outcome.Version.Length > 0) Log.Info("Ведомость ЛЗК: SWTools " + outcome.Version);
             }
             catch (Exception ex)
             {
@@ -865,10 +867,23 @@ namespace ESKD.MaterialSync.Sw
             if (problem.Length > 0)
             {
                 Status("ЕСКД: ведомость ЛЗК не сформирована");
-                Info("Ведомость ЛЗК не сформирована.\n\n" + problem, MessageBoxIcon.Warning);
+                List<Notice> failed = new List<Notice> { Notices.Of(NoticeLevel.Critical, "", problem) };
+                failed.AddRange(_notes);
+                Notices.Remember(failed);
+                _lastOutcome = "error|Ведомость ЛЗК не сформирована.\n\n" + problem;
+                if (_silent)
+                {
+                    Log.Warn("Ведомость ЛЗК не сформирована: " + problem);
+                    return;
+                }
+                NoticeForm.Present(_app, "ЕСКД: Ведомость ЛЗК", "Книга ЛЗК не сформирована",
+                    "Прежняя книга, если была, осталась на месте.", failed, NoticeLevel.Critical);
                 return;
             }
             int issues = result.Issues.Count;
+            List<Notice> notices = Notices.FromLzk(result);
+            notices.AddRange(_notes);
+            Notices.Remember(notices);
             _lastOutcome = "ok|" + _workbookPath + "|" + result.Rows + "|" + issues;
             Log.Info("Ведомость ЛЗК: " + _lastOutcome);
             if (_silent)
@@ -876,17 +891,16 @@ namespace ESKD.MaterialSync.Sw
                 Status("ЕСКД: ведомость ЛЗК сохранена");
                 return;
             }
-            Status("ЕСКД: ведомость ЛЗК сохранена — " + Path.GetFileName(_workbookPath) + (issues > 0 ? ", замечаний " + issues : ""));
-            string text = string.Format("Книга ЛЗК сохранена:\n{0}\n\nСтрок: {1}; покраска: {2}; покупные: {3}; изделий в заказе: {5}.\n{4}\n\nОткрыть книгу?",
-                _workbookPath, result.Rows, result.PaintRows, result.PurchasedRows,
-                issues == 0 ? "Замечаний нет." : "Замечаний: " + issues + " — пометки «?» в ведомости, список в " + LzkNaming.ReportName + ".",
-                _inputs != null ? _inputs.Quantity : 1);
-            if (MessageBox.Show(text, "ЕСКД: Ведомость ЛЗК", MessageBoxButtons.YesNo,
-                    issues == 0 ? MessageBoxIcon.Information : MessageBoxIcon.Warning) == DialogResult.Yes)
-            {
-                try { Process.Start(_workbookPath); }
-                catch (Exception ex) { Log.Error("Открытие ведомости", ex); }
-            }
+            Status("ЕСКД: ведомость ЛЗК сохранена — " + Path.GetFileName(_workbookPath) + (issues > 0 ? ", пометок «?» " + issues : ""));
+            string workbook = _workbookPath;
+            string details = workbook + Environment.NewLine +
+                string.Format("Строк: {0}; изделий в заказе: {1}; участки: {2}.", result.Rows, _inputs != null ? _inputs.Quantity : 1,
+                    result.SectionRows.Count == 0 ? "—" : string.Join(", ", result.SectionRows.Select(kv => kv.Key + " " + kv.Value).ToArray()));
+            NoticeForm.Present(_app, "ЕСКД: Ведомость ЛЗК",
+                issues == 0 ? "Книга ЛЗК сохранена" : "Книга ЛЗК сохранена, но в ней есть пометки «?»: " + issues,
+                details, notices, issues > 0 ? NoticeLevel.Warning : (NoticeLevel?)null,
+                new NoticeButton("Открыть книгу ЛЗК", () => Process.Start(workbook)),
+                new NoticeButton("Открыть папку", () => Process.Start("explorer.exe", "/select,\"" + workbook + "\"")));
         }
 
         private void Cleanup()

@@ -52,7 +52,20 @@ namespace ESKD.MaterialSync.Sw
 
                 Status(app, "ЕСКД: готово к производству — проверка изделия…");
                 string check = Check(app);
-                if (check.Length > 0) return Fail(app, interactive, "Изделие не готово: " + check);
+                if (check.Length > 0)
+                {
+                    CheckReport found = CheckService.LastReport;
+                    if (!interactive || found == null || found.Findings.Count == 0)
+                        return Fail(app, interactive, "Изделие не готово: " + check);
+                    // Не готово — показать, что именно не так, тем же окном, что и проверка: ничего не записано.
+                    Fail(app, false, "Изделие не готово: " + check);
+                    NoticeForm.Present(app, Title, "Изделие не готово к производству",
+                        "Проверка изделия — «" + CheckRules.OutcomeName(found.Outcome) + "», в цех идёт только «" +
+                        CheckRules.OutcomeName(CheckLevel.Ok) + "». Исправьте замечания и нажмите кнопку ещё раз." +
+                        Environment.NewLine + "Ничего не записано, PDF не сделаны.",
+                        Notices.FromCheck(found), Notices.FromCheck(found.Outcome));
+                    return false;
+                }
 
                 Status(app, "ЕСКД: готово к производству — PDF листов участков…");
                 List<KeyValuePair<string, string>> sheets = Sheets(workbook, product, cipher);

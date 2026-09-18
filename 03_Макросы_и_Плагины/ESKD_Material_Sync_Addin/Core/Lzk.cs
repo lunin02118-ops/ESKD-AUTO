@@ -15,7 +15,6 @@ namespace ESKD.MaterialSync.Core
         /// <summary>ТЗ-04 Р4-3: книга ЛЗК лежит в сопроводительной документации изделия.</summary>
         public const string DocsFolder = "04_Сопроводительная документация";
         public const string ArchiveFolder = "_Аннулировано";
-        public const string ReportName = "_Ведомость.txt";
 
         /// <summary>Папка изделия: родитель «01_3D», иначе папка самой сборки.</summary>
         public static string ProductFolder(string assemblyPath)
@@ -85,11 +84,6 @@ namespace ESKD.MaterialSync.Core
         private static bool NotLock(string path)
         {
             return !(Path.GetFileName(path) ?? "").StartsWith("~$", StringComparison.Ordinal);
-        }
-
-        public static string ReportPath(string productFolder)
-        {
-            return Path.Combine(productFolder, ReportName);
         }
 
         /// <summary>Куда убрать прежнюю ведомость: _Аннулировано\Ведомость_&lt;шифр&gt;_&lt;дата_время&gt;.xlsx (без затирания).</summary>
@@ -526,7 +520,8 @@ namespace ESKD.MaterialSync.Core
                 }
                 else if (item != null && item.IsProfile && item.SizeIsEstimate)
                 {
-                    result.Issues.Add(label + ": профиль без длины заготовки — указан габарит (*)");
+                    // «*» — к сведению, а не пометка «?»: длина правдоподобна, её только уточнить (решение владельца 18.09.2026).
+                    result.Notes.Add(label + ": профиль без длины заготовки — указан габарит (*)");
                 }
             }
 
@@ -548,7 +543,7 @@ namespace ESKD.MaterialSync.Core
                 SetName(book, main, "Шапка_Дата", header.Date);
                 SetName(book, main, "Шапка_КонтрольнаяСумма", header.Checksum);
             }
-            SetName(book, main, "Шапка_Замечания", result.Issues.Count == 0 ? "нет" : result.Issues.Count + " (см. " + LzkNaming.ReportName + ")");
+            SetName(book, main, "Шапка_Замечания", result.Issues.Count == 0 ? "нет" : result.Issues.Count + " (пометки «?» в таблице)");
             book.Save();
             return result;
         }
@@ -602,42 +597,6 @@ namespace ESKD.MaterialSync.Core
             unit = (m.Success ? m.Groups[2].Value : raw).Trim().ToLowerInvariant();
             if (unit.Length == 0) unit = "шт";
             if (okei.Length == 0 && unit == "шт") okei = "796";
-        }
-
-        /// <summary>Текст отчёта _Ведомость.txt.</summary>
-        public static string Report(LzkHeader header, string workbookPath, LzkResult result, IEnumerable<string> notes)
-        {
-            StringBuilder sb = new StringBuilder();
-            sb.AppendLine("Ведомость изделия (ЛЗК)");
-            sb.AppendLine("Изделие:  " + (header != null ? header.Product : ""));
-            sb.AppendLine("Сборка:   " + (header != null ? header.Model : ""));
-            sb.AppendLine("Составил: " + (header != null ? header.Author : "") + ", " + (header != null ? header.Date : ""));
-            sb.AppendLine("Файл:     " + workbookPath);
-            if (result != null)
-            {
-                sb.AppendLine(string.Format("Строк: {0}; покраска: {1}; покупные: {2}", result.Rows, result.PaintRows, result.PurchasedRows));
-                if (result.SectionRows.Count > 0)
-                    sb.AppendLine("Участки: " + string.Join("; ", result.SectionRows.Select(kv => kv.Key + " — " + kv.Value).ToArray()));
-                sb.AppendLine();
-                foreach (string e in result.Errors) sb.AppendLine("ОШИБКА: " + e);
-                if (result.Issues.Count == 0 && result.Errors.Count == 0) sb.AppendLine("Замечаний нет.");
-                else foreach (string i in result.Issues) sb.AppendLine("? " + i);
-                if (result.Notes.Count > 0)
-                {
-                    sb.AppendLine();
-                    foreach (string n in result.Notes) sb.AppendLine("  " + n);
-                }
-            }
-            if (notes != null)
-            {
-                List<string> list = notes.Where(n => !string.IsNullOrEmpty(n)).ToList();
-                if (list.Count > 0)
-                {
-                    sb.AppendLine();
-                    foreach (string n in list) sb.AppendLine(n);
-                }
-            }
-            return sb.ToString();
         }
     }
 

@@ -112,14 +112,15 @@ namespace ESKD.MaterialSync.Sw
                     bool drawing = withDrawing.HasValue ? withDrawing.Value && candidate.HasDrawing : candidate.HasDrawing;
                     MakeOne(app, doc, candidate, modelsFolder, drawing, log);
                 }
-                string reportPath = Write(productFolder, log);
+                // Отчёта _Независимые.txt нет (решение владельца 18.09.2026): итог — окно замечаний; пятое поле пусто.
+                Notices.Remember(Notices.FromIndependent(log));
                 LastOutcome = string.Join("|", new[]
                 {
                     "ok", log.Created.Count.ToString(CultureInfo.InvariantCulture),
                     log.Skipped.Count.ToString(CultureInfo.InvariantCulture),
-                    log.Dangling.ToString(CultureInfo.InvariantCulture), reportPath
+                    log.Dangling.ToString(CultureInfo.InvariantCulture), ""
                 });
-                if (interactive) Show(log, reportPath);
+                if (interactive) Show(app, log);
                 Status(app, "");
                 return log.Created.Count > 0;
             }
@@ -531,25 +532,16 @@ namespace ESKD.MaterialSync.Sw
                 == DialogResult.Yes;
         }
 
-        private static string Write(string productFolder, IndependentLog log)
+        private static void Show(ISldWorks app, IndependentLog log)
         {
-            string path = IndependentNaming.ReportPath(productFolder);
-            Directory.CreateDirectory(productFolder);
-            File.WriteAllText(path, log.Text(), new UTF8Encoding(true));
-            return path;
-        }
-
-        private static void Show(IndependentLog log, string path)
-        {
-            string text = "Сделано независимыми: " + log.Created.Count + Environment.NewLine +
-                "Пропущено: " + log.Skipped.Count + Environment.NewLine +
-                (log.Dangling > 0 ? "Оборванных размеров в чертежах: " + log.Dangling + Environment.NewLine : "") +
-                (log.SourcesUntouched ? "" : "ВНИМАНИЕ: исходная модель изменилась — проверьте эталон." + Environment.NewLine) +
-                Environment.NewLine +
-                (log.Skipped.Count == 0 ? "Пропусков нет." : string.Join(Environment.NewLine, log.Skipped.Take(10).ToArray())) +
-                Environment.NewLine + Environment.NewLine + "Отчёт: " + path;
-            MessageBox.Show(text, "ЕСКД: сделать независимым", MessageBoxButtons.OK,
-                log.Skipped.Count > 0 || !log.SourcesUntouched ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+            List<Notice> notices = Notices.FromIndependent(log);
+            NoticeLevel worst = Notices.Max(notices);
+            string headline = log.Created.Count == 0 ? "Ничего не сделано" : "Сделано независимыми: " + log.Created.Count;
+            string details = "Пропущено: " + log.Skipped.Count +
+                (log.Dangling > 0 ? "; оборванных размеров в чертежах: " + log.Dangling : "") + Environment.NewLine +
+                (log.SourcesUntouched ? "Исходные модели не изменены (контрольные суммы совпали)." : "ВНИМАНИЕ: исходная модель изменилась.");
+            NoticeForm.Present(app, "ЕСКД: сделать независимым", headline, details, notices,
+                log.Created.Count == 0 ? NoticeLevel.Critical : worst == NoticeLevel.Info ? (NoticeLevel?)null : worst);
         }
 
         private static void Fail(ISldWorks app, bool interactive, string text)

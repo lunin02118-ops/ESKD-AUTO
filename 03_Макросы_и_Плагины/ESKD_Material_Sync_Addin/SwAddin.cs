@@ -670,10 +670,19 @@ namespace ESKD.MaterialSync
                 withDrawing < 0 ? (bool?)null : withDrawing != 0);
         }
 
-        /// <summary>«ok|создано|пропущено|оборванных размеров|отчёт» или «error|текст».</summary>
+        /// <summary>«ok|создано|пропущено|оборванных размеров|» или «error|текст» (отчёта _Независимые.txt нет).</summary>
         public string IndependentStatus()
         {
             return IndependentService.LastOutcome;
+        }
+
+        /// <summary>
+        /// Замечания последней кнопки — то, что показало (или показало бы без окна) окно «Замечания»: строка на
+        /// замечание «УРОВЕНЬ — документ — текст → что сделать». Для автотестов вместо текстовых отчётов.
+        /// </summary>
+        public string LastNotices()
+        {
+            return Notices.LastText;
         }
 
         /// <summary>

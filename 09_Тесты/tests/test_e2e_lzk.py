@@ -70,7 +70,9 @@ class Lzk(SwTestCase):
         workbook = product / DOCS / BOOK
         self.assertEqual(str(workbook).lower(), path.lower(), "имя и место ведомости")
         self.assertTrue(workbook.is_file(), "файл ведомости")
-        self.assertTrue((product / "_Ведомость.txt").is_file(), "отчёт")
+        self.assertFalse((product / "_Ведомость.txt").exists(), "отчёта-текстовика больше нет — замечания в окне")
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.assertEqual(int(issues), notices.count("ЗАМЕЧАНИЕ — "), f"пометки «?» — замечания окна: {notices}")
         self.assertGreater(int(row_count), 5, "строк в ведомости")
 
         wb = openpyxl.load_workbook(workbook)

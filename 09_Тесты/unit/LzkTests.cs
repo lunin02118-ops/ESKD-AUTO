@@ -31,7 +31,6 @@ namespace ESKD.Tests
                 Assert.AreEqual(Path.Combine(dir, "04_Сопроводительная документация", "ЛЗК_А_Б.xlsx"), LzkNaming.WorkbookPath(dir, "А/Б"),
                     "книга ЛЗК — в сопроводительной документации, недопустимый символ заменён");
                 Assert.AreEqual(Path.Combine(dir, "Ведомость_А_Б.xlsx"), LzkNaming.LegacyWorkbookPath(dir, "А/Б"), "старый образец");
-                Assert.AreEqual(Path.Combine(dir, "_Ведомость.txt"), LzkNaming.ReportPath(dir), "отчёт");
                 DateTime stamp = new DateTime(2026, 9, 17, 15, 4, 0);
                 string first = LzkNaming.ArchivePath(dir, "Ш", stamp);
                 Assert.AreEqual(Path.Combine(dir, "_Аннулировано", "ЛЗК_Ш_2026-09-17_1504.xlsx"), first, "архив");
@@ -244,7 +243,7 @@ namespace ESKD.Tests
                 Assert.AreEqual("200×100×3", main.Get("F8"), "габарит детали");
                 Assert.AreEqual("И Кондуктор", main.Get("B2"), "шапка изделие");
                 Assert.AreEqual("Иванов", main.Get("G2"), "шапка составил");
-                Assert.AreEqual(r.Issues.Count + " (см. _Ведомость.txt)", main.Get("G4"), "шапка замечания");
+                Assert.AreEqual(r.Issues.Count + " (пометки «?» в таблице)", main.Get("G4"), "шапка замечания");
 
                 XlsxSheet paint = book.Sheet("Покрасочный");
                 Assert.AreEqual("И.100", paint.Get("B6"), "окрашиваемый узел");
@@ -260,9 +259,10 @@ namespace ESKD.Tests
                 Assert.AreEqual("4180-001", kit.Get("D8"), "код 1С из модели");
                 Assert.AreEqual("F7*Тираж", kit.Formula("G7"), "всего на заказ");
 
-                string report = LzkWorkbook.Report(header, path, r, new[] { "SWTools 1.1.109" });
-                Assert.IsTrue(report.Contains("Строк: 3; покраска: 1; покупные: 2"), report);
-                Assert.IsTrue(report.Contains("SWTools 1.1.109"), "примечания");
+                Assert.AreEqual(3, r.Rows, "строк");
+                Assert.AreEqual(1, r.PaintRows, "покраска");
+                Assert.AreEqual(2, r.PurchasedRows, "покупные");
+                Assert.AreEqual(r.Issues.Count, Notices.Count(Notices.FromLzk(r), NoticeLevel.Warning), "пометки «?» — замечания окна");
             }
             finally
             {

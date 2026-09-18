@@ -120,13 +120,6 @@ namespace ESKD.MaterialSync.Core
     /// <summary>Имена и места файлов кнопки К-1 (ТЗ-02 Т-20…Т-24).</summary>
     public static class IndependentNaming
     {
-        public const string ReportName = "_Независимые.txt";
-
-        public static string ReportPath(string productFolder)
-        {
-            return Path.Combine(productFolder ?? "", ReportName);
-        }
-
         /// <summary>
         /// Новый файл модели: «&lt;Обозначение&gt; &lt;Наименование&gt;» в «01_3D» изделия с расширением исходного.
         /// Имя занято — к нему добавляется «_2», «_3»…: терять чужую работу молчаливой перезаписью нельзя.

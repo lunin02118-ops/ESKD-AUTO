@@ -81,6 +81,7 @@ class Independent(SwTestCase):
         status = self._make("ПРТИ.468211.150", "Пластина своя")
         self.assertTrue(status.startswith("ok|"), status)
         _, created, skipped, dangling, report_path = status.split("|")
+        self.assertEqual("", report_path, "отчёта _Независимые.txt нет — итог в окне замечаний")
         self.assertEqual("1", created, f"создана одна деталь: {status}")
         self.assertEqual("0", skipped, f"пропусков нет: {status}")
 
@@ -88,10 +89,11 @@ class Independent(SwTestCase):
         self.assertTrue(target.is_file(), "новая деталь лежит в 01_3D изделия")
         self.assertEqual(before, sha256(etalon), "эталон в базе не изменён (Т-24)")
 
-        text = Path(report_path).read_text(encoding="utf-8-sig")
+        text = str(com.call(self.s.eskd(), "LastNotices"))
         self.assertIn("ПРТИ.468211.150 Пластина своя.sldprt", text, text)
-        self.assertIn(f"экземпляров: {instances}", text, text)
-        self.assertIn("Исходные модели не изменены", text, text)
+        self.assertIn(f"экземпляров перепривязано: {instances}", text, text)
+        self.assertNotIn("исходная модель изменилась", text, "эталон не изменён — критичного нет")
+        self.assertFalse((product / "_Независимые.txt").exists(), "текстовый отчёт не пишется")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_N02_assembly_points_at_the_new_part(self):
