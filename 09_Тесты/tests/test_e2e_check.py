@@ -61,7 +61,7 @@ class Check(SwTestCase):
         text = report.read_text(encoding="utf-8-sig")
         self.assertIn("Итог:     ЗАМЕЧАНИЯ", text)
         self.assertIn("ЗАМЕЧАНИЕ — ", text, "строки замечаний")
-        self.assertIn("нет ведомости изделия", text, "ведомость ещё не сформирована")
+        self.assertIn("нет книги ЛЗК изделия", text, "книга ЛЗК ещё не сформирована")
         self.assertIn("не выгружено для производства", text, "экспорта нет")
         self.assertIn("Контрольные суммы (SHA-256):", text)
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")

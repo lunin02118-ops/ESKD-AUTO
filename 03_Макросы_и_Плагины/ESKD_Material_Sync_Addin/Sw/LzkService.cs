@@ -919,10 +919,11 @@ namespace ESKD.MaterialSync.Sw
             if (object.ReferenceEquals(_running, this)) _running = null;
         }
 
+        // swDisplayOrigins не включён: у модели без окна SolidWorks 2025 отвечает на него RPC_E_SERVERFAULT и может упасть.
         private static readonly swUserPreferenceToggle_e[] HiddenInPreview =
         {
             swUserPreferenceToggle_e.swDisplaySketches, swUserPreferenceToggle_e.swDisplayPlanes, swUserPreferenceToggle_e.swDisplayAxes,
-            swUserPreferenceToggle_e.swDisplayTemporaryAxes, swUserPreferenceToggle_e.swDisplayOrigins,
+            swUserPreferenceToggle_e.swDisplayTemporaryAxes,
             swUserPreferenceToggle_e.swDisplayCoordSystems, swUserPreferenceToggle_e.swDisplayCurves,
             swUserPreferenceToggle_e.swDisplayReferencePoints, swUserPreferenceToggle_e.swDisplayReferencePoints2,
             swUserPreferenceToggle_e.swDisplayAnnotations, swUserPreferenceToggle_e.swDisplayAllAnnotations,
@@ -942,7 +943,17 @@ namespace ESKD.MaterialSync.Sw
             {
                 if (model.Visible) return;
                 foreach (swUserPreferenceToggle_e t in HiddenInPreview)
-                    model.Extension.SetUserPreferenceToggle((int)t, (int)swUserPreferenceOption_e.swDetailingNoOptionSpecified, false);
+                {
+                    try
+                    {
+                        model.Extension.SetUserPreferenceToggle((int)t, (int)swUserPreferenceOption_e.swDetailingNoOptionSpecified, false);
+                    }
+                    catch (COMException ex)
+                    {
+                        // Настройка не документа, а системы: у модели её не переключить — эскиз без неё всё равно чище.
+                        Log.WarnOnce("Ведомость ЛЗК: чистый эскиз — настройка " + t + " у модели недоступна: " + ex.Message);
+                    }
+                }
                 model.ShowNamedView2("", (int)swStandardViews_e.swIsometricView);
                 model.ViewZoomtofit2();
             }
