@@ -119,6 +119,8 @@ try {
     Expect "Toolbox не подставлен из профиля" (Read-Value "$swKey\General" "Toolbox Data Location") $null
     # Библиотека проектирования: папка крепежа рядом с инструментарием (как на NAS) — в «Расположение файлов»
     Expect "библиотека проектирования — крепёж и фурнитура" (Read-Value $ext "Content Manager Folders") $fasteners
+    # З-2: тип отображения по умолчанию на чертеже — «Невидимые линии отображаются» (swHiddenEdgeDisplayDefault = 1)
+    Expect "чертёж: невидимые линии отображаются" (Read-Value "$swKey\Drawings" "Display Mode") 1
     $dll = Join-Path $local "$addinRel\ESKD_Material_Sync_v5.dll"
     Expect "CodeBase надстройки — локальная копия" (Read-Value "$sandbox\Classes\CLSID\{B64E6875-B101-4D5C-B245-FF8D50772E25}\InprocServer32" "CodeBase") ("file:///" + $dll.Replace('\', '/'))
     Expect "автозагрузка надстройки" (Read-Value "$sandbox\SolidWorks\AddInsStartup\{B64E6875-B101-4D5C-B245-FF8D50772E25}" "(default)") 1
