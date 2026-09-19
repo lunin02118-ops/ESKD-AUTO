@@ -39,6 +39,8 @@ namespace ESKD.MaterialSync.Sw
         private string _cipher;
         private string _workbookPath;
         private string _legacyPath;
+        /// <summary>Сборка в «01_3D» изделия: книга в «04_…», прежняя — в «_Аннулировано». Иначе — рядом со сборкой, без папок.</summary>
+        private bool _inOrder;
         private LzkInputs _inputs;
         private readonly LzkBook.Options _options = new LzkBook.Options();
         private string _tempWorkbook;
@@ -144,11 +146,12 @@ namespace ESKD.MaterialSync.Sw
             }
             _productFolder = LzkNaming.ProductFolder(_assemblyPath);
             _cipher = LzkNaming.Cipher(_productFolder, _assemblyPath);
-            _workbookPath = LzkNaming.WorkbookPath(_productFolder, _cipher);
+            _inOrder = LzkNaming.InModelsFolder(_assemblyPath);
+            _workbookPath = _inOrder ? LzkNaming.WorkbookPath(_productFolder, _cipher) : LzkNaming.LooseWorkbookPath(_assemblyPath, _cipher);
             _legacyPath = LzkNaming.LegacyWorkbookPath(_productFolder, _cipher);
-            if (!string.Equals(Path.GetFileName(Path.GetDirectoryName(_assemblyPath)), LzkNaming.ModelsFolder, StringComparison.OrdinalIgnoreCase))
+            if (!_inOrder)
                 _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_assemblyPath),
-                    "сборка лежит не в папке «01_3D»: книга ЛЗК записана в «" + LzkNaming.DocsFolder + "» рядом со сборкой"));
+                    "сборка лежит не в папке «01_3D»: книга ЛЗК записана рядом со сборкой, новых папок нет"));
             foreach (string busy in new[] { _workbookPath, _legacyPath })
                 if (FileLocked(busy))
                 {
@@ -889,9 +892,8 @@ namespace ESKD.MaterialSync.Sw
                         // Сборка в папке без права записи (чужой ресурс, архив, защищённая папка): книга не пропадает.
                         Log.Error("Ведомость ЛЗК: запись рядом со сборкой", ex);
                         string denied = Path.GetDirectoryName(_workbookPath);
-                        _productFolder = LzkNaming.FallbackFolder(_assemblyPath);
-                        _workbookPath = LzkNaming.WorkbookPath(_productFolder, _cipher);
-                        _legacyPath = LzkNaming.LegacyWorkbookPath(_productFolder, _cipher);
+                        _inOrder = false;
+                        _workbookPath = LzkNaming.FallbackWorkbookPath(_cipher);
                         Deliver();
                         _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_workbookPath),
                             "в папку «" + denied + "» записать нельзя (" + ex.Message.Trim() + "): книга сохранена в «" +
@@ -920,7 +922,12 @@ namespace ESKD.MaterialSync.Sw
             string fresh = _workbookPath + ".new";
             if (File.Exists(fresh)) File.Delete(fresh);
             File.Copy(_tempWorkbook, fresh, false);
-            if (File.Exists(_workbookPath))
+            if (File.Exists(_workbookPath) && !_inOrder)
+            {
+                // Вне структуры заказа папок не заводим: прежняя книга заменяется, введённое в ней уже перенесено в новую.
+                File.Delete(_workbookPath);
+            }
+            else if (File.Exists(_workbookPath))
             {
                 string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_workbookPath));
                 Directory.CreateDirectory(Path.GetDirectoryName(archive));
@@ -928,7 +935,7 @@ namespace ESKD.MaterialSync.Sw
                 _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_workbookPath), "прежняя книга перенесена в «" + LzkNaming.ArchiveFolder + "»: " + Path.GetFileName(archive)));
             }
             // Ведомость старого образца (в корне изделия) заменяется книгой ЛЗК — два документа об одном не нужны.
-            if (File.Exists(_legacyPath))
+            if (_inOrder && File.Exists(_legacyPath))
             {
                 string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_legacyPath), true);
                 Directory.CreateDirectory(Path.GetDirectoryName(archive));

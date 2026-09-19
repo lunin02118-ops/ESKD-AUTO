@@ -113,7 +113,7 @@ class Lzk(SwTestCase):
 
     def test_L06_assembly_in_any_folder(self):
         """L06 (замечание владельца 19.09.2026): главная сборка — в любой папке, вне заказа и без «01_3D»; детали — рядом и
-        в другой папке. Книга ЛЗК формируется в «04_Сопроводительная документация» рядом со сборкой, на всю сборку."""
+        в другой папке. Книга ЛЗК — прямо рядом со сборкой, новых папок нет; повторный запуск заменяет книгу."""
         from eskd_e2e import build
 
         folder = self.case_dir / "Рабочая папка" / "Новый стол"
@@ -131,19 +131,24 @@ class Lzk(SwTestCase):
         self.path("outcome.txt").write_text(status + "\n\n" + notices, encoding="utf-8")
         self.assertTrue(status.startswith("ok|"), f"{status}\n{notices}")
         workbook = Path(status.split("|")[1])
-        self.assertEqual((folder / DOCS).resolve(), workbook.parent.resolve(), "книга рядом со сборкой")
+        self.assertEqual(folder.resolve(), workbook.parent.resolve(), "книга прямо рядом со сборкой")
+        self.assertEqual("ЛЗК_Стол письменный.xlsx", workbook.name)
         self.assertTrue(workbook.is_file(), "книга ЛЗК")
         ops, on_sections = self._sections(workbook)
         for designation in ("ПРТИ.468211.101", "ПРТИ.468211.111"):
             with self.subTest(part=designation):
                 self.assertNotIn(ops.get(designation) or "?", ("?", ""), f"операции: {ops}\n{notices}")
                 self.assertIn(designation, on_sections, f"на участках: {on_sections}")
+        self.assertEqual([], [d.name for d in folder.iterdir() if d.is_dir()], "рядом со сборкой новых папок нет")
+        status = self._build()
+        self.assertTrue(status.startswith("ok|"), status)
+        self.assertEqual([], [d.name for d in folder.iterdir() if d.is_dir()], "и после повторного запуска")
+        self.assertEqual(["ЛЗК_Стол письменный.xlsx"], sorted(f.name for f in folder.glob("*.xlsx")))
 
     def test_L07_readonly_models_and_denied_folder_still_give_book(self):
         """L07: чужая сборка — деталь занята (только для чтения), в папку сборки писать нельзя. Раньше кнопка обрывалась
-        «Ведомость не сформирована»; теперь книга — в «Документы\\ЕСКД\\ЛЗК\\<сборка>», операции детали — в книге."""
+        «Ведомость не сформирована»; теперь книга — в «Документы», операции детали — в книге."""
         import subprocess
-        import shutil
         from eskd_e2e import build
 
         stamp = time.strftime("%H%M%S")
@@ -169,8 +174,8 @@ class Lzk(SwTestCase):
         self.path("outcome.txt").write_text(status + "\n\n" + notices, encoding="utf-8")
         self.assertTrue(status.startswith("ok|"), f"{status}\n{notices}")
         workbook = Path(status.split("|")[1])
-        self.assertEqual(name, workbook.parent.parent.name, "запасная папка: Документы/ЕСКД/ЛЗК/<сборка>")
-        self.addCleanup(shutil.rmtree, workbook.parent.parent, True)
+        self.assertEqual(f"ЛЗК_{name}.xlsx", workbook.name, "запасное место — «Документы», без папок")
+        self.addCleanup(workbook.unlink, True)
         self.assertTrue(workbook.is_file(), "книга ЛЗК")
         self.assertIn("записать нельзя", notices)
         self.assertIn("только для чтения", notices)
