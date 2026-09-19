@@ -151,13 +151,13 @@ class MPropCompatibility(SwTestCase):
         self.assertTrue(ok, f"DProp не выполнен: err={int(err.value)}")
 
     @known_defect("Д-50")
-    def test_M03_save_after_mprop_writes_nothing(self):
-        """M03 (К-2): после «Применить» MProp сохранение ничего не пишет — надстройка не возвращает свои форматы (Н-04)."""
+    def test_M19_save_after_mprop_writes_nothing(self):
+        """M19 (К-2): после «Применить» MProp сохранение ничего не пишет — надстройка не возвращает свои форматы (Н-04)."""
         path, doc = self.open_copy(A01)
         self.s.save(doc)
         mprop.apply_without_edits(self.s, doc)
         self.s.watchdog.pop_unexpected()
-        mark = self.mark("M03-after-mprop")
+        mark = self.mark("M19-after-mprop")
         self.s.save(doc)
         self.assertNoPropertyWrites(mark, "сохранение после MProp изменило свойства")
 

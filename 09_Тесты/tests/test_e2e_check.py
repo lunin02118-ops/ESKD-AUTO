@@ -19,7 +19,7 @@ class Check(SwTestCase):
     def _product(self):
         """Копия изделия в структуре заказа: _Заявки\\<заказ>\\02_Металл\\И01_…\\01_3D.
 
-        Каталог теста назван коротко (C01, C02…): имена фикстур длинные, а Windows отказывает
+        Каталог теста назван коротко (K01, K02…): имена фикстур длинные, а Windows отказывает
         в копировании, когда путь переваливает за 260 знаков.
         """
         short = self._case_name().split("_")[1]
@@ -44,8 +44,8 @@ class Check(SwTestCase):
         return status
 
     @tags("smoke")
-    def test_C01_report_lists_issues_and_outcome(self):
-        """C01: проверка изделия без чертежей и выгрузки — «ЗАМЕЧАНИЯ», отчёт _Проверка.txt с правилами и суммами."""
+    def test_K01_report_lists_issues_and_outcome(self):
+        """K01: проверка изделия без чертежей и выгрузки — «ЗАМЕЧАНИЯ», отчёт _Проверка.txt с правилами и суммами."""
         product, asm = self._product()
         doc = self.s.open(asm)
         self.s.activate(doc)
@@ -66,8 +66,8 @@ class Check(SwTestCase):
         self.assertIn("Контрольные суммы (SHA-256):", text)
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
-    def test_C02_missing_component_is_defect(self):
-        """C02: файла компонента нет на диске — итог БРАК."""
+    def test_K02_missing_component_is_defect(self):
+        """K02: файла компонента нет на диске — итог БРАК."""
         product, asm = self._product()
         # Файла нет ещё до открытия: SolidWorks открывает сборку с потерянным компонентом
         # (диалог не выводится — открытие тихое), а проверка обязана назвать это браком.
@@ -82,8 +82,8 @@ class Check(SwTestCase):
         text = Path(report_path).read_text(encoding="utf-8-sig")
         self.assertIn("БРАК — ", text, "строка брака")
 
-    def test_C03_second_run_keeps_previous_report(self):
-        """C03: повторная проверка сохраняет прежний отчёт в _Проверка_пред.txt."""
+    def test_K03_second_run_keeps_previous_report(self):
+        """K03: повторная проверка сохраняет прежний отчёт в _Проверка_пред.txt."""
         product, asm = self._product()
         doc = self.s.open(asm)
         self.s.activate(doc)
@@ -94,8 +94,8 @@ class Check(SwTestCase):
         self.assertTrue(previous.is_file(), "прежний отчёт сохранён")
         self.assertEqual(first, previous.read_text(encoding="utf-8-sig"), "прежний отчёт — это первый")
 
-    def test_C05_shows_last_report_without_checking(self):
-        """C05: пункт «Отчёт проверки» отдаёт итог прежней проверки, а без отчёта — отказ."""
+    def test_K05_shows_last_report_without_checking(self):
+        """K05: пункт «Отчёт проверки» отдаёт итог прежней проверки, а без отчёта — отказ."""
         product, asm = self._product()
         doc = self.s.open(asm)
         self.s.activate(doc)
@@ -112,8 +112,8 @@ class Check(SwTestCase):
         self.assertEqual(str(report).lower(), path.lower(), "путь прежнего отчёта")
         self.assertEqual(stamp, report.stat().st_mtime_ns, "отчёт не переписан: проверка заново не запускалась")
 
-    def test_C04_refuses_part_and_keeps_files(self):
-        """C04: у детали кнопка недоступна и проверка отказывает без изменений файлов."""
+    def test_K04_refuses_part_and_keeps_files(self):
+        """K04: у детали кнопка недоступна и проверка отказывает без изменений файлов."""
         path, doc = self.open_copy(SHEET_PART)
         self.s.activate(doc)
         self.assertEqual(0, int(com.call(self.s.eskd(), "EnableCheckCommand")), "кнопка серая у детали")

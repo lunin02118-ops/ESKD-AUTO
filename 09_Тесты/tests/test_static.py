@@ -793,7 +793,7 @@ class StaticRepository(StaticTestCase):
         existing = set()
         for src in (paths.TESTS / "tests").glob("test_*.py"):
             existing |= set(re.findall(r"def test_([A-Z]\d{2})_", src.read_text(encoding="utf-8")))
-        ids = r"[PMBDSRIC]\d{2}(?:,\s*[PMBDSRIC]\d{2})*"
+        ids = r"[PMBDSRICGK]\d{2}(?:,\s*[PMBDSRICGK]\d{2})*"
         cited = set()
         for text in (guide, readme):
             for group in re.findall(r"\((%s)\)|\|\s*(%s)\s*\||тест[а-я]*\s+(%s)" % (ids, ids, ids), text):
@@ -917,6 +917,39 @@ class StaticRepository(StaticTestCase):
                 if pattern.search(line):
                     found.append(f"{f.name}:{n}: {line.strip()[:100]}")
         self.assertEqual([], found)
+
+    def test_T0_test_ids_are_unique(self):
+        """T0 (аудит 19.09.2026): номер сценария вида P01 встречается только в одном файле — фильтр -k и ссылки
+        в документах однозначны."""
+        where = {}
+        for src in sorted((paths.TESTS / "tests").glob("test_*.py")):
+            for tid in set(re.findall(r"def test_([A-Z]\d{2})_", src.read_text(encoding="utf-8"))):
+                where.setdefault(tid, []).append(src.name)
+        self.assertEqual({}, {k: v for k, v in where.items() if len(v) > 1})
+
+    def test_T0_runner_reports_failed_subtests(self):
+        """T0 (аудит 19.09.2026): упавший подтест попадает в отчёт раннера и делает прогон красным — раньше тест
+        с упавшим подтестом пропадал из отчёта и итога."""
+        import io
+        import sys
+        sys.path.insert(0, str(paths.TESTS))
+        import run_tests
+
+        class Probe(unittest.TestCase):
+            def test_sub(self):
+                for i in (1, 2):
+                    with self.subTest(i=i):
+                        self.assertEqual(1, i)
+
+            def test_ok(self):
+                with self.subTest(i=1):
+                    pass
+
+        result = unittest.TextTestRunner(resultclass=run_tests.Recorder, stream=io.StringIO()).run(
+            unittest.TestLoader().loadTestsFromTestCase(Probe))
+        self.assertEqual([("test_ok", "pass"), ("test_sub (i=2)", "fail")],
+                         sorted((r["id"].rsplit(".", 1)[-1], r["status"]) for r in result.records))
+
 
 if __name__ == "__main__":
     unittest.main()

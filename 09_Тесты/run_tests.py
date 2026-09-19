@@ -81,6 +81,14 @@ class Recorder(unittest.TextTestResult):
         super().addExpectedFailure(test, err)
         self._rec(test, "xfail", self._exc_info_to_string(err, test).strip().splitlines()[-1])
 
+    def addSubTest(self, test, subtest, err):
+        # упавший подтест не вызывает addFailure у теста — без этой записи тест пропадал бы из отчёта и итога
+        super().addSubTest(test, subtest, err)
+        if err is not None:
+            status = "fail" if issubclass(err[0], test.failureException) else "error"
+            self._rec(test, status, self._exc_info_to_string(err, test))
+            self.records[-1]["id"] = subtest.id()
+
     def addUnexpectedSuccess(self, test):
         super().addUnexpectedSuccess(test)
         self._rec(test, "xpass", "дефект, по-видимому, исправлен — обновите defects.json")
@@ -123,6 +131,17 @@ def iter_tests(suite):
             yield item
 
 
+def commit():
+    """Какой код проверял прогон: хеш HEAD и пометка о незакоммиченных правках."""
+    import subprocess
+    try:
+        run = lambda *a: subprocess.run(["git", *a], cwd=HERE, capture_output=True, text=True, timeout=20).stdout.strip()
+        head = run("rev-parse", "--short", "HEAD")
+        return head + (" + незакоммиченные правки" if run("status", "--porcelain", "--untracked-files=no") else "")
+    except Exception:
+        return "неизвестен"
+
+
 def write_reports(records, out_dir, title, started):
     out_dir.mkdir(parents=True, exist_ok=True)
     counts = {}
@@ -146,7 +165,8 @@ def write_reports(records, out_dir, title, started):
               "xfail": "🟡 известный дефект", "xpass": "⚠ дефект больше не воспроизводится"}
     lines = [f"# Отчёт автотестов ЕСКД — {title}", "",
              f"Начало: {started}  ·  длительность: {round(time.time() - time.mktime(time.strptime(started, '%Y-%m-%d %H:%M:%S')))} с",
-             f"DLL надстройки: `{testing._session_options['eskd_dll'] or paths.ADDIN_DLL}`", "",
+             f"DLL надстройки: `{testing._session_options['eskd_dll'] or paths.ADDIN_DLL}`",
+             f"Коммит: `{commit()}`", "",
              "| Итог | Количество |", "|---|---:|"]
     for key in ("pass", "xfail", "fail", "error", "xpass", "skip"):
         if counts.get(key):

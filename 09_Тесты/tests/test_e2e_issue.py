@@ -74,16 +74,16 @@ class Issue(SwTestCase):
                          "PDF листов участков не сделаны")
 
     # ------------------------------------------------------------------ R: готово к производству
-    def test_R01_without_book_asks_for_lzk(self):
-        """R01: у изделия нет книги ЛЗК — кнопка просит сначала «Ведомость ЛЗК» и ничего не пишет."""
+    def test_G01_without_book_asks_for_lzk(self):
+        """G01: у изделия нет книги ЛЗК — кнопка просит сначала «Ведомость ЛЗК» и ничего не пишет."""
         _, product, asm = self._order()
         status = self._ready(asm)
         self.assertTrue(status.startswith("error|"), status)
         self.assertIn("Ведомость ЛЗК", status, status)
         self._nothing_issued(product)
 
-    def test_R02_legacy_book_must_be_rebuilt(self):
-        """R02: ведомость старого образца (в корне изделия, без участков) — кнопка просит пересобрать книгу."""
+    def test_G02_legacy_book_must_be_rebuilt(self):
+        """G02: ведомость старого образца (в корне изделия, без участков) — кнопка просит пересобрать книгу."""
         _, product, asm = self._order()
         openpyxl.Workbook().save(product / f"Ведомость_{CIPHER}.xlsx")
         status = self._ready(asm)
@@ -91,8 +91,8 @@ class Issue(SwTestCase):
         self.assertIn("старого образца", status, status)
         self._nothing_issued(product)
 
-    def test_R03_unchecked_product_is_not_ready(self):
-        """R03: книга есть, но проверка изделия не «ГОТОВО» — отказ с причиной, PDF и отметки нет."""
+    def test_G03_unchecked_product_is_not_ready(self):
+        """G03: книга есть, но проверка изделия не «ГОТОВО» — отказ с причиной, PDF и отметки нет."""
         _, product, asm = self._order()
         self._book(product / DOCS / f"ЛЗК_{CIPHER}.xlsx")
         status = self._ready(asm)
@@ -101,8 +101,8 @@ class Issue(SwTestCase):
         self._nothing_issued(product)
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
-    def test_R04_product_ready_report_protects_its_documents(self):
-        """R04: отметка «готово» лежит в папке изделия — выгрузка видит документ выданным (Т-30)."""
+    def test_G04_product_ready_report_protects_its_documents(self):
+        """G04: отметка «готово» лежит в папке изделия — выгрузка видит документ выданным (Т-30)."""
         _, product, asm = self._order()
         (product / "_Выдано_2026-09-11_1200.txt").write_text(
             "\n".join(["Готово к производству", "", "Документы изделия:", "  ab12  " + ASM, ""]), encoding="utf-8")
