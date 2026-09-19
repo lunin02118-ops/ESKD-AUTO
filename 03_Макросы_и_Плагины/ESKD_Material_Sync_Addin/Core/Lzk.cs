@@ -25,6 +25,29 @@ namespace ESKD.MaterialSync.Core
                 ? parent : dir;
         }
 
+        /// <summary>Сборка в папке «01_3D» изделия (структура заказа) — книга в «04_Сопроводительная документация».</summary>
+        public static bool InModelsFolder(string assemblyPath)
+        {
+            string dir = Path.GetDirectoryName(Path.GetFullPath(assemblyPath)) ?? "";
+            return string.Equals(Path.GetFileName(dir), ModelsFolder, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Книга сборки вне структуры заказа — прямо рядом со сборкой, без новых папок (замечание владельца 19.09.2026).
+        /// </summary>
+        public static string LooseWorkbookPath(string assemblyPath, string cipher)
+        {
+            return Path.Combine(Path.GetDirectoryName(Path.GetFullPath(assemblyPath)) ?? "", WorkbookPrefix + SafeFileName(cipher) + ".xlsx");
+        }
+
+        /// <summary>
+        /// Рядом со сборкой писать нельзя (чужой ресурс, архив, защищённая папка) — книга в «Документы», без новых папок.
+        /// </summary>
+        public static string FallbackWorkbookPath(string cipher)
+        {
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), WorkbookPrefix + SafeFileName(cipher) + ".xlsx");
+        }
+
         /// <summary>
         /// Шифр изделия: из имени папки «И&lt;nn&gt;_&lt;шифр&gt;_…», иначе обозначение главной сборки без нулевых хвостов
         /// (КОД.00.00.000 → КОД), иначе обозначение как есть, иначе имя файла сборки.
@@ -59,8 +82,8 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>
-        /// Книга изделия, которая есть на диске: ЛЗК в «04_Сопроводительная документация», иначе ведомость старого
-        /// образца в корне (по шифру, затем любая); пусто — ни одной.
+        /// Книга изделия, которая есть на диске: ЛЗК в «04_Сопроводительная документация», иначе ЛЗК прямо в папке (сборка
+        /// вне структуры заказа), иначе ведомость старого образца в корне (по шифру, затем любая); пусто — ни одной.
         /// </summary>
         public static string FindWorkbook(string productFolder, string cipher)
         {
@@ -70,6 +93,8 @@ namespace ESKD.MaterialSync.Core
             string docs = Path.Combine(productFolder, DocsFolder);
             string any = Directory.Exists(docs) ? Directory.GetFiles(docs, WorkbookPrefix + "*.xlsx").FirstOrDefault(NotLock) : null;
             if (any != null) return any;
+            path = Path.Combine(productFolder, WorkbookPrefix + SafeFileName(cipher) + ".xlsx");
+            if (File.Exists(path)) return path;
             path = LegacyWorkbookPath(productFolder, cipher);
             if (File.Exists(path)) return path;
             return Directory.GetFiles(productFolder, LegacyWorkbookPrefix + "*.xlsx").FirstOrDefault(NotLock) ?? "";
@@ -359,6 +384,8 @@ namespace ESKD.MaterialSync.Core
         public bool IsAssembly;
         public bool IsPurchased;
         public bool InProduct;
+        /// <summary>Модель базы эталонов или библиотеки («02_БАЗА», «_Библиотека проектирования»): её файл не правится.</summary>
+        public bool InBase;
         public string Operations = "";
         public int Quantity;
         public double AreaM2 = double.NaN;
