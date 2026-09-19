@@ -76,21 +76,21 @@ namespace ESKD.MaterialSync.Core
                 ? value : 0;
         }
 
-        /// <summary>
-        /// Значения ТЗ-02 Т-13 — только для книги ЛЗК, когда справочника нет: калькулятор «Расход» всё равно
-        /// должен считать, а лист «Нормы» книги показывает, что взяты значения по умолчанию, и правится под заказ.
-        /// </summary>
-        public static Norms Defaults()
+        /// <summary>Пустые нормативы: книга ЛЗК берёт все значения из прежней книги (правка под заказ).</summary>
+        public static Norms Empty()
         {
-            Norms norms = new Norms("");
-            string[,] values =
-            {
-                { "Труба.Хлыст", "6000" }, { "Труба.Захват", "200" }, { "Труба.Торцовка", "20" }, { "Труба.Рез", "0.5" },
-                { "Труба.Деловой", "500" }, { "Лист.Формат", "1250x2500" }, { "Лист.Отход", "1.15" },
-                { "Краска.Норма", "140" }, { "Краска.Потери", "15" }, { "Краска.Тара", "25" }
-            };
-            for (int i = 0; i < values.GetLength(0); i++) norms._values[values[i, 0]] = values[i, 1];
-            return norms;
+            return new Norms("");
+        }
+
+        /// <summary>
+        /// Справочник для изделия: вверх по папкам от <paramref name="folder"/> (свой на заказ или на отдел), иначе — в
+        /// папке справочников инструментария (<paramref name="referenceFolder"/>); пусто — нигде нет.
+        /// </summary>
+        public static string Find(string folder, string referenceFolder)
+        {
+            string found = FindUp(folder);
+            if (found.Length > 0) return found;
+            return !string.IsNullOrEmpty(referenceFolder) && File.Exists(PathIn(referenceFolder)) ? PathIn(referenceFolder) : "";
         }
 
         /// <summary>

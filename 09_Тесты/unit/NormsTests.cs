@@ -44,6 +44,21 @@ namespace ESKD.Tests
             return folder;
         }
 
+        public static void Test_Shipped_reference_book_is_complete_and_found_in_toolkit()
+        {
+            // 02_Шаблоны_и_Форматки\Справочники инструментария (ТЗ-02 Т-13): встроенных нормативов у надстройки нет
+            string references = Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, @"..\..\..\02_Шаблоны_и_Форматки\Справочники"));
+            string problem;
+            Norms norms = Norms.Read(Norms.Find(Temp(), references), out problem);
+            Assert.IsTrue(norms != null, "справочник инструментария: " + problem);
+            Assert.AreEqual(6000.0, norms.Number("Труба.Хлыст"), "хлыст 6 м (Р4-5)");
+            double width, length;
+            norms.Pair("Лист.Формат", out width, out length);
+            Assert.AreEqual(2500.0, length, "формат листа");
+            Assert.AreEqual(0.5, norms.Number("Труба.Рез"), "рез");
+            Assert.AreEqual("", Norms.Find(Temp(), Temp()), "нигде нет — пусто, без значений по умолчанию");
+        }
+
         public static void Test_Norms_are_read_from_reference_book()
         {
             string folder = Temp();

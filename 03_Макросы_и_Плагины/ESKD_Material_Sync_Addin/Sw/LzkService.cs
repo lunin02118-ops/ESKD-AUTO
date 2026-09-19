@@ -158,7 +158,7 @@ namespace ESKD.MaterialSync.Sw
             // Введённое в прежней книге (тираж, срок, цвет, нормы, указания) переносится в новую.
             _inputs = LzkInputs.Read(File.Exists(_workbookPath) ? _workbookPath : "");
             _options.Inputs = _inputs;
-            ReadReferences();
+            if (!ReadReferences()) return false;
 
             Status("ЕСКД: ведомость ЛЗК — чтение состава изделия…");
             AssemblyDoc asm = (AssemblyDoc)_doc;
@@ -261,23 +261,34 @@ namespace ESKD.MaterialSync.Sw
             return true;
         }
 
-        /// <summary>Нормативы и бланки — вверх по папкам от изделия (Т-13); нет — значения по умолчанию.</summary>
-        private void ReadReferences()
+        /// <summary>
+        /// Нормативы и бланки — вверх по папкам от изделия, иначе из справочников инструментария (Т-13, ТЗ-04). Встроенных
+        /// нормативов нет: без справочника книга собирается, только если все нормы уже введены в прежней книге.
+        /// </summary>
+        private bool ReadReferences()
         {
-            string normsPath = Norms.FindUp(_productFolder);
+            string references = Settings.ReferenceFolder();
+            string normsPath = Norms.Find(_productFolder, references);
             string problem = "";
             Norms norms = normsPath.Length > 0 ? Norms.Read(normsPath, out problem) : null;
             if (norms == null)
             {
-                norms = Norms.Defaults();
-                _notes.Add(problem.Length > 0
-                    ? Notices.Of(NoticeLevel.Warning, Norms.FileName, problem + " Нормы в книге — по умолчанию.", "Поправьте справочник нормативов")
-                    : Notices.Of(NoticeLevel.Info, Norms.FileName, "справочник не найден — нормы в книге по умолчанию",
-                        "Лист «Нормы» правится под заказ"));
+                if (LzkBook.NormRows.Any(n => !_inputs.Norms.ContainsKey(n.Key)))
+                {
+                    Info((problem.Length > 0 ? problem : "Справочник «" + Norms.FileName + "» не найден ни у изделия, ни в " +
+                        (references.Length > 0 ? references : "папке инструментария") + ".") +
+                        "\n\nВстроенных нормативов нет: положите справочник на место (или переустановите рабочее место) и повторите.",
+                        MessageBoxIcon.Warning);
+                    return false;
+                }
+                norms = Norms.Empty();
+                _notes.Add(Notices.Of(NoticeLevel.Warning, Norms.FileName, (problem.Length > 0 ? problem : "справочник не найден") +
+                    " — нормы взяты из прежней книги ЛЗК", "Поправьте справочник нормативов"));
             }
             _options.Norms = norms;
-            _options.Blanks = LzkBlanks.Read(LzkBlanks.FindUp(_productFolder), out problem);
+            _options.Blanks = LzkBlanks.Read(LzkBlanks.Find(_productFolder, references), out problem);
             if (problem.Length > 0) _notes.Add(Notices.Of(NoticeLevel.Warning, LzkBlanks.FileName, problem, "Поправьте справочник бланков"));
+            return true;
         }
 
         /// <summary>Заказ — имя папки заказа изделия; вне структуры заказов — пусто.</summary>

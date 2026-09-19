@@ -40,6 +40,9 @@ class Lzk(SwTestCase):
         """Копия изделия в структуре заказа: И01_<шифр>_<имя>\\01_3D со всеми моделями фикстуры A."""
         models = self.case_dir / PRODUCT / "01_3D"
         models.mkdir(parents=True, exist_ok=True)
+        # справочник нормативов «на заказ» над изделием: встроенных нормативов у надстройки нет (Т-13)
+        norms = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / "Нормативы_производства.xlsx"
+        (self.case_dir / norms.name).write_bytes(norms.read_bytes())
         for src in sorted(Path(paths.FIXTURES_A).iterdir()):
             if src.suffix.lower() in (".sldprt", ".sldasm"):
                 self.s.workspace_copy(src, subdir=f"{self._case_name()}/{PRODUCT}/01_3D")

@@ -82,15 +82,19 @@ namespace ESKD.MaterialSync.Core
             _sections[section] = blank;
         }
 
-        /// <summary>Справочник бланков вверх по папкам от <paramref name="folder"/>; пусто — нет.</summary>
-        public static string FindUp(string folder)
+        /// <summary>
+        /// Справочник бланков вверх по папкам от <paramref name="folder"/>, иначе — в папке справочников инструментария
+        /// (<paramref name="referenceFolder"/>); пусто — нет.
+        /// </summary>
+        public static string Find(string folder, string referenceFolder)
         {
             for (string current = folder; !string.IsNullOrEmpty(current); current = Path.GetDirectoryName(current))
             {
                 string candidate = Path.Combine(current, FileName);
                 if (File.Exists(candidate)) return candidate;
             }
-            return "";
+            string shared = string.IsNullOrEmpty(referenceFolder) ? "" : Path.Combine(referenceFolder, FileName);
+            return shared.Length > 0 && File.Exists(shared) ? shared : "";
         }
 
         /// <summary>
@@ -351,7 +355,7 @@ namespace ESKD.MaterialSync.Core
         {
             double value;
             if (inputs != null && inputs.Norms.TryGetValue(key, out value)) return value;
-            if (norms == null) norms = Norms.Defaults();
+            if (norms == null) return 0;
             if (key == "Лист.Ширина" || key == "Лист.Длина")
             {
                 double width, length;
@@ -468,7 +472,7 @@ namespace ESKD.MaterialSync.Core
         {
             if (options == null) options = new Options();
             LzkInputs inputs = options.Inputs ?? new LzkInputs();
-            Norms norms = options.Norms ?? Norms.Defaults();
+            Norms norms = options.Norms ?? Norms.Empty();
             LzkBlanks blanks = options.Blanks ?? LzkBlanks.Defaults();
             Styles st = new Styles(book);
             List<LzkItem> made = items.Where(i => !(i.IsTop && !i.IsAssembly)).ToList();
@@ -483,7 +487,7 @@ namespace ESKD.MaterialSync.Core
                 result.SectionRows[section] = SectionSheet(book, st, section, made, header, inputs, blanks);
             result.PaintRows = result.SectionRows[LzkBlanks.Painting];
             result.PurchasedRows = PurchasedGroups(made).Count;
-            Cost(book, st, made, header, result);
+            Cost(book, st, made, header, result, inputs, norms);
             NormsSheetWrite(book, st, inputs, norms);
             MainColumns(book, mainSheet, col, headerRow, rows, blanks);
 
@@ -832,7 +836,8 @@ namespace ESKD.MaterialSync.Core
         }
 
         // ------------------------------------------------------------------ Расход
-        private static void Cost(XlsxBook book, Styles st, List<LzkItem> items, LzkHeader header, LzkResult result)
+        private static void Cost(XlsxBook book, Styles st, List<LzkItem> items, LzkHeader header, LzkResult result,
+            LzkInputs inputs, Norms norms)
         {
             XlsxSheet s = book.AddSheet(CostSheet);
             string[] titles =
@@ -882,6 +887,7 @@ namespace ESKD.MaterialSync.Core
                 foreach (int c in new[] { 6, 7, 8, 12 })
                     s.SetFormula(C(c, row), "SUM(" + L(c) + first + ":" + L(c) + (row - 1) + ")", c == 6 ? st.TotalInt : st.TotalDec1);
                 s.SetFormula(C(9, row), "IF(H" + row + ">0,G" + row + "/H" + row + ",\"\")", st.TotalPercent);
+                s.SetText(C(13, row), OptimalBars(sortament.ToList(), inputs, norms), st.Text);
                 subtotals.Add(row);
                 row++;
             }
@@ -967,6 +973,24 @@ namespace ESKD.MaterialSync.Core
             book.SetPrintNames(CostSheet, "$A$1:$" + L(columns) + "$" + Math.Max(row, barEnd), head);
         }
 
+        /// <summary>
+        /// Справочно (ТЗ-04, план п. Т4-5): раскладка разных длин сортамента по хлыстам (CutPlan) на тираж книги — формулы
+        /// «пакетом» считают каждую длину отдельно и дают верхнюю оценку. Тираж в книге поменяли — число устарело, поэтому
+        /// тираж назван в тексте.
+        /// </summary>
+        public static string OptimalBars(IList<BarGroup> sortament, LzkInputs inputs, Norms norms)
+        {
+            int quantity = inputs != null && inputs.Quantity > 0 ? inputs.Quantity : 1;
+            List<double> pieces = new List<double>();
+            foreach (BarGroup g in sortament)
+                for (int i = 0; i < g.PerProduct * quantity; i++) pieces.Add(g.LengthMm);
+            double bar = NormValue("Труба.Хлыст", inputs, norms);
+            if (pieces.Count == 0 || bar <= 0) return "";
+            CutResult plan = CutPlan.Plan(sortament[0].Sortament, pieces, bar, NormValue("Труба.Захват", inputs, norms),
+                NormValue("Труба.Торцовка", inputs, norms), NormValue("Труба.Рез", inputs, norms), NormValue("Труба.Деловой", inputs, norms));
+            return "оптимально " + plan.BarCount + " хл. на тираж " + quantity + (plan.TooLong.Count > 0 ? ", есть длиннее хлыста" : "");
+        }
+
         // ------------------------------------------------------------------ Нормы
         private static void NormsSheetWrite(XlsxBook book, Styles st, LzkInputs inputs, Norms norms)
         {
@@ -979,7 +1003,7 @@ namespace ESKD.MaterialSync.Core
             s.Merge("A1:D1");
             string source = norms.SourcePath.Length > 0
                 ? "Взяты из справочника " + norms.SourcePath
-                : "Справочник «" + Norms.FileName + "» не найден — значения по умолчанию (ТЗ-02 Т-13)";
+                : "Справочник «" + Norms.FileName + "» не найден";
             if (inputs.Norms.Count > 0) source = "Значения прежней книги ЛЗК (правка под заказ сохраняется). " + source;
             s.SetText("A2", source, st.NoteWrap);
             s.Merge("A2:D2");

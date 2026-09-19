@@ -11,6 +11,16 @@ namespace ESKD.Tests
     /// <summary>Живая книга ЛЗК (ТЗ-04): формулы, имена, участки, калькулятор, перенос введённого.</summary>
     public static class LzkBookTests
     {
+        /// <summary>Справочник нормативов инструментария — встроенных нормативов у надстройки нет (ТЗ-02 Т-13).</summary>
+        private static Norms ShippedNorms()
+        {
+            string problem;
+            string path = Norms.PathIn(Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, @"..\..\..\02_Шаблоны_и_Форматки\Справочники")));
+            Norms norms = Norms.Read(path, out problem);
+            Assert.IsTrue(norms != null, problem);
+            return norms;
+        }
+
         private static string Temp()
         {
             return Path.Combine(Path.GetTempPath(), "eskd_book_" + Guid.NewGuid().ToString("N") + ".xlsx");
@@ -254,7 +264,7 @@ namespace ESKD.Tests
                 inputs.Notes["Сварочный"] = "Свой текст";
                 inputs.Norms["Труба.Захват"] = 600;
                 LzkHeader header = new LzkHeader { Product = "А Рама", Cipher = "А", Name = "Рама", Order = "3021_Заказ", Date = "18.09.2026" };
-                LzkResult r = LzkWorkbook.Complete(path, header, items, new LzkBook.Options { Inputs = inputs });
+                LzkResult r = LzkWorkbook.Complete(path, header, items, new LzkBook.Options { Inputs = inputs, Norms = ShippedNorms() });
                 Assert.AreEqual(0, r.Errors.Count, string.Join("; ", r.Errors.ToArray()));
 
                 XlsxBook book = XlsxBook.Open(path);
@@ -275,6 +285,8 @@ namespace ESKD.Tests
                 Assert.AreEqual("IF(E7>0,ROUNDUP(D7/E7,0),\"?\")", cost.Formula("F7"), "хлыстов");
                 Assert.AreEqual("300", cost.Get("B8"), "вторая длина");
                 Assert.AreEqual("SUM(F7:F8)", cost.Formula("F9"), "итого хлыстов по сортаменту");
+                Assert.IsTrue(cost.Get("M9").StartsWith("оптимально ") && cost.Get("M9").EndsWith("на тираж 41"),
+                    "справочная раскладка CutPlan на тираж: " + cost.Get("M9"));
 
                 XlsxSheet passport = book.Sheet("Паспорт");
                 string sheet, cell;
@@ -284,7 +296,7 @@ namespace ESKD.Tests
                 Assert.IsTrue(book.TryResolveName("Захват", out sheet, out cell), "норматив");
                 Assert.AreEqual("600", book.Sheet(sheet).Get(cell), "норма, правленная под заказ");
                 Assert.IsTrue(book.TryResolveName("Хлыст", out sheet, out cell), "хлыст");
-                Assert.AreEqual("6000", book.Sheet(sheet).Get(cell), "хлыст 6 м по умолчанию");
+                Assert.AreEqual("6000", book.Sheet(sheet).Get(cell), "хлыст 6 м из справочника инструментария");
 
                 LzkInputs read = LzkInputs.Read(path);
                 Assert.IsTrue(read.FromWorkbook, "прочитано из книги");
@@ -296,7 +308,7 @@ namespace ESKD.Tests
                 Assert.AreEqual(600.0, read.Norms["Труба.Захват"], "норма сохранена");
 
                 // Повторная сборка по прочитанному — те же значения.
-                LzkWorkbook.Complete(second, header, items, new LzkBook.Options { Inputs = read });
+                LzkWorkbook.Complete(second, header, items, new LzkBook.Options { Inputs = read, Norms = ShippedNorms() });
                 LzkInputs again = LzkInputs.Read(second);
                 Assert.AreEqual(41, again.Quantity, "тираж пережил пересборку");
                 Assert.AreEqual("Свой текст", again.Notes["Сварочный"], "указания пережили пересборку");
