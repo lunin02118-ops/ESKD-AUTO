@@ -20,12 +20,12 @@
   }
  },
  "SpecEditor/SpecEditor.swp": {
-  "sha256": "ba4de8c696534c250b4a4aa5e4244b5e2bd7936243a81cee61c95edd793292a5",
+  "sha256": "70baaea71dfddc067bba180448892fdbe2618a91b5003a8526034d124cd3341d",
   "modules": {
    "FrmSpecEditor.frm.txt": 5083,
    "FrmSpecEditor_Doc.frm.txt": 209,
    "FrmSpecEditor_Pref.frm.txt": 357,
-   "SpecEditor_run.bas.txt": 454,
+   "SpecEditor_run.bas.txt": 482,
    "SpecEditor_top.bas.txt": 65,
    "ThisLibrary.cls.txt": 9
   }

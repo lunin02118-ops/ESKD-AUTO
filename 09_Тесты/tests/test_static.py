@@ -472,7 +472,7 @@ class StaticRepository(StaticTestCase):
             return set(re.findall(r'"([^"]+)"', body)) | {consts[ref.split(".")[-1]] for ref in re.findall(r"\b[A-Z]\w*\.\w+", body)}
 
         groups = {a: declared(a) for a in ("DefaultNames", "SwPlusServiceNames", "LegacyExtraNames", "AddinNames", "TemplateNames", "ExtraNames")}
-        self.assertEqual({"Материал_Строка", "Формат_до_БЧ", "Примечание_до_БЧ"}, groups["AddinNames"])
+        self.assertEqual({"Материал_Строка", "Формат_до_БЧ", "Примечание_до_БЧ", "Запись_БЧ"}, groups["AddinNames"])
         known = set().union(*groups.values())
 
         call = re.compile(r'\b(?:Set|SetIfEmpty|Raw|Resolved|Delete|Exists|Get)\(\s*(?:"[^"]*"|[^,()"]*)\s*,\s*"([^"]+)"')

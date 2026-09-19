@@ -46,11 +46,11 @@ namespace ESKD.MaterialSync.Core
 
         /// <summary>
         /// Свойства, которые ведёт только надстройка (в словаре SWPlus их нет): однострочная запись материала для сводной
-        /// ведомости и прежние «Формат» и «Примечание» на время режима «Деталь БЧ».
+        /// ведомости, прежние «Формат» и «Примечание» на время режима «Деталь БЧ» и строки записи БЧ для спецификации.
         /// </summary>
         public static readonly string[] AddinNames = new string[]
         {
-            MaterialRecord.LineProperty, BchRecord.SavedFormatProperty, BchRecord.SavedRemarkProperty
+            MaterialRecord.LineProperty, BchRecord.SavedFormatProperty, BchRecord.SavedRemarkProperty, BchRecord.LinesProperty
         };
 
         /// <summary>

@@ -328,12 +328,12 @@ Public Sub SwpLayoutRecords(ByVal swTable As Object, ByVal nColDesignation As In
     ByVal nColQty As Integer, ByVal nColRemark As Integer, ByVal nColPos As Integer)
     Dim i As Long, r As Long, k As Long, c As Long, j As Long, n As Long, nTotal As Long
     Dim sText As String, sQty As String, sRemark As String
-    Dim vLines As Variant
+    Dim vLines As Variant, vExtra As Variant
     Dim swFormat As Object
     Dim dWidth As Double
     Dim ok As Boolean
-    For i = swTable.RowCount - 1 To 1 Step -1
-        sText = Replace(swTable.Text(i, nColName), Chr$(13), "")
+    vExtra = SwpExtraLines(swTable): For i = swTable.RowCount - 1 To 1 Step -1 ' ЕСКД З-9: строки записи БЧ — из модели
+        sText = SwpRecordText(swTable.Text(i, nColName), vExtra(i))
         If InStr(sText, Chr$(10)) > 0 Then
             vLines = Split(sText, Chr$(10))
             nTotal = 0
@@ -395,7 +395,7 @@ End Function
 
 ' Ширина шрифта строки записи: самая длинная часть (у дроби — вид сортамента и длинный из числителя и знаменателя)
 ' пишется простым текстом в однострочную ячейку; пока строка переносится (высота больше 8 мм) — ширина меньше на 0,05,
-' но не меньше 0,8. В ячейку возвращается сама строка.
+' но не меньше 0,8. В ячейку возвращается сама строка; связанная ячейка, где она уже есть, не переписывается (З-9).
 Private Function SwpFitWidth(ByVal swTable As Object, ByVal r As Long, ByVal c As Long, ByVal sLine As String) As Double
     Dim sProbe As String, sPart As String, sPrefix As String
     Dim vParts As Variant
@@ -414,7 +414,7 @@ Private Function SwpFitWidth(ByVal swTable As Object, ByVal r As Long, ByVal c A
     Else
         sProbe = sLine
     End If
-    swTable.Text(r, c) = sProbe
+    If swTable.Text(r, c) <> sProbe Then swTable.Text(r, c) = sProbe
     Set swFormat = swTable.GetCellTextFormat(r, c)
     dBase = swFormat.WidthFactor
     SwpFitWidth = 0.8
@@ -426,7 +426,7 @@ Private Function SwpFitWidth(ByVal swTable As Object, ByVal r As Long, ByVal c A
             Exit For
         End If
     Next dWidth
-    swTable.Text(r, c) = sLine
+    If swTable.Text(r, c) <> sLine Then swTable.Text(r, c) = sLine
     swFormat.WidthFactor = SwpFitWidth
     ok = swTable.SetCellTextFormat(r, c, False, swFormat)
 End Function
@@ -451,3 +451,31 @@ Failed:
     swDoc.AddCustomInfo3 "", "SwpLayoutError", 30, ""
     swDoc.CustomInfo2("", "SwpLayoutError") = Err.Number & ": " & Err.Description
 End Sub
+
+' ===== Правки ЕСКД: З-9 — SpecEditor не переписывает свойства модели =====
+
+' Строки записи БЧ после наименования по строкам таблицы — свойство модели «Запись_БЧ». Графа «Наименование» связана с
+' «Наименованием» детали, и всё, что пишется в её ячейку, SolidWorks пишет в модель; поэтому у детали БЧ там одно название,
+' а остальные строки записи читает временная графа, связанная с «Запись_БЧ», — как графы «Раздел» и «Группа» при чтении
+' таблицы.
+Private Function SwpExtraLines(ByVal swTable As Object) As Variant
+    Dim v() As String
+    Dim i As Long, n As Long
+    Dim ok As Boolean
+    n = swTable.ColumnCount
+    ReDim v(swTable.RowCount)
+    ok = swTable.InsertColumn(swTableItemInsertPosition_Last, 0, "Запись_БЧ")
+    ok = swTable.SetColumnType(n, swWeldTableColumnType_CustomProperty)
+    ok = swTable.SetColumnCustomProperty(n, "Запись_БЧ")
+    For i = 1 To swTable.RowCount - 1
+        v(i) = Replace(swTable.Text(i, n), Chr$(13), "")
+    Next i
+    ok = swTable.DeleteColumn(n)
+    SwpExtraLines = v
+End Function
+
+' Текст записи строки таблицы: наименование и строки «Запись_БЧ»; запись прежних версий — вся в наименовании.
+Private Function SwpRecordText(ByVal sName As String, ByVal sExtra As String) As String
+    SwpRecordText = Replace(sName, Chr$(13), "")
+    If Len(sExtra) > 0 And InStr(SwpRecordText, Chr$(10)) = 0 Then SwpRecordText = SwpRecordText & Chr$(10) & sExtra
+End Function

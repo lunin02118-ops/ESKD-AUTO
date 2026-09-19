@@ -97,11 +97,14 @@ namespace ESKD.MaterialSync.Core
             return Path.Combine(productFolder ?? "", ReportName);
         }
 
-        /// <summary>«&lt;Обозначение&gt; &lt;Наименование&gt;» — основа имени любого файла выдачи; пусто — имя файла модели.</summary>
+        /// <summary>
+        /// «&lt;Обозначение&gt; &lt;Наименование&gt;» — основа имени любого файла выдачи; пусто — имя файла модели.
+        /// У детали БЧ в «Наименовании» запись для спецификации — в имя идёт только её первая строка.
+        /// </summary>
         public static string Stem(string designation, string name, string modelPath)
         {
             string left = (designation ?? "").Trim();
-            string right = (name ?? "").Trim();
+            string right = BchRecord.IsRecord(name) ? BchRecord.ShortTitle(name) : (name ?? "").Trim();
             string stem = (left + " " + right).Trim();
             if (stem.Length == 0) stem = Path.GetFileNameWithoutExtension(modelPath ?? "") ?? "";
             return LzkNaming.SafeFileName(stem);

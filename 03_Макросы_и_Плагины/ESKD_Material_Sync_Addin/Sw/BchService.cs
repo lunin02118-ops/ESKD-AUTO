@@ -120,10 +120,13 @@ namespace ESKD.MaterialSync.Sw
                     w.Set(level, remark, SwPlusFormat.BchRemark(level.Length == 0 ? active : level, fileTitle, false, grams));
             }
 
-            // Наименование для спецификации
+            // Запись для спецификации: «Наименование» — одно название, остальные строки — «Запись_БЧ» (З-9)
             string baseTitle = CurrentTitle(w, doc, dict);
             string titleLevel = RecordLevel(w);
-            w.Set(titleLevel, title, BuildRecord(app, doc, w.ActiveConfigurationName(), baseTitle));
+            string record = BuildRecord(app, doc, w.ActiveConfigurationName(), baseTitle);
+            if (BchRecord.IsRecord(w.Raw(titleLevel, title))) w.Delete(titleLevel, title);
+            w.Set("", title, BchRecord.ShortTitle(record));
+            w.Set(titleLevel, BchRecord.LinesProperty, BchRecord.Lines(record));
             string fb = w.Raw("", titleFb);
             if (PropertyWriter.IsEmptyOrTemplate(fb))
                 w.Set("", titleFb, SwPlusFormat.TitleStamp(SwPlusFormat.WrapTitle(BchRecord.ShortTitle(baseTitle)), dict.SmallFontMarkup));
@@ -132,7 +135,7 @@ namespace ESKD.MaterialSync.Sw
             return Enabled;
         }
 
-        /// <summary>Уровень записи БЧ в «Наименовании»: общие при одной конфигурации, иначе активная конфигурация.</summary>
+        /// <summary>Уровень записи БЧ («Наименование», «Запись_БЧ»): общие при одной конфигурации, иначе активная конфигурация.</summary>
         internal static string RecordLevel(PropertyWriter w)
         {
             return w.ConfigurationNames().Length <= 1 ? "" : w.ActiveConfigurationName();
@@ -175,25 +178,38 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>
-        /// При сохранении детали БЧ своя запись (BchRecord.IsOwnRecord) пересобирается по материалу и габаритам модели: после
-        /// смены материала или размеров спецификация не отстаёт (WP-2.7). Запись, изменённая вручную, остаётся.
+        /// При сохранении детали БЧ строки своей записи (BchRecord.IsOwnRecord) пересобираются по материалу и габаритам модели:
+        /// после смены материала или размеров спецификация не отстаёт (WP-2.7). Запись, изменённая вручную, остаётся.
+        /// «Наименование» не трогается, если в нём название: его пишет конструктор или синхронизация по имени файла.
         /// </summary>
         internal static void UpdateOnSave(PropertyWriter w, ISldWorks app, ModelDoc2 doc, PropertyDictionary dict)
         {
             if (!IsBch(w, dict)) return;
             string title = dict[Role.Description];
             string level = RecordLevel(w);
-            string current = w.Raw(level, title);
-            // Запись, от которой осталась одна строка (однострочное поле вкладки свойств, шаблонное «Деталь») или имя
-            // файла, восстанавливается: у детали БЧ в «Наименовании» всегда запись для спецификации.
+            string lines = w.Raw(level, BchRecord.LinesProperty);
+            // Запись до З-9 — вся в «Наименовании» уровня записи: название уходит в общие, строки — в «Запись_БЧ».
+            string old = w.Raw(level, title);
+            if (BchRecord.IsRecord(old))
+            {
+                if (string.IsNullOrEmpty(lines)) lines = BchRecord.Lines(old);
+                if (level.Length > 0) w.Delete(level, title);
+                w.Set("", title, BchRecord.ShortTitle(old));
+                w.Set(level, BchRecord.LinesProperty, lines);
+            }
+            // Название пропало (пусто, шаблонное «Деталь») — по имени файла.
+            string current = w.Raw(level, title) ?? w.Raw("", title);
             string fileTitle = DesignationParser.Parse(SafePath(doc), dict.NameSeparator).Title ?? "";
             string plain = (current ?? "").Trim();
-            bool lost = !BchRecord.IsRecord(current) && (PropertyWriter.IsEmptyOrTemplate(current) ||
-                DesignationParser.IsTemplateName(plain) || plain == fileTitle.Trim() || plain == BchRecord.ShortTitle(fileTitle));
-            if (!lost && !BchRecord.IsOwnRecord(current)) return;
-            string head = lost ? BchRecord.ShortTitle(fileTitle.Length > 0 ? fileTitle : current) : BchRecord.ShortTitle(current);
-            string wanted = BuildRecord(app, doc, w.ActiveConfigurationName(), head);
-            if (MaterialRecord.Normalize(current) != wanted) w.Set(level, title, wanted);
+            if (PropertyWriter.IsEmptyOrTemplate(current) || DesignationParser.IsTemplateName(plain))
+            {
+                plain = BchRecord.ShortTitle(fileTitle.Length > 0 ? fileTitle : current);
+                w.Set("", title, plain);
+            }
+            if (!string.IsNullOrEmpty(lines) && !BchRecord.IsOwnRecord(BchRecord.Join(plain, lines))) return;
+            string wanted = BchRecord.Lines(BuildRecord(app, doc, w.ActiveConfigurationName(), plain));
+            if (MaterialRecord.Normalize(lines ?? "") != wanted && (wanted.Length > 0 || lines != null))
+                w.Set(level, BchRecord.LinesProperty, wanted);
         }
 
         private static int Disable(PropertyWriter w, ModelDoc2 doc, PropertyDictionary dict, Settings settings)
@@ -217,6 +233,7 @@ namespace ESKD.MaterialSync.Sw
             // Наименование: запись БЧ заменяется наименованием из имени файла (или первой строкой записи).
             foreach (string level in new[] { "", w.ActiveConfigurationName() })
             {
+                w.Delete(level, BchRecord.LinesProperty);
                 string current = w.Raw(level, title);
                 if (current == null || !SwPlusMarkup.HasMarkup(current)) continue;
                 ParsedName parsed = DesignationParser.Parse(SafePath(doc), dict.NameSeparator);

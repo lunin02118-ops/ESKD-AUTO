@@ -31,6 +31,14 @@ namespace ESKD.Tests
                 ExportNaming.IgsPath(Product, "ТС-52.00.01.002", "Стойка", Model, 0), "IGS профиля");
         }
 
+        public static void Test_Bch_record_gives_only_its_title()
+        {
+            // З-9: у детали БЧ «Наименование» — запись для спецификации; в имя файла она не попадает.
+            string record = "Распорка\n<STACK size=1>Труба ПО 30х15х1,5 ГОСТ 8644-68<OVER>08пс ГОСТ 13663-86</STACK>\nL = 369 мм";
+            Assert.AreEqual(Product + @"\03_ЧПУ\Труборез\NC3-7R.03.001 Распорка.igs",
+                ExportNaming.IgsPath(Product, "NC3-7R.03.001", record, Model, 0), "IGS детали БЧ");
+        }
+
         public static void Test_Dxf_carries_thickness_and_frame()
         {
             // Образец технолога записан как «_S2.0мм», но Т-28 требует целую толщину без дробной части:

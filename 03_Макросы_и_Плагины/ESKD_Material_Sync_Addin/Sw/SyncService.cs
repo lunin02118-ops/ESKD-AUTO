@@ -257,9 +257,8 @@ namespace ESKD.MaterialSync.Sw
             if (string.IsNullOrEmpty(now.Title)) return;
             string currentTitle = w.Raw("", title);
             Provenance titleState = ProvenanceRule.Classify(currentTitle, now.Title, before != null ? before.Title : null, false);
-            // У детали БЧ «Наименование» — запись для спецификации; потерянную запись восстанавливает BchService.UpdateOnSave
+            // У детали БЧ «Наименование» — такое же название, как у любой детали; строки записи — в «Запись_БЧ» (З-9)
             bool bch = !isAssembly && BchService.IsBch(w, dict);
-            if (bch && !BchRecord.IsRecord(currentTitle) && ProvenanceRule.ShouldWrite(titleState)) titleState = Provenance.Current;
             string effective = currentTitle ?? "";
             if (ProvenanceRule.ShouldWrite(titleState))
             {
