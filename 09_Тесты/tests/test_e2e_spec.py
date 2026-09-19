@@ -46,6 +46,26 @@ def read_table(ann):
     return table, heights
 
 
+def bom_anchor(drw):
+    """Точка привязки BOM (swTableAnnotation_BillOfMaterials) текущего листа, мм."""
+    a = com.dyn(drw.GetCurrentSheet).TableAnchor(2)
+    return [round(float(x) * 1000, 1) for x in com.dyn(a).Position] if a is not None else None
+
+
+def set_bom_anchor(drw, x, y):
+    """Точка привязки BOM листа — точка эскиза форматки (ISheet.SetAsTableAnchor), как у прежних форматок."""
+    drw.EditTemplate()
+    sketch = com.dyn(drw.SketchManager)
+    sketch.AddToDB = True
+    point = com.dyn(sketch.CreatePoint(x, y, 0))
+    sketch.AddToDB = False
+    drw.ClearSelection2(True)
+    point.Select4(False, com.null_dispatch())
+    com.dyn(drw.GetCurrentSheet).SetAsTableAnchor(2)
+    drw.ClearSelection2(True)
+    drw.EditSheet()
+
+
 def first_table(drw):
     view = drw.GetFirstView
     while view is not None:
@@ -60,10 +80,22 @@ class SpecBchLayout(SwTestCase):
     COL_FORMAT, COL_POS, COL_NAME, COL_QTY = 0, 2, 4, 5
     PARTS = ("ПРТИ.468211.101 Пластина опорная.sldprt", "ПРТИ.468211.111 Стойка трубная.sldprt")
 
-    def _layout(self):
+    def _macro(self, proc, error_property):
+        from eskd_e2e import mprop
+        drw = com.dyn(self.s.sw.ActiveDoc)
+        macro = mprop.swplus_copy(self.s.run_dir).parent.parent / "SpecEditor" / "SpecEditor.swp"
+        err = com.ref_int()
+        ok = bool(self.s.sw.RunMacro2(str(macro), "SpecEditor_run", proc, 1, err))
+        self.assertEqual([], self.s.watchdog.pop_unexpected(), "окна SpecEditor")
+        self.assertTrue(ok, f"{proc} не выполнен: err={int(err.value)}")
+        self.assertEqual("", str(drw.GetCustomInfoValue("", error_property) or ""), f"ошибка {proc}")
+
+    def _layout(self, anchored=False):
         """Сборка из двух деталей БЧ и болта, чертёж с таблицей SpecEditor, оформление записей БЧ (SwpLayoutRecords).
+        anchored — таблица вставляется, как SpecEditor на лист сборки (FrmSpecEditor:1708): к точке привязки BOM листа,
+        правым нижним углом; перед этим у листа ставится точка прежних форматок (205; 68), и SpecEditor её исправляет.
         Возвращает чертёж, таблицу, пути деталей и свойства деталей в памяти до оформления."""
-        from eskd_e2e import build, mprop
+        from eskd_e2e import build
         parts = []
         for name in self.PARTS:
             path, doc = self.open_copy(name)
@@ -83,15 +115,42 @@ class SpecBchLayout(SwTestCase):
         view = build.model_view(drw, asm_path, 60, 60)
         drw.ActivateView(str(view.GetName2))
         template = paths.SWPLUS / "SpecEditor" / "SpecEditor_sp.sldbomtbt"
-        ann = com.dyn(view.InsertBomTable4(False, 0.2, 0.285, 1, 2, "", str(template), False, 0, False))
+        if anchored:
+            set_bom_anchor(drw, 0.205, 0.068)
+            self.assertEqual([205.0, 68.0], bom_anchor(drw), "точка прежних форматок")
+            self._macro("swp_bom_anchor_active_sheet", "SwpAnchorError")
+            drw.ActivateView(str(view.GetName2))
+            ann = com.dyn(view.InsertBomTable4(True, 0.415, 0.068, 4, 1, "", str(template), False, 0, False))
+        else:
+            ann = com.dyn(view.InsertBomTable4(False, 0.2, 0.285, 1, 2, "", str(template), False, 0, False))
         before = {p: oracles.dump_properties(com.dyn(self.s.sw.GetOpenDocumentByName(str(p)))) for p in parts}
-        macro = mprop.swplus_copy(self.s.run_dir).parent.parent / "SpecEditor" / "SpecEditor.swp"
-        err = com.ref_int()
-        ok = bool(self.s.sw.RunMacro2(str(macro), "SpecEditor_run", "swp_layout_active_table", 1, err))
-        self.assertEqual([], self.s.watchdog.pop_unexpected(), "окна SpecEditor")
-        self.assertTrue(ok, f"оформление не выполнено: err={int(err.value)}")
-        self.assertEqual("", str(drw.GetCustomInfoValue("", "SwpLayoutError") or ""), "ошибка процедуры оформления")
+        self._macro("swp_layout_active_table", "SwpLayoutError")
         return drw, ann, parts, before
+
+    def test_S10_spec_sits_in_bottom_left_corner_of_sheet(self):
+        """S10 (замечание владельца 19.09.2026): спецификация на листе A3 сборочного чертежа — в левом нижнем углу рамки:
+        правый нижний угол в точке привязки BOM (205; 5) мм, левый — в (20; 5), таблица привязана и растёт вверх.
+        Лист с точкой прежних форматок (205; 68) SpecEditor исправляет перед вставкой; форматки A3–A0 несут точку сами."""
+        from eskd_e2e import build
+        # Форматки — до чертежа со старой точкой: SolidWorks держит загруженную форматку в памяти сеанса.
+        for name in ("A3-A-1", "A2-A-1", "A1-A-1", "A0-A-1"):
+            with self.subTest(format=name):
+                doc = self.s.new_doc(paths.DRAWING_TEMPLATE)
+                size = {"A3": (420, 297), "A2": (594, 420), "A1": (841, 594), "A0": (1189, 841)}[name[:2]]
+                build.set_sheet_format(doc, build.sheet_format(name), *size)
+                self.assertEqual([205.0, 5.0], bom_anchor(doc), "точка привязки BOM форматки")
+                self.s.close(doc)
+        drw, ann, parts, before = self._layout(anchored=True)
+        # Ширины граф спецификации ставит SpecEditor (FrmSpecEditor:2949–2955): 6+6+8+70+63+10+22 = 185 мм.
+        for c, w in enumerate((0.006, 0.006, 0.008, 0.07, 0.063, 0.01, 0.022)):
+            ann.SetColumnWidth(c, w, 0)  # swTableRowColChange_TableSizeCanChange
+        drw.ForceRebuild3(False)
+        self.assertEqual([205.0, 5.0], bom_anchor(drw), "точка привязки BOM листа")
+        self.assertTrue(bool(ann.Anchored), "таблица привязана к точке")
+        self.assertEqual([205.0, 5.0], [round(float(x) * 1000, 1) for x in list(com.dyn(ann.GetAnnotation).GetPosition)[:2]],
+                         "правый нижний угол таблицы — в точке привязки, низ — на рамке")
+        width = sum(float(ann.GetColumnWidth(c)) for c in range(int(ann.ColumnCount))) * 1000
+        self.assertAlmostEqual(20.0, 205.0 - width, delta=0.5, msg=f"левый край — на рамке 20 мм (ширина {width:.1f} мм)")
 
     def test_S09_spec_layout_does_not_rewrite_models(self):
         """S09 (З-9): SpecEditor не переписывает свойства моделей — у деталей БЧ «Наименование», «Запись_БЧ» и «Примечание»
