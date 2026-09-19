@@ -155,12 +155,57 @@ function Copy-EskdFile {
     if ($copy.IsReadOnly) { $copy.IsReadOnly = $false }
 }
 
+function Get-EskdInstanceFiles {
+    <#
+    Файлы выпуска, которые попадают в локальную копию: надстройка (файлы $AddinFiles и Icons) и вся папка SWPlus.
+    Relative — путь от корня инструментария (он же — от корня локальной копии), State — файл настроек макросов
+    ($SwPlusStateFiles): пользователь его меняет, поэтому обновление и проверка его не сравнивают.
+    #>
+    param([Parameter(Mandatory = $true)][pscustomobject]$Layout)
+    $root = $Layout.SourceRoot.TrimEnd('\')
+    $sources = New-Object System.Collections.Generic.List[string]
+    foreach ($name in $script:AddinFiles) {
+        $src = Join-Path $Layout.SourceAddin $name
+        if (Test-Path -LiteralPath $src) { $sources.Add($src) }
+    }
+    $icons = Join-Path $Layout.SourceAddin "Icons"
+    if (Test-Path -LiteralPath $icons) { foreach ($f in Get-ChildItem -LiteralPath $icons -File) { $sources.Add($f.FullName) } }
+    if (Test-Path -LiteralPath $Layout.SourceSwPlus) {
+        foreach ($f in Get-ChildItem -LiteralPath $Layout.SourceSwPlus -File -Recurse) { $sources.Add($f.FullName) }
+    }
+    $swplusPrefix = $script:Rel.SwPlus.ToLowerInvariant() + "\"
+    $stateLow = @($script:SwPlusStateFiles | ForEach-Object { $swplusPrefix + $_.ToLowerInvariant() })
+    foreach ($src in $sources) {
+        $rel = $src.Substring($root.Length + 1)
+        [pscustomobject]@{
+            Source   = $src
+            Local    = Join-Path $Layout.LocalRoot $rel
+            Relative = $rel
+            State    = $stateLow -contains $rel.ToLowerInvariant()
+        }
+    }
+}
+
+function Get-EskdFileSha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function New-EskdReleaseFiles {
+    # Для toolkit_release.json (ТЗ-01 Т-39): относительный путь и SHA-256 каждого файла локальной копии.
+    param([Parameter(Mandatory = $true)][string]$SourceRoot)
+    $layout = Get-EskdLayout -SourceRoot $SourceRoot -LocalRoot $SourceRoot
+    foreach ($f in Get-EskdInstanceFiles -Layout $layout) {
+        [ordered]@{ path = $f.Relative; sha256 = (Get-EskdFileSha256 -Path $f.Source); state = [bool]$f.State }
+    }
+}
+
 function Copy-EskdLocalInstance {
     <#
-    Локальная копия: надстройка (файлы $AddinFiles и Icons) и вся папка SWPlus. Основные надписи (02) и библиотека
-    материалов не копируется: SolidWorks и надстройка берут её только из общей папки (решение владельца 14.09.2026). Файлы выпуска заменяются
-    версией источника; файлы настроек макросов ($SwPlusStateFiles), уже существующие локально, не трогаются.
-    Возвращает сводку: Copied, Kept, Skipped.
+    Локальная копия: файлы Get-EskdInstanceFiles. Основные надписи (02) и библиотека материалов не копируются:
+    SolidWorks и надстройка берут их только из общей папки (решение владельца 14.09.2026). Файлы выпуска заменяются
+    версией источника; файлы настроек макросов, уже существующие локально, не трогаются.
+    Возвращает сводку: Copied, Kept, Same.
     #>
     param([Parameter(Mandatory = $true)][pscustomobject]$Layout)
     $copied = New-Object System.Collections.Generic.List[string]
@@ -171,29 +216,57 @@ function Copy-EskdLocalInstance {
     if (-not (Test-Path -LiteralPath $sourceDll)) {
         throw "В папке инструментария нет собранной надстройки ($sourceDll). Опубликуйте выпуск: 01_Настройки_SolidWorks\Publish-EskdToolkit.ps1"
     }
-    $pairs = New-Object System.Collections.Generic.List[object]
-    foreach ($name in $script:AddinFiles) {
-        $src = Join-Path $Layout.SourceAddin $name
-        if (Test-Path -LiteralPath $src) { $pairs.Add(@($src, (Join-Path $Layout.LocalAddin $name), $false)) }
-    }
-    $icons = Join-Path $Layout.SourceAddin "Icons"
-    if (Test-Path -LiteralPath $icons) {
-        foreach ($f in Get-ChildItem -LiteralPath $icons -File) { $pairs.Add(@($f.FullName, (Join-Path $Layout.LocalAddin "Icons\$($f.Name)"), $false)) }
-    }
-    $stateLow = @($script:SwPlusStateFiles | ForEach-Object { $_.ToLowerInvariant() })
-    foreach ($f in Get-ChildItem -LiteralPath $Layout.SourceSwPlus -File -Recurse) {
-        $rel = $f.FullName.Substring($Layout.SourceSwPlus.TrimEnd('\').Length + 1)
-        $pairs.Add(@($f.FullName, (Join-Path $Layout.LocalSwPlus $rel), ($stateLow -contains $rel.ToLowerInvariant())))
-    }
-
-    foreach ($p in $pairs) {
-        $src, $dst, $isState = $p
-        if ($isState -and (Test-Path -LiteralPath $dst)) { $kept.Add($dst); continue }
-        if (Test-EskdFileSame -A $src -B $dst) { $same++; continue }
-        Copy-EskdFile -Source $src -Target $dst
-        $copied.Add($dst)
+    foreach ($f in Get-EskdInstanceFiles -Layout $Layout) {
+        if ($f.State -and (Test-Path -LiteralPath $f.Local)) { $kept.Add($f.Local); continue }
+        if (Test-EskdFileSame -A $f.Source -B $f.Local) { $same++; continue }
+        Copy-EskdFile -Source $f.Source -Target $f.Local
+        $copied.Add($f.Local)
     }
     return [pscustomobject]@{ Copied = @($copied); Kept = @($kept); Same = $same }
+}
+
+function Test-EskdInstall {
+    <#
+    Режим Check (ТЗ-01 Т-13, Т-18): сверка выпуска, установленной версии и локальной копии. Ничего не меняет.
+    Code: 0 — актуально; 10 — нужно обновление (не установлено или установлен другой выпуск); 20 — повреждено (файл
+    локальной копии пропал или изменён); 40 — выпуск не опубликован или файлы источника не совпадают с его хешами.
+    Файлы настроек макросов не сравниваются: их меняет пользователь.
+    #>
+    param([Parameter(Mandatory = $true)][pscustomobject]$Layout, [string]$InstalledVersion = "")
+    $problems = New-Object System.Collections.Generic.List[string]
+    $result = { param($code, $state) [pscustomobject]@{ Code = $code; State = $state; Problems = @($problems) } }
+    if (-not (Test-Path -LiteralPath $Layout.Release)) {
+        $problems.Add("Нет toolkit_release.json: выпуск не опубликован (Publish-EskdToolkit.ps1).")
+        return & $result 40 "Выпуск не опубликован"
+    }
+    $json = [System.IO.File]::ReadAllText($Layout.Release, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+    $files = @($json.files)
+    if (-not $files.Count) {
+        $problems.Add("В toolkit_release.json нет хешей файлов: выпуск опубликован прежней версией публикации — опубликуйте заново.")
+        return & $result 40 "Выпуск без хешей"
+    }
+    foreach ($f in $files) {
+        $src = Join-Path $Layout.SourceRoot $f.path
+        if (-not (Test-Path -LiteralPath $src)) { $problems.Add("В источнике нет файла выпуска: $($f.path)"); continue }
+        if ((Get-EskdFileSha256 -Path $src) -ne $f.sha256) { $problems.Add("Файл источника не совпадает с выпуском: $($f.path)") }
+    }
+    if ($problems.Count) { return & $result 40 "Источник не совпадает с выпуском" }
+    if (-not $InstalledVersion) {
+        $problems.Add("Инструментарий на этом рабочем месте не установлен.")
+        return & $result 10 "Не установлено"
+    }
+    if ($InstalledVersion -ne [string]$json.version) {
+        $problems.Add("Установлен выпуск $InstalledVersion, опубликован $($json.version).")
+        return & $result 10 "Требуется обновление"
+    }
+    foreach ($f in $files) {
+        if ($f.state) { continue }
+        $local = Join-Path $Layout.LocalRoot $f.path
+        if (-not (Test-Path -LiteralPath $local)) { $problems.Add("В локальной копии нет файла: $($f.path)"); continue }
+        if ((Get-EskdFileSha256 -Path $local) -ne $f.sha256) { $problems.Add("Файл локальной копии изменён: $($f.path)") }
+    }
+    if ($problems.Count) { return & $result 20 "Повреждено" }
+    return & $result 0 "Актуально"
 }
 
 # WP-3.4: справочники SWPlus записываются, только если содержимое меняется; фамилии и организации дописываются в конец.

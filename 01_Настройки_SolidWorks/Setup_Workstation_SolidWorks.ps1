@@ -17,6 +17,12 @@
     кладёт в источник публикация (Publish-EskdToolkit.ps1). Права администратора не нужны.
 
     Повторный запуск — обновление: файлы выпуска заменяются, настройки макросов пользователя остаются.
+    Каждый запуск пишет журнал в %LOCALAPPDATA%\ESKD\Logs (хранятся последние 20).
+.PARAMETER Mode
+    Install — установка или обновление (по умолчанию). Check — сверка выпуска, установленной версии и локальной копии
+    по SHA-256 без изменений; код выхода 0 — актуально, 10 — нужно обновление, 20 — повреждено, 40 — выпуск не
+    опубликован или источник не совпадает с хешами (ТЗ-01 Т-18). Uninstall — снять регистрацию надстройки, кнопки SWPlus
+    и вкладку ЕСКД, удалить локальную копию и сведения об установке; фамилия и настройки ЕСКД, шрифты, Drew остаются.
 .PARAMETER Author
     Фамилия и инициалы для штампа. По умолчанию — из ESKD_Settings, иначе полное имя учётной записи Windows.
 .PARAMETER Firm
@@ -34,11 +40,14 @@
 .EXAMPLE
     .\Setup_Workstation_SolidWorks.ps1
 .EXAMPLE
+    .\Setup_Workstation_SolidWorks.ps1 -Mode Check
+.EXAMPLE
     .\Setup_Workstation_SolidWorks.ps1 -Author "Иванов И.И." -Firm "ТОО «Троя»" -CloseMode Graceful -NonInteractive
 #>
 
 [CmdletBinding()]
 param (
+    [ValidateSet("Install", "Check", "Uninstall")][string]$Mode = "Install",
     [string]$Author = "",
     [string]$Firm = "",
     [string]$SwVersion = "",
@@ -193,6 +202,18 @@ if (-not $SourceRoot) {
     exit 2
 }
 if (-not $LocalRoot) { $LocalRoot = Get-EskdDefaultLocalRoot }
+# Журнал запуска: рядом с локальной копией (%LOCALAPPDATA%\ESKD\Logs), последние 20 — администратору для разбора.
+$logDir = Join-Path (Split-Path -Path $LocalRoot -Parent) "Logs"
+$logPath = Join-Path $logDir ("{0}_{1}.log" -f $Mode.ToLowerInvariant(), (Get-Date -Format "yyyyMMdd_HHmmss"))
+try {
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    Start-Transcript -LiteralPath $logPath -Force | Out-Null
+    Get-ChildItem -LiteralPath $logDir -Filter "*.log" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 20 |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+} catch {
+    Write-Host "[ВНИМАНИЕ] Журнал не ведётся: $($_.Exception.Message)" -ForegroundColor Yellow
+    $logPath = ""
+}
 $layout = Get-EskdLayout -SourceRoot $SourceRoot -LocalRoot $LocalRoot
 $release = Get-EskdRelease -Path $layout.Release
 $SwVersion = Get-SolidWorksRegistryVersion -Requested $SwVersion
@@ -205,6 +226,67 @@ Write-Host "Выпуск:               $($release.Version) $($release.Date)" -F
 Write-Host "Локальная копия:      $LocalRoot" -ForegroundColor White
 Write-Host "SolidWorks:           $SwVersion" -ForegroundColor White
 if ($sandbox) { Write-Host "Тестовый корень реестра: $U" -ForegroundColor Magenta }
+if ($logPath) { Write-Host "Журнал:               $logPath" -ForegroundColor White }
+$install = "$U\SolidWorks\ESKD_Install"
+
+if ($Mode -eq "Check") {
+    Write-Step "Проверка установки (ничего не меняется)..."
+    $check = Test-EskdInstall -Layout $layout -InstalledVersion ([string](Get-RegValue $install "ReleaseVersion"))
+    foreach ($line in $check.Problems | Select-Object -First 30) { Write-Info $line }
+    if ($check.Problems.Count -gt 30) { Write-Info "… и ещё $($check.Problems.Count - 30)." }
+    if ($check.Code -eq 0) { Write-Ok "Актуально: выпуск $($release.Version), локальная копия совпадает с выпуском." }
+    else { Write-Warn "$($check.State) (код $($check.Code))." }
+    exit $check.Code
+}
+
+if ($Mode -eq "Uninstall") {
+    Write-Step "Удаление инструментария ЕСКД с рабочего места..."
+    if (-not (Close-SolidWorks -Mode $CloseMode)) {
+        Write-Fail "Удаление прервано: SolidWorks не закрыт. Изменения не вносились."
+        exit 3
+    }
+    try {
+        . (Join-Path $layout.SourceAddin "Register-EskdAddin.ps1")
+        Unregister-EskdAddin -UserRoot $U -MachineRoot "HKLM:\Software" -SystemWide:((Test-IsAdmin) -and -not $sandbox)
+        Write-Ok "Регистрация надстройки ЕСКД снята."
+    } catch {
+        Write-Fail "Регистрация надстройки: $($_.Exception.Message)"
+    }
+    $swRootU = "$U\SolidWorks\$SwVersion"
+    $qatU = "$swRootU\User Interface\CommandManager\QAT\GB0"
+    # Кнопки SWPlus Btn11..Btn19 = 1,33639..1,33647 (шаг [5/9]); базовые кнопки SolidWorks и кнопки пользователя остаются.
+    for ($i = 11; $i -le 19; $i++) {
+        if ([string](Get-RegValue $qatU "Btn$i") -eq ("1,{0}" -f (33628 + $i))) { Remove-ItemProperty -LiteralPath $qatU -Name "Btn$i" -ErrorAction SilentlyContinue }
+    }
+    for ($cid = 33639; $cid -le 33647; $cid++) { Remove-ItemProperty -LiteralPath "$swRootU\Menu Customizations" -Name "$cid" -ErrorAction SilentlyContinue }
+    foreach ($macro in @(Get-ChildItem -LiteralPath "$swRootU\User Defined Macros" -ErrorAction SilentlyContinue)) {
+        $macroPath = [string](Get-RegValue $macro.PSPath "Source Path")
+        if ($macroPath -and $macroPath.StartsWith($LocalRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $macro.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Ok "Кнопки SWPlus убраны."
+    foreach ($ctx in @("PartContext", "AssyContext", "DrwContext")) {
+        foreach ($tab in @(Get-ChildItem -LiteralPath "$swRootU\User Interface\CommandManager\$ctx" -ErrorAction SilentlyContinue)) {
+            if ([string](Get-RegValue $tab.PSPath "RefName") -eq "ЕСКД" -or
+                [string](Get-RegValue $tab.PSPath "ModuleName") -eq "{B64E6875-B101-4D5C-B245-FF8D50772E25}") {
+                Remove-Item -LiteralPath $tab.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    Write-Ok "Вкладка ЕСКД убрана."
+    # Локальная копия удаляется, только если это она: в папке лежит надстройка или SWPlus (защита от ошибочного -LocalRoot).
+    if ((Test-Path -LiteralPath $layout.LocalAddinDll) -or (Test-Path -LiteralPath $layout.LocalSwPlus)) {
+        Remove-Item -LiteralPath $LocalRoot -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $LocalRoot) { Write-Warn "Локальная копия удалена не полностью (файлы заняты): $LocalRoot" }
+        else { Write-Ok "Локальная копия удалена: $LocalRoot" }
+    } elseif (Test-Path -LiteralPath $LocalRoot) {
+        Write-Warn "Папка $LocalRoot не похожа на локальную копию ЕСКД — не удалена."
+    }
+    Remove-Item -LiteralPath $install -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Ok "Сведения об установке удалены. Фамилия и настройки ЕСКД, шрифты, Drew оставлены."
+    exit 0
+}
 
 # Фамилия и организация
 $settingsKey = "$U\SolidWorks\ESKD_Settings"
@@ -250,6 +332,14 @@ Write-Step "[2/9] Копирование макросов SWPlus и надстр
 try {
     $copy = Copy-EskdLocalInstance -Layout $layout
     Write-Ok ("Локальная копия: обновлено файлов {0}, без изменений {1}, настройки пользователя сохранены {2}." -f $copy.Copied.Count, $copy.Same, $copy.Kept.Count)
+    # Сверка копии с хешами выпуска (ТЗ-01 Т-28): файл, испорченный при копировании по сети, не должен остаться незамеченным.
+    $releaseCheck = Test-EskdInstall -Layout $layout -InstalledVersion $release.Version
+    if ($releaseCheck.Code -eq 0) { Write-Ok "Локальная копия совпадает с выпуском $($release.Version) по SHA-256." }
+    elseif ($releaseCheck.Code -eq 40 -and $release.Version -eq "рабочая копия") { Write-Info "Выпуск не опубликован (рабочая копия) — сверка по хешам пропущена." }
+    else {
+        $failures++
+        Write-Fail "$($releaseCheck.State): $(@($releaseCheck.Problems | Select-Object -First 5) -join '; ')"
+    }
 } catch {
     Write-Fail $_.Exception.Message
     exit 2
@@ -811,7 +901,6 @@ if ($DrewRussian) {
 }
 
 # Сведения об установке
-$install = "$U\SolidWorks\ESKD_Install"
 Set-Reg $install "SourceRoot" $SourceRoot
 Set-Reg $install "LocalRoot" $LocalRoot
 Set-Reg $install "ReleaseVersion" $release.Version
@@ -820,6 +909,7 @@ Set-Reg $install "SwVersion" $SwVersion
 Set-Reg $install "Author" $Author
 Set-Reg $install "InstalledAt" (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Set-Reg $install "LastResult" $(if ($failures) { "FAILED" } else { "OK" })
+Set-Reg $install "LastLog" $logPath
 
 Write-Host ""
 if ($failures) {

@@ -92,8 +92,9 @@ try {
     $setupArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $setup, "-Author", "Тестов Т.Т.", "-Firm", "ООО «Проверка»",
               "-CloseMode", "Skip", "-NonInteractive", "-LocalRoot", $local, "-RegistryRoot", $sandbox, "-SwVersion", "SOLIDWORKS 2025", "-Utf8Output")
     $run = {
+        param([string[]]$extra = @())
         $psi = New-Object System.Diagnostics.ProcessStartInfo "powershell.exe"
-        $psi.Arguments = ($setupArgs | ForEach-Object { if ($_ -match '[\s«»"]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ } }) -join " "
+        $psi.Arguments = (@($setupArgs) + $extra | ForEach-Object { if ($_ -match '[\s«»"]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ } }) -join " "
         $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
         $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
         $p = [System.Diagnostics.Process]::Start($psi)
@@ -206,6 +207,64 @@ try {
     Expect "фамилия не задвоена" (@($fam2 | Where-Object { $_ -eq "Тестов Т.Т." }).Count) 1
     $after2 = Snapshot $source
     Expect "источник не изменён повторной установкой" (@($after2.Keys | Where-Object { $before[$_] -ne $after2[$_] }) -join ", ") ""
+    $logs = @(Get-ChildItem -LiteralPath (Join-Path (Split-Path -Path $local -Parent) "Logs") -Filter "install_*.log" -ErrorAction SilentlyContinue)
+    Expect "журнал установки записан" ($logs.Count -ge 1) $true
+    Expect "журнал установки — в ESKD_Install" ([bool](Read-Value "$sandbox\SolidWorks\ESKD_Install" "LastLog")) $true
+    if ($logs.Count) { Expect "в журнале — итог установки" ([System.IO.File]::ReadAllText($logs[0].FullName).Contains("НАСТРОЙКА ЗАВЕРШЕНА")) $true }
+
+    # ТЗ-01 -Mode Check: выпуск без хешей — 40; опубликованный выпуск, установлена рабочая копия — 10; после установки
+    # выпуска — 0; испорченный файл локальной копии — 20; изменённый файл источника — 40. Check ничего не меняет.
+    $code, $out = & $run @("-Mode", "Check")
+    $output += "`n--- проверка без выпуска ---`n" + $out
+    Expect "Check: выпуск не опубликован" $code 40
+    $releaseFile = Join-Path $source "toolkit_release.json"
+    $releaseJson = [ordered]@{ version = "2026.09.19.1200"; date = "19.09.2026 12:00"; commit = "test"; publisher = "test";
+                              files = @(New-EskdReleaseFiles -SourceRoot $source) }
+    [System.IO.File]::WriteAllText($releaseFile, ($releaseJson | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+    Expect "выпуск: хеши файлов надстройки и SWPlus" (@($releaseJson.files | Where-Object { $_.path -like "*ESKD_Material_Sync_v5.dll" -or $_.path -like "*MProp.swp" }).Count) 2
+    Expect "выпуск: файлы настроек помечены" (@($releaseJson.files | Where-Object { $_.state -and $_.path -like "*MProp_Fam.txt" }).Count) 1
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check: установлена рабочая копия, опубликован выпуск — нужно обновление" $code 10
+    $code, $out = & $run
+    $output += "`n--- установка выпуска ---`n" + $out
+    Expect "установка выпуска" $code 0
+    Expect "установка сверила копию с выпуском" ($out.Contains("совпадает с выпуском 2026.09.19.1200")) $true
+    Expect "ESKD_Install: версия выпуска" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "ReleaseVersion") "2026.09.19.1200"
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check: актуально" $code 0
+    $localBefore = Snapshot $local
+    [System.IO.File]::AppendAllText((Join-Path $localSwPlus "MProp\MProp_Fam.txt"), "Коллега К.К.`r`n", $cp1251)
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check: правка файла настроек пользователя — не повреждение" $code 0
+    [System.IO.File]::WriteAllText($sort, "испорчено", $cp1251)
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check: испорченный файл локальной копии" $code 20
+    Expect "Check: назван испорченный файл" ($out.Contains("MProp_Sort.txt")) $true
+    $srcFile = Get-Item -LiteralPath (Join-Path $source "$swplusRel\MProp\MProp_Sort.txt")
+    $srcFile.IsReadOnly = $false
+    $srcBytes = [System.IO.File]::ReadAllBytes($srcFile.FullName)
+    [System.IO.File]::AppendAllText($srcFile.FullName, "x", $cp1251)
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check: источник не совпадает с выпуском" $code 40
+    Expect "Check: локальная копия не тронута" ((Snapshot $local).Keys.Count) $localBefore.Keys.Count
+    [System.IO.File]::WriteAllBytes($srcFile.FullName, $srcBytes)
+
+    # ТЗ-01 -Mode Uninstall: регистрация, кнопки SWPlus, вкладка, локальная копия и ESKD_Install — долой; фамилия,
+    # базовые кнопки SolidWorks и кнопка пользователя в панели быстрого доступа остаются.
+    $code, $out = & $run @("-Mode", "Uninstall")
+    $output += "`n--- удаление ---`n" + $out
+    Expect "Uninstall: код выхода" $code 0
+    Expect "Uninstall: регистрация COM снята" (Test-Path -LiteralPath "$sandbox\Classes\CLSID\{B64E6875-B101-4D5C-B245-FF8D50772E25}") $false
+    Expect "Uninstall: автозагрузка снята" (Test-Path -LiteralPath "$sandbox\SolidWorks\AddInsStartup\{B64E6875-B101-4D5C-B245-FF8D50772E25}") $false
+    Expect "Uninstall: кнопки SWPlus убраны" (@(11..19 | Where-Object { Read-Value $qat "Btn$_" }).Count) 0
+    Expect "Uninstall: базовая кнопка SolidWorks осталась" (Read-Value $qat "Btn0") "1,21781"
+    Expect "Uninstall: кнопка пользователя осталась" (Read-Value $qat "Btn20") "1,40001"
+    Expect "Uninstall: макросы на локальную копию убраны" (Read-Value "$swKey\User Defined Macros\01 - Macro Folder" "Source Path") $null
+    Expect "Uninstall: локальная копия удалена" (Test-Path -LiteralPath $local) $false
+    Expect "Uninstall: ESKD_Install удалён" (Test-Path -LiteralPath "$sandbox\SolidWorks\ESKD_Install") $false
+    Expect "Uninstall: фамилия осталась" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check после удаления: не установлено" $code 10
 } catch {
     $problems.Add("исключение: $($_.Exception.Message) @ $($_.InvocationInfo.ScriptLineNumber)")
 } finally {

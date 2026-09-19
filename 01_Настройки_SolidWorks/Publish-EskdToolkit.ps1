@@ -114,8 +114,10 @@ $release = [ordered]@{
     date      = $date.ToString("dd.MM.yyyy HH:mm")
     commit    = "$commit$(if ($dirty) { '+изменения' })"
     publisher = "$env:USERDOMAIN\$env:USERNAME"
+    # SHA-256 опубликованных файлов локальной копии: по ним установщик проверяет источник и копию (ТЗ-01 Т-39, -Mode Check)
+    files     = @(New-EskdReleaseFiles -SourceRoot $Target)
 }
-[System.IO.File]::WriteAllText($releaseFile, ($release | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText($releaseFile, ($release | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "`n[OK] Опубликован выпуск $($release.version) (коммит $($release.commit)) в $Target" -ForegroundColor Green
 Write-Host "Конструкторам: запустить $Target\01_Настройки_SolidWorks\Настройка_Рабочего_Места_SolidWorks.exe" -ForegroundColor Green
 exit 0
