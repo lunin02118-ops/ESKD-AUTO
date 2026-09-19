@@ -26,6 +26,8 @@ namespace ESKD.MaterialSync.Sw
         private sealed class DocState
         {
             public ModelDoc2 Doc;
+            /// <summary>Пришёл DestroyNotify: события этого документа больше не обрабатываются.</summary>
+            public bool Destroyed;
             public int Type;
             public string LastPath = "";
             public PartDoc Part;
@@ -344,6 +346,7 @@ namespace ESKD.MaterialSync.Sw
         // ------------------------------------------------------------------ события документа
         private int OnDocSave(DocState s, string fileName)
         {
+            if (s.Destroyed) return 0;
             try
             {
                 Settings settings = Settings.Read();
@@ -365,6 +368,7 @@ namespace ESKD.MaterialSync.Sw
 
         private int OnDocSavePost(DocState s, int saveType, string fileName)
         {
+            if (s.Destroyed) return 0;
             try
             {
                 Settings settings = Settings.Read();
@@ -412,7 +416,14 @@ namespace ESKD.MaterialSync.Sw
 
         private int OnDocDestroy(DocState s)
         {
-            // Документ разрушается: к нему не обращаемся, снимаем подписки и отменяем отложенные задачи.
+            // Документ разрушается: к нему не обращаемся и отменяем отложенные задачи. Подписки здесь НЕ снимаются:
+            // отписка (Unadvise) внутри DestroyNotify меняет список подписчиков, который SolidWorks в этот момент
+            // перебирает, — изредка это нарушение доступа в mfc140u и падение SolidWorks при закрытии детали
+            // (M07 в длинном прогоне 19.09.2026, отчёт CXPA: DestroyNotify → Release → DestroyNotify2). Документ
+            // забывается, его события дальше игнорируются; подписки уходят вместе с разрушенным документом —
+            // так же делает зонд автотестов (ESKD_ProbeHost).
+            if (s.Destroyed) return 0;
+            s.Destroyed = true;
             if (_idle.Count > 0)
             {
                 IdleTask[] pending = _idle.ToArray();
@@ -423,8 +434,8 @@ namespace ESKD.MaterialSync.Sw
                     else Log.Warn("Документ закрыт до выполнения отложенной задачи «" + t.Kind + "»: " + t.TargetPath);
                 }
             }
-            Untrack(s);
             _docs.Remove(s);
+            s.Doc = null;
             return 0;
         }
 
@@ -493,7 +504,9 @@ namespace ESKD.MaterialSync.Sw
             }
             catch (Exception ex)
             {
+                // Часть подписок могла встать — снимаем их, иначе они остаются без учёта (аудит 19.09, Я-В8).
                 Log.Error("Track " + SafeTitle(doc), ex);
+                Untrack(s);
                 return null;
             }
         }

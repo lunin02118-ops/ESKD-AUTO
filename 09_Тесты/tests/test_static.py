@@ -866,6 +866,19 @@ class StaticRepository(StaticTestCase):
         spec.loader.exec_module(export_vba)
         self.assertEqual([], export_vba.check())
 
+    def test_T0_destroy_notify_does_not_unsubscribe(self):
+        """T0 (19.09.2026, M07 в длинном прогоне): обработчик DestroyNotify надстройки не снимает подписки — отписка внутри
+        события меняет список подписчиков, который перебирает SolidWorks, и изредка роняет его при закрытии детали."""
+        hub = (ADDIN / "Sw" / "EventHub.cs").read_text(encoding="utf-8-sig")
+        body = re.search(r"private int OnDocDestroy\(DocState s\)\s*\{(.*?)\n        \}", hub, re.S).group(1)
+        code = "\n".join(line for line in body.splitlines() if not line.strip().startswith("//"))
+        self.assertNotIn("Untrack", code)
+        self.assertNotIn("-=", code)
+        self.assertIn("s.Destroyed = true", code)
+        for handler in ("OnDocSave(DocState s, string fileName)", "OnDocSavePost(DocState s, int saveType, string fileName)"):
+            start = hub.index(handler)
+            self.assertIn("if (s.Destroyed) return 0;", hub[start:start + 200], handler)
+
     def test_T0_swplus_macros_rebuild_from_original(self):
         """T0 (аудит 19.09, М-К2): исходный SWPlus из git + все правки ЕСКД по порядку (tools/swplus_apply_all.py) дают
         ровно макросы репозитория — правки воспроизводимы на новом выпуске SWPlus одной командой, без редактора VBA."""
