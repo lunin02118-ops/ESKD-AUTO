@@ -253,6 +253,11 @@ namespace ESKD.MaterialSync.Sw
             if (task.Kind == "copy")
             {
                 FixCopy(task.TargetPath, task.PreviousPath);
+                return;
+            }
+            if (task.Kind == "drawingformat")
+            {
+                DrawingFormatService.Apply(_app, (DrawingDoc)task.Doc);
             }
         }
 
@@ -358,7 +363,14 @@ namespace ESKD.MaterialSync.Sw
                 {
                     s.LastPath = fileName ?? s.LastPath;
                 }
-                if (!settings.ServiceEnabled || !settings.SyncOnSave || s.Type == (int)swDocumentTypes_e.swDocDRAWING) return 0;
+                if (!settings.ServiceEnabled || !settings.SyncOnSave) return 0;
+                if (s.Type == (int)swDocumentTypes_e.swDocDRAWING)
+                {
+                    // З-1: формат листов — в «Формат» модели; в простое, после того как SolidWorks закончил запись чертежа
+                    if (saveType == SaveTypeSave || saveType == SaveTypeSaveAs)
+                        _idle.Enqueue(new IdleTask { Doc = s.Doc, Kind = "drawingformat", TargetPath = fileName });
+                    return 0;
+                }
                 if (saveType == SaveTypeSaveAs && settings.ResaveAfterSaveAs && !_resaving)
                 {
                     _idle.Enqueue(new IdleTask { Doc = s.Doc, Kind = "saveas", TargetPath = fileName, PreviousPath = previous });
