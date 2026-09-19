@@ -88,7 +88,8 @@ namespace ESKD.MaterialSync.Sw
                     User = Settings.Read().Author ?? Environment.UserName,
                     Time = DateTime.Now
                 };
-                List<Candidate> candidates = Candidates(app, doc, productFolder, modelsFolder, log);
+                List<Candidate> candidates = Candidates(app, doc, productFolder, modelsFolder, log,
+                    interactive ? (Func<string, string, bool>)AskDetachNode : null);
                 if (candidates.Count == 0)
                 {
                     Fail(app, interactive, log.Skipped.Count > 0
@@ -139,7 +140,7 @@ namespace ESKD.MaterialSync.Sw
         // ------------------------------------------------------------------ что выделено (Т-19, Т-20)
         /// <summary>Выделенные компоненты, которые можно сделать своими; остальные попадают в пропуски с причиной.</summary>
         public static List<Candidate> Candidates(ISldWorks app, ModelDoc2 doc, string productFolder,
-            string modelsFolder, IndependentLog log)
+            string modelsFolder, IndependentLog log, Func<string, string, bool> askDetachNode = null)
         {
             List<Candidate> candidates = new List<Candidate>();
             SelectionMgr selection = doc.SelectionManager as SelectionMgr;
@@ -151,6 +152,20 @@ namespace ESKD.MaterialSync.Sw
             {
                 Component2 comp = selection.GetSelectedObjectsComponent4(i, -1) as Component2;
                 if (comp == null) continue;
+                // Т-21: деталь внутри чужого узла (эталон базы, узел другого изделия) — MakeIndependent переписал бы
+                // ссылку в файле этого узла. Сначала своим делается узел: с согласия конструктора — вместо детали.
+                Component2 node = ForeignNode(comp, productFolder);
+                if (node != null)
+                {
+                    string nodeTitle = Path.GetFileName(node.GetPathName() ?? "") ?? "";
+                    string partTitle = Path.GetFileName(comp.GetPathName() ?? "") ?? "";
+                    if (askDetachNode == null || !askDetachNode(partTitle, nodeTitle))
+                    {
+                        log.Skip(partTitle, "входит в чужой узел «" + nodeTitle + "»: сначала сделайте независимым узел");
+                        continue;
+                    }
+                    comp = node;
+                }
                 string path = comp.GetPathName() ?? "";
                 string title = path.Length > 0 ? Path.GetFileName(path) : (comp.Name2 ?? "компонент");
                 if (path.Length == 0 || !File.Exists(path))
@@ -184,6 +199,32 @@ namespace ESKD.MaterialSync.Sw
                 candidates.Add(candidate);
             }
             return candidates;
+        }
+
+        /// <summary>Верхний чужой узел над компонентом: сборка вне папки изделия; нет — null.</summary>
+        private static Component2 ForeignNode(Component2 comp, string productFolder)
+        {
+            Component2 foreign = null;
+            try
+            {
+                for (Component2 parent = comp.GetParent() as Component2; parent != null; parent = parent.GetParent() as Component2)
+                {
+                    string path = parent.GetPathName() ?? "";
+                    if (path.Length > 0 && !LzkNaming.IsInside(path, productFolder)) foreign = parent;
+                }
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Сделать независимым: родительский узел", ex);
+            }
+            return foreign;
+        }
+
+        private static bool AskDetachNode(string part, string node)
+        {
+            return MessageBox.Show("Деталь «" + part + "» входит в чужой узел «" + node + "» (эталон или узел другого изделия).\n\n" +
+                "Сделать независимым весь узел? Тогда он и его детали станут своими для этого изделия, а эталон не изменится.\n\n" +
+                "«Нет» — деталь пропускается.", "Сделать независимым", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes;
         }
 
         /// <summary>

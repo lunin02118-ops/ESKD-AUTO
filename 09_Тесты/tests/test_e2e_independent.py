@@ -140,6 +140,21 @@ class Independent(SwTestCase):
         self.assertTrue(self._make().startswith("error|"), "вызов отказал")
         self.assertNoPropertyWrites()
 
+    def test_N05_part_inside_etalon_node_is_not_detached_alone(self):
+        """N05 (Т-21): деталь внутри эталонного узла базы отдельно не отвязывается — MakeIndependent переписал бы ссылку
+        в файле эталона; кнопка называет узел, который нужно сделать своим (в окне — предлагает это сделать)."""
+        node_name = "ПРТИ.468211.110 СБ Узел опоры.sldasm"
+        product, asm, node = self._product(node_name)
+        before = sha256(node)
+        doc = self.s.open(asm)
+        self.s.activate(doc)
+        self._select(doc, product / "01_3D" / "ПРТИ.468211.101 Пластина опорная.sldprt")
+        status = self._make()
+        self.assertTrue(status.startswith("error|"), f"отказ: {status}")
+        self.assertIn("чужой узел «" + node_name + "»", status, "узел назван")
+        self.s.close_all()
+        self.assertEqual(before, sha256(node), "эталонный узел не изменён")
+
 
 if __name__ == "__main__":
     unittest.main()
