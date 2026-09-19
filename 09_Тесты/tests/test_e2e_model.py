@@ -399,5 +399,43 @@ class ModelNames(SwTestCase):
         self.assertNotIn("SW-Material", V(disk, "Материал_Таблица", "00") or "", "таблица — тоже запись библиотеки")
 
 
+
+class Buttons(SwTestCase):
+    """Кнопка «Синхронизировать» и доступность кнопок вкладки по типу документа."""
+
+    def test_M21_sync_button_fills_requisites_once(self):
+        """M21: «Синхронизировать» на детали без реквизитов пишет их в модель; второе нажатие ничего не меняет."""
+        path, doc = self.open_copy(A02)
+        self.s.activate(doc)
+        changes = int(com.call(self.s.eskd(), "SyncActiveDocumentSilent"))
+        self.assertGreater(changes, 0, "свойства записаны")
+        self.assertEqual("Стойка", str(doc.Extension.CustomPropertyManager("").Get("Наименование") or ""),
+                         "наименование из имени файла")
+        mark = self.mark("M21-second-sync")
+        self.assertEqual(0, int(com.call(self.s.eskd(), "SyncActiveDocumentSilent")), "второе нажатие — без изменений")
+        self.assertNoPropertyWrites(mark, "повторная синхронизация изменила свойства")
+
+    def test_M22_buttons_available_by_document_type(self):
+        """M22: доступность кнопок вкладки на детали, сборке и чертеже: «Готово к производству»
+        и «Закрыть заказ» доступны всегда — они сами объясняют, что открыть; прочие — по типу документа."""
+        commands = ("EnableBchCommand", "EnableLzkCommand", "EnableCheckCommand", "EnableExportCommand",
+                    "EnableIndependentCommand", "EnableRevisionCommand", "EnableEtalonCommand",
+                    "EnableReadyCommand", "EnableCloseCommand")
+        expected = {
+            "деталь": (1, 0, 0, 1, 0, 0, 0, 1, 1),
+            "сборка": (0, 1, 1, 1, 1, 0, 0, 1, 1),
+            "чертёж": (0, 0, 0, 0, 0, 0, 0, 1, 1),
+        }
+        self.copy_fixtures(A01, A02, A03, A04, A06, A07, A08)
+        documents = {"деталь": A02, "сборка": A08, "чертёж": A01.replace(".sldprt", ".slddrw")}
+        for kind, name in documents.items():
+            with self.subTest(kind):
+                doc = self.s.open(self.copy_fixture(name))
+                self.s.activate(doc)
+                actual = tuple(int(com.call(self.s.eskd(), c)) for c in commands)
+                self.assertEqual(dict(zip(commands, expected[kind])), dict(zip(commands, actual)), kind)
+                self.s.close_all()
+
+
 if __name__ == "__main__":
     unittest.main()

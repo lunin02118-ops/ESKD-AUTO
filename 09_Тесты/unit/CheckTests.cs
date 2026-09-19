@@ -9,6 +9,16 @@ namespace ESKD.Tests
     {
         private const string Order = @"\\Synology_TR\Конструкторский отдел\_Заявки\2026-014 Школа";
 
+        public static void Test_Workbook_checksum_is_compared_by_prefix()
+        {
+            string full = "9159dab59d43ab7ff8a7394272b309ad55ada44e20c2c1d55c4b9d1fe9bb2856";
+            // Шапка книги ЛЗК хранит 16 знаков суммы: полная сумма файла с ними совпадает — книга свежая.
+            Assert.IsTrue(CheckRules.WorkbookMatchesAssembly("SHA-256 9159dab59d43ab7f", full), "та же сборка");
+            Assert.IsTrue(CheckRules.WorkbookMatchesAssembly("SHA-256 " + full, full), "полная сумма");
+            Assert.IsFalse(CheckRules.WorkbookMatchesAssembly("SHA-256 0000dab59d43ab7f", full), "другая сборка");
+            Assert.IsTrue(CheckRules.WorkbookMatchesAssembly("", full), "в книге суммы нет — не с чем сравнивать");
+        }
+
         public static void Test_Locate_product_inside_order()
         {
             ProductLocation location = ProductLocator.Locate(Order + @"\02_Металл\И01_ТС-52_Стол\01_3D\ТС-52.00.00.000 Стол.sldasm");

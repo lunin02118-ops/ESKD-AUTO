@@ -408,8 +408,7 @@ namespace ESKD.MaterialSync.Sw
                     }
                     if (!book.TryResolveName("Шапка_КонтрольнаяСумма", out sheet, out cell)) return;
                     string written = (book.Sheet(sheet).Get(cell) ?? "").Trim();
-                    string current = "SHA-256 " + Checksum(assemblyPath);
-                    if (written.Length > 0 && !string.Equals(written, current, StringComparison.OrdinalIgnoreCase))
+                    if (!CheckRules.WorkbookMatchesAssembly(written, Checksum(assemblyPath)))
                         report.Add(CheckRules.Workbook, CheckRules.LevelOf(CheckRules.Workbook), name,
                             "ведомость сделана по другой версии сборки: сформируйте заново");
                 }

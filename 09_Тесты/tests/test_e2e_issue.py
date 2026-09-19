@@ -6,6 +6,7 @@
 кнопка читает их как файлы.
 """
 import shutil
+import time
 import unittest
 from pathlib import Path
 
@@ -114,6 +115,71 @@ class Issue(SwTestCase):
         text = Path(status.split("|")[3]).read_text(encoding="utf-8-sig")
         self.assertIn("документ выдан в производство, оформите новую ревизию", text,
                       "отметка в папке изделия защищает выданный документ")
+
+    def _wait(self, start, status_method, running="running", timeout=900):
+        com.call(self.s.eskd(), start)
+        deadline = time.time() + timeout
+        status = running
+        while time.time() < deadline:
+            status = str(com.call(self.s.eskd(), status_method))
+            if status and status != running:
+                break
+            time.sleep(1)
+        return status
+
+    def test_G05_checked_product_becomes_ready(self):
+        """G05: изделие с чертежами, выгрузкой и книгой ЛЗК проходит проверку «ГОТОВО» — кнопка делает PDF листов
+        участков через Excel, пишет отметку «готово» и отчёт _Выдано в папке изделия."""
+        order, product, asm = self._order()
+        # Изделие доводится до готового кнопками конструктора: «Синхронизировать» на каждой модели,
+        # «Деталь БЧ» — у деталей без чертежа; модели сохраняются, как сохранил бы их конструктор.
+        for model in sorted((product / "01_3D").iterdir()):
+            # покупные (без обозначения) приходят готовыми — их кнопки не трогают
+            if model.suffix.lower() not in (".sldprt", ".sldasm") or model.name == ASM or not model.name.startswith("ПРТИ"):
+                continue
+            doc = self.s.open(model)
+            self.s.activate(doc)
+            self.assertGreaterEqual(int(com.call(self.s.eskd(), "SyncActiveDocumentSilent")), 0, model.name)
+            # кнопка «Деталь БЧ» вдавлена (3) у уже оформленной — повторное нажатие сняло бы оформление
+            bch = int(com.call(self.s.eskd(), "EnableBchCommand"))
+            if model.suffix.lower() == ".sldprt" and not model.with_suffix(".SLDDRW").exists() and bch != 3:
+                self.assertEqual(1, int(com.call(self.s.eskd(), "ToggleDrawinglessSilent")), model.name)
+            self.s.save(doc)
+            self.s.close(doc)
+        norms = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / "Нормативы_производства.xlsx"
+        (order / norms.name).write_bytes(norms.read_bytes())
+        doc = self.s.open(asm)
+        self.s.activate(doc)
+        self.assertTrue(self._wait("ExportProductSilent", "ExportStatus", running="").startswith("ok|"), "выгрузка")
+        lzk = self._wait("BuildLzkSilent", "LzkStatus")
+        self.assertTrue(lzk.startswith("ok|"), lzk)
+        check = self._wait("CheckProductSilent", "CheckStatus", running="")
+        report = product / "_Проверка.txt"
+        self.assertTrue(check.startswith("ok|ГОТОВО|"),
+                        check + "\n" + (report.read_text(encoding="utf-8-sig") if report.exists() else ""))
+
+        com.call(self.s.eskd(), "ReadyForProductionSilent")
+        status = str(com.call(self.s.eskd(), "ReadyStatus"))
+        self.assertTrue(status.startswith("ok|"), status)
+        _, issued, sheets, folder = status.split("|")
+        self.assertEqual(str(product).lower(), folder.lower(), "папка изделия в итоге")
+        pdfs = sorted((product / "02_PDF").glob(f"ЛЗК_{CIPHER}_*.pdf"))
+        self.assertEqual(int(sheets), len(pdfs), f"PDF на каждый лист участка и «Расход»: {[p.name for p in pdfs]}")
+        self.assertIn(f"ЛЗК_{CIPHER}_Расход.pdf", [p.name for p in pdfs], "«Расход» в цех")
+        for pdf in pdfs:
+            self.assertEqual(b"%PDF", pdf.read_bytes()[:4], f"{pdf.name} — PDF от Excel")
+        issued = Path(issued)
+        self.assertEqual(str(product).lower(), str(issued.parent).lower(), "отчёт _Выдано в папке изделия")
+        self.assertTrue(issued.name.startswith("_Выдано_"), issued.name)
+        text = issued.read_text(encoding="utf-8-sig")
+        for pdf in pdfs:
+            self.assertIn(pdf.name, text, f"{pdf.name} в отчёте")
+        self.assertIn(f"ЛЗК_{CIPHER}.xlsx", text, "книга в отчёте")
+        self.assertIn(ASM.lower(), text.lower(), "документы изделия перечислены — их защищает Т-30")
+        book = openpyxl.load_workbook(product / DOCS / f"ЛЗК_{CIPHER}.xlsx")
+        ws, cell = next(iter(book.defined_names["Выдано"].destinations))
+        self.assertTrue(str(book[ws][cell.replace("$", "")].value or "").strip(), "отметка «Выдано» в паспорте книги")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     # ------------------------------------------------------------------ Y: закрытие заказа
     def test_Y01_close_packs_order_and_moves_it_to_archive(self):

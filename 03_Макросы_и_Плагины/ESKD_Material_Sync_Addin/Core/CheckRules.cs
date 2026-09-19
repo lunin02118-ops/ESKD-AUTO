@@ -94,6 +94,18 @@ namespace ESKD.MaterialSync.Core
             return rule == References || rule == Rebuild || rule == Attributes ? CheckLevel.Defect : CheckLevel.Issue;
         }
 
+        /// <summary>
+        /// Книга ЛЗК сделана по этой сборке: в шапке книги — «SHA-256 » и начало суммы сборки (16 знаков — читаемо в шапке),
+        /// а проверка считает полную сумму файла; совпадение начала и есть совпадение версии.
+        /// </summary>
+        public static bool WorkbookMatchesAssembly(string written, string assemblyHash)
+        {
+            string prefix = (written ?? "").Trim();
+            if (prefix.StartsWith("SHA-256", StringComparison.OrdinalIgnoreCase)) prefix = prefix.Substring(7).Trim();
+            if (prefix.Length == 0 || string.IsNullOrEmpty(assemblyHash)) return true;
+            return assemblyHash.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
+        }
+
         public static string LevelName(CheckLevel level)
         {
             return level == CheckLevel.Defect ? "БРАК" : level == CheckLevel.Issue ? "ЗАМЕЧАНИЕ" : "ГОТОВО";
