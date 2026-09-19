@@ -59,6 +59,7 @@ param (
     [switch]$SkipDrew,
     [switch]$SkipSwTools,
     [switch]$SkipProfileReset,
+    [switch]$AllowUnpublished,
     [switch]$SwInternetBlock,
     [switch]$DrewRussian,
     [switch]$Utf8Output,
@@ -131,15 +132,33 @@ function Close-SolidWorks {
         try {
             $swApp = [Runtime.InteropServices.Marshal]::GetActiveObject('SldWorks.Application')
             if ($swApp) {
+                # Несохранённая работа не закрывается: ExitApp её не спасёт, а через таймаут процесс снимается силой.
+                $unsaved = @()
+                $doc = $swApp.GetFirstDocument()
+                while ($doc) {
+                    if ($doc.GetSaveFlag()) { $unsaved += [IO.Path]::GetFileName([string]$doc.GetPathName()) }
+                    $doc = $doc.GetNext()
+                }
+                if ($unsaved.Count -gt 0) {
+                    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($swApp)
+                    Write-Fail ("В SolidWorks есть несохранённые документы: " + (($unsaved | ForEach-Object { if ($_) { $_ } else { "(новый, без имени)" } }) -join ", ") +
+                                ". Сохраните или закройте их и повторите установку.")
+                    return $false
+                }
                 [void]$swApp.ExitApp()
                 [void][Runtime.InteropServices.Marshal]::ReleaseComObject($swApp)
-                Write-Info "SolidWorks закрывается (до 30 секунд)..."
+                Write-Info "SolidWorks закрывается (до 2 минут: большая сборка закрывается долго)..."
             }
         } catch {
             Write-Warn "SolidWorks не отвечает по COM: $($_.Exception.Message)"
         }
-        $deadline = (Get-Date).AddSeconds(30)
+        $deadline = (Get-Date).AddSeconds(120)
         while ((Get-Date) -lt $deadline -and (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue)) { Start-Sleep -Milliseconds 500 }
+        if (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
+            # Не закрылся сам — силой не снимаем: он может дописывать файл на NAS. Снятие — только -CloseMode Force.
+            Write-Fail "SolidWorks не закрылся за 2 минуты. Закройте его вручную и повторите установку."
+            return $false
+        }
     }
     if (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
         Stop-Process -Name "SLDWORKS" -Force -ErrorAction SilentlyContinue
@@ -238,6 +257,15 @@ if ($Mode -eq "Check") {
     if ($check.Code -eq 0) { Write-Ok "Актуально: выпуск $($release.Version), локальная копия совпадает с выпуском." }
     else { Write-Warn "$($check.State) (код $($check.Code))." }
     exit $check.Code
+}
+
+# Без toolkit_release.json ставится только клон репозитория (разработчик) или тестовый корень реестра. В общей папке его
+# нет в одном случае — идёт публикация (Publish снимает выпуск на время копирования): ставить сейчас — получить
+# половину новых файлов и половину старых без сверки по хешам.
+if ($Mode -eq "Install" -and $release.Version -eq "рабочая копия" -and -not $sandbox -and -not $AllowUnpublished -and
+    -not (Test-Path -LiteralPath (Join-Path $SourceRoot ".git"))) {
+    Write-Fail "Выпуск инструментария не опубликован или публикуется прямо сейчас (нет toolkit_release.json в $SourceRoot). Повторите через несколько минут; не проходит — сообщите администратору."
+    exit 2
 }
 
 if ($Mode -eq "Uninstall") {
@@ -385,6 +413,11 @@ if (Test-Path -LiteralPath $layout.RegProfile) {
     $regText = [System.IO.File]::ReadAllText($layout.RegProfile, [System.Text.Encoding]::Unicode)
     $adapted = Convert-EskdRegProfile -Text $regText -SourceRoot $SourceRoot -LocalRoot $LocalRoot -SwVersion $SwVersion `
         -KeepMachineSections:$machine -RegistryRoot $U
+    $foreign = @(Find-EskdForeignPaths -Text $adapted -Allowed @($SourceRoot, $LocalRoot))
+    if ($foreign.Count) {
+        $failures++
+        Write-Fail "В профиле реестра пути чужого компьютера: $($foreign -join '; '). Профиль импортирован, но эти пути на этом ПК не работают — переэкспортируйте .reg без них."
+    }
     $tempReg = Join-Path ([System.IO.Path]::GetTempPath()) ("eskd_profile_" + [guid]::NewGuid().ToString("N") + ".reg")
     [System.IO.File]::WriteAllText($tempReg, $adapted, [System.Text.Encoding]::Unicode)
     $importOutput = @(& reg.exe import "$tempReg" 2>&1)
@@ -470,7 +503,12 @@ Write-Ok "Производительность: аппаратный конве�
 # Аппаратное ускорение, конвейер и RealView для видеокарт этого ПК
 try {
     $nvWorkarounds = 0x32408 # 205832: RealView + Performance Pipeline
-    foreach ($gpu in @(Get-CimInstance Win32_VideoController -ErrorAction Stop | ForEach-Object { $_.Name } | Where-Object { $_ })) {
+    # Маска NVIDIA записывается только под именем карты NVIDIA: встроенной Intel/AMD без сертифицированного драйвера
+    # RealView даёт артефакты (аудит 19.09, У-В6).
+    $nvidia = @(Get-CimInstance Win32_VideoController -ErrorAction Stop |
+        Where-Object { $_.Name -and ("$($_.AdapterCompatibility) $($_.Name)" -match 'NVIDIA|GeForce|Quadro') } | ForEach-Object { $_.Name })
+    if (-not $nvidia.Count) { Write-Info "Видеокарты NVIDIA нет — маска RealView под именами карт не записывается." }
+    foreach ($gpu in $nvidia) {
         Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\$gpu" "Workarounds" $nvWorkarounds "DWord"
         Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\$gpu" "Workarounds" $nvWorkarounds "DWord"
     }
@@ -737,8 +775,14 @@ if ($sandbox -or $SkipDrew) {
                 Write-Info "Установка Drew (Gov-издание, лицензия встроена): $($drewExe[0].Name)."
                 $startedAt = Get-Date
                 $setup = $null
+                # Установщик просит права администратора, а у повышенного процесса нет подключённых сетевых дисков: с буквы
+                # диска NAS он тихо не стартует. Как у SWTools — запуск из локальной копии (аудит 19.09, У-К4).
+                $drewTemp = Join-Path $env:TEMP ("ESKD_Drew_" + [guid]::NewGuid().ToString("N"))
                 try {
-                    $setup = Start-Process -FilePath $drewExe[0].FullName -WorkingDirectory $drewDir -PassThru -ErrorAction Stop
+                    New-Item -ItemType Directory -Path $drewTemp -Force | Out-Null
+                    $drewLocalExe = Join-Path $drewTemp $drewExe[0].Name
+                    Copy-Item -LiteralPath $drewExe[0].FullName -Destination $drewLocalExe -Force -ErrorAction Stop
+                    $setup = Start-Process -FilePath $drewLocalExe -WorkingDirectory $drewTemp -PassThru -ErrorAction Stop
                 } catch {
                     # Отказ в правах администратора, блокировка файла с сетевого ресурса SmartScreen и т. п.: ждать нечего.
                     $failures++
@@ -766,6 +810,8 @@ if ($sandbox -or $SkipDrew) {
                     elseif ($setup.HasExited) { $failures++; Write-Fail "Установщик Drew завершился (код $($setup.ExitCode)), а файлы Drew не обновлены - запустите $($drewExe[0].Name) вручную." }
                     else { $failures++; Write-Fail "Drew не установился за 6 минут - проверьте окно установщика." }
                 }
+                # Копию убираем, только когда установщик закончил: работающему процессу она ещё нужна.
+                if (-not $setup -or $setup.HasExited) { Remove-Item -LiteralPath $drewTemp -Recurse -Force -ErrorAction SilentlyContinue }
             }
         }
     }
@@ -890,7 +936,18 @@ if ($sandbox -or $SkipSwTools) {
 # 8. Отучение SolidWorks от сети (опция, галочка в окне)
 Write-Step "[8/9] Отучение SolidWorks от сети..."
 if ($SwInternetBlock) {
-    $sb = Join-Path $PSScriptRoot "SwInternetBlock\Set-SwInternetBlock.ps1"
+    $sbDir = Join-Path $PSScriptRoot "SwInternetBlock"
+    $sb = Join-Path $sbDir "Set-SwInternetBlock.ps1"
+    # Сколько правил должно быть: записи манифеста, чьи программы есть на этом ПК (SLDWORKS.exe наружу не блокируется —
+    # иначе ломается «Поделиться настройками» Drew). Прежний порог 300 был недостижим (аудит 19.09, У-В2).
+    $sbExpected = 0
+    try {
+        foreach ($e in @(Get-Content -LiteralPath (Join-Path $sbDir "SWInternetBlock.manifest.json") -Raw -Encoding UTF8 | ConvertFrom-Json)) {
+            if (-not (Test-Path -LiteralPath $e.path)) { continue }
+            if (($e.path -match 'SLDWORKS\.exe$') -and ($e.direction -ceq 'Outbound')) { continue }
+            $sbExpected++
+        }
+    } catch { Write-Warn "Манифест SwInternetBlock не прочитан: $($_.Exception.Message)" }
     if (-not (Test-Path -LiteralPath $sb)) {
         Write-Warn "Пакет SwInternetBlock не найден: $sb"
     } elseif ($machine) {
@@ -902,7 +959,14 @@ if ($SwInternetBlock) {
         Write-Ok "Правил Block SW Internet: $cnt; домены SW заглушены в hosts. Drew и его облако настроек не затронуты."
     } else {
         Write-Info "Нужны права администратора - откроется запрос UAC (два раза не потребуется)..."
-        $sbCmd = "& '{0}' -Mode apply; & '{0}' -Mode hosts-apply" -f $sb
+        # У повышенного процесса нет подключённых сетевых дисков: пакет запускается из локальной копии (аудит 19.09, У-К4).
+        $sbTemp = Join-Path $env:TEMP ("ESKD_SwInternetBlock_" + [guid]::NewGuid().ToString("N"))
+        $sbRun = $sb
+        try {
+            Copy-Item -LiteralPath $sbDir -Destination $sbTemp -Recurse -Force -ErrorAction Stop
+            $sbRun = Join-Path $sbTemp "Set-SwInternetBlock.ps1"
+        } catch { Write-Warn "Копия SwInternetBlock в %TEMP% не сделана ($($_.Exception.Message)) - запуск из $sbDir." }
+        $sbCmd = "& '{0}' -Mode apply; & '{0}' -Mode hosts-apply" -f $sbRun.Replace("'", "''")
         # Ожидание ограничено, чтобы окно установки не висело бесконечно. Первое применение создаёт ~300 правил
         # брандмауэра и на новом ПК идёт 2-3 минуты, поэтому запас 10 минут. Процесс администратора из обычного
         # процесса не остановить - по истечении срока он продолжает работу сам, установка идёт дальше.
@@ -912,11 +976,12 @@ if ($SwInternetBlock) {
             $uacState = "done"
             if ($uacProc -and -not $uacProc.WaitForExit(600000)) { $uacState = "timeout" }
         } catch { Write-Warn "UAC отклонён - отучение от сети пропущено." }
+        if ($uacState -ne "timeout" -and $sbRun -ne $sb) { Remove-Item -LiteralPath $sbTemp -Recurse -Force -ErrorAction SilentlyContinue }
         $cnt = @(Get-NetFirewallRule -DisplayName 'Block SW Internet*' -ErrorAction SilentlyContinue).Count
         if ($uacState -eq "timeout") {
             Write-Warn "Отучение от сети не завершилось за 10 минут и продолжается в отдельном окне; правил пока: $cnt. Проверьте позже."
-        } elseif ($cnt -ge 300) { Write-Ok "Правил Block SW Internet: $cnt (применено)." }
-        elseif ($uacState -eq "done") { Write-Warn "Правил Block SW Internet: $cnt - отучение от сети завершилось не полностью." }
+        } elseif ($sbExpected -gt 0 -and $cnt -ge $sbExpected) { Write-Ok "Правил Block SW Internet: $cnt из $sbExpected (применено)." }
+        elseif ($uacState -eq "done") { Write-Warn "Правил Block SW Internet: $cnt из $sbExpected - отучение от сети завершилось не полностью." }
         else { Write-Warn "Правил Block SW Internet: $cnt - похоже, UAC не подтверждён." }
     }
 } else {

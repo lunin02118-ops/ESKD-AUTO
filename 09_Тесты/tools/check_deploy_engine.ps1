@@ -83,6 +83,8 @@ try {
     Expect "профиль: разделы вне тестового корня" ([regex]::Matches($adapted, "(?m)^\[-?HKEY_CURRENT_USER\\Software\\(?!$registryName\\)").Count) 0
     Expect "профиль: следы d:\Work" ([regex]::Matches($adapted, '(?i)[a-z]:\\\\+work\\\\+').Count) 0
     Expect "профиль: Toolbox" ([regex]::Matches($adapted, '"Toolbox Data Location"').Count) 0
+    Expect "профиль: чужих путей нет" (@(Find-EskdForeignPaths -Text $adapted -Allowed @($source, $local)) -join "; ") ""
+    Expect "профиль: чужой путь найден" (@(Find-EskdForeignPaths -Text ($adapted + "`r`n`"X`"=`"q:\\Work\\_dev\\x.sldprt`"") -Allowed @($source, $local)) -join "; ") "q:\Work\_dev"
     Expect "класс: основные надписи" (Resolve-EskdProfilePath -Relative "02_Шаблоны_и_Форматки\Основные надписи" -SourceRoot "S" -LocalRoot "L") "S\02_Шаблоны_и_Форматки\Основные надписи"
     Expect "класс: макрос" (Resolve-EskdProfilePath -Relative "$swplusRel\MProp\MProp.swp" -SourceRoot "S" -LocalRoot "L") "L\$swplusRel\MProp\MProp.swp"
     Expect "класс: надстройка" (Resolve-EskdProfilePath -Relative "$addinRel\x.dll" -SourceRoot "S" -LocalRoot "L") "L\$addinRel\x.dll"
