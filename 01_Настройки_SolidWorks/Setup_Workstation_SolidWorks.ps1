@@ -344,6 +344,21 @@ if ($designLibrary) {
 } else {
     Write-Info "Папка «_ крепеж и фурнитура» рядом с инструментарием не найдена — библиотека проектирования не меняется."
 }
+# Папки поиска ссылочных документов (ТЗ-02 Т-57): от места запуска — стандартные изделия (02_БАЗА), крепёж и фурнитура,
+# профили сварных деталей инструментария; поиск по папкам включён. Режим совместной работы (Т-56) — в профиле, раздел Collab.
+$referenceFolders = @(
+    (Join-Path $sourceParent "_стандартные изделия"),
+    (Join-Path $sourceParent "_Библиотека проектирования\_стандартные изделия"),
+    $designLibrary,
+    (Join-Path $SourceRoot "04_Библиотеки_Материалов_и_Профилей\Профили сварных деталей")
+) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
+if ($referenceFolders) {
+    foreach ($folderKey in @("$swRoot\ExtReferences", "$swRoot\ExtFolder")) {
+        Set-Reg $folderKey "Document Folders" (@($referenceFolders) -join ";")
+        Set-Reg $folderKey "Use Search Rules" 1 "DWord"
+    }
+    Write-Ok "Папки поиска ссылок: $(@($referenceFolders) -join '; ')"
+}
 Set-Reg "$swRoot\Performance" "Use Performance Pipeline 2020" 0 "DWord"
 
 # RealView для видеокарт этого ПК

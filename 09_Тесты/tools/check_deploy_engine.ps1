@@ -119,6 +119,11 @@ try {
     Expect "Toolbox не подставлен из профиля" (Read-Value "$swKey\General" "Toolbox Data Location") $null
     # Библиотека проектирования: папка крепежа рядом с инструментарием (как на NAS) — в «Расположение файлов»
     Expect "библиотека проектирования — крепёж и фурнитура" (Read-Value $ext "Content Manager Folders") $fasteners
+    # Т-57: папки поиска ссылок от места запуска; Т-56: режим совместной работы из профиля
+    Expect "папки поиска ссылок" (Read-Value $ext "Document Folders") ($fasteners + ";" + (Join-Path $source "04_Библиотеки_Материалов_и_Профилей\Профили сварных деталей"))
+    Expect "поиск по папкам включён" (Read-Value $ext "Use Search Rules") 1
+    Expect "многопользовательская среда" (Read-Value "$swKey\Collab" "Enable Collab") 1
+    Expect "проверка чужих изменений" (Read-Value "$swKey\Collab" "Ping Files") 1
     # З-2: тип отображения по умолчанию на чертеже — «Невидимые линии отображаются» (swHiddenEdgeDisplayDefault = 1)
     Expect "чертёж: невидимые линии отображаются" (Read-Value "$swKey\Drawings" "Display Mode") 1
     $dll = Join-Path $local "$addinRel\ESKD_Material_Sync_v5.dll"
