@@ -18,6 +18,8 @@ namespace ESKD.MaterialSync.Core
         public DateTime Time = DateTime.Now;
         public readonly System.Collections.Generic.List<string> Files = new System.Collections.Generic.List<string>();
         public readonly System.Collections.Generic.List<string> Skipped = new System.Collections.Generic.List<string>();
+        /// <summary>Выгружено, но с оговоркой: цеху стоит проверить файл (например, IGS не по оси трубы, Т-29).</summary>
+        public readonly System.Collections.Generic.List<string> Warnings = new System.Collections.Generic.List<string>();
         /// <summary>Файл выгрузки → SHA-256.</summary>
         public readonly System.Collections.Generic.Dictionary<string, string> Checksums =
             new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -30,6 +32,11 @@ namespace ESKD.MaterialSync.Core
         public void Skip(string document, string reason)
         {
             Skipped.Add((document ?? "") + " — " + (reason ?? ""));
+        }
+
+        public void Warn(string document, string reason)
+        {
+            Warnings.Add((document ?? "") + " — " + (reason ?? ""));
         }
 
         public string Text()
@@ -56,6 +63,12 @@ namespace ESKD.MaterialSync.Core
                 sb.AppendLine();
                 sb.AppendLine("Пропущено:");
                 foreach (string line in Skipped) sb.AppendLine("  " + line);
+            }
+            if (Warnings.Count > 0)
+            {
+                sb.AppendLine();
+                sb.AppendLine("Замечания:");
+                foreach (string line in Warnings) sb.AppendLine("  " + line);
             }
             return sb.ToString();
         }

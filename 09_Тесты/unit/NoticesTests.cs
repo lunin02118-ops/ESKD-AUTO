@@ -72,6 +72,21 @@ namespace ESKD.Tests
             Assert.AreEqual("А.103 Рама.slddrw", list[2].Document, "документ");
         }
 
+        public static void Test_Export_warnings_are_warnings_before_skips()
+        {
+            ExportLog log = new ExportLog();
+            log.Skip("А.101 Пластина.sldprt", "нет чертежа: PDF не сделан");
+            log.Warn("А.102 Стойка.igs", "IGS в глобальной системе координат: ось трубы не найдена");
+            List<Notice> list = Notices.FromExport(log.Skipped, log.Warnings);
+            Assert.AreEqual(2, list.Count, "пропуск и замечание");
+            Assert.AreEqual(NoticeLevel.Warning, list[0].Level, "IGS не по оси — замечание");
+            Assert.AreEqual("А.102 Стойка.igs", list[0].Document, "документ замечания");
+            string text = log.Text();
+            Assert.IsTrue(text.Contains("Замечания:" + System.Environment.NewLine +
+                "  А.102 Стойка.igs — IGS в глобальной системе координат"), text);
+            Assert.IsTrue(text.Contains("пропущено: 1"), "замечание не считается пропуском");
+        }
+
         public static void Test_Independent_log_reports_changed_source_as_critical()
         {
             IndependentLog log = new IndependentLog();

@@ -249,9 +249,15 @@ namespace ESKD.MaterialSync.Core
         /// Пропуски выгрузки «документ — причина»: файл не получился — критично; выданный документ — замечание
         /// (нужна ревизия); нет чертежа или развёртки — к сведению (так бывает у БЧ и у деталей не из листа).
         /// </summary>
-        public static List<Notice> FromExport(IEnumerable<string> skipped)
+        public static List<Notice> FromExport(IEnumerable<string> skipped, IEnumerable<string> warnings = null)
         {
             List<Notice> list = new List<Notice>();
+            foreach (string line in warnings ?? Enumerable.Empty<string>())
+            {
+                string document, reason;
+                SplitDocument(line, out document, out reason);
+                list.Add(Of(NoticeLevel.Warning, document, reason, "Проверьте файл перед резкой"));
+            }
             foreach (string line in skipped ?? Enumerable.Empty<string>())
             {
                 string document, reason;

@@ -101,7 +101,7 @@ namespace ESKD.MaterialSync.Sw
                     "ok", log.Files.Count.ToString(CultureInfo.InvariantCulture),
                     log.Skipped.Count.ToString(CultureInfo.InvariantCulture), reportPath
                 });
-                Notices.Remember(Notices.FromExport(log.Skipped));
+                Notices.Remember(Notices.FromExport(log.Skipped, log.Warnings));
                 if (interactive) Show(app, log, productFolder);
                 Status(app, "");
                 return true;
@@ -451,8 +451,14 @@ namespace ESKD.MaterialSync.Sw
                     app.SetUserPreferenceIntegerValue(prefs[i], wanted[i]);
                 }
                 int errors = 0, warnings = 0;
-                bool ok = item.Model.Extension.SaveAs(target, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
-                    (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref errors, ref warnings);
+                bool ok;
+                using (TubeAxis axis = TubeAxis.Create(app, item.Model, item.Path))
+                {
+                    ok = item.Model.Extension.SaveAs(target, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
+                        (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref errors, ref warnings);
+                    if (ok && !axis.Applied)
+                        log.Warn(Path.GetFileName(target), "IGS в глобальной системе координат: " + axis.Reason);
+                }
                 if (ok) log.Add(target);
                 else log.Skip(Path.GetFileName(item.Path), "IGS не сохранён (код " + errors + ")");
             }
@@ -517,7 +523,7 @@ namespace ESKD.MaterialSync.Sw
 
         private static void Show(ISldWorks app, ExportLog log, string productFolder)
         {
-            List<Notice> notices = Notices.FromExport(log.Skipped);
+            List<Notice> notices = Notices.FromExport(log.Skipped, log.Warnings);
             NoticeLevel worst = Notices.Max(notices);
             string headline = worst == NoticeLevel.Critical ? "Выгружено не всё" : "Выгрузка готова";
             string details = "Выгружено файлов: " + log.Files.Count + ", пропущено: " + log.Skipped.Count + Environment.NewLine +

@@ -156,6 +156,53 @@ def square_tube(session, outer_mm, wall_mm, length_mm, material):
     return doc, feat
 
 
+def sheet_metal_plate(session, length_mm, width_mm, thickness_mm, material):
+    """Листовая деталь — базовая кромка из прямоугольника: есть SheetMetal и развёртка (выгрузка DXF, Т-28).
+    Merge = False: с объединением SolidWorks кромку на пустой детали не строит."""
+    doc = session.new_doc(paths.PART_TEMPLATE)
+    sketch_rectangles(doc, [(-length_mm / 2000, -width_mm / 2000, length_mm / 2000, width_mm / 2000)])
+    t = thickness_mm / 1000.0
+    feat = doc.FeatureManager.InsertSheetMetalBaseFlange2(t, False, t, 0.0254, 0.01, False, 0, 0, 1, com.null_dispatch(),
+                                                           False, 0, 0.0001, 0.0001, 0.5, True, False, True, True)
+    if feat is None:
+        raise RuntimeError("Базовая кромка листовой детали не построена")
+    set_material(doc, material)
+    doc.ForceRebuild3(False)
+    return doc
+
+
+def structural_tube(session, length_mm, profile, material, angle_deg=0.0):
+    """Деталь сварной конструкции: элемент конструкции (WeldMemberFeat) по отрезку вдоль X из профиля .sldlfp
+    (выгрузка IGS, Т-29).
+    angle_deg — наклон отрезка во фронтальной плоскости: ось трубы не совпадает с осями детали. Массивы объектов API передаются VARIANT с VT_DISPATCH — иначе SolidWorks их не принимает."""
+    import pythoncom
+    import win32com.client
+    doc = session.new_doc(paths.PART_TEMPLATE)
+    doc.ClearSelection2(True)
+    select_plane(doc, "front")
+    sk = doc.SketchManager
+    sk.InsertSketch(True)
+    a = math.radians(angle_deg)
+    segment = sk.CreateLine(0.0, 0.0, 0.0, length_mm / 1000.0 * math.cos(a), length_mm / 1000.0 * math.sin(a), 0.0)
+    sk.InsertSketch(True)
+    fm = doc.FeatureManager
+    group = win32com.client.Dispatch(com.call(fm, "CreateStructuralMemberGroup")._oleobj_)
+    group.Segments = win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_DISPATCH, [segment._oleobj_])
+    feat = fm.InsertStructuralWeldment4(str(profile), 1, True,
+                                        win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_DISPATCH, [group._oleobj_]))
+    if feat is None:
+        raise RuntimeError(f"Элемент конструкции не построен: {profile}")
+    set_material(doc, material)
+    doc.ForceRebuild3(False)
+    return doc
+
+
+def tube_profile(name="40х40х2"):
+    """Профиль сварных деталей из библиотеки инструментария: квадратная труба ГОСТ 8639-82."""
+    return (paths.ROOT / "04_Библиотеки_Материалов_и_Профилей" / "Профили сварных деталей" / "Сортамент ГОСТ" /
+            "Труба квадратная ГОСТ 8639-82" / f"{name}.sldlfp")
+
+
 def analytic_mass_plate(length_mm, width_mm, thickness_mm, material):
     return length_mm * width_mm * thickness_mm * 1e-9 * material_library()[material]["density"]
 
