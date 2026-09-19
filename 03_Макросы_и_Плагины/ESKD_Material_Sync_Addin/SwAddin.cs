@@ -616,6 +616,15 @@ namespace ESKD.MaterialSync
             CheckService.ShowLast(_app, false);
         }
 
+        /// <summary>
+        /// Отложенные задачи надстройки (пересохранение в простое): автотесты и внешние программы ждут нуля,
+        /// прежде чем закрывать документ или снимать с него подписки.
+        /// </summary>
+        public int PendingIdleTasks()
+        {
+            return _hub != null ? _hub.PendingTasks : 0;
+        }
+
         /// <summary>«ok|итог|брак|замечаний|отчёт» или «error|текст».</summary>
         public string CheckStatus()
         {

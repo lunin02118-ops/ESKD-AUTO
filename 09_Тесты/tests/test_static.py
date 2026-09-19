@@ -625,6 +625,11 @@ class StaticRepository(StaticTestCase):
         self.assertIn("ESKD_SwInternetBlock_", setup, "SwInternetBlock — из копии в %TEMP%")
         self.assertNotIn("$cnt -ge 300", setup, "порог правил — по файлам этого ПК, а не 300")
         self.assertIn("Find-EskdForeignPaths", setup, "профиль реестра проверяется на чужие пути")
+        # R01 19.09: закрытие документа посреди отложенного пересохранения роняет SolidWorks
+        session = (ROOT / "09_Тесты" / "eskd_e2e" / "session.py").read_text(encoding="utf-8")
+        close = session[session.index("    def close(self, doc):"):session.index("    def close_all(self):")]
+        self.assertIn("self.wait_addin_idle()", close, "сессия ждёт отложенные задачи надстройки перед закрытием")
+        self.assertIn("public int PendingIdleTasks()", addin, "надстройка сообщает число отложенных задач")
 
     def test_T0_fixture_corpus_a_matches_manifest(self):
         """T0 (Д-44): файлы корпуса А совпадают с хешами манифеста, манифест помнит шаблоны, из которых корпус собран.
