@@ -1,16 +1,11 @@
 # -*- coding: utf-8 -*-
 """Правки макросов SWPlus шага 4 плана согласования (WP-3.1…3.6), применяются vba_patch.py.
 
-    python 09_Тесты/tools/swplus_step4_edits.py            — пробная проверка: каждая правка находит своё место
-    python 09_Тесты/tools/swplus_step4_edits.py --apply    — архив прежних .swp в 99_Архив, правка, выгрузка текста
+    Накладывается вместе с остальными правками: python 09_Тесты/tools/swplus_apply_all.py [--apply]
 
 Правки пишутся против текстовой выгрузки (_VBA_выгрузка): «было» должно встретиться ровно один раз.
 """
-import hashlib
-import json
-import shutil
 import sys
-from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -325,41 +320,11 @@ def plan(swp, edits):
     return problems
 
 
-def sha256(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
 def run(edits, archive, argv):
-    """Пробная проверка или (--apply) архив, правка и запись SHA-256; edits — {путь .swp: {модуль: [(было, стало)]}},
-    «было» = None — дописать в конец модуля."""
-    apply = "--apply" in argv
-    problems, record = [], {}
-    for rel, module_edits in edits.items():
-        problems += plan(SWPLUS / rel, module_edits)
-    if problems:
-        print("\n".join(problems))
-        return 1
-    if not apply:
-        print("правки находят свои места:", ", ".join(edits))
-        return 0
-    archive.mkdir(parents=True, exist_ok=True)
-    record_path = archive / "patch_record.json"
-    if record_path.exists():
-        record = json.loads(record_path.read_text(encoding="utf-8"))
-    for rel, module_edits in edits.items():
-        swp = SWPLUS / rel
-        backup = archive / rel
-        backup.parent.mkdir(parents=True, exist_ok=True)
-        if not backup.exists():
-            shutil.copyfile(swp, backup)
-        tmp = swp.with_suffix(".patched.swp")
-        report = vba_patch.patch(swp, tmp, module_edits)
-        record[rel] = {"sha256_before": sha256(backup), "sha256_after": sha256(tmp), "archive": str(backup.relative_to(ROOT)),
-                       "report": report, "date": datetime.now().isoformat(timespec="seconds")}
-        tmp.replace(swp)
-    record_path.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(json.dumps({k: v["sha256_after"] for k, v in record.items()}, ensure_ascii=False, indent=1))
-    return 0
+    """Правки накладываются только все вместе и из исходного SWPlus — swplus_apply_all.py (аудит 19.09, М-К2):
+    повторное наложение одной правки на уже правленый макрос не находит своего места."""
+    import swplus_apply_all
+    return swplus_apply_all.main(argv)
 
 
 def main():

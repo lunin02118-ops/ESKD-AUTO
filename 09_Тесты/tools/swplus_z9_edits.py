@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """Правка SpecEditor по замечанию З-9, применяется vba_patch.py.
 
-    python 09_Тесты/tools/swplus_z9_edits.py            — пробная проверка
-    python 09_Тесты/tools/swplus_z9_edits.py --apply    — архив прежнего .swp в 99_Архив/SWPlus_до_шага4, правка
+    Накладывается вместе с остальными правками: python 09_Тесты/tools/swplus_apply_all.py [--apply]
 
 З-9: графа «Наименование» спецификации связана с «Наименованием» детали — всё, что SpecEditor пишет в её ячейку,
 SolidWorks пишет в модель. Раскладка записи БЧ по строкам (SwpLayoutRecords, WP-4.3) писала в эту ячейку первую строку

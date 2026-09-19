@@ -323,7 +323,7 @@ namespace ESKD.MaterialSync.Core
         {
             new NormRow("Труба.Хлыст", "Хлыст", "мм", "Длина хлыста", "0"),
             new NormRow("Труба.Захват", "Захват", "мм", "Захват станка — эта часть хлыста не режется", "0"),
-            new NormRow("Труба.Торцовка", "Торцовка", "мм", "Торцовка — на каждый торец хлыста", "0"),
+            new NormRow("Труба.Торцовка", "Торцовка", "мм", "Торцовка — один конец хлыста; второй конец уходит в захват", "0"),
             new NormRow("Труба.Рез", "Рез", "мм", "Ширина реза", "0.0"),
             new NormRow("Труба.Деловой", "Деловой", "мм", "Деловой остаток — не короче", "0"),
             new NormRow("Лист.Ширина", "ЛистШирина", "мм", "Лист: ширина", "0"),
@@ -866,12 +866,12 @@ namespace ESKD.MaterialSync.Core
                     s.SetNumber(C(2, row), g.LengthMm, st.Dec1);
                     s.SetNumber(C(3, row), g.PerProduct, st.Int);
                     s.SetFormula(C(4, row), "C" + r + "*" + NameQuantity, st.Int);
-                    s.SetFormula(C(5, row), "IF(B" + r + ">0,MAX(0,TRUNC((Хлыст-Захват-2*Торцовка)/(B" + r + "+Рез))),0)", st.Int);
+                    s.SetFormula(C(5, row), "IF(B" + r + ">0,MAX(0,TRUNC((Хлыст-Захват-Торцовка)/(B" + r + "+Рез))),0)", st.Int);
                     s.SetFormula(C(6, row), "IF(E" + r + ">0,ROUNDUP(D" + r + "/E" + r + ",0),\"" + Mark + "\")", st.Int);
                     s.SetFormula(C(7, row), "D" + r + "*B" + r + "/1000", st.Dec1);
                     s.SetFormula(C(8, row), "IF(ISNUMBER(F" + r + "),F" + r + "*Хлыст/1000,0)", st.Dec1);
                     s.SetFormula(C(9, row), "IF(H" + r + ">0,G" + r + "/H" + r + ",\"\")", st.Percent);
-                    s.SetFormula(C(10, row), "IF(E" + r + ">0,Хлыст-Захват-2*Торцовка-E" + r + "*(B" + r + "+Рез),\"\")", st.Int);
+                    s.SetFormula(C(10, row), "IF(E" + r + ">0,Хлыст-Захват-Торцовка-E" + r + "*(B" + r + "+Рез),\"\")", st.Int);
                     if (double.IsNaN(g.KgPerMeter)) s.SetText(C(11, row), Mark, st.Center);
                     else s.SetNumber(C(11, row), Math.Round(g.KgPerMeter, 3), st.Dec3);
                     s.SetFormula(C(12, row), "IF(ISNUMBER(K" + r + "),H" + r + "*K" + r + ",\"\")", st.Dec1);
@@ -966,7 +966,7 @@ namespace ESKD.MaterialSync.Core
             row += 2;
             s.SetText(C(1, row), "Покупные и стандартные изделия — лист «Комплектовочный». Нормы расчёта — лист «Нормы».", st.Note);
             row++;
-            s.SetText(C(1, row), "Из хлыста = ОТБР((Хлыст − Захват − 2 × Торцовка) / (L + Рез)); хлыстов = ОКРУГЛВВЕРХ(всего / из хлыста).", st.Note);
+            s.SetText(C(1, row), "Из хлыста = ОТБР((Хлыст − Захват − Торцовка) / (L + Рез)); хлыстов = ОКРУГЛВВЕРХ(всего / из хлыста).", st.Note);
             s.FreezeRowsAbove("A" + (head + 1));
             s.FitToWidth(true);
             book.SetPrintNames(CostSheet, "$A$1:$" + L(columns) + "$" + Math.Max(row, barEnd), head);

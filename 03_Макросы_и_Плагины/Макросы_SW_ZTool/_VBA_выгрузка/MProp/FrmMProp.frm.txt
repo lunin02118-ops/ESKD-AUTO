@@ -3444,7 +3444,7 @@ End If
 End Sub
 
 Private Sub Формат_Change()
-If Формат.Value = "БЧ" Then
+If UCase$(Trim$(Формат.Value)) = "БЧ" Then ' ЕСКД М-В6: без учёта регистра и пробелов
     Примечание.Enabled = False
     Примечание.Value = "Масса"
 Else
@@ -3936,7 +3936,7 @@ Private Function SwpHasDigit(ByVal s As String) As Boolean
     SwpHasDigit = s Like "*#*"
 End Function
 
-Private Function SwpIsDocCode(ByVal s As String) As Boolean
+Private Function SwpIsDocCode(ByVal s As String) As Boolean ' ЕСКД М-В6: список = NameParsing.DocCodes надстройки (тест T0)
     Select Case UCase$(s)
         Case "СБ", "ГЧ", "МЧ", "ВО", "ТУ", "ТБ", "ПЭ", "СХ", "СЭ", "ВП", "СП"
             SwpIsDocCode = True
@@ -4002,7 +4002,7 @@ Private Function SwpBchRecord(ByVal sConf As String) As String
     If sFormat = "" Then sFormat = swModel.CustomInfo2("", prpFormat)
     If sFormat = "" Then sFormat = swModel.CustomInfo2(sConfigName, prpFormat)
     sDesc = swModel.CustomInfo2(sConf, prpDescription)
-    If Trim$(sFormat) = "БЧ" And InStr(sDesc, Chr$(10)) > 0 Then SwpBchRecord = sDesc
+    If UCase$(Trim$(sFormat)) = "БЧ" And InStr(sDesc, Chr$(10)) > 0 Then SwpBchRecord = sDesc ' ЕСКД М-В6
 End Function
 
 Private Function SwpFirstLine(ByVal s As String) As String

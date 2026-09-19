@@ -866,6 +866,68 @@ class StaticRepository(StaticTestCase):
         spec.loader.exec_module(export_vba)
         self.assertEqual([], export_vba.check())
 
+    def test_T0_swplus_macros_rebuild_from_original(self):
+        """T0 (аудит 19.09, М-К2): исходный SWPlus из git + все правки ЕСКД по порядку (tools/swplus_apply_all.py) дают
+        ровно макросы репозитория — правки воспроизводимы на новом выпуске SWPlus одной командой, без редактора VBA."""
+        import importlib.util
+        import sys
+        sys.path.insert(0, str(paths.TESTS / "tools"))
+        spec = importlib.util.spec_from_file_location("swplus_apply_all", paths.TESTS / "tools" / "swplus_apply_all.py")
+        apply_all = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(apply_all)
+        self.assertEqual([], apply_all.check())
+
+    def test_T0_swplus_audit_macro_guards(self):
+        """T0 (аудит 19.09, М-В2…М-В6): временные графа и строка SpecEditor убираются и при ошибке; точка привязки BOM меняется
+        только у листа без точки или с точкой прежних форматок; графы — по заголовку; коды документов MProp и имя «Запись_БЧ»
+        совпадают с надстройкой."""
+        export = ROOT / "03_Макросы_и_Плагины" / "Макросы_SW_ZTool" / "_VBA_выгрузка"
+        run = (export / "SpecEditor" / "SpecEditor_run.bas.txt").read_text(encoding="utf-8")
+
+        def proc(text, name):
+            m = re.search(r"\n(?:Public |Private )?(?:Sub|Function) " + name + r"\b.*?\nEnd (?:Sub|Function)", text, re.S)
+            self.assertIsNotNone(m, name)
+            return m.group(0)
+
+        for name, cleanup in (("SwpExtraLines", "If bAdded Then ok = swTable.DeleteColumn(n)"),
+                              ("SwpFitWidth", "If bRow Then ok = swTable.DeleteRow(t)"),
+                              ("SwpBomAnchor", "swDraw.EditSheet")):
+            body = proc(run, name)
+            self.assertIn("On Error GoTo Failed", body, name)
+            self.assertIn("Resume Cleanup", body, name)
+            self.assertIn(cleanup, body.split("Cleanup:")[1], f"{name}: уборка после метки Cleanup")
+        self.assertNotIn("swTable.Text(r, c) = sProbe", proc(run, "SwpFitWidth"), "пробная строка — не в ячейку детали")
+        self.assertIn("SwpAt(vPos, 0.205, 0.068)", proc(run, "SwpBomAnchor"), "намеренная точка привязки не трогается")
+        layout = proc(run, "SwpLayoutRecords")
+        for title in ("ОБОЗНАЧ", "НАИМЕН", "КОЛ", "ПРИМ", "ПОЗ"):
+            self.assertIn(f'SwpColumn(swTable, "{title}"', layout, title)
+        form = (export / "SpecEditor" / "FrmSpecEditor.frm.txt").read_text(encoding="utf-8")
+        self.assertIn("SwpBomAnchorWarn swDraw, swSheet", form, "форма предупреждает о неудаче точки привязки")
+
+        bch = (ADDIN / "Core" / "BchRecord.cs").read_text(encoding="utf-8")
+        prop = re.search(r'LinesProperty = "([^"]+)"', bch).group(1)
+        self.assertIn(f'Private Const prpRecordBch As String = "{prop}"', run)
+        self.assertEqual(1, run.count(f'"{prop}"'), "«Запись_БЧ» — одной константой")
+
+        mprop = (export / "MProp" / "FrmMProp.frm.txt").read_text(encoding="utf-8")
+        codes = re.search(r'DocCodes = "([^"]+)"', (ADDIN / "Core" / "NameParsing.cs").read_text(encoding="utf-8")).group(1)
+        addin_codes = {c for c in codes.split("|") if "\\" not in c}
+        vba = proc(mprop, "SwpIsDocCode")
+        vba_codes = set(re.findall(r'"([А-ЯЁ]{2})"', re.search(r"Case (\"[^\n]+)", vba).group(1)))
+        self.assertEqual(addin_codes, vba_codes, "коды документов MProp = NameParsing.DocCodes")
+        self.assertIn('Like "Э#"', vba, "Э1…Э9 — как «Э\\d» надстройки")
+        self.assertEqual(2, mprop.count('If UCase$(Trim$('), "«БЧ» без учёта регистра")
+        self.assertNotIn('If Формат.Value = "БЧ"', mprop)
+        self.assertNotIn('If Trim$(sFormat) = "БЧ"', mprop)
+
+        # Перенос графы 1 MProp — те же 22 и 31 знак, что у надстройки (М-В7).
+        fmt = (ADDIN / "Core" / "SwPlusFormat.cs").read_text(encoding="utf-8")
+        big = re.search(r"TitleLineLimit = (\d+)", fmt).group(1)
+        small = re.search(r"TitleSmallLineLimit = (\d+)", fmt).group(1)
+        wrap = proc(mprop, "SwpWrapTitle")
+        for piece in (f"Len(t) <= {big}", f"SwpWrapLines(t, {big}, n)", f"SwpWrapLines(t, {small}, n)"):
+            self.assertIn(piece, wrap, "перенос графы 1 MProp = SwPlusFormat")
+
     def test_T0_documentation_matches_code(self):
         """T0: руководство описывает все параметры ESKD_Settings и кнопки вкладки и ссылается только на существующие тесты;
         README, руководство и окно настроек не повторяют утверждений v5; устаревшие документы помечены (WP-5.1)."""

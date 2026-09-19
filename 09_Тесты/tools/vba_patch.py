@@ -179,13 +179,12 @@ def recompile_header(swp, base):
     return struct.pack("<HHBH", 0x61CC, version, 0, 0)
 
 
-def patch(src, dst, edits):
-    """Копия src → dst с правками {модуль: [(было, стало)]}; все модули без P-code. Возвращает отчёт."""
-    base, dir_raw, modules, codepage, texts = read_modules(src)
-    report = {"codepage": codepage, "modules": {}}
+def apply_edits(texts, edits, where=""):
+    """Правки {модуль: [(было, стало)]} к {модуль: текст}; возвращает новый словарь, исходный не меняется."""
+    texts = dict(texts)
     unknown = set(edits) - set(texts)
     if unknown:
-        raise ValueError(f"нет модулей: {sorted(unknown)}")
+        raise ValueError(f"{where}нет модулей: {sorted(unknown)}")
     for module, pairs in edits.items():
         text = texts[module]
         for old, new in pairs:
@@ -194,9 +193,27 @@ def patch(src, dst, edits):
                 continue
             count = text.count(old)
             if count != 1:
-                raise ValueError(f"{module}: «{old[:80]}» встречается {count} раз")
+                raise ValueError(f"{where}{module}: «{old[:80]}» встречается {count} раз")
             text = text.replace(old, new)
         texts[module] = text
+    return texts
+
+
+def patch(src, dst, edits):
+    """Копия src → dst с правками {модуль: [(было, стало)]}; все модули без P-code. Возвращает отчёт."""
+    texts = apply_edits(read_modules(src)[4], edits)
+    report = write_texts(src, dst, texts)
+    for name, item in report["modules"].items():
+        item["edits"] = len(edits.get(name, []))
+    return report
+
+
+def write_texts(src, dst, texts):
+    """Копия src → dst, в которой исходники модулей заменены на texts {модуль: текст (LF)}; все модули без P-code."""
+    base, dir_raw, modules, codepage, before = read_modules(src)
+    if set(texts) != set(before):
+        raise ValueError(f"модули не совпадают: {sorted(set(texts) ^ set(before))}")
+    report = {"codepage": codepage, "modules": {}}
     shutil.copyfile(src, dst)
     new_dir = bytearray(dir_raw)
     for m in modules:
@@ -207,7 +224,7 @@ def patch(src, dst, edits):
     for m in modules:
         source = texts[m["name"]].replace("\n", "\r\n").encode("cp%d" % codepage)
         _write_stream(vba, m["stream_name"], compress(source))
-        report["modules"][m["name"]] = {"pcode_removed": m["pcode"], "edits": len(edits.get(m["name"], []))}
+        report["modules"][m["name"]] = {"pcode_removed": m["pcode"], "changed": texts[m["name"]] != before[m["name"]]}
     _write_stream(vba, "dir", compress(bytes(new_dir)))
     _write_stream(vba, "_VBA_PROJECT", recompile_header(src, base))
     for stg in reversed(storages):

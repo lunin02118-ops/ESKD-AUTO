@@ -111,8 +111,8 @@ namespace ESKD.Tests
             Assert.AreEqual(163672.0, plan.CleanMm, "чистый расход, мм");
             Assert.AreEqual(246000.0, plan.BoughtMm, "закуплено, мм");
             Assert.AreEqual(41, plan.BusinessRests.Count, "деловой обрезок с каждого хлыста");
-            // 6000 − захват 200 − торцовка 2×20 (на каждый торец, как в формуле книги) − 2×(1996 + 0,5) = 1767 мм.
-            Assert.IsTrue(plan.BusinessRests.All(r => r > 1760 && r < 1770), "обрезок около 1767 мм: " +
+            // 6000 − захват 200 − торцовка 20 (один конец, как в формуле книги) − 2×(1996 + 0,5) = 1787 мм.
+            Assert.IsTrue(plan.BusinessRests.All(r => r > 1780 && r < 1790), "обрезок около 1787 мм: " +
                 string.Join(", ", plan.BusinessRests.Take(3).Select(r => r.ToString("0")).ToArray()));
             Assert.AreEqual("66.5%", plan.KimText, "КИМ как в образце заявки");
         }
@@ -125,7 +125,7 @@ namespace ESKD.Tests
             CutResult plan = CutPlan.Plan("Труба 20х20", pieces, 6000, 200, 20, 0.5, 500);
             watch.Stop();
             Assert.AreEqual(40000, plan.Bars.Sum(b => b.Pieces.Count), "все заготовки разложены");
-            // По 5 длинных на хлыст (5002,5 мм из 5760), в остаток 757,5 — ещё одна короткая; остальные короткие по 8.
+            // По 5 длинных на хлыст (5002,5 мм из 5780), в остаток 777,5 — ещё одна короткая; остальные короткие по 8.
             Assert.AreEqual(4000 + (20000 - 4000 + 7) / 8, plan.BarCount, "хлыстов");
             Assert.IsTrue(watch.ElapsedMilliseconds < 3000, "раскрой 40 000 заготовок: " + watch.ElapsedMilliseconds + " мс");
         }

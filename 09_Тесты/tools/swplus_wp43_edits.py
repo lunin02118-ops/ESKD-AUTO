@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """Правки SpecEditor и Master пакета WP-4.3 плана согласования (Д-16, Р-15, спайк S-2f), применяются vba_patch.py.
 
-    python 09_Тесты/tools/swplus_wp43_edits.py            — пробная проверка
-    python 09_Тесты/tools/swplus_wp43_edits.py --apply    — архив прежних .swp в 99_Архив/SWPlus_до_шага4, правка
+    Накладывается вместе с остальными правками: python 09_Тесты/tools/swplus_apply_all.py [--apply]
 
 * SpecEditor: формат сборочной единицы «А4» кириллицей (FrmSpecEditor:1971–1972); запись в несколько строк (деталь БЧ)
   оформляется строго по ГОСТ Р 2.105-2019 п. 7.4–7.5 и рис. 15 проекта ГОСТ Р 2.109 — процедура SwpLayoutRecords в

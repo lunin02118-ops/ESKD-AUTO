@@ -1,6 +1,6 @@
 Attribute VB_Name = "SpecEditor_run"
 Option Explicit
-'Public swApp As Object
+Private Const prpRecordBch As String = "Запись_БЧ" ' ЕСКД З-9: = BchRecord.LinesProperty надстройки (сверяет тест T0)
 'Public swModel As Object
 'Public swDraw As Object
 'Public swView As Object
@@ -332,6 +332,11 @@ Public Sub SwpLayoutRecords(ByVal swTable As Object, ByVal nColDesignation As In
     Dim swFormat As Object
     Dim dWidth As Double
     Dim ok As Boolean
+    nColDesignation = SwpColumn(swTable, "ОБОЗНАЧ", nColDesignation) ' ЕСКД М-В5: графы — по заголовку таблицы
+    nColName = SwpColumn(swTable, "НАИМЕН", nColName)
+    nColQty = SwpColumn(swTable, "КОЛ", nColQty)
+    nColRemark = SwpColumn(swTable, "ПРИМ", nColRemark)
+    nColPos = SwpColumn(swTable, "ПОЗ", nColPos)
     vExtra = SwpExtraLines(swTable): For i = swTable.RowCount - 1 To 1 Step -1 ' ЕСКД З-9: строки записи БЧ — из модели
         sText = SwpRecordText(swTable.Text(i, nColName), vExtra(i))
         If InStr(sText, Chr$(10)) > 0 Then
@@ -394,15 +399,17 @@ Private Function SwpTableRows(ByVal sLine As String) As Long
 End Function
 
 ' Ширина шрифта строки записи: самая длинная часть (у дроби — вид сортамента и длинный из числителя и знаменателя)
-' пишется простым текстом в однострочную ячейку; пока строка переносится (высота больше 8 мм) — ширина меньше на 0,05,
-' но не меньше 0,8. В ячейку возвращается сама строка; связанная ячейка, где она уже есть, не переписывается (З-9).
+' пишется простым текстом во временную строку таблицы под строкой r; пока строка переносится (высота больше 8 мм) — ширина
+' меньше на 0,05, но не меньше 0,8. Временная строка не связана с моделью: ячейка «Наименования» детали пробного текста не
+' получает (аудит 19.09, М-В3) и удаляется и при ошибке. В ячейку r пишется сама строка, если её там ещё нет (З-9).
 Private Function SwpFitWidth(ByVal swTable As Object, ByVal r As Long, ByVal c As Long, ByVal sLine As String) As Double
     Dim sProbe As String, sPart As String, sPrefix As String
     Dim vParts As Variant
     Dim k As Long, p As Long
     Dim swFormat As Object
     Dim dWidth As Double, dBase As Double
-    Dim ok As Boolean
+    Dim ok As Boolean, bRow As Boolean
+    Dim t As Long, nErr As Long, sErr As String
     p = InStr(1, sLine, "<STACK", vbTextCompare)
     If p > 0 Then
         sPrefix = Left$(sLine, p - 1)
@@ -414,21 +421,34 @@ Private Function SwpFitWidth(ByVal swTable As Object, ByVal r As Long, ByVal c A
     Else
         sProbe = sLine
     End If
-    If swTable.Text(r, c) <> sProbe Then swTable.Text(r, c) = sProbe
     Set swFormat = swTable.GetCellTextFormat(r, c)
     dBase = swFormat.WidthFactor
     SwpFitWidth = 0.8
+    On Error GoTo Failed
+    bRow = swTable.InsertRow(swTableItemInsertPosition_After, r)
+    If Not bRow Then Err.Raise vbObjectError + 514, "SwpFitWidth", "не удалось вставить временную строку таблицы"
+    t = r + 1
+    ok = swTable.SetRowVerticalGap(t, 0)
+    swTable.Text(t, c) = sProbe
     For dWidth = dBase To 0.7999 Step -0.05
         swFormat.WidthFactor = dWidth
-        ok = swTable.SetCellTextFormat(r, c, False, swFormat)
-        If swTable.SetRowHeight(r, 0.008, swTableRowColChange_TableSizeCanChange) <= 0.0081 Then
+        ok = swTable.SetCellTextFormat(t, c, False, swFormat)
+        If swTable.SetRowHeight(t, 0.008, swTableRowColChange_TableSizeCanChange) <= 0.0081 Then
             SwpFitWidth = dWidth
             Exit For
         End If
     Next dWidth
+Cleanup:
+    On Error GoTo 0
+    If bRow Then ok = swTable.DeleteRow(t)
+    If nErr <> 0 Then Err.Raise nErr, "SwpFitWidth", sErr
     If swTable.Text(r, c) <> sLine Then swTable.Text(r, c) = sLine
     swFormat.WidthFactor = SwpFitWidth
     ok = swTable.SetCellTextFormat(r, c, False, swFormat)
+    Exit Function
+Failed:
+    nErr = Err.Number: sErr = Err.Description
+    Resume Cleanup
 End Function
 
 ' Автотест WP-4.3: оформить первую таблицу активного чертежа (столбцы шаблона SpecEditor_sp).
@@ -457,21 +477,31 @@ End Sub
 ' Строки записи БЧ после наименования по строкам таблицы — свойство модели «Запись_БЧ». Графа «Наименование» связана с
 ' «Наименованием» детали, и всё, что пишется в её ячейку, SolidWorks пишет в модель; поэтому у детали БЧ там одно название,
 ' а остальные строки записи читает временная графа, связанная с «Запись_БЧ», — как графы «Раздел» и «Группа» при чтении
-' таблицы.
+' таблицы. Графа удаляется и при ошибке посреди чтения (аудит 19.09, М-В2), ошибка передаётся дальше.
 Private Function SwpExtraLines(ByVal swTable As Object) As Variant
     Dim v() As String
-    Dim i As Long, n As Long
-    Dim ok As Boolean
+    Dim i As Long, n As Long, nErr As Long
+    Dim ok As Boolean, bAdded As Boolean
+    Dim sErr As String
     n = swTable.ColumnCount
     ReDim v(swTable.RowCount)
-    ok = swTable.InsertColumn(swTableItemInsertPosition_Last, 0, "Запись_БЧ")
+    On Error GoTo Failed
+    bAdded = swTable.InsertColumn(swTableItemInsertPosition_Last, 0, prpRecordBch)
+    If Not bAdded Then Err.Raise vbObjectError + 515, "SwpExtraLines", "не удалось вставить временную графу «" & prpRecordBch & "»"
     ok = swTable.SetColumnType(n, swWeldTableColumnType_CustomProperty)
-    ok = swTable.SetColumnCustomProperty(n, "Запись_БЧ")
+    ok = swTable.SetColumnCustomProperty(n, prpRecordBch)
     For i = 1 To swTable.RowCount - 1
         v(i) = Replace(swTable.Text(i, n), Chr$(13), "")
     Next i
-    ok = swTable.DeleteColumn(n)
+Cleanup:
+    On Error GoTo 0
+    If bAdded Then ok = swTable.DeleteColumn(n)
+    If nErr <> 0 Then Err.Raise nErr, "SwpExtraLines", sErr
     SwpExtraLines = v
+    Exit Function
+Failed:
+    nErr = Err.Number: sErr = Err.Description
+    Resume Cleanup
 End Function
 
 ' Текст записи строки таблицы: наименование и строки «Запись_БЧ»; запись прежних версий — вся в наименовании.
@@ -485,27 +515,53 @@ End Function
 ' На листе шире 395 мм спецификация (185 мм) стоит слева от основной надписи: правым нижним углом в (205; 5) мм, то есть
 ' левым нижним углом в углу рамки (20; 5), и растёт вверх. Форматки SWPlus несли точку листа A4 (205; 68) — над основной
 ' надписью; у чертежа на прежней форматке точка привязки BOM его листа переставляется здесь один раз. Узкий лист (A4,
-' A3 книжный) не меняется: там спецификация над основной надписью.
+' A3 книжный) не меняется: там спецификация над основной надписью. Аудит 19.09, М-В4: точку меняет только у листа без
+' точки или с точкой прежних форматок — другую точку поставили намеренно, она остаётся; лист всегда выходит из режима
+' редактирования основной надписи; повторная попытка берёт уже созданную точку; неудача — ошибка с объяснением.
 Public Sub SwpBomAnchor(ByVal swDraw As Object, ByVal swSheet As Object)
     Dim vProps As Variant, vPos As Variant
     Dim swAnchor As Object, swPoint As Object
+    Dim bTemplate As Boolean, bSelected As Boolean
+    Dim nErr As Long, sErr As String
     vProps = swSheet.GetProperties
     If vProps(5) < 0.395 Then Exit Sub
     Set swAnchor = swSheet.TableAnchor(swTableAnnotation_BillOfMaterials)
     If Not swAnchor Is Nothing Then
         vPos = swAnchor.Position
-        If Abs(vPos(0) - 0.205) < 0.0005 And Abs(vPos(1) - 0.005) < 0.0005 Then Exit Sub
+        If Not SwpAt(vPos, 0.205, 0.068) Then Exit Sub
     End If
+    On Error GoTo Failed
     swDraw.EditTemplate
-    swDraw.SketchManager.AddToDB = True
-    Set swPoint = swDraw.SketchManager.CreatePoint(0.205, 0.005, 0)
-    swDraw.SketchManager.AddToDB = False
+    bTemplate = True
     swDraw.ClearSelection2 True
-    If Not swPoint Is Nothing Then
-        If swPoint.Select4(False, Nothing) Then swSheet.SetAsTableAnchor swTableAnnotation_BillOfMaterials
+    bSelected = swDraw.Extension.SelectByID2("", "SKETCHPOINT", 0.205, 0.005, 0, False, 0, Nothing, 0)
+    If Not bSelected Then
+        swDraw.SketchManager.AddToDB = True
+        Set swPoint = swDraw.SketchManager.CreatePoint(0.205, 0.005, 0)
+        swDraw.SketchManager.AddToDB = False
+        swDraw.ClearSelection2 True
+        If Not swPoint Is Nothing Then bSelected = swPoint.Select4(False, Nothing)
     End If
-    swDraw.ClearSelection2 True
-    swDraw.EditSheet
+    If bSelected Then swSheet.SetAsTableAnchor swTableAnnotation_BillOfMaterials
+Cleanup:
+    On Error GoTo 0
+    If bTemplate Then
+        swDraw.SketchManager.AddToDB = False
+        swDraw.ClearSelection2 True
+        swDraw.EditSheet
+    End If
+    If nErr <> 0 Then Err.Raise nErr, "SwpBomAnchor", sErr
+    Set swAnchor = swSheet.TableAnchor(swTableAnnotation_BillOfMaterials)
+    If Not swAnchor Is Nothing Then vPos = swAnchor.Position
+    If swAnchor Is Nothing Then
+        Err.Raise vbObjectError + 513, "SwpBomAnchor", "не удалось поставить точку привязки спецификации (205; 5) мм"
+    ElseIf Not SwpAt(vPos, 0.205, 0.005) Then
+        Err.Raise vbObjectError + 513, "SwpBomAnchor", "не удалось поставить точку привязки спецификации (205; 5) мм"
+    End If
+    Exit Sub
+Failed:
+    nErr = Err.Number: sErr = Err.Description
+    Resume Cleanup
 End Sub
 
 ' Автотест: точка привязки BOM текущего листа активного чертежа. Ошибка — в свойство чертежа «SwpAnchorError».
@@ -518,4 +574,38 @@ Public Sub swp_bom_anchor_active_sheet()
 Failed:
     swDoc.AddCustomInfo3 "", "SwpAnchorError", 30, ""
     swDoc.CustomInfo2("", "SwpAnchorError") = Err.Number & ": " & Err.Description
+End Sub
+
+' ===== Правки ЕСКД: глубокий аудит 19.09.2026 (М-В4, М-В5) =====
+
+' Точка vPos (м) совпадает с (x; y) с допуском 0,5 мм.
+Private Function SwpAt(ByVal vPos As Variant, ByVal x As Double, ByVal y As Double) As Boolean
+    SwpAt = Abs(vPos(0) - x) < 0.0005 And Abs(vPos(1) - y) < 0.0005
+End Function
+
+' Номер графы таблицы, заголовок которой начинается с sTitle (заглавными): без учёта регистра, пробелов, переносов и
+' дефисов («Приме-чание»). Нет такой графы — nDefault, номер по шаблону SpecEditor_sp.
+Private Function SwpColumn(ByVal swTable As Object, ByVal sTitle As String, ByVal nDefault As Integer) As Integer
+    Dim c As Long
+    Dim s As String
+    SwpColumn = nDefault
+    For c = 0 To swTable.ColumnCount - 1
+        s = UCase$(swTable.GetColumnTitle(c))
+        s = Replace(Replace(Replace(Replace(s, Chr$(13), ""), Chr$(10), ""), "-", ""), " ", "")
+        If Left$(s, Len(sTitle)) = sTitle Then
+            SwpColumn = c
+            Exit Function
+        End If
+    Next c
+End Function
+
+' Точка привязки спецификации из формы SpecEditor: неудача — предупреждение конструктору, спецификация вставляется дальше.
+Public Sub SwpBomAnchorWarn(ByVal swDraw As Object, ByVal swSheet As Object)
+    Dim lAnswer As Long
+    On Error GoTo Failed
+    SwpBomAnchor swDraw, swSheet
+    Exit Sub
+Failed:
+    lAnswer = Application.SldWorks.SendMsgToUser2("Спецификация: " & Err.Description & ". Проверьте положение таблицы на листе.", _
+        swMbWarning, swMbOk)
 End Sub
