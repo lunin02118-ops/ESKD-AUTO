@@ -210,6 +210,14 @@ namespace ESKD.MaterialSync.Sw
 
         private int OnIdle()
         {
+            try
+            {
+                LzkService.PollIdle();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("OnIdleNotify: ведомость ЛЗК", ex);
+            }
             if (_processingIdle || _idle.Count == 0) return 0;
             _processingIdle = true;
             try

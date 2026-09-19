@@ -216,6 +216,8 @@ namespace ESKD.MaterialSync.Core
         public readonly Dictionary<string, string> Notes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         /// <summary>Значения прочитаны из прежней книги.</summary>
         public bool FromWorkbook;
+        /// <summary>Прежняя книга есть, но не прочиталась: введённое в ней перенести нельзя — затирать её нельзя.</summary>
+        public string ReadError = "";
 
         public static LzkInputs Read(string workbookPath)
         {
@@ -249,6 +251,7 @@ namespace ESKD.MaterialSync.Core
             catch (Exception ex)
             {
                 Log.Error("ЛЗК: чтение введённого в " + workbookPath, ex);
+                inputs.ReadError = ex.Message;
             }
             return inputs;
         }

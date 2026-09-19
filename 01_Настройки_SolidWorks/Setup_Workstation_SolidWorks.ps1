@@ -32,6 +32,10 @@
     Force — завершить без сохранения; Skip — не закрывать. -KillSolidWorks и -SkipClose — прежние синонимы.
 .PARAMETER NonInteractive
     Без вопросов в консоли: недостающая фамилия — ошибка.
+.PARAMETER Graphics
+    Auto — аппаратный конвейер графики включается только на дискретной видеокарте NVIDIA или AMD Radeon Pro
+    (по умолчанию); Safe — конвейер выключен, предупреждение о программном OpenGL остаётся: этот режим нужен, когда
+    после настройки SolidWorks не запускается или окно чёрное; Hardware — включить конвейер на любой видеокарте.
 .PARAMETER LocalRoot
     Локальная копия (по умолчанию %LOCALAPPDATA%\ESKD\Toolkit).
 .PARAMETER RegistryRoot
@@ -63,6 +67,7 @@ param (
     [switch]$SwInternetBlock,
     [switch]$DrewRussian,
     [switch]$Utf8Output,
+    [ValidateSet("Auto", "Safe", "Hardware")][string]$Graphics = "Auto",
     [string]$LocalRoot = "",
     [string]$RegistryRoot = "HKCU:\Software"
 )
@@ -494,39 +499,67 @@ if ($referenceFolders) {
     }
     Write-Ok "Папки поиска ссылок: $(@($referenceFolders) -join '; ')"
 }
-Set-Reg "$swRoot\Performance" "Use Performance Pipeline 2020" 1 "DWord"
-Set-Reg "$swRoot\Performance" "Use GPU Silhouette Edges" 1 "DWord"
-Set-Reg "$swRoot\General" "Software OGL Alarm" 0 "DWord"
-Set-Reg "$swRoot\General" "Use Software OGL" 0 "DWord"
-Write-Ok "Производительность: аппаратный конвейер и кромки силуэта включены, программный OpenGL отключён."
+# Графика. Аппаратный конвейер SolidWorks 2025 работает не на всякой видеокарте: на встроенной Intel/AMD, на старом
+# драйвере и в виртуальной машине SolidWorks с ним не запускается вовсе, а отключённый программный OpenGL не даёт
+# ему подняться запасным путём (замечание владельца 20.09.2026 — на другом ПК SolidWorks не стартовал после настройки).
+# Поэтому конвейер включается только на дискретной видеокарте NVIDIA или AMD Radeon Pro; «-Graphics Safe» выключает его
+# на любой машине (лечение уже настроенного ПК), «-Graphics Hardware» включает принудительно.
+$videoCards = @()
+try { $videoCards = @(Get-CimInstance Win32_VideoController -ErrorAction Stop) }
+catch { Write-Info "Видеокарту определить не удалось — графика настраивается в безопасном режиме." }
+$nvidia = @($videoCards | Where-Object { $_.Name -and ("$($_.AdapterCompatibility) $($_.Name)" -match 'NVIDIA|GeForce|Quadro|RTX') } |
+    ForEach-Object { $_.Name })
+$proGpu = @($videoCards | Where-Object { $_.Name -and ("$($_.AdapterCompatibility) $($_.Name)" -match 'Radeon Pro|FirePro') })
+$hardwareGraphics = switch ($Graphics) {
+    "Hardware" { $true }
+    "Safe"     { $false }
+    default    { [bool]($nvidia.Count -or $proGpu.Count) }
+}
+$cardNames = if ($videoCards.Count) { (@($videoCards | ForEach-Object { $_.Name }) -join ", ") } else { "не определена" }
+if ($hardwareGraphics) {
+    Set-Reg "$swRoot\Performance" "Use Performance Pipeline 2020" 1 "DWord"
+    Set-Reg "$swRoot\Performance" "Use GPU Silhouette Edges" 1 "DWord"
+    Set-Reg "$swRoot\General" "Software OGL Alarm" 0 "DWord"
+    Set-Reg "$swRoot\General" "Use Software OGL" 0 "DWord"
+    Write-Ok "Графика ($cardNames): аппаратный конвейер и кромки силуэта включены."
+} else {
+    # Значения по умолчанию SolidWorks: конвейер выключен, программный OpenGL разрешён и о нём предупреждают.
+    Set-Reg "$swRoot\Performance" "Use Performance Pipeline 2020" 0 "DWord"
+    Set-Reg "$swRoot\Performance" "Use GPU Silhouette Edges" 0 "DWord"
+    Set-Reg "$swRoot\General" "Software OGL Alarm" 1 "DWord"
+    Set-Reg "$swRoot\General" "Use Software OGL" 0 "DWord"
+    Write-Ok "Графика ($cardNames): аппаратный конвейер не включается — SolidWorks выберет режим сам."
+}
 
-# Аппаратное ускорение, конвейер и RealView для видеокарт этого ПК
-try {
-    $nvWorkarounds = 0x32408 # 205832: RealView + Performance Pipeline
-    # Маска NVIDIA записывается только под именем карты NVIDIA: встроенной Intel/AMD без сертифицированного драйвера
-    # RealView даёт артефакты (аудит 19.09, У-В6).
-    $nvidia = @(Get-CimInstance Win32_VideoController -ErrorAction Stop |
-        Where-Object { $_.Name -and ("$($_.AdapterCompatibility) $($_.Name)" -match 'NVIDIA|GeForce|Quadro') } | ForEach-Object { $_.Name })
-    if (-not $nvidia.Count) { Write-Info "Видеокарты NVIDIA нет — маска RealView под именами карт не записывается." }
-    foreach ($gpu in $nvidia) {
-        Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\$gpu" "Workarounds" $nvWorkarounds "DWord"
-        Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\$gpu" "Workarounds" $nvWorkarounds "DWord"
-    }
-    # Универсальные ключи для семейств NVIDIA GeForce
-    Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\GeForce" "Workarounds" $nvWorkarounds "DWord"
-    Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\NVIDIA GeForce" "Workarounds" $nvWorkarounds "DWord"
-    Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\GeForce" "Workarounds" $nvWorkarounds "DWord"
-    Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\NVIDIA GeForce" "Workarounds" $nvWorkarounds "DWord"
-    # Текущий рендерер, если уже инициализирован SolidWorks
-    $curKey = "$U\SolidWorks\AllowList\Current"
-    if (Test-Path -LiteralPath $curKey) {
-        $curVendor = [string](Get-RegValue $curKey "Vendor")
-        if ($curVendor -like "*NVIDIA*") {
-            Set-Reg $curKey "Workarounds" $nvWorkarounds "DWord"
+# RealView и конвейер под именами видеокарт — только для дискретных NVIDIA: встроенной Intel/AMD без сертифицированного
+# драйвера RealView даёт артефакты (аудит 19.09, У-В6).
+if ($hardwareGraphics -and $nvidia.Count) {
+    try {
+        $nvWorkarounds = 0x32408 # 205832: RealView + Performance Pipeline
+        foreach ($gpu in $nvidia) {
+            Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\$gpu" "Workarounds" $nvWorkarounds "DWord"
+            Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\$gpu" "Workarounds" $nvWorkarounds "DWord"
         }
+        # Универсальные ключи для семейств NVIDIA GeForce
+        Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\GeForce" "Workarounds" $nvWorkarounds "DWord"
+        Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\NVIDIA GeForce" "Workarounds" $nvWorkarounds "DWord"
+        Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\GeForce" "Workarounds" $nvWorkarounds "DWord"
+        Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\NVIDIA GeForce" "Workarounds" $nvWorkarounds "DWord"
+        # Текущий рендерер, если уже инициализирован SolidWorks
+        $curKey = "$U\SolidWorks\AllowList\Current"
+        if (Test-Path -LiteralPath $curKey) {
+            $curVendor = [string](Get-RegValue $curKey "Vendor")
+            if ($curVendor -like "*NVIDIA*") { Set-Reg $curKey "Workarounds" $nvWorkarounds "DWord" }
+        }
+        Write-Ok "AllowList: RealView и аппаратный конвейер активированы для видеокарты NVIDIA."
+    } catch { Write-Info "AllowList не настроен: $($_.Exception.Message)" }
+} elseif (-not $hardwareGraphics) {
+    # Настройка чужой машины могла оставить маску от прежнего ПК — снимаем её, иначе SolidWorks снова не стартует.
+    foreach ($stale in @("$U\SolidWorks\AllowList\Gl2Shaders", "$U\SolidWorks\AllowList\NVIDIA Corporation")) {
+        if (Test-Path -LiteralPath $stale) { Remove-Item -LiteralPath $stale -Recurse -Force -ErrorAction SilentlyContinue }
     }
-    Write-Ok "AllowList: RealView и аппаратный конвейер графики активированы для GPU."
-} catch { Write-Info "Видеокарта не определена — RealView не настраивается." }
+    Write-Info "RealView не настраивается: дискретной видеокарты NVIDIA нет."
+}
 
 # 4. Очистка устаревших надстроек и вкладок
 Write-Step "[4/9] Очистка устаревших надстроек и вкладок..."

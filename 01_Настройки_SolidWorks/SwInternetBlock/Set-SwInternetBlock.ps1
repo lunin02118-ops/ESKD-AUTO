@@ -31,7 +31,8 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 if ($Mode -ne 'audit' -and -not $isAdmin) { Write-Output 'FATAL: apply/remove требуют прав администратора.'; exit 1 }
 
 function Test-SldWorksConflict([string]$path, [string]$dir) {
-  return ($path -match 'SLDWORKS\.exe$') -and ($dir -ceq 'Outbound')
+  # Ни одного правила на SLDWORKS.exe: входящее тоже пропускаем — оно мешало лицензированию на новом ПК (аудит 20.09.2026).
+  return ($path -match 'SLDWORKS\.exe$')
 }
 
 $script:SwDomains = @(

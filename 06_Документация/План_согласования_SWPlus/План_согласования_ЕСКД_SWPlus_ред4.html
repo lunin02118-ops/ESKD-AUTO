@@ -1106,6 +1106,10 @@ html { scroll-behavior: smooth; }
     <li><span class="sid">4.3</span><div><p><b>SpecEditor и Master:</b> кириллическая «А4» (FrmSpecEditor:1971–1972; FrmMaster:104–108, 250); перекомпиляция SpecEditor, чтобы исходник совпал со скомпилированным кодом.</p></div></li>
   </ul>
   <h4 id="vba-proc">Порядок правки макросов (В-5)</h4>
+  <p class="prose"><strong>Заменено 19.09.2026 (аудит, М-К2):</strong> макросы правятся только парами «было → стало» в
+  <code>09_Тесты/tools/swplus_*_edits.py</code> и собираются одной командой <code>swplus_apply_all.py --apply</code> из
+  исходного SWPlus (git <code>11a6d98</code>); редактор VBA и архив в <code>99_Архив</code> не используются. Действующий
+  порядок — руководство, раздел «Правка макросов SWPlus», и журнал решений от 19.09.2026. Ниже — исторический текст.</p>
   <ol class="prose">
     <li>Прежний <code>.swp</code> копируется в <code>99_Архив</code>, его SHA-256 записывается для отката.</li>
     <li>Правка вносится в редакторе VBA SolidWorks.</li>

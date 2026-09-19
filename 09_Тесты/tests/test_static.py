@@ -106,6 +106,26 @@ class StaticRepository(StaticTestCase):
         self.assertIn('Replace("%TOOLKIT%", $toolkit)', setup, "установщик не подставляет папку инструментария")
         self.assertNotIn("$layout.DrwAutomation", setup, "поле раскладки, которого нет")
 
+    def test_T0_graphics_settings_do_not_depend_on_developer_pc(self):
+        """Замечание владельца 20.09.2026: на другом ПК SolidWorks не запускался после настройки. Аппаратный конвейер
+        графики включается только на дискретной видеокарте (ключ -Graphics: Auto/Safe/Hardware), программный OpenGL
+        остаётся запасным путём, а профиль реестра не несёт слепок видеокарты разработчика."""
+        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn('[ValidateSet("Auto", "Safe", "Hardware")][string]$Graphics', setup, "нет выбора режима графики")
+        self.assertIn("$hardwareGraphics", setup, "конвейер включается без проверки видеокарты")
+        pipeline = setup.index('"Use Performance Pipeline 2020" 1')
+        self.assertLess(setup.index("$hardwareGraphics = switch"), pipeline, "конвейер включается до проверки видеокарты")
+        self.assertIn('if ($hardwareGraphics -and $nvidia.Count)', setup, "маска RealView пишется без видеокарты NVIDIA")
+        gui = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
+        self.assertIn('"-Graphics", "Safe"', gui, "в окне настройки нет безопасной графики")
+        self.assertTrue((ROOT / "01_Настройки_SolidWorks" / "Безопасная_графика_SolidWorks.ps1").is_file(),
+                        "нет скорой помощи для ПК, где SolidWorks не стартует")
+        reg = (ROOT / "01_Настройки_SolidWorks" / "Реестровые_Профили" / "01_SW2025_Корпоративный_Стандарт_ЕСКД.reg").read_bytes().decode("utf-16")
+        for name in ("Saved OGL Settings", "OGL Display Shaders", "Use Performance Pipeline 2020", "Use GPU Silhouette Edges",
+                     "Use Software OGL", "Software OGL Alarm", "Large Assembly Settings", "Open Documents On Startup"):
+            with self.subTest(value=name):
+                self.assertNotIn('"%s"=' % name, reg, "настройка конкретного ПК в корпоративном профиле")
+
     def test_T0_export_paths_follow_order_structure(self):
         """ТЗ-03 ред. 8 §4.3, регламент §7.2: выгрузки из чертежа в папке 01_3D ложатся в папки изделия —
         PDF в 02_PDF (только из чертежей, без листов развёртки), DXF в 03_ЧПУ\\Лазер_Лист; линии сгиба в DXF не удаляются;
@@ -588,8 +608,11 @@ class StaticRepository(StaticTestCase):
         self.assertIn("IsOpenedReadOnly()", revision, "ревизия отказывает документу только для чтения")
         self.assertRegex(revision, r"string saveProblem = Write\(", "ревизия проверяет, сохранился ли штамп")
         lzk = (ADDIN / "Sw" / "LzkService.cs").read_text(encoding="utf-8")
-        self.assertLess(lzk.index('_workbookPath + ".new"'), lzk.index("File.Move(_workbookPath, archive)"),
+        self.assertLess(lzk.index("File.Copy(_tempWorkbook, fresh"), lzk.index("ReplacePrevious(fresh)"),
                         "новая книга ЛЗК записана до того, как прежняя уехала в архив")
+        self.assertIn("File.Copy(previous, _workbookPath", lzk, "не встала новая книга — прежняя возвращается на место")
+        self.assertIn("inputs.ReadError = ex.Message", (ADDIN / "Core" / "LzkBook.cs").read_text(encoding="utf-8"),
+                      "нечитаемая прежняя книга не затирается молча")
         ready = (ADDIN / "Sw" / "ReadyService.cs").read_text(encoding="utf-8")
         self.assertLess(ready.index("ExcelPdf.Export(workbook, staged"), ready.index("File.Move(target, archive)"),
                         "PDF листов участков сделаны до того, как прежние уехали в архив")

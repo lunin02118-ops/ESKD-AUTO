@@ -81,6 +81,9 @@ namespace ESKD.Tests
             Assert.IsFalse(ProductLocator.IsPurchasedFolder(models + @"\CN1-2.SLDASM"), "сама сборка");
             Assert.IsFalse(ProductLocator.IsPurchasedFolder(@"\\NAS\_Заявки\Т-1 Школа\Крепёжная рама\01_3D\Рама.SLDASM"),
                 "изделие с «крепёжным» именем не покупное: считаются только папки внутри 01_3D");
+            Assert.IsFalse(ProductLocator.IsPurchasedFolder(@"D:\Проекты\Крепёжная рама\Рама.SLDASM"),
+                "сборка вне заказа в папке «Крепёжная рама» — не покупное");
+            Assert.IsTrue(ProductLocator.IsPurchasedFolder(@"\\NAS\База\Крепёж ГОСТ\М8\Винт.SLDPRT"), "«Крепёж ГОСТ» — покупное");
             Assert.IsTrue(ProductLocator.IsPurchasedFolder(@"\\NAS\База\Стандартные изделия\Винт M8.SLDPRT"),
                 "библиотека базы вне изделия — как раньше");
         }
