@@ -565,6 +565,29 @@ class StaticRepository(StaticTestCase):
                 wrong.append(f"{fid}: копия чертежа изменена после сборки")
         self.assertEqual([], wrong)
 
+    def test_T0_fixture_corpus_a_matches_manifest(self):
+        """T0 (Д-44): файлы корпуса А совпадают с хешами манифеста, манифест помнит шаблоны, из которых корпус собран.
+        Корпус А сознательно собран из шаблонов до нормализации (13.09.2026): так выглядят модели, уже лежащие в заказах,
+        и на них держатся проверки прежних алиасов (Д-18, I03). Текущие шаблоны проверяют модели, которые тесты строят
+        на лету (build.plate, X05, контракт C*). Изменённый файл корпуса — пересборка fixtures/build_fixtures.py."""
+
+        def digest(path):
+            return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+        manifest = json.loads(paths.FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+        self.assertEqual({paths.PART_TEMPLATE.name, paths.ASSEMBLY_TEMPLATE.name, paths.DRAWING_TEMPLATE.name},
+                         set(manifest["templates"]), "манифест помнит шаблоны сборки корпуса")
+        wrong = []
+        for fid, item in manifest["fixtures"].items():
+            hashes = item["sha256"] if isinstance(item.get("sha256"), dict) else {item["file"]: item.get("sha256")}
+            for name, expected in hashes.items():
+                path = paths.FIXTURES_A / name
+                if not path.is_file():
+                    wrong.append(f"{fid}: нет файла {name}")
+                elif digest(path) != expected:
+                    wrong.append(f"{fid}: {name} изменён после сборки корпуса")
+        self.assertEqual([], wrong)
+
     def test_T0_dll_built_from_current_sources(self):
         """T0: build_manifest.json — хеши исходников совпадают с текущими файлами (Д-24)."""
         if not paths.ADDIN_DLL.exists():
