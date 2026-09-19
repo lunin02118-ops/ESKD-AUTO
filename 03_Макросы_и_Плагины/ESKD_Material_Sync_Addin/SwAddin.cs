@@ -163,7 +163,7 @@ namespace ESKD.MaterialSync
                 "Проверить изделие, сделать PDF листов участков и расхода из книги ЛЗК и отметить изделие готовым — отчёт _Выдано в папке изделия",
                 "Готово к производству", 10, "ReadyForProduction", "EnableReadyCommand", CommandUserIds[11], buttons);
             int close = group.AddCommandItem2("Закрыть заказ", -1,
-                "Собрать комплекты изделий, сдать заказ в архив Y: и убрать папку в _Сдано",
+                "Собрать комплекты изделий, сдать заказ в архив _Архив и убрать папку в _Сдано",
                 "Закрыть заказ", 11, "CloseOrder", "EnableCloseCommand", CommandUserIds[12], buttons);
             group.HasToolbar = true;
             group.HasMenu = true;

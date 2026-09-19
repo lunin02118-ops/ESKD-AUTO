@@ -16,7 +16,7 @@ namespace ESKD.MaterialSync.Sw
     /// <summary>
     /// Кнопка К-6 «Закрыть заказ» (ТЗ-02 Т-44…Т-47). Собирает заказ во временную папку (Pack and Go
     /// комплектов изделий + остальные файлы заказа), сверяет копию по контрольным суммам, переносит
-    /// в архив `Y:\&lt;год&gt;\&lt;заказ&gt;` и убирает папку заказа в `_Сдано` с запиской `_Архив.txt`.
+    /// в архив `_Архив\&lt;год&gt;\&lt;заказ&gt;` рядом с `_Заявки` (<see cref="OrderArchive"/>) и убирает папку заказа в `_Сдано` с запиской `_Архив.txt`.
     /// Ничего не удаляется, пока копия не сверена: оборванный перенос оставляет временную папку,
     /// и повторный запуск продолжает с неё (Т-46).
     /// </summary>
@@ -29,7 +29,6 @@ namespace ESKD.MaterialSync.Sw
         public const string DoneFolder = "_Сдано";
         public const string KitsFolder = "Комплекты";
         public const string ArchiveNote = "_Архив.txt";
-        public const string DefaultArchiveRoot = @"Y:\";
 
         public static bool Run(ISldWorks app, bool interactive, string orderFolder, string archiveRoot)
         {
@@ -64,7 +63,7 @@ namespace ESKD.MaterialSync.Sw
                     return false;
                 }
                 string root = (archiveRoot ?? "").Trim();
-                if (root.Length == 0) root = DefaultArchiveRoot;
+                if (root.Length == 0) root = OrderArchive.DefaultRoot(order);
                 if (interactive)
                 {
                     // Закрытие заказа необратимо для рабочей папки: спрашиваем один раз, но по-честному —
@@ -82,7 +81,7 @@ namespace ESKD.MaterialSync.Sw
                 }
                 if (!Directory.Exists(root))
                 {
-                    Fail(app, interactive, "Архив «" + root + "» недоступен: подключите диск и повторите.");
+                    Fail(app, interactive, "Архив «" + root + "» недоступен: нет папки или нет прав на запись (создаёт сисадмин). Заказ не тронут.");
                     return false;
                 }
 

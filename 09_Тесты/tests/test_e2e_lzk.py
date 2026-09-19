@@ -41,8 +41,10 @@ class Lzk(SwTestCase):
         models = self.case_dir / PRODUCT / "01_3D"
         models.mkdir(parents=True, exist_ok=True)
         # справочник нормативов «на заказ» над изделием: встроенных нормативов у надстройки нет (Т-13)
-        norms = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / "Нормативы_производства.xlsx"
-        (self.case_dir / norms.name).write_bytes(norms.read_bytes())
+        # справочник бланков — тоже из репозитория: иначе надстройка возьмёт опубликованный в инструментарии на NAS
+        for name in ("Нормативы_производства.xlsx", "ЛЗК_бланки.xlsx"):
+            ref = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / name
+            (self.case_dir / ref.name).write_bytes(ref.read_bytes())
         for src in sorted(Path(paths.FIXTURES_A).iterdir()):
             if src.suffix.lower() in (".sldprt", ".sldasm"):
                 self.s.workspace_copy(src, subdir=f"{self._case_name()}/{PRODUCT}/01_3D")
@@ -98,6 +100,10 @@ class Lzk(SwTestCase):
         self.assertNotIn("Покраска", ops["ПРТИ.468211.110"], "механическая сборка целиком не красится")
         paint = wb["Покрасочный"]
         self.assertEqual("Покрасочный участок", paint["A1"].value, "название листа")
+        # В-3 (решение владельца 19.09.2026): подписей на листах участков нет
+        for section in ("Заготовительный", "Сварочный", "Покрасочный", "Комплектовочный"):
+            texts = [str(c.value) for row in wb[section].iter_rows() for c in row if isinstance(c.value, str)]
+            self.assertFalse([t for t in texts if "_____ /" in t], f"{section}: строки подписей")
         self.assertEqual("№", paint["A5"].value, "шапка таблицы")
         self.assertEqual("=Тираж", paint["C3"].value, "тираж в шапке — из паспорта")
         data = [r for r in range(6, paint.max_row + 1) if isinstance(paint.cell(r, 1).value, (int, float))]

@@ -9,6 +9,15 @@ namespace ESKD.Tests
     {
         private const string Order = @"\\Synology_TR\Конструкторский отдел\_Заявки\2026-014 Школа";
 
+        public static void Test_Order_archive_is_next_to_orders_root()
+        {
+            // Диск архива Y: не заводится (решение владельца 19.09.2026): архив — «_Архив» на том же ресурсе.
+            Assert.AreEqual(@"\\Synology_TR\Конструкторский отдел\_Архив",
+                OrderArchive.DefaultRoot(@"\\Synology_TR\Конструкторский отдел\_Заявки\85-1_Т_Центр_Мангыстау"), "UNC");
+            Assert.AreEqual(@"Z:\_Архив", OrderArchive.DefaultRoot(@"Z:\_Заявки\85-1_Т_Центр_Мангыстау\"), "диск Z:");
+            Assert.AreEqual("", OrderArchive.DefaultRoot(@"Z:\"), "корень диска — архив не вывести");
+        }
+
         public static void Test_Workbook_checksum_is_compared_by_prefix()
         {
             string full = "9159dab59d43ab7ff8a7394272b309ad55ada44e20c2c1d55c4b9d1fe9bb2856";

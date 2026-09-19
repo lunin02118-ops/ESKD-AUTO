@@ -565,6 +565,16 @@ class StaticRepository(StaticTestCase):
                 wrong.append(f"{fid}: копия чертежа изменена после сборки")
         self.assertEqual([], wrong)
 
+    def test_T0_dprop_form_opening_does_not_change_drawing(self):
+        """T0 (Д-64, решение владельца 19.09.2026): открытие формы DProp чертёж не меняет — в UserForm_Activate нет
+        SheetsControl (переименование листов, ЛРИ, «Листов»); нумерацию делает «Исправить оформление чертежа»."""
+        text = (ROOT / "03_Макросы_и_Плагины" / "Макросы_SW_ZTool" / "_VBA_выгрузка" / "DProp" / "FrmDProp.frm.txt"
+                ).read_text(encoding="utf-8")
+        activate = re.search(r"(?ms)^Public Sub UserForm_Activate\(\)$(.*?)^End Sub$", text).group(1)
+        self.assertNotRegex(activate, r"(?m)^\s*SheetsControl\s*$", "открытие формы переименовывает листы")
+        standard = re.search(r"(?ms)^Private Sub CmdStandard_Click\(\).*?$(.*?)^End Sub$", text).group(1)
+        self.assertIn("SheetsControl", standard, "«Исправить оформление чертежа» нумерует листы")
+
     def test_T0_fixture_corpus_a_matches_manifest(self):
         """T0 (Д-44): файлы корпуса А совпадают с хешами манифеста, манифест помнит шаблоны, из которых корпус собран.
         Корпус А сознательно собран из шаблонов до нормализации (13.09.2026): так выглядят модели, уже лежащие в заказах,

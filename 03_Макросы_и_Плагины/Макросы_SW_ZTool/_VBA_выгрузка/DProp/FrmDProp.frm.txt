@@ -203,7 +203,7 @@ Private Sub CmdStandard_Click() ' Исправить оформление чер
     If MIni = 1 Then
         Add ' Доп. оформление
     End If
-    AnnDef
+    AnnDef: SheetsControl ' ЕСКД Д-64: нумерация листов DRW1…n и «Лист»/«Листов» — по явной команде
     ' Узнаем имя активного листа
     Set swSheet = swDraw.GetCurrentSheet
     strActiveSheetName = swSheet.GetName
@@ -399,7 +399,7 @@ If ok = True Then
 End If
 
 Tests
-SheetsControl
+' ЕСКД Д-64: открытие формы чертёж не меняет — листы и «Листов» правит «Исправить оформление чертежа»
 
 ' Возвращение активного листа
 ok = swDraw.ActivateSheet(strActiveSheetName)

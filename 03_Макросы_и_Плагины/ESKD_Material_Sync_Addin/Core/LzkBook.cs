@@ -77,8 +77,7 @@ namespace ESKD.MaterialSync.Core
         {
             LzkBlank blank = new LzkBlank { Section = section, Notes = notes };
             blank.Operations.AddRange(operations);
-            blank.Signatures.Add("Начальник КТО");
-            blank.Signatures.Add("Начальник участка");
+            // Подписей на листах участков по умолчанию нет (решение владельца 19.09.2026, В-3); нужны — справочник, столбец D.
             _sections[section] = blank;
         }
 
