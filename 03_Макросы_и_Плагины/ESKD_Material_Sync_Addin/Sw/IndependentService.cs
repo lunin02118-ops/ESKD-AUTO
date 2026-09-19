@@ -249,6 +249,11 @@ namespace ESKD.MaterialSync.Sw
         {
             string title = Path.GetFileName(candidate.Source);
             string target = IndependentNaming.TargetPath(modelsFolder, candidate.Designation, candidate.Name, candidate.Source);
+            if (ExportNaming.TooLong(IndependentNaming.DrawingOf(target)).Length > 0)
+            {
+                log.Skip(title, "не сделана независимой: " + ExportNaming.TooLong(IndependentNaming.DrawingOf(target)));
+                return;
+            }
             string before = Checksum(candidate.Source);
             try
             {

@@ -74,6 +74,17 @@ namespace ESKD.MaterialSync.Core
         public const string ReportName = "_Экспорт.txt";
         public const string ArchiveFolder = "_Аннулировано";
 
+        /// <summary>Предел длины пути файла (ТЗ-02 Т-7): запас до 260 знаков Windows на «_ИзмN» и копии в архив.</summary>
+        public const int MaxPath = 240;
+
+        /// <summary>Путь длиннее <see cref="MaxPath"/>: такой файл не пишется, причина — в отчёт.</summary>
+        public static string TooLong(string path)
+        {
+            int length = (path ?? "").Length;
+            return length <= MaxPath ? "" : "путь " + length + " знаков, больше " + MaxPath +
+                " (ТЗ-02 Т-7): сократите наименование или имя папки изделия";
+        }
+
         /// <summary>Папка PDF изделия: &lt;изделие&gt;\02_PDF.</summary>
         public static string PdfDirectory(string productFolder)
         {

@@ -229,6 +229,11 @@ namespace ESKD.MaterialSync.Sw
                 return;
             }
             string target = ExportNaming.PdfPath(productFolder, item.Designation, item.Name, item.Path, item.Revision);
+            if (ExportNaming.TooLong(target).Length > 0)
+            {
+                log.Skip(Path.GetFileName(drawingPath), "PDF не сделан: " + ExportNaming.TooLong(target));
+                return;
+            }
             Directory.CreateDirectory(Path.GetDirectoryName(target) ?? "");
 
             ModelDoc2 drawing = null;
@@ -349,6 +354,11 @@ namespace ESKD.MaterialSync.Sw
                 }
                 string target = ExportNaming.DxfPath(productFolder, item.Designation, item.Name, item.Path,
                     thickness, width, length, item.Revision);
+                if (ExportNaming.TooLong(target).Length > 0)
+                {
+                    log.Skip(Path.GetFileName(item.Path), "DXF не сделан: " + ExportNaming.TooLong(target));
+                    return;
+                }
                 if (File.Exists(target)) File.Delete(target);
                 File.Move(temporary, target);
                 log.Add(target);
@@ -418,6 +428,11 @@ namespace ESKD.MaterialSync.Sw
         {
             if (!IsStructuralMember(item.Model)) return;
             string target = ExportNaming.IgsPath(productFolder, item.Designation, item.Name, item.Path, item.Revision);
+            if (ExportNaming.TooLong(target).Length > 0)
+            {
+                log.Skip(Path.GetFileName(item.Path), "IGS не сделан: " + ExportNaming.TooLong(target));
+                return;
+            }
             Directory.CreateDirectory(Path.GetDirectoryName(target) ?? "");
             // Труборезу нужны поверхности вместе с кривыми в стандартном наборе IGES (Т-29); прежние
             // настройки конструктора возвращаются на место — кнопка ничего за собой не оставляет.

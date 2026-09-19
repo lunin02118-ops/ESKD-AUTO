@@ -139,5 +139,14 @@ namespace ESKD.Tests
             Assert.AreEqual(Path.Combine(Product, "02_PDF", "_Аннулировано", "ТС-52.00.01.004 Заглушка_2026-09-17_2145.pdf"),
                 ExportNaming.ArchivePath(pdf, new DateTime(2026, 9, 17, 21, 45, 0)), "прежний файл выдачи");
         }
+
+        public static void Test_Path_longer_than_240_is_refused()
+        {
+            string ok = @"Z:\" + new string('a', 237);
+            Assert.AreEqual(240, ok.Length, "подготовка");
+            Assert.AreEqual("", ExportNaming.TooLong(ok), "240 знаков — можно");
+            Assert.IsTrue(ExportNaming.TooLong(ok + "b").StartsWith("путь 241 знаков, больше 240"), "241 — отказ с причиной");
+            Assert.AreEqual("", ExportNaming.TooLong(null), "нет пути — не отказ");
+        }
     }
 }
