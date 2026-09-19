@@ -52,9 +52,10 @@ try {
     $addinRel = "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin"
     foreach ($rel in @("02_Шаблоны_и_Форматки", $swplusRel, "04_Библиотеки_Материалов_и_Профилей\Библиотека материалов",
                        "04_Библиотеки_Материалов_и_Профилей\Профили резьбы", "01_Настройки_SolidWorks\Реестровые_Профили")) {
+        $srcDir = Join-Path $RepoRoot $rel
         $dst = Join-Path $source $rel
         New-Item -ItemType Directory -Path $dst -Force | Out-Null
-        Copy-Item -Path (Join-Path (Join-Path $RepoRoot $rel) "*") -Destination $dst -Recurse -Force -Exclude "Backups"
+        & robocopy.exe "$srcDir" "$dst" /E /NFL /NDL /NJH /NJS /XD "Backups" | Out-Null
     }
     Remove-Item -LiteralPath (Join-Path $source "01_Настройки_SolidWorks\Реестровые_Профили\Backups") -Recurse -Force -ErrorAction SilentlyContinue
     # Соседняя папка библиотеки проектирования, как «_Библиотека проектирования\_ крепеж и фурнитура» на NAS
@@ -71,7 +72,7 @@ try {
     }
     Copy-Item -LiteralPath (Join-Path (Join-Path $RepoRoot $addinRel) "Icons") -Destination $addinDst -Recurse
     New-Item -ItemType Directory -Path (Join-Path $source "04_Библиотеки_Материалов_и_Профилей\Профили сварных деталей") -Force | Out-Null
-    Get-ChildItem -LiteralPath $source -File -Recurse | ForEach-Object { $_.IsReadOnly = $true }
+    Get-ChildItem -LiteralPath $source -File -Recurse | ForEach-Object { try { $_.IsReadOnly = $true } catch {} }
     $before = Snapshot $source
 
     # Разбор профиля отдельно: при тестовом корне нет HKLM и все разделы — в тестовом корне
@@ -141,6 +142,10 @@ try {
     Expect "QAT: базовая кнопка SolidWorks Btn10" (Read-Value $qat "Btn10") "1,54325"
     Expect "QAT: кнопка MProp Btn11" (Read-Value $qat "Btn11") "1,33639"
     Expect "QAT: кнопка SaveAsPDF Btn19" (Read-Value $qat "Btn19") "1,33647"
+    Expect "производительность: конвейер 2020 включён" (Read-Value "$swKey\Performance" "Use Performance Pipeline 2020") 1
+    Expect "производительность: кромки силуэта включены" (Read-Value "$swKey\Performance" "Use GPU Silhouette Edges") 1
+    Expect "производительность: тревога OGL выключена" (Read-Value "$swKey\General" "Software OGL Alarm") 0
+    Expect "производительность: программный OGL выключен" (Read-Value "$swKey\General" "Use Software OGL") 0
 
     $exported = Join-Path $temp "sandbox.reg"
     $null = & reg.exe export "HKCU\Software\$registryName" $exported /y 2>&1
@@ -195,6 +200,7 @@ try {
     Expect "сброс: путь Toolbox сохранён" (Read-Value "$swKey\General" "Toolbox Data Location") "C:\Мой Toolbox"
     Expect "сброс: кнопка пользователя в QAT сохранена" (Read-Value $qat "Btn20") "1,40001"
     Expect "сброс: QAT после повторной установки — Btn0..Btn19" (@(0..19 | Where-Object { Read-Value $qat "Btn$_" }).Count) 20
+    Expect "сброс: конвейер производительности сохранён" (Read-Value "$swKey\Performance" "Use Performance Pipeline 2020") 1
     Expect "сброс: фамилия вне раздела версии не тронута" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
     $output += "`n--- повторная установка ---`n" + $output2
     Expect "код выхода повторной установки" $code2 0
@@ -270,7 +276,7 @@ try {
 } finally {
     if (Test-Path -LiteralPath $sandbox) { Remove-Item -LiteralPath $sandbox -Recurse -Force }
     if (Test-Path -LiteralPath $temp) {
-        Get-ChildItem -LiteralPath $temp -File -Recurse -Force | ForEach-Object { $_.IsReadOnly = $false }
+        Get-ChildItem -LiteralPath $temp -File -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object { try { $_.IsReadOnly = $false } catch {} }
         Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
