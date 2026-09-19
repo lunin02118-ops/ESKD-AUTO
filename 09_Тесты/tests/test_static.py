@@ -106,6 +106,24 @@ class StaticRepository(StaticTestCase):
         self.assertIn('Replace("%TOOLKIT%", $toolkit)', setup, "установщик не подставляет папку инструментария")
         self.assertNotIn("$layout.DrwAutomation", setup, "поле раскладки, которого нет")
 
+    def test_T0_swtools_setup_ships_with_toolkit(self):
+        """Решение владельца 20.09.2026: SWTools идёт в комплекте. Установщик лежит в репозитории вместе с описанием
+        выпуска, описание совпадает с файлом по имени, версии и SHA-256, и публикация уносит папку в общую папку."""
+        folder = ROOT / "03_Макросы_и_Плагины" / "SWTools_Установщик"
+        release_file = folder / "swtools_release.json"
+        self.assertTrue(release_file.is_file(), "нет описания выпуска SWTools")
+        release = json.loads(release_file.read_text(encoding="utf-8"))
+        setup = folder / release["setup"]
+        self.assertTrue(setup.is_file(), "нет установщика SWTools из описания выпуска")
+        self.assertIn(release["version"], setup.name, "имя установщика не совпадает с версией выпуска")
+        self.assertEqual(hashlib.sha256(setup.read_bytes()).hexdigest(), release["sha256"].lower(),
+                         "SHA-256 установщика не совпадает с описанием выпуска")
+        self.assertRegex(release["eula_sha256"], r"^[0-9a-f]{64}$", "нет SHA-256 лицензии для тихой установки")
+        publish = (ROOT / "01_Настройки_SolidWorks" / "Publish-EskdToolkit.ps1").read_text(encoding="utf-8-sig")
+        self.assertNotIn('"SWTools_Установщик"', publish, "публикация не уносит установщик SWTools в общую папку")
+        ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertNotIn("SWTools_Установщик", ignore, "установщик SWTools исключён из репозитория")
+
     def test_T0_graphics_settings_do_not_depend_on_developer_pc(self):
         """Замечание владельца 20.09.2026: на другом ПК SolidWorks не запускался после настройки. Аппаратный конвейер
         графики включается только на дискретной видеокарте (ключ -Graphics: Auto/Safe/Hardware), программный OpenGL

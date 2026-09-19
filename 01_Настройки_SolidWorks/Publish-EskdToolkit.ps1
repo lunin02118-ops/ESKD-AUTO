@@ -5,8 +5,9 @@
     1. Собирает надстройку ЕСКД (build.ps1) и окно настройки (PyInstaller) — пропуск ключом -SkipBuild.
     2. Проверяет автотесты static (без SolidWorks) на собранной надстройке — пропуск ключом -SkipTests.
     3. Копирует репозиторий в папку -Target зеркалом robocopy без служебных папок разработки.
-    4. С ключом -SwToolsSetup кладёт установщик SWTools в 03_Макросы_и_Плагины\SWTools_Установщик (в репозитории
-       его нет; зеркало эту папку не трогает, прежний выпуск SWTools без ключа остаётся).
+    4. Установщик SWTools лежит в репозитории (03_Макросы_и_Плагины\SWTools_Установщик) и уходит в общую папку
+       зеркалом — SWTools идёт в комплекте (решение владельца 20.09.2026). Ключ -SwToolsSetup заменяет его новой
+       сборкой: установщик и swtools_release.json перезаписываются.
     5. Последним пишет toolkit_release.json: версия, коммит, дата, кто опубликовал.
 
     Конструкторы после публикации запускают 01_Настройки_SolidWorks\Настройка_Рабочего_Места_SolidWorks.exe из
@@ -21,7 +22,8 @@
 .EXAMPLE
     .\Publish-EskdToolkit.ps1 -Target "Z:\00_ИНСТРУМЕНТЫ\Инструменты_Конструктора" -SwToolsSetup "D:\сборки\SWTools-1.1.109-Setup.exe"
 .PARAMETER SwToolsSetup
-    Установщик SWTools-<версия>-Setup.exe из сборки SWTools; рядом должен лежать его .manifest.json.
+    Новая сборка SWTools-<версия>-Setup.exe вместо той, что лежит в репозитории; рядом должен лежать её
+    .manifest.json. Без ключа публикуется установщик из репозитория.
 #>
 [CmdletBinding()]
 param(
@@ -85,8 +87,7 @@ if (-not $SkipTests) {
 Write-Host "`nКопирование в $Target ..." -ForegroundColor Gray
 $excludeDirs = @(".git", ".claude", "08_Результаты_Тестирования", "09_Тесты", "99_Архив", "07_Драйверы_NVIDIA", "build_temp",
                  "Backups", "Legacy_Builds", "_VBA_выгрузка", "__pycache__",
-                 "swtools",             # клон репозитория SWTools у разработчика (ТЗ-02 огр. 4а) не публикуется
-                 "SWTools_Установщик")  # установщик SWTools — только в общей папке (-SwToolsSetup), зеркало его не удаляет
+                 "swtools")             # клон репозитория SWTools у разработчика (ТЗ-02 огр. 4а) не публикуется
 $excludeFiles = @(".git", "*_old", "*.clean_old", "*.f40_old", '~$*', "*.tmp", "toolkit_release.json")  # .git — файл-ссылка worktree
 $releaseFile = Join-Path $Target "toolkit_release.json"
 Remove-Item -LiteralPath $releaseFile -Force -ErrorAction SilentlyContinue  # на время копирования выпуск не считается опубликованным

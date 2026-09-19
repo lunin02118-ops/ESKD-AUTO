@@ -1,0 +1,9 @@
+{
+  "version": "1.1.110",
+  "setup": "SWTools-1.1.110-Setup.exe",
+  "sha256": "4758f514d2b327f6102967a81a5d08cc7584b9624f01dc6c70984d8e970d15e6",
+  "eula_sha256": "191675567cb74c3b4663d2d135a2ec7e6ad0b4b3bd53115ca189a8aa8344077d",
+  "source_commit": "",
+  "artifact_kind": "release",
+  "origin": "https://license.vizbuka.ru/swtools — официальный установщик SWTools (продукт владельца), скачан 20.09.2026"
+}
