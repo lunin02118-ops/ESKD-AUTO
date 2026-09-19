@@ -85,6 +85,18 @@ namespace ESKD.MaterialSync.Sw
                     return false;
                 }
 
+                // Заказ с тем же именем уже в архиве или в «_Сдано» (повтор после сбоя, одноимённый заказ прошлых лет):
+                // перенос слил бы папки, а откат при ошибке удалил бы и прежнее содержимое. Отказ до любых действий.
+                string target = Path.Combine(root, DateTime.Now.Year.ToString(CultureInfo.InvariantCulture), Path.GetFileName(order));
+                string done = Path.Combine(OrdersRoot(order), DoneFolder, Path.GetFileName(order));
+                foreach (string busy in new[] { target, done })
+                    if (Directory.Exists(busy))
+                    {
+                        Fail(app, interactive, "Папка «" + busy + "» уже есть. Заказ не тронут: проверьте, не закрывался ли он " +
+                            "раньше, и переименуйте ту папку или этот заказ.");
+                        return false;
+                    }
+
                 temp = Path.Combine(OrdersRoot(order), TempFolder, Path.GetFileName(order));
                 Directory.CreateDirectory(temp);
 
@@ -118,7 +130,6 @@ namespace ESKD.MaterialSync.Sw
                 }
 
                 Status(app, "ЕСКД: закрытие заказа — перенос в архив…");
-                string target = Path.Combine(root, DateTime.Now.Year.ToString(CultureInfo.InvariantCulture), Path.GetFileName(order));
                 if (!Move(temp, target, problems))
                 {
                     // Недописанная папка в архиве убирается целиком: половина заказа хуже, чем ничего (Т-46).
@@ -130,7 +141,6 @@ namespace ESKD.MaterialSync.Sw
                 }
 
                 Status(app, "ЕСКД: закрытие заказа — папка в «" + DoneFolder + "»…");
-                string done = Path.Combine(OrdersRoot(order), DoneFolder, Path.GetFileName(order));
                 Note(order, target, copied);
                 if (!Move(order, done, problems))
                 {
@@ -195,7 +205,9 @@ namespace ESKD.MaterialSync.Sw
                 while (doc != null)
                 {
                     string path = doc.GetPathName() ?? "";
-                    if (path.Length > 0 && path.StartsWith(order, StringComparison.OrdinalIgnoreCase))
+                    // С разделителем: заказ «85_Т» не должен считать своими документы заказа «85_Т2».
+                    if (path.Length > 0 && path.StartsWith(order.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar,
+                            StringComparison.OrdinalIgnoreCase))
                         open.Add(Path.GetFileName(path));
                     doc = doc.GetNext() as ModelDoc2;
                 }
@@ -421,7 +433,7 @@ namespace ESKD.MaterialSync.Sw
             sb.AppendLine("Архив:  " + archive);
             sb.AppendLine("Файлов: " + files);
             sb.AppendLine("Когда:  " + DateTime.Now.ToString("dd.MM.yyyy HH:mm", CultureInfo.GetCultureInfo("ru-RU")));
-            sb.AppendLine("Кто:    " + (Settings.Read().Author ?? Environment.UserName));
+            sb.AppendLine("Кто:    " + Settings.AuthorOrUser());
             sb.AppendLine();
             sb.AppendLine("Рабочие файлы заказа лежат в архиве; эта папка оставлена для истории.");
             try

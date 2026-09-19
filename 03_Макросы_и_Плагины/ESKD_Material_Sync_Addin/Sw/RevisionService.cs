@@ -48,6 +48,20 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Причина, по которой кнопка недоступна, или пустая строка.</summary>
         public static string Unavailable(ISldWorks app)
         {
+            return Unavailable(app, false);
+        }
+
+        // SolidWorks опрашивает доступность кнопки на каждое движение мыши, а ответ «выдан ли документ» — это чтение
+        // отчётов выдачи с NAS. Для опроса ответ держим IssuedCacheTime по пути документа (аудит 19.09, волна 2);
+        // само нажатие и автотесты (RevisionUnavailable) всегда читают отчёты заново.
+        private static readonly TimeSpan IssuedCacheTime = TimeSpan.FromSeconds(2);
+        private static string _issuedKey = "";
+        private static bool _issuedValue;
+        private static DateTime _issuedAt;
+
+        /// <summary>quick — для опроса кнопки: ответ о выдаче берётся из кэша на IssuedCacheTime.</summary>
+        public static string Unavailable(ISldWorks app, bool quick)
+        {
             try
             {
                 ModelDoc2 doc = app.ActiveDoc as ModelDoc2;
@@ -60,13 +74,26 @@ namespace ESKD.MaterialSync.Sw
                     return "у детали с чертежом ревизию поднимают на чертеже";
                 string path = doc.GetPathName() ?? "";
                 if (path.Length == 0) return "документ ещё не сохранён";
-                return Issued(path, type == (int)swDocumentTypes_e.swDocDRAWING)
+                bool drawing = type == (int)swDocumentTypes_e.swDocDRAWING;
+                return (quick ? IssuedQuick(path, drawing) : Issued(path, drawing))
                     ? "" : "документ ещё не выдан — правьте свободно";
             }
             catch (COMException)
             {
                 return "";
             }
+        }
+
+        private static bool IssuedQuick(string path, bool drawing)
+        {
+            string key = (drawing ? "d|" : "m|") + path;
+            DateTime now = DateTime.UtcNow;
+            if (key == _issuedKey && now - _issuedAt < IssuedCacheTime) return _issuedValue;
+            bool value = Issued(path, drawing);
+            _issuedKey = key;
+            _issuedValue = value;
+            _issuedAt = now;
+            return value;
         }
 
         /// <summary>Документ (или его модель) числится в отчётах выдачи изделия (Т-48).</summary>
@@ -116,6 +143,14 @@ namespace ESKD.MaterialSync.Sw
                     Fail(app, interactive, "Документ не разобран: сохраните его в папке изделия и повторите.");
                     return false;
                 }
+                // Документ только для чтения (открыт у коллеги): штамп не сохранится, а строка журнала и перенос
+                // прежних PDF в «_Аннулировано» уже случились бы — отказ до любых изменений.
+                if (target.Document.IsOpenedReadOnly())
+                {
+                    Fail(app, interactive, "Документ открыт только для чтения (его держит другой пользователь или файл " +
+                        "защищён от записи). Ревизия не поднята, журнал и файлы выдачи не тронуты.");
+                    return false;
+                }
                 int next = target.Revision + 1;
                 string reasonText = ChangeReasons.ByCode(code).Text;
                 string reasonCode = ChangeReasons.ByCode(code).Code;
@@ -144,7 +179,7 @@ namespace ESKD.MaterialSync.Sw
                 {
                     Revision = next,
                     Date = DateTime.Now,
-                    Who = Settings.Read().Author ?? Environment.UserName,
+                    Who = Settings.AuthorOrUser(),
                     Document = Path.GetFileName(target.DocumentPath),
                     What = change,
                     Reason = reasonText,
@@ -159,7 +194,15 @@ namespace ESKD.MaterialSync.Sw
                 }
 
                 Status(app, "ЕСКД: новая ревизия — штамп…");
-                Write(app, target, next, line);
+                string saveProblem = Write(app, target, next, line);
+                if (saveProblem.Length > 0)
+                {
+                    // Прежние PDF не трогаем: пока документ не сохранён, действующей остаётся прежняя ревизия.
+                    Fail(app, interactive, "Штамп ревизии " + next + " не сохранён (" + saveProblem + "). Строка " + line +
+                        " журнала «" + ChangeLog.FileName + "» уже записана — удалите её или повторите сохранение документа. " +
+                        "Прежние файлы выдачи не тронуты.");
+                    return false;
+                }
                 Archive(target);
                 Status(app, "ЕСКД: новая ревизия — выгрузка…");
                 string exported = Export(app, target);
@@ -222,16 +265,13 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>Ревизия и графы таблицы изменений — в том же виде, в каком их ведёт DProp (Т-50).</summary>
-        private static void Write(ISldWorks app, Target target, int revision, int line)
+        /// <returns>Пусто — сохранено; иначе причина, по которой документ не сохранился.</returns>
+        private static string Write(ISldWorks app, Target target, int revision, int line)
         {
             string property = target.IsDrawing ? RevisionProperty : BchRevisionProperty;
             PropertyWriter w = new PropertyWriter(target.Document, false);
             w.Set("", property, revision.ToString(CultureInfo.InvariantCulture));
-            if (!target.IsDrawing)
-            {
-                Save(target.Document);
-                return;
-            }
+            if (!target.IsDrawing) return Save(target.Document);
             DrawingDoc drw = (DrawingDoc)target.Document;
             string[] sheets = drw.GetSheetNames() as string[] ?? new string[0];
             Dictionary<string, string> values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -277,7 +317,7 @@ namespace ESKD.MaterialSync.Sw
                 }
             }
             target.Document.ForceRebuild3(false);
-            Save(target.Document);
+            return Save(target.Document);
         }
 
         private static string CurrentSheet(DrawingDoc drw)
@@ -294,10 +334,12 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
-        private static void Save(ModelDoc2 doc)
+        private static string Save(ModelDoc2 doc)
         {
             int errors = 0, warnings = 0;
-            doc.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings);
+            if (doc.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings) && errors == 0) return "";
+            Log.Warn("Новая ревизия: Save3 errors=" + errors + " warnings=" + warnings + " " + (doc.GetPathName() ?? ""));
+            return "код ошибки SolidWorks " + errors;
         }
 
         /// <summary>Прежние файлы выдачи этого документа — в `_Аннулировано` (Т-30, Т-52).</summary>

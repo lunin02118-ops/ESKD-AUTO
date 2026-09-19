@@ -172,7 +172,10 @@ namespace ESKD.Tests
                 main.SetText("C8", "Текст <&> «кавычки»");
                 main.SetNumber("G8", 1.25);
                 XlsxSheet extra = book.AddSheet("Покраска");
-                extra.SetText("A1", "x", book.AddStyle(true, true, true));
+                int style = book.AddStyle(true, true, true);
+                extra.SetText("A1", "x", style);
+                Assert.AreEqual(style, book.AddStyle(true, true, true), "тот же стиль — прежний индекс, без новых записей");
+                Assert.IsTrue(book.AddStyle(true, true, false) != style, "другой стиль — новый индекс");
                 book.Save();
 
                 XlsxBook again = XlsxBook.Open(path);

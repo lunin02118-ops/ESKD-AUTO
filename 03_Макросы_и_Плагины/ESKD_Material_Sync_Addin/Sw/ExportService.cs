@@ -71,22 +71,35 @@ namespace ESKD.MaterialSync.Sw
                 ExportLog log = new ExportLog
                 {
                     Product = LzkNaming.Cipher(productFolder, path),
-                    User = Settings.Read().Author ?? Environment.UserName,
+                    User = Settings.AuthorOrUser(),
                     Time = DateTime.Now
                 };
                 foreach (Item item in items)
                 {
                     Status(app, "ЕСКД: выгрузка — " + Path.GetFileName(item.Path));
-                    // Ревизия принадлежит чертежу (Р0-8): её поднимает К-7 в чертеже, а модель об этом не знает.
-                    // Поэтому суффикс «_ИзмN» и право переписать выданное берутся из чертежа, если он есть.
-                    item.Revision = Math.Max(item.Revision, DrawingRevision(app, item.Path));
-                    // Выданный документ перезаписывать нельзя: цех работает по тому, что у него на руках (Т-30).
-                    if (item.Revision == 0 && issued.Contains(Path.GetFileName(item.Path)))
+                    // Чертёж открывается один раз — и для ревизии, и для PDF (аудит 19.09, Л-В7): по сети каждое
+                    // открытие чертежа — секунды, а у изделия их десятки.
+                    string drawingPath = Path.ChangeExtension(item.Path, ".slddrw");
+                    bool opened = false;
+                    ModelDoc2 drawing = null;
+                    try
                     {
-                        log.Skip(Path.GetFileName(item.Path), "документ выдан в производство, оформите новую ревизию");
-                        continue;
+                        if (File.Exists(drawingPath)) drawing = OpenDrawing(app, drawingPath, out opened);
+                        // Ревизия принадлежит чертежу (Р0-8): её поднимает К-7 в чертеже, а модель об этом не знает.
+                        // Поэтому суффикс «_ИзмN» и право переписать выданное берутся из чертежа, если он есть.
+                        item.Revision = Math.Max(item.Revision, DrawingRevision(drawing, drawingPath));
+                        // Выданный документ перезаписывать нельзя: цех работает по тому, что у него на руках (Т-30).
+                        if (item.Revision == 0 && issued.Contains(Path.GetFileName(item.Path)))
+                        {
+                            log.Skip(Path.GetFileName(item.Path), "документ выдан в производство, оформите новую ревизию");
+                            continue;
+                        }
+                        Pdf(app, item, productFolder, log, drawingPath, drawing);
                     }
-                    Pdf(app, item, productFolder, log);
+                    finally
+                    {
+                        if (opened && drawing != null) app.CloseDoc(drawing.GetPathName());
+                    }
                     if (!item.IsAssembly)
                     {
                         Dxf(app, item, productFolder, log);
@@ -95,7 +108,7 @@ namespace ESKD.MaterialSync.Sw
                 }
                 // Экспорт переключал окна: конструктор должен увидеть ту же сборку, с которой начал.
                 Activate(app, path);
-                string reportPath = Write(productFolder, log);
+                string reportPath = Write(productFolder, log, type == (int)swDocumentTypes_e.swDocPART, items);
                 LastOutcome = string.Join("|", new[]
                 {
                     "ok", log.Files.Count.ToString(CultureInfo.InvariantCulture),
@@ -111,10 +124,6 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Выгрузка для производства", ex);
                 Fail(app, interactive, "Выгрузка не выполнена: " + ex.Message);
                 return false;
-            }
-            finally
-            {
-                if (doc != null) Marshal.ReleaseComObject(doc);
             }
         }
 
@@ -163,7 +172,7 @@ namespace ESKD.MaterialSync.Sw
                 item.Designation = Value(w, cfg, "Обозначение");
                 item.Name = Value(w, cfg, "Наименование");
                 item.Revision = ExportNaming.Revision(Value(w, cfg, "Revision"));
-                item.IsPurchased = SyncService.IsProtected(w, model) || ProductLocator.IsPurchasedFolder(path);
+                item.IsPurchased = ComponentKind.IsPurchased(w, model, path, "Выгрузка");
             }
             catch (Exception ex)
             {
@@ -187,25 +196,34 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
-        /// <summary>Ревизия чертежа рядом с моделью: 0 — чертежа нет или он ещё черновик.</summary>
-        private static int DrawingRevision(ISldWorks app, string modelPath)
+        /// <summary>Чертёж, уже открытый в SolidWorks, или открытый здесь (opened — закрыть после работы); null — не открылся.</summary>
+        private static ModelDoc2 OpenDrawing(ISldWorks app, string drawingPath, out bool opened)
         {
-            string drawingPath = Path.ChangeExtension(modelPath, ".slddrw");
-            if (!File.Exists(drawingPath)) return 0;
-            ModelDoc2 drawing = null;
-            bool opened = false;
+            opened = false;
             try
             {
-                drawing = app.GetOpenDocumentByName(drawingPath) as ModelDoc2;
-                if (drawing == null)
-                {
-                    int errors = 0, warnings = 0;
-                    drawing = app.OpenDoc6(drawingPath, (int)swDocumentTypes_e.swDocDRAWING,
-                        (int)swOpenDocOptions_e.swOpenDocOptions_Silent | (int)swOpenDocOptions_e.swOpenDocOptions_ReadOnly,
-                        "", ref errors, ref warnings) as ModelDoc2;
-                    opened = drawing != null;
-                }
-                if (drawing == null) return 0;
+                ModelDoc2 drawing = app.GetOpenDocumentByName(drawingPath) as ModelDoc2;
+                if (drawing != null) return drawing;
+                int errors = 0, warnings = 0;
+                drawing = app.OpenDoc6(drawingPath, (int)swDocumentTypes_e.swDocDRAWING,
+                    (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref errors, ref warnings) as ModelDoc2;
+                opened = drawing != null;
+                if (drawing == null) Log.Warn("Выгрузка: чертёж не открылся (код " + errors + "): " + drawingPath);
+                return drawing;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Выгрузка: открытие чертежа " + drawingPath, ex);
+                return null;
+            }
+        }
+
+        /// <summary>Ревизия чертежа рядом с моделью: 0 — чертежа нет или он ещё черновик.</summary>
+        private static int DrawingRevision(ModelDoc2 drawing, string drawingPath)
+        {
+            if (drawing == null) return 0;
+            try
+            {
                 return ExportNaming.Revision(new PropertyWriter(drawing, true).Resolved("", "Revision"));
             }
             catch (Exception ex)
@@ -213,16 +231,11 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Выгрузка: ревизия чертежа " + drawingPath, ex);
                 return 0;
             }
-            finally
-            {
-                if (opened && drawing != null) app.CloseDoc(drawing.GetPathName());
-            }
         }
 
         // ------------------------------------------------------------------ PDF чертежей (Т-27)
-        private static void Pdf(ISldWorks app, Item item, string productFolder, ExportLog log)
+        private static void Pdf(ISldWorks app, Item item, string productFolder, ExportLog log, string drawingPath, ModelDoc2 drawing)
         {
-            string drawingPath = Path.ChangeExtension(item.Path, ".slddrw");
             if (!File.Exists(drawingPath))
             {
                 log.Skip(Path.GetFileName(item.Path), "нет чертежа: PDF не сделан");
@@ -236,8 +249,6 @@ namespace ESKD.MaterialSync.Sw
             }
             Directory.CreateDirectory(Path.GetDirectoryName(target) ?? "");
 
-            ModelDoc2 drawing = null;
-            bool opened = false;
             int[] toggles =
             {
                 (int)swUserPreferenceToggle_e.swPDFExportInColor, (int)swUserPreferenceToggle_e.swPDFExportEmbedFonts,
@@ -247,21 +258,13 @@ namespace ESKD.MaterialSync.Sw
             // Цвет, шрифты, качество — как у SaveAsPDF SWPlus (С-4); колонтитулы не печатаются.
             bool[] wanted = { true, true, true, false, true };
             bool[] previous = new bool[toggles.Length];
+            if (drawing == null)
+            {
+                log.Skip(Path.GetFileName(drawingPath), "чертёж не открылся");
+                return;
+            }
             try
             {
-                drawing = app.GetOpenDocumentByName(drawingPath) as ModelDoc2;
-                if (drawing == null)
-                {
-                    int errors = 0, warnings = 0;
-                    drawing = app.OpenDoc6(drawingPath, (int)swDocumentTypes_e.swDocDRAWING,
-                        (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref errors, ref warnings) as ModelDoc2;
-                    opened = drawing != null;
-                }
-                if (drawing == null)
-                {
-                    log.Skip(Path.GetFileName(drawingPath), "чертёж не открылся");
-                    return;
-                }
                 for (int i = 0; i < toggles.Length; i++)
                 {
                     previous[i] = app.GetUserPreferenceToggle(toggles[i]);
@@ -301,7 +304,6 @@ namespace ESKD.MaterialSync.Sw
                         Log.Error("Выгрузка: восстановление настройки PDF", ex);
                     }
                 }
-                if (opened && drawing != null) app.CloseDoc(drawing.GetPathName());
             }
         }
 
@@ -315,15 +317,25 @@ namespace ESKD.MaterialSync.Sw
 
             string folder = ExportNaming.LaserDirectory(productFolder);
             Directory.CreateDirectory(folder);
-            // Таблица соответствия слоёв превратила бы тихий экспорт в диалог: она здесь не нужна.
-            try
+            // Таблица соответствия слоёв превратила бы тихий экспорт в диалог: она здесь не нужна. Настройки
+            // пользователя возвращаются после экспорта (аудит 19.09, Л-В8) — его ручной DXF не должен меняться.
+            int[] toggles = { (int)swUserPreferenceToggle_e.swDxfMapping, (int)swUserPreferenceToggle_e.swDXFDontShowMap };
+            bool[] wanted = { false, true };
+            bool[] previous = new bool[toggles.Length];
+            bool[] changed = new bool[toggles.Length];
+            for (int i = 0; i < toggles.Length; i++)
             {
-                app.SetUserPreferenceToggle((int)swUserPreferenceToggle_e.swDxfMapping, false);
-                app.SetUserPreferenceToggle((int)swUserPreferenceToggle_e.swDXFDontShowMap, true);
-            }
-            catch (COMException ex)
-            {
-                Log.Error("Выгрузка: настройки DXF", ex);
+                try
+                {
+                    previous[i] = app.GetUserPreferenceToggle(toggles[i]);
+                    if (previous[i] == wanted[i]) continue;
+                    app.SetUserPreferenceToggle(toggles[i], wanted[i]);
+                    changed[i] = true;
+                }
+                catch (COMException ex)
+                {
+                    Log.Error("Выгрузка: настройки DXF", ex);
+                }
             }
             // Размеры рамки видны только в готовой развёртке, поэтому экспорт идёт во временный файл,
             // а окончательное имя «…_S<толщина>мм_<ширина>х<длина>.dxf» получается после замера.
@@ -377,6 +389,18 @@ namespace ESKD.MaterialSync.Sw
                 catch (IOException ex)
                 {
                     Log.Error("Выгрузка: временный DXF " + temporary, ex);
+                }
+                for (int i = 0; i < toggles.Length; i++)
+                {
+                    if (!changed[i]) continue;
+                    try
+                    {
+                        app.SetUserPreferenceToggle(toggles[i], previous[i]);
+                    }
+                    catch (COMException ex)
+                    {
+                        Log.Error("Выгрузка: восстановление настройки DXF", ex);
+                    }
                 }
             }
         }
@@ -512,13 +536,42 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ отчёт
-        private static string Write(string productFolder, ExportLog log)
+        private static string Write(string productFolder, ExportLog log, bool partial, IEnumerable<Item> items)
         {
             foreach (string file in log.Files) log.Checksums[file] = Checksum(file);
             string path = ExportNaming.ReportPath(productFolder);
+            // Выгрузка одной детали (и «Новая ревизия») дописывает отчёт изделия, а не заменяет его: иначе проверка
+            // изделия сочла бы все остальные детали невыгруженными. Прежние файлы остаются, если лежат на месте
+            // и не переписаны сейчас; прежние пропуски — если документ сейчас не выгружался.
+            if (partial && File.Exists(path)) Merge(productFolder, log, ExportLog.Parse(File.ReadAllText(path, Encoding.UTF8)), items);
             Directory.CreateDirectory(productFolder);
             File.WriteAllText(path, log.Text(), new UTF8Encoding(true));
             return path;
+        }
+
+        private static void Merge(string productFolder, ExportLog log, ExportLog previous, IEnumerable<Item> items)
+        {
+            HashSet<string> now = new HashSet<string>(log.Files.Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
+            HashSet<string> documents = new HashSet<string>(
+                items.Select(i => Path.GetFileNameWithoutExtension(i.Path)), StringComparer.OrdinalIgnoreCase);
+            string[] folders =
+            {
+                ExportNaming.PdfDirectory(productFolder), ExportNaming.LaserDirectory(productFolder),
+                ExportNaming.TubeDirectory(productFolder)
+            };
+            foreach (string name in previous.Files)
+            {
+                if (now.Contains(name)) continue;
+                string found = folders.Select(f => Path.Combine(f, name)).FirstOrDefault(File.Exists);
+                if (found == null) continue;
+                log.Files.Add(found);
+                string sum;
+                if (previous.Checksums.TryGetValue(name, out sum)) log.Checksums[found] = sum;
+            }
+            foreach (string line in previous.Skipped)
+                if (!documents.Contains(Path.GetFileNameWithoutExtension(ExportLog.SplitSkip(line).Key))) log.Skipped.Add(line);
+            foreach (string line in previous.Warnings)
+                if (!documents.Contains(Path.GetFileNameWithoutExtension(ExportLog.SplitSkip(line).Key))) log.Warnings.Add(line);
         }
 
         private static void Show(ISldWorks app, ExportLog log, string productFolder)

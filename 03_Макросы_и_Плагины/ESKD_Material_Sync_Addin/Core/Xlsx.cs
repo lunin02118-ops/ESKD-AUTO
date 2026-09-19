@@ -34,6 +34,9 @@ namespace ESKD.MaterialSync.Core
         private readonly Dictionary<string, XlsxSheet> _sheets = new Dictionary<string, XlsxSheet>(StringComparer.OrdinalIgnoreCase);
         private XDocument _styles;
         private bool _stylesChanged;
+        // Одинаковый стиль, запрошенный повторно, отдаёт прежний индекс: без этого каждая книга ЛЗК дописывала
+        // в styles.xml десятки одинаковых шрифтов, рамок и xf (аудит 19.09, желательное по Xlsx).
+        private readonly Dictionary<string, int> _styleIndex = new Dictionary<string, int>(StringComparer.Ordinal);
 
         private XlsxBook(string path)
         {
@@ -261,6 +264,14 @@ namespace ESKD.MaterialSync.Core
         public int AddStyle(XlsxStyle style)
         {
             if (style == null) style = new XlsxStyle();
+            string key = string.Join("|", new[]
+            {
+                style.Bold ? "b" : "", style.Border ? "r" : "", style.Wrap ? "w" : "", style.Gray ? "g" : "",
+                style.Size.ToString(CultureInfo.InvariantCulture), style.Fill ?? "", style.Horizontal ?? "",
+                style.Vertical ?? "", style.NumberFormat ?? ""
+            });
+            int known;
+            if (_styleIndex.TryGetValue(key, out known)) return known;
             if (_styles == null) _styles = Load("xl/styles.xml");
             XElement root = _styles.Root;
             int fontId = 0;
@@ -337,6 +348,7 @@ namespace ESKD.MaterialSync.Core
             int index = xfs.Elements(Main + "xf").Count() - 1;
             xfs.SetAttributeValue("count", index + 1);
             _stylesChanged = true;
+            _styleIndex[key] = index;
             return index;
         }
 
@@ -656,8 +668,27 @@ namespace ESKD.MaterialSync.Core
                     }
                 }
             }
-            File.Copy(temp, _path, true);
-            File.Delete(temp);
+            Replace(temp, _path);
+        }
+
+        /// <summary>Готовый файл встаёт на место целиком: обрыв сети посреди записи не оставляет полкниги.</summary>
+        private static void Replace(string temp, string path)
+        {
+            if (!File.Exists(path))
+            {
+                File.Move(temp, path);
+                return;
+            }
+            try
+            {
+                File.Replace(temp, path, null, true);
+            }
+            catch (PlatformNotSupportedException)
+            {
+                // Файловая система без замены (часть NAS): копия поверх — как раньше.
+                File.Copy(temp, path, true);
+                File.Delete(temp);
+            }
         }
 
         /// <summary>Номер колонки (1 — A) и строки из ссылки A1.</summary>
@@ -761,14 +792,22 @@ namespace ESKD.MaterialSync.Core
             c.RemoveNodes();
             c.SetAttributeValue("t", "inlineStr");
             if (style >= 0) c.SetAttributeValue("s", style);
-            XElement t = new XElement(XlsxBook.Main + "t", text ?? "");
-            if ((text ?? "").Trim() != (text ?? "")) t.SetAttributeValue(XNamespace.Xml + "space", "preserve");
+            // Управляющие символы (бывают в свойствах SolidWorks) XML запрещает: запись книги упала бы целиком.
+            text = XmlSafe(text ?? "");
+            XElement t = new XElement(XlsxBook.Main + "t", text);
+            if (text.Trim() != text) t.SetAttributeValue(XNamespace.Xml + "space", "preserve");
             c.Add(new XElement(XlsxBook.Main + "is", t));
             Changed = true;
         }
 
         public void SetNumber(string cell, double value, int style = -1)
         {
+            // «NaN» и «Infinity» в <v> — повреждённая книга: Excel откроет её только с восстановлением.
+            if (double.IsNaN(value) || double.IsInfinity(value))
+            {
+                SetText(cell, "", style);
+                return;
+            }
             XElement c = Find(cell, true);
             c.RemoveNodes();
             c.SetAttributeValue("t", null);
@@ -785,10 +824,44 @@ namespace ESKD.MaterialSync.Core
                 cols = new XElement(XlsxBook.Main + "cols");
                 _data.AddBeforeSelf(cols);
             }
-            cols.Elements(XlsxBook.Main + "col").Where(c => (int)c.Attribute("min") == column && (int)c.Attribute("max") == column).Remove();
-            cols.Add(new XElement(XlsxBook.Main + "col", new XAttribute("min", column), new XAttribute("max", column),
-                new XAttribute("width", width.ToString(CultureInfo.InvariantCulture)), new XAttribute("customWidth", 1)));
+            // Диапазоны <col> обязаны не пересекаться и идти по возрастанию (схема): колонка внутри диапазона шаблона
+            // («13…16384») вырезается из него, иначе Excel открывает книгу с «восстановлением сведений о столбцах».
+            foreach (XElement range in cols.Elements(XlsxBook.Main + "col").ToList())
+            {
+                int min = (int)range.Attribute("min"), max = (int)range.Attribute("max");
+                if (column < min || column > max) continue;
+                if (min < column) range.AddBeforeSelf(CopyRange(range, min, column - 1));
+                if (column < max) range.AddAfterSelf(CopyRange(range, column + 1, max));
+                range.Remove();
+            }
+            XElement fresh = new XElement(XlsxBook.Main + "col", new XAttribute("min", column), new XAttribute("max", column),
+                new XAttribute("width", width.ToString(CultureInfo.InvariantCulture)), new XAttribute("customWidth", 1));
+            XElement next = cols.Elements(XlsxBook.Main + "col").FirstOrDefault(c => (int)c.Attribute("min") > column);
+            if (next != null) next.AddBeforeSelf(fresh);
+            else cols.Add(fresh);
             Changed = true;
+        }
+
+        private static XElement CopyRange(XElement range, int min, int max)
+        {
+            XElement copy = new XElement(range);
+            copy.SetAttributeValue("min", min);
+            copy.SetAttributeValue("max", max);
+            return copy;
+        }
+
+        /// <summary>Текст без символов, запрещённых в XML 1.0 (кроме табуляции и переводов строки).</summary>
+        internal static string XmlSafe(string text)
+        {
+            StringBuilder sb = null;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char ch = text[i];
+                bool bad = (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r') || ch == '\uFFFE' || ch == '\uFFFF';
+                if (bad && sb == null) sb = new StringBuilder(text, 0, i, text.Length);
+                if (!bad && sb != null) sb.Append(ch);
+            }
+            return sb == null ? text : sb.ToString();
         }
 
         /// <summary>Объединить ячейки, например A1:F1.</summary>
@@ -961,12 +1034,49 @@ namespace ESKD.MaterialSync.Core
             return created;
         }
 
+        // Индекс строк: книга ЛЗК на сотни строк заполняется по ячейке, и полный проход по строкам с Regex на каждую
+        // ячейку давал десятки секунд. Индекс только ускоряет: найденная строка перепроверяется, не найденная ищется как раньше.
+        private readonly Dictionary<int, XElement> _rows = new Dictionary<int, XElement>();
+
+        private XElement IndexedRow(int row)
+        {
+            XElement node;
+            if (_rows.TryGetValue(row, out node) && node.Parent == _data && (int)node.Attribute("r") == row) return node;
+            _rows.Remove(row);
+            return null;
+        }
+
+        /// <summary>Номер колонки по ссылке «AB12» без регулярных выражений.</summary>
+        private static int ColumnOf(string reference)
+        {
+            int column = 0;
+            foreach (char ch in reference ?? "")
+            {
+                if (ch == '$') continue;
+                char u = char.ToUpperInvariant(ch);
+                if (u < 'A' || u > 'Z') break;
+                column = column * 26 + (u - 'A' + 1);
+            }
+            return column;
+        }
+
         private XElement Find(string cell, bool create)
         {
             int column, row;
             XlsxBook.ParseCell(cell, out column, out row);
             string name = XlsxBook.CellName(column, row);
-            XElement rowNode = null;
+            XElement rowNode = IndexedRow(row);
+            if (rowNode != null) return FindInRow(rowNode, column, name, create);
+            // Частый случай — дописывание строк в конец листа.
+            XElement last = _data.Elements(XlsxBook.Main + "row").LastOrDefault();
+            if (last != null && (int)last.Attribute("r") < row)
+            {
+                if (!create) return null;
+                rowNode = new XElement(XlsxBook.Main + "row", new XAttribute("r", row));
+                last.AddAfterSelf(rowNode);
+                _rows[row] = rowNode;
+                return FindInRow(rowNode, column, name, true);
+            }
             foreach (XElement r in _data.Elements(XlsxBook.Main + "row"))
             {
                 int number = (int)r.Attribute("r");
@@ -985,11 +1095,15 @@ namespace ESKD.MaterialSync.Core
                 rowNode = new XElement(XlsxBook.Main + "row", new XAttribute("r", row));
                 _data.Add(rowNode);
             }
+            _rows[row] = rowNode;
+            return FindInRow(rowNode, column, name, create);
+        }
+
+        private static XElement FindInRow(XElement rowNode, int column, string name, bool create)
+        {
             foreach (XElement c in rowNode.Elements(XlsxBook.Main + "c"))
             {
-                string reference = (string)c.Attribute("r");
-                int cc, cr;
-                XlsxBook.ParseCell(reference, out cc, out cr);
+                int cc = ColumnOf((string)c.Attribute("r"));
                 if (cc == column) return c;
                 if (cc > column)
                 {

@@ -27,6 +27,11 @@ namespace ESKD.MaterialSync.Sw
         public static string LastOutcome = "";
 
         public const string VersionsFolder = "_Версии";
+        /// <summary>
+        /// Манифест снимка: «относительный путь TAB SHA-256» на строку. С ним повторный снимок сравнивается с прежними
+        /// без перечитывания их файлов по сети (аудит 19.09, Я-В5); снимки без манифеста сравниваются по файлам, как раньше.
+        /// </summary>
+        public const string ManifestName = "_Снимок.txt";
         /// <summary>Что входит в снимок: модели, PDF, программы ЧПУ и ведомость изделия.</summary>
         public static readonly string[] Folders = { LzkNaming.ModelsFolder, ExportNaming.PdfFolder, ExportNaming.CncFolder, LzkNaming.DocsFolder };
 
@@ -86,13 +91,14 @@ namespace ESKD.MaterialSync.Sw
                         "): папка «" + Path.GetFileName(target) + "» оставлена для разбора.");
                     return false;
                 }
+                WriteManifest(target, state);
 
                 string applicability = Applicability(productFolder, path);
                 ChangeLog.Append(ChangeLog.Path(productFolder), new ChangeRow
                 {
                     Revision = revision,
                     Date = DateTime.Now,
-                    Who = Settings.Read().Author ?? Environment.UserName,
+                    Who = Settings.AuthorOrUser(),
                     Document = "снимок " + Path.GetFileName(target),
                     What = string.IsNullOrWhiteSpace(what) ? "снимок состояния эталона" : what.Trim(),
                     Reason = ChangeReasons.ByCode(code).Text,
@@ -174,7 +180,7 @@ namespace ESKD.MaterialSync.Sw
             if (!Directory.Exists(versions)) return "";
             foreach (string snapshot in Directory.GetDirectories(versions).OrderByDescending(d => d))
             {
-                Dictionary<string, string> previous = State(snapshot);
+                Dictionary<string, string> previous = ReadManifest(snapshot) ?? State(snapshot);
                 if (previous.Count != state.Count) continue;
                 bool same = state.All(pair =>
                 {
@@ -184,6 +190,44 @@ namespace ESKD.MaterialSync.Sw
                 if (same) return Path.GetFileName(snapshot);
             }
             return "";
+        }
+
+        private static void WriteManifest(string target, Dictionary<string, string> state)
+        {
+            try
+            {
+                File.WriteAllLines(Path.Combine(target, ManifestName),
+                    state.OrderBy(pair => pair.Key, StringComparer.OrdinalIgnoreCase).Select(pair => pair.Key + "\t" + pair.Value),
+                    new UTF8Encoding(true));
+            }
+            catch (IOException ex)
+            {
+                // Без манифеста снимок полноценен: следующий снимок сравнит его по файлам.
+                Log.Error("Снимок эталона: манифест " + target, ex);
+            }
+        }
+
+        /// <summary>Состояние прежнего снимка из манифеста или null, если манифеста нет или он не читается.</summary>
+        private static Dictionary<string, string> ReadManifest(string snapshot)
+        {
+            string path = Path.Combine(snapshot, ManifestName);
+            if (!File.Exists(path)) return null;
+            try
+            {
+                Dictionary<string, string> state = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string line in File.ReadAllLines(path, Encoding.UTF8))
+                {
+                    int tab = line.LastIndexOf('\t');
+                    if (tab <= 0) return null;
+                    state[line.Substring(0, tab)] = line.Substring(tab + 1).Trim();
+                }
+                return state;
+            }
+            catch (IOException ex)
+            {
+                Log.Error("Снимок эталона: манифест " + path, ex);
+                return null;
+            }
         }
 
         private static int Copy(string productFolder, string target, Dictionary<string, string> state)

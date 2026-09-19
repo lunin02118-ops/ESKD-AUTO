@@ -64,7 +64,7 @@ namespace ESKD.MaterialSync.Sw
                 {
                     Assembly = Path.GetFileName(assemblyPath),
                     Product = LzkNaming.Cipher(productFolder, assemblyPath),
-                    User = Settings.Read().Author ?? Environment.UserName,
+                    User = Settings.AuthorOrUser(),
                     Time = DateTime.Now
                 };
                 if (!location.Found)
@@ -105,10 +105,6 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Проверка изделия", ex);
                 Fail(app, interactive, "Проверка не выполнена: " + ex.Message);
                 return false;
-            }
-            finally
-            {
-                if (doc != null) Marshal.ReleaseComObject(doc);
             }
         }
 
@@ -152,9 +148,9 @@ namespace ESKD.MaterialSync.Sw
                     continue;
                 }
                 bool inProduct = LzkNaming.IsInside(path, productFolder);
-                if (!inProduct && !Allowed(path))
+                if (!inProduct && !Allowed(path, assemblyPath))
                     report.Add(CheckRules.References, CheckRules.LevelOf(CheckRules.References), name,
-                        "ссылка за пределами заказа и базы: " + path);
+                        "ссылка за пределами заказа и базы (или на другой заказ): " + path);
                 nodes.Add(new Node
                 {
                     Path = path,
@@ -162,32 +158,24 @@ namespace ESKD.MaterialSync.Sw
                     IsAssembly = model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY,
                     // Покупное — и по свойствам (SProp), и по папке заказа: в боевых заказах фурнитуру
                     // складывают в «Стандартные изделия и фурнитура», не помечая каждую модель.
-                    IsPurchased = IsPurchased(model) || ProductLocator.IsPurchasedFolder(path),
+                    IsPurchased = ComponentKind.IsPurchased(null, model, path, "Проверка изделия"),
                     InProduct = inProduct
                 });
             }
             return nodes;
         }
 
-        /// <summary>Ссылка допустима: заказ, база эталонов или библиотека стандартных изделий.</summary>
-        private static bool Allowed(string path)
+        /// <summary>Ссылка допустима: этот же заказ, база эталонов или библиотека стандартных изделий. Деталь чужого
+        /// заказа — нет (Т-32а): тот заказ закроют в архив, и ссылка оборвётся.</summary>
+        private static bool Allowed(string path, string assemblyPath)
         {
             ProductLocation location = ProductLocator.Locate(path);
-            return location.InOrder || location.InBase;
+            if (location.InBase) return true;
+            if (!location.InOrder) return false;
+            string own = ProductLocator.Locate(assemblyPath).OrderFolder;
+            return own.Length == 0 || string.Equals(location.OrderFolder.TrimEnd('\\'), own.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
         }
 
-        private static bool IsPurchased(ModelDoc2 model)
-        {
-            try
-            {
-                return SyncService.IsProtected(new PropertyWriter(model, true), model);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Проверка изделия: признак покупного", ex);
-                return false;
-            }
-        }
 
         // ------------------------------------------------------------------ правило «б»: перестроение
         private static void Rebuild(ModelDoc2 doc, CheckReport report)
@@ -430,13 +418,42 @@ namespace ESKD.MaterialSync.Sw
                     "изделие не выгружено для производства (PDF, DXF, IGS)");
                 return;
             }
-            string text = File.ReadAllText(path, Encoding.UTF8);
+            // Сверяем блоки отчёта по отдельности: имя детали стоит и в «Пропущено» («PDF не сохранён»), и такая
+            // деталь выгруженной не считается (Т-32е).
+            ExportLog log = ExportLog.Parse(File.ReadAllText(path, Encoding.UTF8));
             foreach (Node node in nodes.Where(n => n.InProduct && !n.IsPurchased && !n.IsAssembly))
             {
                 string name = Path.GetFileNameWithoutExtension(node.Path);
-                if (text.IndexOf(name, StringComparison.OrdinalIgnoreCase) < 0)
-                    report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), Path.GetFileName(node.Path),
+                string file = Path.GetFileName(node.Path);
+                string failed = log.Skipped.Select(ExportLog.SplitSkip)
+                    .Where(s => Path.GetFileNameWithoutExtension(s.Key).Equals(name, StringComparison.OrdinalIgnoreCase)
+                        && !ExportLog.IsBenignSkip(s.Value))
+                    .Select(s => s.Value).FirstOrDefault();
+                if (failed != null)
+                    report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), file, "выгрузка не сделана: " + failed);
+                else if (!log.Files.Any(f => f.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0) &&
+                         !log.Skipped.Any(s => Path.GetFileNameWithoutExtension(ExportLog.SplitSkip(s).Key)
+                             .Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), file,
                         "нет в отчёте выгрузки " + CheckRules.ExportReportName);
+            }
+            // Файлы выгрузки должны лежать на месте и не меняться после выгрузки: цех получит именно их.
+            string[] folders =
+            {
+                ExportNaming.PdfDirectory(productFolder), ExportNaming.LaserDirectory(productFolder),
+                ExportNaming.TubeDirectory(productFolder)
+            };
+            foreach (string exported in log.Files)
+            {
+                string found = folders.Select(f => Path.Combine(f, exported)).FirstOrDefault(File.Exists);
+                string sum;
+                if (found == null)
+                    report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), exported,
+                        "файла выгрузки нет в папке изделия: выгрузите изделие заново");
+                else if (log.Checksums.TryGetValue(exported, out sum) &&
+                         !string.Equals(sum, Checksum(found), StringComparison.OrdinalIgnoreCase))
+                    report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), exported,
+                        "файл изменён после выгрузки: выгрузите изделие заново");
             }
         }
 

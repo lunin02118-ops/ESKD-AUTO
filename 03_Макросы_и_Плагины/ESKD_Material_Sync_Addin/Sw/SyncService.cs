@@ -55,10 +55,36 @@ namespace ESKD.MaterialSync.Sw
     /// </summary>
     public static class SyncService
     {
+        // Словарь SWPlus нужен на каждом сохранении и при каждом опросе кнопок, а лежит рядом с надстройкой — у
+        // установки с NAS это сетевые чтения. Держим прочитанный словарь и перечитываем, когда меняется файл
+        // (проверка времени изменения — не чаще раза в DictionaryRecheck) или путь из настроек.
+        private static readonly TimeSpan DictionaryRecheck = TimeSpan.FromSeconds(10);
+        private static readonly object DictionaryLock = new object();
+        private static PropertyDictionary _dictionary;
+        private static string _dictionaryOverride, _dictionaryPath;
+        private static DateTime _dictionaryStamp, _dictionaryChecked;
+
         public static PropertyDictionary Dictionary(Settings settings)
         {
-            string addinDir = Path.GetDirectoryName(typeof(SyncService).Assembly.Location) ?? "";
-            return PropertyDictionary.Load(PropertyDictionary.Locate(addinDir, settings.DictionaryPath));
+            string overridePath = settings.DictionaryPath ?? "";
+            lock (DictionaryLock)
+            {
+                DateTime now = DateTime.UtcNow;
+                if (_dictionary != null && _dictionaryOverride == overridePath && now - _dictionaryChecked < DictionaryRecheck)
+                    return _dictionary;
+                string addinDir = Path.GetDirectoryName(typeof(SyncService).Assembly.Location) ?? "";
+                string path = PropertyDictionary.Locate(addinDir, overridePath) ?? "";
+                DateTime stamp = path.Length > 0 && File.Exists(path) ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
+                if (_dictionary == null || _dictionaryOverride != overridePath || _dictionaryPath != path || _dictionaryStamp != stamp)
+                {
+                    _dictionary = PropertyDictionary.Load(path.Length > 0 ? path : null);
+                    _dictionaryOverride = overridePath;
+                    _dictionaryPath = path;
+                    _dictionaryStamp = stamp;
+                }
+                _dictionaryChecked = now;
+                return _dictionary;
+            }
         }
 
         public static SyncReport SyncModel(ISldWorks app, ModelDoc2 doc, SyncRequest req)
@@ -628,6 +654,7 @@ namespace ESKD.MaterialSync.Sw
                     Log.Error("SetUserPreferenceInteger " + prefs[i], ex);
                 }
             }
+            if (changed && !w.DryRun) w.Forget();
             if (changed)
             {
                 System.Globalization.CultureInfo ru = System.Globalization.CultureInfo.GetCultureInfo("ru-RU");

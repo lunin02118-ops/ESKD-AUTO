@@ -53,6 +53,9 @@ class Etalon(SwTestCase):
         self.assertIn(PART, copied, f"модели в снимке: {copied}")
         self.assertEqual((product / "01_3D" / PART).stat().st_size, (snapshot / "01_3D" / PART).stat().st_size,
                          "файл скопирован целиком")
+        manifest = (snapshot / "_Снимок.txt").read_text(encoding="utf-8-sig").splitlines()
+        self.assertEqual(int(files), len(manifest), f"манифест — строка на файл снимка: {manifest[:3]}")
+        self.assertTrue(any(line.startswith("01_3D\\" + PART + "\t") for line in manifest), f"деталь в манифесте: {manifest[:3]}")
         self.assertIn("2026-001 Школа", applicability, f"применяемость: {status}")
 
         rows = list(openpyxl.load_workbook(product / "Изменения.xlsx")["Изменения"].iter_rows(values_only=True))

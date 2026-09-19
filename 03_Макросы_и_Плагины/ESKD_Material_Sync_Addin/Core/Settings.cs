@@ -53,6 +53,14 @@ namespace ESKD.MaterialSync.Core
             }
         }
 
+        /// <summary>Кто работает: фамилия из настроек, а если её не задали — учётная запись Windows.
+        /// (`Author` пустой, а не null, поэтому «Author ?? UserName» подстановку не делал никогда.)</summary>
+        public static string AuthorOrUser()
+        {
+            string author = (Read().Author ?? "").Trim();
+            return author.Length > 0 ? author : Environment.UserName;
+        }
+
         public static Settings Read()
         {
             Settings s = new Settings();

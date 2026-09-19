@@ -347,7 +347,7 @@ namespace ESKD.MaterialSync.Sw
                 Configuration = cfg,
                 IsAssembly = assembly,
                 InProduct = LzkNaming.IsInside(path, _productFolder),
-                IsPurchased = SafeProtected(w, model),
+                IsPurchased = ComponentKind.IsPurchased(w, model, path, "Ведомость ЛЗК"),
                 Designation = Prop(w, active, "Обозначение"),
                 Name = Prop(w, active, "Наименование"),
                 Operations = Prop(w, active, LzkOperations.PropertyName),
@@ -375,18 +375,6 @@ namespace ESKD.MaterialSync.Sw
             return item;
         }
 
-        private static bool SafeProtected(PropertyWriter w, ModelDoc2 model)
-        {
-            try
-            {
-                return SyncService.IsProtected(w, model);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Ведомость ЛЗК: признак покупного", ex);
-                return false;
-            }
-        }
 
         private static string Prop(PropertyWriter w, string cfg, string name)
         {
@@ -425,7 +413,19 @@ namespace ESKD.MaterialSync.Sw
             {
                 if (t.IsStructuralMember)
                 {
-                    double length = CutListLength(model);
+                    bool several;
+                    double length = CutListLength(model, out several);
+                    if (several)
+                    {
+                        // Рама из нескольких труб в одном файле: одна длина на всю деталь занизила бы «Расход» —
+                        // берём наибольшую с пометкой «оценка», конструктор уточнит (аудит 19.09, Л-В9).
+                        item.SizeIsEstimate = true;
+                        if (!double.IsNaN(length) && length > 0)
+                        {
+                            item.Size = LzkOperations.FormatLength(length);
+                            return;
+                        }
+                    }
                     if (double.IsNaN(length))
                     {
                         Dimension rd1 = model.Parameter("RD1@Примечания") as Dimension;
@@ -450,9 +450,11 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
-        private static double CutListLength(ModelDoc2 model)
+        /// <summary>Наибольшая длина LENGTH по папкам списка вырезов; several — заготовок больше одной (папок или QUANTITY).</summary>
+        private static double CutListLength(ModelDoc2 model, out bool several)
         {
             double found = double.NaN;
+            int pieces = 0;
             for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
             {
                 if (f.GetTypeName2() != "SolidBodyFolder") continue;
@@ -465,9 +467,14 @@ namespace ESKD.MaterialSync.Sw
                     m.Get4("LENGTH", false, out raw, out resolved);
                     double v = LzkOperations.ParseNumber(resolved);
                     if (double.IsNaN(v)) v = LzkOperations.ParseNumber(raw);
-                    if (!double.IsNaN(v) && (double.IsNaN(found) || v > found)) found = v;
+                    if (double.IsNaN(v)) continue;
+                    if (double.IsNaN(found) || v > found) found = v;
+                    m.Get4("QUANTITY", false, out raw, out resolved);
+                    double quantity = LzkOperations.ParseNumber(resolved);
+                    pieces += double.IsNaN(quantity) || quantity < 1 ? 1 : (int)Math.Round(quantity);
                 }
             }
+            several = pieces > 1;
             return found;
         }
 
@@ -596,13 +603,19 @@ namespace ESKD.MaterialSync.Sw
         {
             bool topPainted = LzkOperations.Contains(top.Operations, LzkOperations.Painting);
             Dictionary<LzkItem, bool> allInside = new Dictionary<LzkItem, bool>();
+            // Путь родителя — один COM-вызов на уровень, поиск позиции — по словарю: раньше GetPathName вызывался
+            // для каждой позиции ведомости на каждого родителя каждого экземпляра.
+            Dictionary<string, LzkItem> byPath = new Dictionary<string, LzkItem>(StringComparer.OrdinalIgnoreCase);
+            foreach (LzkItem item in _items)
+                if (!string.IsNullOrEmpty(item.Path) && !byPath.ContainsKey(item.Path)) byPath[item.Path] = item;
             foreach (Instance inst in instances)
             {
                 bool inside = topPainted;
                 for (Component2 p = inst.Component.GetParent() as Component2; p != null && !inside; p = p.GetParent() as Component2)
                 {
-                    LzkItem parent = _items.FirstOrDefault(i => string.Equals(i.Path, p.GetPathName(), StringComparison.OrdinalIgnoreCase));
-                    if (parent != null && LzkOperations.Contains(parent.Operations, LzkOperations.Painting)) inside = true;
+                    LzkItem parent;
+                    if (byPath.TryGetValue(p.GetPathName() ?? "", out parent) &&
+                        LzkOperations.Contains(parent.Operations, LzkOperations.Painting)) inside = true;
                 }
                 bool prev;
                 allInside[inst.Item] = allInside.TryGetValue(inst.Item, out prev) ? prev && inside : inside;
@@ -845,6 +858,11 @@ namespace ESKD.MaterialSync.Sw
 
                 if (problem.Length == 0)
                 {
+                    // Новая книга сначала ложится рядом («.new»): упадёт копирование на NAS — прежняя книга останется на месте.
+                    Directory.CreateDirectory(Path.GetDirectoryName(_workbookPath));
+                    string fresh = _workbookPath + ".new";
+                    if (File.Exists(fresh)) File.Delete(fresh);
+                    File.Copy(_tempWorkbook, fresh, false);
                     if (File.Exists(_workbookPath))
                     {
                         string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_workbookPath));
@@ -860,8 +878,7 @@ namespace ESKD.MaterialSync.Sw
                         File.Move(_legacyPath, archive);
                         _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_legacyPath), "ведомость старого образца перенесена в «" + LzkNaming.ArchiveFolder + "»"));
                     }
-                    Directory.CreateDirectory(Path.GetDirectoryName(_workbookPath));
-                    File.Copy(_tempWorkbook, _workbookPath, false);
+                    File.Move(fresh, _workbookPath);
                 }
                 if (outcome != null && outcome.Version.Length > 0) Log.Info("Ведомость ЛЗК: SWTools " + outcome.Version);
             }

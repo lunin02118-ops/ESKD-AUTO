@@ -236,7 +236,7 @@ class StaticRepository(StaticTestCase):
         self.assertRegex(setup, r'Start-Process -FilePath "msiexec\.exe" -ArgumentList "/x", \$old\.Code, "/qn", "/norestart" -Verb RunAs',
                          "прежняя сборка Drew удаляется msiexec /x с запросом прав")
         self.assertIn("Новая сборка не ставится", setup, "при отказе в правах новая сборка не ставится поверх старой")
-        self.assertLess(setup.index("msiexec.exe"), setup.index("$drewExe[0].FullName -WorkingDirectory"), "удаление — до установки")
+        self.assertLess(setup.index("msiexec.exe"), setup.index("$drewLocalExe -WorkingDirectory"), "удаление — до установки")
         # аудит 15.09.2026 B1, B2: сбой запуска установщика не ждёт 6 минут; установленный этим же установщиком Drew
         # не переустанавливается при каждом обновлении из-за расхождения хэша
         self.assertIn("-PassThru -ErrorAction Stop", setup, "сбой запуска установщика Drew перехватывается сразу")
@@ -574,6 +574,57 @@ class StaticRepository(StaticTestCase):
         self.assertNotRegex(activate, r"(?m)^\s*SheetsControl\s*$", "открытие формы переименовывает листы")
         standard = re.search(r"(?ms)^Private Sub CmdStandard_Click\(\).*?$(.*?)^End Sub$", text).group(1)
         self.assertIn("SheetsControl", standard, "«Исправить оформление чертежа» нумерует листы")
+
+    def test_T0_audit_wave1_guards(self):
+        """T0 (глубокий аудит 19.09.2026, волна 1): правила, без которых данные теряются молча.
+        Документ SolidWorks внутри процесса не освобождается ReleaseComObject (его RCW держит EventHub); ревизия
+        проверяет «только чтение» и результат сохранения; книга ЛЗК и PDF листов участков заменяются только готовыми;
+        установщик не ставит неопубликованный выпуск и не закрывает SolidWorks с несохранёнными документами."""
+        allowed = {"ExcelPdf.cs", "ShellThumbnail.cs", "TubeAxis.cs"}  # чужие COM-объекты: Excel, оболочка, элемент дерева
+        released = sorted(src.name for src in (ADDIN / "Sw").glob("*.cs")
+                          if "ReleaseComObject" in src.read_text(encoding="utf-8") and src.name not in allowed)
+        self.assertEqual([], released, "ReleaseComObject на документе SolidWorks внутри процесса")
+        revision = (ADDIN / "Sw" / "RevisionService.cs").read_text(encoding="utf-8")
+        self.assertIn("IsOpenedReadOnly()", revision, "ревизия отказывает документу только для чтения")
+        self.assertRegex(revision, r"string saveProblem = Write\(", "ревизия проверяет, сохранился ли штамп")
+        lzk = (ADDIN / "Sw" / "LzkService.cs").read_text(encoding="utf-8")
+        self.assertLess(lzk.index('_workbookPath + ".new"'), lzk.index("File.Move(_workbookPath, archive)"),
+                        "новая книга ЛЗК записана до того, как прежняя уехала в архив")
+        ready = (ADDIN / "Sw" / "ReadyService.cs").read_text(encoding="utf-8")
+        self.assertLess(ready.index("ExcelPdf.Export(workbook, staged"), ready.index("File.Move(target, archive)"),
+                        "PDF листов участков сделаны до того, как прежние уехали в архив")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("GetSaveFlag()", setup, "установщик видит несохранённые документы")
+        self.assertRegex(setup, r'\$release\.Version -eq "рабочая копия" -and -not \$sandbox -and -not \$AllowUnpublished',
+                         "без опубликованного выпуска установка из общей папки не идёт")
+        self.assertNotRegex(" ".join(src.read_text(encoding="utf-8") for src in addin_sources()),
+                            r"Author \?\? Environment\.UserName", "Author пустой, а не null: нужен Settings.AuthorOrUser()")
+
+    def test_T0_audit_wave2_guards(self):
+        """T0 (глубокий аудит 19.09.2026, волны 2–3): скорость на NAS и одно правило «покупное».
+        Словарь SWPlus и значения свойств не перечитываются на каждое обращение; опрос кнопки «Новая ревизия» не читает
+        сеть чаще раза в 2 с; выгрузка открывает чертёж один раз и возвращает настройки DXF; «покупное» решает
+        ComponentKind; установщик запускает повышенные процессы из %TEMP% и проверяет чужие пути в профиле."""
+        sync = (ADDIN / "Sw" / "SyncService.cs").read_text(encoding="utf-8")
+        self.assertIn("DictionaryRecheck", sync, "словарь SWPlus кешируется")
+        writer = (ADDIN / "Sw" / "PropertyWriter.cs").read_text(encoding="utf-8")
+        self.assertIn("_values.Clear()", writer, "кеш значений сбрасывается при записи")
+        addin = (ADDIN / "SwAddin.cs").read_text(encoding="utf-8")
+        self.assertIn("RevisionService.Unavailable(_app, true)", addin, "опрос кнопки ревизии — с кешем")
+        export = (ADDIN / "Sw" / "ExportService.cs").read_text(encoding="utf-8")
+        self.assertEqual(1, export.count("swDocumentTypes_e.swDocDRAWING,"), "чертёж открывается в одном месте")
+        self.assertIn("восстановление настройки DXF", export, "настройки DXF пользователя возвращаются")
+        services = {name: (ADDIN / "Sw" / name).read_text(encoding="utf-8")
+                    for name in ("CheckService.cs", "ExportService.cs", "LzkService.cs")}
+        self.assertEqual([], [n for n, text in services.items() if "ComponentKind.IsPurchased(" not in text],
+                         "проверка, выгрузка и ЛЗК решают «покупное» одним правилом")
+        etalon = (ADDIN / "Sw" / "EtalonService.cs").read_text(encoding="utf-8")
+        self.assertIn("ReadManifest(snapshot) ?? State(snapshot)", etalon, "прежние снимки сравниваются по манифесту")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("ESKD_Drew_", setup, "установщик Drew — из копии в %TEMP%")
+        self.assertIn("ESKD_SwInternetBlock_", setup, "SwInternetBlock — из копии в %TEMP%")
+        self.assertNotIn("$cnt -ge 300", setup, "порог правил — по файлам этого ПК, а не 300")
+        self.assertIn("Find-EskdForeignPaths", setup, "профиль реестра проверяется на чужие пути")
 
     def test_T0_fixture_corpus_a_matches_manifest(self):
         """T0 (Д-44): файлы корпуса А совпадают с хешами манифеста, манифест помнит шаблоны, из которых корпус собран.

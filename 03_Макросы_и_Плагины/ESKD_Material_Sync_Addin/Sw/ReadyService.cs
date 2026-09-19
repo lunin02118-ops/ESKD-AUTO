@@ -72,16 +72,41 @@ namespace ESKD.MaterialSync.Sw
                 string pdfDir = ExportNaming.PdfDirectory(product);
                 DateTime now = DateTime.Now;
                 foreach (KeyValuePair<string, string> pair in sheets)
-                    if (File.Exists(pair.Value))
+                    if (File.Exists(pair.Value) && Locked(pair.Value))
+                        return Fail(app, interactive, "Файл " + Path.GetFileName(pair.Value) + " открыт. Закройте его и повторите.");
+                // PDF сначала во временную папку: не сработал Excel — прежние PDF цеха остаются на месте.
+                string staging = Path.Combine(Path.GetTempPath(), "ESKD_pdf_" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(staging);
+                try
+                {
+                    List<KeyValuePair<string, string>> staged = sheets
+                        .Select(s => new KeyValuePair<string, string>(s.Key, Path.Combine(staging, Path.GetFileName(s.Value)))).ToList();
+                    string problem;
+                    if (!ExcelPdf.Export(workbook, staged, out problem)) return Fail(app, interactive, problem);
+                    Directory.CreateDirectory(pdfDir);
+                    for (int i = 0; i < sheets.Count; i++)
                     {
-                        if (Locked(pair.Value))
-                            return Fail(app, interactive, "Файл " + Path.GetFileName(pair.Value) + " открыт. Закройте его и повторите.");
-                        string archive = ExportNaming.ArchivePath(pair.Value, now);
-                        Directory.CreateDirectory(Path.GetDirectoryName(archive) ?? "");
-                        File.Move(pair.Value, archive);
+                        string target = sheets[i].Value;
+                        if (File.Exists(target))
+                        {
+                            string archive = ExportNaming.ArchivePath(target, now);
+                            Directory.CreateDirectory(Path.GetDirectoryName(archive) ?? "");
+                            File.Move(target, archive);
+                        }
+                        File.Copy(staged[i].Value, target, false);
                     }
-                string problem;
-                if (!ExcelPdf.Export(workbook, sheets, out problem)) return Fail(app, interactive, problem);
+                }
+                finally
+                {
+                    try
+                    {
+                        Directory.Delete(staging, true);
+                    }
+                    catch (IOException ex)
+                    {
+                        Log.Error("Готово к производству: временная папка " + staging, ex);
+                    }
+                }
 
                 string who = Settings.Read().Author;
                 if (string.IsNullOrWhiteSpace(who)) who = Environment.UserName;

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using ESKD.MaterialSync.Core;
 
@@ -76,6 +77,36 @@ namespace ESKD.Tests
 
             string empty = new ExportLog { Product = "ТС-52", User = "И" }.Text();
             Assert.IsTrue(empty.Contains("Ничего не выгружено."), empty);
+        }
+
+        public static void Test_Report_is_parsed_back_by_blocks()
+        {
+            // Проверка изделия (Т-32е) читает отчёт по блокам: имя детали в «Пропущено» не делает её выгруженной.
+            string sum = new string('a', 64);
+            ExportLog log = new ExportLog { Product = "ТС-52", User = "И" };
+            string pdf = Path.Combine(Product, "02_PDF", "ТС-52.00.01.004 Заглушка.pdf");
+            log.Add(pdf);
+            log.Checksums[pdf] = sum;
+            log.Skip("ТС-52.00.01.005 Уголок.slddrw", "PDF не сохранён (код 2)");
+            log.Skip("ТС-52.00.01.007 Кронштейн.sldprt", "нет чертежа: PDF не сделан");
+            log.Warn("ТС-52.00.02.001 Труба.sldprt", "IGS не по оси трубы");
+
+            ExportLog back = ExportLog.Parse(log.Text());
+            Assert.AreEqual(1, back.Files.Count, "один выгруженный файл");
+            Assert.AreEqual("ТС-52.00.01.004 Заглушка.pdf", back.Files[0], "имя файла");
+            Assert.AreEqual(sum, back.Checksums["ТС-52.00.01.004 Заглушка.pdf"], "сумма");
+            Assert.AreEqual(2, back.Skipped.Count, "два пропуска");
+            Assert.AreEqual(1, back.Warnings.Count, "замечание");
+            KeyValuePair<string, string> skip = ExportLog.SplitSkip(back.Skipped[0]);
+            Assert.AreEqual("ТС-52.00.01.005 Уголок.slddrw", skip.Key, "документ пропуска");
+            Assert.AreEqual("PDF не сохранён (код 2)", skip.Value, "причина");
+            Assert.IsFalse(ExportLog.IsBenignSkip(skip.Value), "несохранённый PDF — несделанная выгрузка");
+            Assert.IsTrue(ExportLog.IsBenignSkip(ExportLog.SplitSkip(back.Skipped[1]).Value), "у детали без чертежа PDF нет по делу");
+            Assert.IsTrue(ExportLog.IsBenignSkip("документ выдан в производство, оформите новую ревизию"), "выданное не переписывается");
+
+            ExportLog legacy = ExportLog.Parse("Выгружено (SHA-256):\r\n  --------  А.pdf\r\n");
+            Assert.AreEqual(1, legacy.Files.Count, "строка без суммы — файл есть");
+            Assert.IsFalse(legacy.Checksums.ContainsKey("А.pdf"), "без суммы нечего сверять");
         }
 
         public static void Test_Issued_documents_are_read_from_reports()
