@@ -5,6 +5,7 @@
 в папке изделия, PDF листов участков делает Excel из книги ЛЗК. Книги здесь собираются вручную (openpyxl) —
 кнопка читает их как файлы.
 """
+import os
 import shutil
 import time
 import unittest
@@ -240,6 +241,63 @@ class Issue(SwTestCase):
         self.assertIn("недоступен", status, status)
         self.assertTrue((order / "02_Металл" / PRODUCT / "01_3D" / ASM).is_file(), "файлы заказа на месте")
         self.assertFalse((order.parent / "_Сдано" / ORDER).exists(), "заказ не сдан")
+
+    def _close_to_default_archive(self, order):
+        """Закрыть заказ без адреса архива: архив по умолчанию — «_Архив» рядом с корнем заказов (19.09.2026)."""
+        orders_root = order.parent
+        archive = orders_root.parent / "_Архив"
+        self.s.close_all()
+        status = self._close(order, "")
+        self.assertTrue(status.startswith("ok|"), status)
+        _, target, files, done = status.split("|")
+        target, done = Path(target), Path(done)
+        self.assertGreater(int(files), 0, status)
+        self.assertEqual(str(archive / time.strftime("%Y") / order.name).lower(), str(target).lower(), "архив _Архив\\<год>\\<заказ>")
+        self.assertTrue((target / "Комплекты" / CIPHER).is_dir(), f"комплект изделия: {sorted(p.name for p in target.iterdir())}")
+        self.assertTrue((target / "02_Металл" / PRODUCT / "01_3D" / ASM).is_file(), "файлы заказа в архиве")
+        self.assertEqual(str(orders_root / "_Сдано" / order.name).lower(), str(done).lower(), "заказ в «_Сдано»")
+        self.assertFalse(order.exists(), "папка заказа убрана из рабочего каталога")
+        self.assertIn(str(target), (done / "_Архив.txt").read_text(encoding="utf-8-sig"), "записка ссылается на архив")
+        self.assertFalse((orders_root / "_tmp" / order.name).exists(), "временная папка убрана")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+        return target, done
+
+    def test_Y04_default_archive_is_next_to_orders_root(self):
+        """Y04: диска Y: нет — «Закрыть заказ» без адреса кладёт архив в «_Архив» рядом с «_Заявки»."""
+        order, _, _ = self._order(issued=True)
+        (order.parent.parent / "_Архив").mkdir(exist_ok=True)
+        self._close_to_default_archive(order)
+
+    @unittest.skipUnless(os.environ.get("ESKD_LIVE_ORDERS_ROOT"), "живая проверка NAS: задать ESKD_LIVE_ORDERS_ROOT=<…\\_Заявки>")
+    def test_Y05_live_close_on_nas(self):
+        """Y05 (по запросу): тестовый заказ закрывается на настоящем NAS в настоящий «_Архив»; убирается только он сам."""
+        orders_root = Path(os.environ["ESKD_LIVE_ORDERS_ROOT"])
+        archive = orders_root.parent / "_Архив"
+        self.assertTrue(archive.is_dir(), f"нет папки архива {archive}")
+        name = "_тест_ЕСКД_закрытие_" + time.strftime("%Y%m%d_%H%M%S")
+        order = orders_root / name
+        models = order / "02_Металл" / PRODUCT / "01_3D"
+        models.mkdir(parents=True)
+        tmp_existed = (orders_root / "_tmp").exists()
+        target = done = None
+        try:
+            for src in sorted(Path(paths.FIXTURES_A).iterdir()):
+                if src.suffix.lower() in (".sldprt", ".sldasm", ".slddrw"):
+                    shutil.copy2(src, models / src.name)
+            (models.parent / "_Выдано_2026-09-10_0900.txt").write_text(
+                "Готово к производству\nИзделие: " + CIPHER + "\n", encoding="utf-8")
+            target, done = self._close_to_default_archive(order)
+        finally:
+            # Только то, что создал сам тест: тестовый заказ, его архив и его папка в «_Сдано».
+            for path in (order, done, target, orders_root / "_tmp" / name):
+                if path is not None and Path(path).name == name and Path(path).exists():
+                    shutil.rmtree(path, ignore_errors=True)
+            year = archive / time.strftime("%Y")
+            if year.is_dir() and not any(year.iterdir()):
+                year.rmdir()
+            tmp = orders_root / "_tmp"
+            if not tmp_existed and tmp.is_dir() and not any(tmp.iterdir()):
+                tmp.rmdir()
 
 
 if __name__ == "__main__":
