@@ -111,9 +111,23 @@ namespace ESKD.Tests
             Assert.AreEqual(163672.0, plan.CleanMm, "чистый расход, мм");
             Assert.AreEqual(246000.0, plan.BoughtMm, "закуплено, мм");
             Assert.AreEqual(41, plan.BusinessRests.Count, "деловой обрезок с каждого хлыста");
-            Assert.IsTrue(plan.BusinessRests.All(r => r > 1780 && r < 1800), "обрезок около 1787 мм: " +
+            // 6000 − захват 200 − торцовка 2×20 (на каждый торец, как в формуле книги) − 2×(1996 + 0,5) = 1767 мм.
+            Assert.IsTrue(plan.BusinessRests.All(r => r > 1760 && r < 1770), "обрезок около 1767 мм: " +
                 string.Join(", ", plan.BusinessRests.Take(3).Select(r => r.ToString("0")).ToArray()));
             Assert.AreEqual("66.5%", plan.KimText, "КИМ как в образце заявки");
+        }
+
+        public static void Test_Large_run_is_planned_quickly()
+        {
+            // Тираж в тысячи изделий: раскрой пачками одинаковых длин, а не по одной штуке (аудит 19.09, Л-К6).
+            System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+            double[] pieces = Enumerable.Repeat(1000.0, 20000).Concat(Enumerable.Repeat(700.0, 20000)).ToArray();
+            CutResult plan = CutPlan.Plan("Труба 20х20", pieces, 6000, 200, 20, 0.5, 500);
+            watch.Stop();
+            Assert.AreEqual(40000, plan.Bars.Sum(b => b.Pieces.Count), "все заготовки разложены");
+            // По 5 длинных на хлыст (5002,5 мм из 5760), в остаток 757,5 — ещё одна короткая; остальные короткие по 8.
+            Assert.AreEqual(4000 + (20000 - 4000 + 7) / 8, plan.BarCount, "хлыстов");
+            Assert.IsTrue(watch.ElapsedMilliseconds < 3000, "раскрой 40 000 заготовок: " + watch.ElapsedMilliseconds + " мс");
         }
 
         public static void Test_Short_rest_is_waste_and_long_piece_is_reported()

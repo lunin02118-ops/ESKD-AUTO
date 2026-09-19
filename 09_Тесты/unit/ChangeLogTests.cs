@@ -24,6 +24,37 @@ namespace ESKD.Tests
             Assert.AreEqual("4 — устранение ошибок", ChangeReasons.ByCode("4").ToString(), "вид в списке окна");
         }
 
+        public static void Test_Concurrent_appends_keep_every_row()
+        {
+            // Два конструктора дописывают журнал одновременно: без метки-блокировки последняя запись затирала строку первой.
+            string folder = Temp();
+            try
+            {
+                string path = ChangeLog.Path(folder);
+                int[] numbers = new int[6];
+                System.Threading.Thread[] threads = new System.Threading.Thread[numbers.Length];
+                for (int i = 0; i < threads.Length; i++)
+                {
+                    int k = i;
+                    threads[i] = new System.Threading.Thread(() => numbers[k] = ChangeLog.Append(path, new ChangeRow
+                    {
+                        Revision = 1, Date = new DateTime(2026, 9, 19), Who = "Поток " + k, Document = "Д" + k + ".slddrw",
+                        What = "проверка", Reason = "прочие", Code = "8", Backlog = "использовать"
+                    }));
+                    threads[i].Start();
+                }
+                foreach (System.Threading.Thread thread in threads) thread.Join();
+                Array.Sort(numbers);
+                Assert.AreEqual("1,2,3,4,5,6", string.Join(",", numbers), "каждая запись получила свой номер");
+                Assert.AreEqual(6, ChangeLog.Rows(path).Count, "ни одна строка не потеряна");
+                Assert.IsFalse(File.Exists(path + ".lock"), "метка занятости снята");
+            }
+            finally
+            {
+                Directory.Delete(folder, true);
+            }
+        }
+
         public static void Test_Journal_is_created_with_header()
         {
             string folder = Temp();

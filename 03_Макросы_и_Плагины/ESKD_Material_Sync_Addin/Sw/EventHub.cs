@@ -196,6 +196,16 @@ namespace ESKD.MaterialSync.Sw
             return 0;
         }
 
+        /// <summary>
+        /// Отложенных задач (пересохранение после «Сохранить как», формат чертежа, копия): пока их больше нуля,
+        /// внешний процесс не должен закрывать документ и дёргать его события — SolidWorks принимает входящий
+        /// COM-вызов посреди Save3 в простое и падает (ucrtbase 0xc0000409, R01 19.09.2026).
+        /// </summary>
+        public int PendingTasks
+        {
+            get { return _idle.Count + (_processingIdle ? 1 : 0); }
+        }
+
         private int OnIdle()
         {
             if (_processingIdle || _idle.Count == 0) return 0;

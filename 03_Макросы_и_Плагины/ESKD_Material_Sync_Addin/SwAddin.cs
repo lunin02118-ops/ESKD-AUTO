@@ -408,6 +408,11 @@ namespace ESKD.MaterialSync
                 // SolidWorks опрашивает состояние кнопки постоянно; занятый COM — просто «доступна, не нажата».
                 return 1;
             }
+            catch (Exception ex)
+            {
+                Core.Log.WarnOnce("Кнопка EnableBchCommand: " + ex.GetType().Name + ": " + ex.Message);
+                return 1;
+            }
         }
 
         private string _formatProperty;
@@ -546,6 +551,11 @@ namespace ESKD.MaterialSync
             {
                 return 1;
             }
+            catch (Exception ex)
+            {
+                Core.Log.WarnOnce("Кнопка EnableLzkCommand: " + ex.GetType().Name + ": " + ex.Message);
+                return 1;
+            }
         }
 
         public void BuildLzk()
@@ -576,6 +586,11 @@ namespace ESKD.MaterialSync
             {
                 return 1;
             }
+            catch (Exception ex)
+            {
+                Core.Log.WarnOnce("Кнопка EnableCheckCommand: " + ex.GetType().Name + ": " + ex.Message);
+                return 1;
+            }
         }
 
         public void CheckProduct()
@@ -601,6 +616,15 @@ namespace ESKD.MaterialSync
             CheckService.ShowLast(_app, false);
         }
 
+        /// <summary>
+        /// Отложенные задачи надстройки (пересохранение в простое): автотесты и внешние программы ждут нуля,
+        /// прежде чем закрывать документ или снимать с него подписки.
+        /// </summary>
+        public int PendingIdleTasks()
+        {
+            return _hub != null ? _hub.PendingTasks : 0;
+        }
+
         /// <summary>«ok|итог|брак|замечаний|отчёт» или «error|текст».</summary>
         public string CheckStatus()
         {
@@ -617,6 +641,11 @@ namespace ESKD.MaterialSync
             }
             catch (COMException)
             {
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                Core.Log.WarnOnce("Кнопка EnableExportCommand: " + ex.GetType().Name + ": " + ex.Message);
                 return 1;
             }
         }
@@ -651,6 +680,11 @@ namespace ESKD.MaterialSync
             }
             catch (COMException)
             {
+                return 1;
+            }
+            catch (Exception ex)
+            {
+                Core.Log.WarnOnce("Кнопка EnableIndependentCommand: " + ex.GetType().Name + ": " + ex.Message);
                 return 1;
             }
         }
@@ -695,10 +729,15 @@ namespace ESKD.MaterialSync
             {
                 int type = ActiveDocType();
                 if (type != (int)swDocumentTypes_e.swDocDRAWING && type != (int)swDocumentTypes_e.swDocPART) return 0;
-                return RevisionService.Unavailable(_app).Length == 0 ? 1 : 0;
+                return RevisionService.Unavailable(_app, true).Length == 0 ? 1 : 0;
             }
             catch (COMException)
             {
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Core.Log.WarnOnce("Кнопка EnableRevisionCommand: " + ex.GetType().Name + ": " + ex.Message);
                 return 0;
             }
         }
@@ -738,6 +777,11 @@ namespace ESKD.MaterialSync
             }
             catch (COMException)
             {
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                Core.Log.WarnOnce("Кнопка EnableEtalonCommand: " + ex.GetType().Name + ": " + ex.Message);
                 return 0;
             }
         }

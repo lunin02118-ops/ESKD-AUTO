@@ -50,7 +50,11 @@ namespace ESKD.MaterialSync.Core
         public static readonly string[] PurchasedFolders =
             { "Стандартные изделия", "Стандартные", "Фурнитура", "Покупные", "Крепеж", "Крепёж" };
 
-        /// <summary>Документ лежит в папке покупного или стандартного (любой уровень пути).</summary>
+        /// <summary>
+        /// Документ лежит в папке покупного или стандартного. В изделии считаются только папки внутри «01_3D»: иначе
+        /// изделие «Крепёжная рама» целиком стало бы покупным и выпало из выгрузки и проверки (аудит 19.09, Л-В5).
+        /// Вне изделия (библиотеки базы) — любой уровень пути, как раньше.
+        /// </summary>
         public static bool IsPurchasedFolder(string path)
         {
             if (string.IsNullOrWhiteSpace(path)) return false;
@@ -65,7 +69,9 @@ namespace ESKD.MaterialSync.Core
             }
             for (string current = dir; !string.IsNullOrEmpty(current); current = Path.GetDirectoryName(current))
             {
-                string folder = (Path.GetFileName(current) ?? "").TrimStart('_', ' ');
+                string name = Path.GetFileName(current) ?? "";
+                if (string.Equals(name, LzkNaming.ModelsFolder, StringComparison.OrdinalIgnoreCase)) return false;
+                string folder = name.TrimStart('_', ' ');
                 if (PurchasedFolders.Any(p => folder.StartsWith(p, StringComparison.OrdinalIgnoreCase))) return true;
             }
             return false;

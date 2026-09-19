@@ -134,11 +134,40 @@ function Convert-EskdRegProfile {
     return $out
 }
 
+function Find-EskdForeignPaths {
+    <#
+    Пути с буквой диска в адаптированном профиле .reg, которые не ведут ни в инструментарий, ни в локальную копию, ни в
+    профиль пользователя, ни в папки Windows/Program Files. Новый экспорт .reg с ПК разработчика (его диск D:) иначе молча
+    разнёсся бы на все рабочие места (аудит 19.09, У-В1). Возвращает список различных путей (до трёх уровней).
+    #>
+    param(
+        [Parameter(Mandatory = $true)][string]$Text,
+        [string[]]$Allowed = @()
+    )
+    $roots = @($Allowed + @($env:USERPROFILE, $env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:ProgramData, $env:windir) |
+        Where-Object { $_ } | ForEach-Object { $_.TrimEnd('\').ToLowerInvariant() + '\' })
+    $found = New-Object System.Collections.Generic.List[string]
+    foreach ($m in [regex]::Matches($Text, '(?i)(?<![A-Za-z])[A-Za-z]:(?:\\\\)+[^"\r\n;]*')) {
+        $path = ($m.Value -replace '(\\)+', '\')
+        $low = $path.ToLowerInvariant() + '\'
+        if (@($roots | Where-Object { $low.StartsWith($_) }).Count) { continue }
+        $short = (($path -split '\\') | Select-Object -First 3) -join '\'
+        if (-not $found.Contains($short)) { $found.Add($short) }
+    }
+    return @($found)
+}
+
 function Test-EskdFileSame {
+    <#
+    Файл локальной копии совпадает с выпуском. Размер и время сравниваются первыми (быстро); при разнице во времени
+    решает SHA-256: у Synology и NTFS разная точность времени, и по одному времени перекопировалось бы всё (аудит 19.09, У-В9).
+    #>
     param([string]$A, [string]$B)
     if (-not (Test-Path -LiteralPath $B)) { return $false }
     $fa = Get-Item -LiteralPath $A; $fb = Get-Item -LiteralPath $B
-    return ($fa.Length -eq $fb.Length) -and ($fa.LastWriteTimeUtc -eq $fb.LastWriteTimeUtc)
+    if ($fa.Length -ne $fb.Length) { return $false }
+    if ($fa.LastWriteTimeUtc -eq $fb.LastWriteTimeUtc) { return $true }
+    return (Get-EskdFileSha256 -Path $A) -eq (Get-EskdFileSha256 -Path $B)
 }
 
 function Copy-EskdFile {

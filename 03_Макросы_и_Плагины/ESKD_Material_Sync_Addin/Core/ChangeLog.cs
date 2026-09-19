@@ -95,8 +95,10 @@ namespace ESKD.MaterialSync.Core
             "Задел", "Применяемость"
         };
         private static readonly double[] Widths = { 5, 9, 12, 18, 34, 40, 34, 12, 14, 30 };
-        /// <summary>Сколько ждать занятый файл (Т-51).</summary>
-        public static readonly TimeSpan Wait = TimeSpan.FromSeconds(30);
+        /// <summary>Сколько ждать занятый файл (Т-51). Ожидание идёт в потоке SolidWorks — дольше нельзя: окно «зависнет».</summary>
+        public static readonly TimeSpan Wait = TimeSpan.FromSeconds(8);
+        /// <summary>Метка «журнал пишет другой конструктор» старше этого — след упавшего сеанса, её можно снять.</summary>
+        public static readonly TimeSpan StaleLock = TimeSpan.FromMinutes(2);
 
         public static string Path(string folder)
         {
@@ -146,7 +148,10 @@ namespace ESKD.MaterialSync.Core
             {
                 try
                 {
-                    return Write(path, row);
+                    // Книга читается целиком в память и записывается заново: два конструктора, дописывающие строку
+                    // одновременно, затёрли бы строки друг друга. Метка-файл рядом с книгой пускает писать по одному.
+                    using (Lock(path))
+                        return Write(path, row);
                 }
                 catch (IOException ex)
                 {
@@ -157,10 +162,28 @@ namespace ESKD.MaterialSync.Core
                     last = ex;
                 }
                 if (DateTime.UtcNow >= deadline) break;
-                Thread.Sleep(1000);
+                Thread.Sleep(500);
             }
             Log.Error("Журнал изменений: строка не записана в " + path, last);
             return 0;
+        }
+
+        /// <summary>Метка «журнал занят»: файл `Изменения.xlsx.lock`, удаляется при закрытии. Занято — IOException.</summary>
+        private static FileStream Lock(string path)
+        {
+            string lockPath = path + ".lock";
+            string directory = System.IO.Path.GetDirectoryName(lockPath);
+            if (!string.IsNullOrEmpty(directory)) Directory.CreateDirectory(directory);
+            try
+            {
+                if (File.Exists(lockPath) && DateTime.UtcNow - File.GetLastWriteTimeUtc(lockPath) > StaleLock)
+                    File.Delete(lockPath);
+            }
+            catch (IOException ex)
+            {
+                Log.Error("Журнал изменений: старая метка " + lockPath, ex);
+            }
+            return new FileStream(lockPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
         }
 
         private static int Write(string path, ChangeRow row)

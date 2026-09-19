@@ -327,7 +327,23 @@ class SwSession:
         err = com.ref_int()
         self.sw.ActivateDoc3(doc.GetTitle, False, 0, err)
 
+    def wait_addin_idle(self, timeout=15.0):
+        """Ждёт, пока надстройка выполнит отложенные задачи (пересохранение после «Сохранить как» в простое).
+        Закрыть документ или снять с него подписки зонда раньше нельзя: SolidWorks принимает внешний COM-вызов
+        посреди Save3 и падает (R01, 19.09.2026). Каждый опрос отдаёт SolidWorks простой."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                addin = self.eskd() if self.eskd_loaded else None
+                if addin is None or int(com.call(addin, "PendingIdleTasks")) == 0:
+                    return True
+            except Exception:
+                return False
+            time.sleep(0.2)
+        return False
+
     def close(self, doc):
+        self.wait_addin_idle()
         try:
             title = doc.GetTitle
         except Exception:
@@ -349,6 +365,7 @@ class SwSession:
         time.sleep(0.3)
 
     def close_all(self):
+        self.wait_addin_idle()
         for doc in list(self._opened):
             self.close(doc)
         try:

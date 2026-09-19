@@ -85,7 +85,7 @@ namespace ESKD.MaterialSync.Sw
                 IndependentLog log = new IndependentLog
                 {
                     Product = LzkNaming.Cipher(productFolder, assemblyPath),
-                    User = Settings.Read().Author ?? Environment.UserName,
+                    User = Settings.AuthorOrUser(),
                     Time = DateTime.Now
                 };
                 List<Candidate> candidates = Candidates(app, doc, productFolder, modelsFolder, log,
@@ -130,10 +130,6 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Сделать независимым", ex);
                 Fail(app, interactive, "Не сделано: " + ex.Message);
                 return false;
-            }
-            finally
-            {
-                if (doc != null) Marshal.ReleaseComObject(doc);
             }
         }
 
@@ -362,10 +358,6 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Сделать независимым: реквизиты " + target, ex);
                 log.Skip(title, "реквизиты новой детали не обновлены: " + ex.Message);
             }
-            finally
-            {
-                if (model != null) Marshal.ReleaseComObject(model);
-            }
         }
 
         // ------------------------------------------------------------------ чертёж (Т-22)
@@ -413,12 +405,8 @@ namespace ESKD.MaterialSync.Sw
             }
             finally
             {
-                if (drawing != null)
-                {
-                    string path = drawing.GetPathName();
-                    Marshal.ReleaseComObject(drawing);
-                    app.CloseDoc(path);
-                }
+                // Чертёж только закрываем; RCW не освобождаем — его держит EventHub до DestroyNotify.
+                if (drawing != null) app.CloseDoc(drawing.GetPathName());
             }
         }
 

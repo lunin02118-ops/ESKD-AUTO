@@ -17,6 +17,12 @@ namespace ESKD.MaterialSync.Sw
         private readonly bool _dryRun;
         private readonly string _docTitle;
         private readonly Dictionary<string, HashSet<string>> _names = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        // Один синхронизатор читает одно свойство по нескольку раз (сырое, вычисленное, «пусто ли»), а каждое чтение —
+        // межпроцессный вызов COM. Значения держим до первой записи: вычисленное значение одного свойства может
+        // ссылаться на другое ($PRP), поэтому любая запись сбрасывает весь кэш значений (аудит 19.09, волна 2).
+        private readonly Dictionary<string, CustomPropertyManager> _managers = new Dictionary<string, CustomPropertyManager>(StringComparer.Ordinal);
+        private readonly Dictionary<string, string[]> _values = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        private string[] _configurations;
 
         public int Changes { get; private set; }
         public int Failures { get; private set; }
@@ -67,15 +73,23 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
+        /// <summary>Модель изменена в обход записи свойств (единицы, материал): вычисленные значения перечитать.</summary>
+        public void Forget()
+        {
+            _values.Clear();
+        }
+
         /// <summary>Режим DryRun: запись только в журнал (единицы документа тоже не переключаются).</summary>
         public bool DryRun { get { return _dryRun; } }
 
         public string[] ConfigurationNames()
         {
+            if (_configurations != null) return (string[])_configurations.Clone();
             try
             {
                 string[] names = _doc.GetConfigurationNames() as string[];
-                return names ?? new string[0];
+                _configurations = names ?? new string[0];
+                return (string[])_configurations.Clone();
             }
             catch (Exception ex)
             {
@@ -100,7 +114,36 @@ namespace ESKD.MaterialSync.Sw
 
         private CustomPropertyManager Manager(string cfg)
         {
-            return _doc.Extension.get_CustomPropertyManager(cfg ?? "");
+            string key = cfg ?? "";
+            CustomPropertyManager manager;
+            if (!_managers.TryGetValue(key, out manager))
+            {
+                manager = _doc.Extension.get_CustomPropertyManager(key);
+                _managers[key] = manager;
+            }
+            return manager;
+        }
+
+        /// <summary>Сырое и вычисленное значение одним вызовом Get4; null — свойства нет или чтение не удалось.</summary>
+        private string[] Values(string cfg, string name)
+        {
+            if (!Exists(cfg, name)) return null;
+            string key = (cfg ?? "") + "\0" + name;
+            string[] pair;
+            if (_values.TryGetValue(key, out pair)) return pair;
+            string val, resolved;
+            try
+            {
+                Manager(cfg).Get4(name, false, out val, out resolved);
+                pair = new[] { val ?? "", resolved ?? "" };
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Get4 " + name + " " + _docTitle, ex);
+                return null;
+            }
+            _values[key] = pair;
+            return pair;
         }
 
         private HashSet<string> Names(string cfg)
@@ -142,34 +185,14 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Сырое значение (выражение, как записано) или null, если свойства нет.</summary>
         public string Raw(string cfg, string name)
         {
-            if (!Exists(cfg, name)) return null;
-            string val, resolved;
-            try
-            {
-                Manager(cfg).Get4(name, false, out val, out resolved);
-                return val ?? "";
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Get4 " + name + " " + _docTitle, ex);
-                return null;
-            }
+            string[] pair = Values(cfg, name);
+            return pair != null ? pair[0] : null;
         }
 
         public string Resolved(string cfg, string name)
         {
-            if (!Exists(cfg, name)) return null;
-            string val, resolved;
-            try
-            {
-                Manager(cfg).Get4(name, false, out val, out resolved);
-                return resolved ?? "";
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Get4 " + name + " " + _docTitle, ex);
-                return null;
-            }
+            string[] pair = Values(cfg, name);
+            return pair != null ? pair[1] : null;
         }
 
         public static bool IsEmptyOrTemplate(string raw)
@@ -191,6 +214,7 @@ namespace ESKD.MaterialSync.Sw
             Operations.Add(string.Format("{0} [{1}] {2}: {3} → {4}", _docTitle, level, name,
                 current == null ? "<нет>" : Short(current), Short(value)));
             if (_dryRun) return false;
+            _values.Clear();
             try
             {
                 int rc = Manager(cfg).Add3(name, (int)swCustomInfoType_e.swCustomInfoText, value,
@@ -226,6 +250,7 @@ namespace ESKD.MaterialSync.Sw
             string level = string.IsNullOrEmpty(cfg) ? "общие" : cfg;
             Operations.Add(string.Format("{0} [{1}] {2}: удалено", _docTitle, level, name));
             if (_dryRun) return false;
+            _values.Clear();
             try
             {
                 int rc = Manager(cfg).Delete2(name);

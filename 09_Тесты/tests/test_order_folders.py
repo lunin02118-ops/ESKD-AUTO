@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -115,7 +116,14 @@ class OrderFolders(unittest.TestCase):
         for name, text in files.items():
             (src / name).parent.mkdir(parents=True, exist_ok=True)
             (src / name).write_text(text, encoding="utf-8")
+            self._age(src / name)
         return src
+
+    @staticmethod
+    def _age(path, hours=24):
+        """Файл «вчерашний»: только что изменённые скрипт не трогает (ТЗ-03 §2 п. 5)."""
+        old = time.time() - hours * 3600
+        os.utime(path, (old, old))
 
     def _plan(self, src, order):
         out = self.tmp / "plan"
@@ -178,9 +186,74 @@ class OrderFolders(unittest.TestCase):
             self.assertEqual(row["sha256"], sha(row["dst"]), f"копия сверена: {row['dst']}")
             self.assertTrue(Path(row["src"]).is_file(), "без --move исходник остаётся")
         self.assertEqual([], self.sp.order_problems(order), "дерево заказа полное — проверка проходит")
-        log = (out / "apply_log.csv").read_text(encoding="utf-8-sig")
+        logs = list(out.glob("apply_log_*.csv"))
+        self.assertEqual(1, len(logs), "журнал запуска с датой в имени")
+        log = logs[0].read_text(encoding="utf-8-sig")
         self.assertIn("конфликт имени", log)
         self.assertNotIn("ОШИБКА", log)
+
+    def test_T0_apply_refuses_destinations_outside_order(self):
+        """Колонку dst правят руками: путь вне папки заказа (опечатка, чужой заказ, «..») — остановка без единого
+        действия, код 2."""
+        src = self._mess()
+        order = self.tmp / "85-1_Т_Центр соц услуг_Мангыстау"
+        out, rows = self._plan(src, order)
+        plan = out / "plan.csv"
+        text = plan.read_text(encoding="utf-8-sig")
+        stray = str(self.tmp / "85-1_Т_Центр соц услуг_Мангыстау2" / "СЗ 85-1.docx")
+        text = text.replace(rows["СЗ 85-1.docx"]["dst"], stray)
+        plan.write_text(text, encoding="utf-8-sig")
+        result = run("apply_plan.py", "--plan", plan, "--apply")
+        self.assertEqual(2, result.returncode, result.stdout + result.stderr)
+        self.assertIn("вне папки заказа", result.stdout)
+        self.assertFalse(order.exists(), "ничего не создано")
+        self.assertFalse(Path(stray).parent.exists(), "в соседний заказ ничего не записано")
+
+    def test_T0_fresh_files_and_lonely_copies(self):
+        """Файл, изменённый менее 2 ч назад, в план переноса не попадает; «копия» без основного файла остаётся
+        рабочей, а не уходит в _Аннулировано (ТЗ-03 §2 п. 5, §4.5); «сзади.jpg» — не служебная записка."""
+        src = self._mess()
+        (src / "85T.СМ.01.003 Уголок - копия.sldprt").write_text("copy", encoding="utf-8")
+        self._age(src / "85T.СМ.01.003 Уголок - копия.sldprt")
+        (src / "сзади.jpg").write_text("photo", encoding="utf-8")
+        self._age(src / "сзади.jpg")
+        (src / "85T.СМ.01.004 Косынка.sldprt").write_text("now", encoding="utf-8")
+        order = self.tmp / "85-1_Т_Центр соц услуг_Мангыстау"
+        out, rows = self._plan(src, order)
+        self.assertEqual("skip", rows["85T.СМ.01.004 Косынка.sldprt"]["action"], "свежий файл не трогаем")
+        self.assertIn("менее 2 ч назад", (out / "questions.txt").read_text(encoding="utf-8"))
+        lonely = Path(rows["85T.СМ.01.003 Уголок - копия.sldprt"]["dst"])
+        self.assertNotIn("_Аннулировано", lonely.parts, f"копия без основного — рабочая: {lonely}")
+        self.assertNotEqual(order / "сзади.jpg", Path(rows["сзади.jpg"]["dst"]), "не служебная записка")
+
+    def test_T0_latin_and_cyrillic_cipher_is_one_product(self):
+        """«85T» латиницей и «85Т» кириллицей — одно изделие: второй папки И02 нет, расхождение — в вопросах."""
+        src = self._mess()
+        for name in ("85Т.СМ.00.000 Кровать одноместная.slddrw", "85Т.СМ.01.005 Ребро.sldprt"):  # «Т» кириллицей
+            (src / name).write_text("cyr", encoding="utf-8")
+            self._age(src / name)
+        order = self.tmp / "85-1_Т_Центр соц услуг_Мангыстау"
+        out, rows = self._plan(src, order)
+        product = order / "02_Металл" / "И01_85T.СМ_Кровать одноместная"
+        self.assertEqual(product / "01_3D" / "85Т.СМ.01.005 Ребро.sldprt", Path(rows["85Т.СМ.01.005 Ребро.sldprt"]["dst"]))
+        folders = {Path(r["dst"]).relative_to(order).parts[1] for r in rows.values()
+                   if r["dst"] and Path(r["dst"]).relative_to(order).parts[0] == "02_Металл"}
+        self.assertEqual({"И01_85T.СМ_Кровать одноместная"}, folders, "одно изделие")
+        self.assertIn("латиница/кириллица", (out / "questions.txt").read_text(encoding="utf-8"))
+
+    def test_T0_move_sends_source_to_quarantine(self):
+        """--move: копия сверена, исходник уехал в карантин с тем же относительным путём, ничего не удалено."""
+        src = self._mess()
+        order = self.tmp / "85-1_Т_Центр соц услуг_Мангыстау"
+        quarantine = self.tmp / "карантин"
+        out, rows = self._plan(src, order)
+        result = run("apply_plan.py", "--plan", out / "plan.csv", "--apply", "--move", "--quarantine", quarantine)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        leg = rows["85T.СМ.01.001 Ножка.sldprt"]
+        self.assertEqual(leg["sha256"], sha(leg["dst"]), "копия на месте")
+        self.assertFalse(Path(leg["src"]).exists(), "исходник убран из разбираемой папки")
+        self.assertEqual(leg["sha256"], sha(quarantine / "85T.СМ.01.001 Ножка.sldprt"), "исходник — в карантине")
+        self.assertTrue((src / "Thumbs.db").exists(), "пропущенный файл не тронут")
 
 
 if __name__ == "__main__":

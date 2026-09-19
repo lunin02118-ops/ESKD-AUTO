@@ -67,32 +67,34 @@ namespace ESKD.MaterialSync.Core
             double faceMm, double kerfMm, double businessMm)
         {
             CutResult result = new CutResult { Sortament = sortament ?? "" };
-            // Зона реза: хлыст без захвата станка, из неё сразу уходит торцовка первого реза.
+            // Зона реза: хлыст без захвата станка и без торцовки обоих торцов (справочник: «на каждый торец») —
+            // так же считает формула «Шт. из хлыста» в книге ЛЗК, иначе «оптимально N хл.» расходился бы с таблицей.
             double zone = Math.Max(0, barMm - gripMm);
-            List<double> ordered = (pieces ?? new double[0]).Where(p => p > 0).OrderByDescending(p => p).ToList();
-            foreach (double piece in ordered.Where(p => p + faceMm + kerfMm > zone).ToList())
+            double usable = zone - 2 * faceMm;
+            // Одинаковые длины раскладываются пачкой: «сначала длинные» даёт тот же план, что и по одной штуке,
+            // но тираж в тысячи изделий не превращается в миллиарды сравнений в потоке SolidWorks.
+            foreach (IGrouping<double, double> group in (pieces ?? new double[0]).Where(p => p > 0)
+                .GroupBy(p => p).OrderByDescending(g => g.Key))
             {
-                result.TooLong.Add(piece);
-                ordered.Remove(piece);
-            }
-            foreach (double piece in ordered)
-            {
-                result.CleanMm += piece;
-                CutBar target = null;
-                foreach (CutBar candidate in result.Bars)
-                    if (candidate.Rest >= piece + kerfMm)
-                    {
-                        target = candidate;
-                        break;
-                    }
-                if (target == null)
+                double piece = group.Key, step = piece + kerfMm;
+                int left = group.Count();
+                if (step > usable)
                 {
-                    target = new CutBar { Used = faceMm, Rest = zone - faceMm };
-                    result.Bars.Add(target);
+                    for (int i = 0; i < left; i++) result.TooLong.Add(piece);
+                    continue;
                 }
-                target.Pieces.Add(piece);
-                target.Used += piece + kerfMm;
-                target.Rest -= piece + kerfMm;
+                result.CleanMm += piece * left;
+                foreach (CutBar bar in result.Bars)
+                {
+                    if (left == 0) break;
+                    left -= Put(bar, piece, step, Math.Min(left, (int)Math.Floor(bar.Rest / step)));
+                }
+                while (left > 0)
+                {
+                    CutBar bar = new CutBar { Used = 2 * faceMm, Rest = usable };
+                    result.Bars.Add(bar);
+                    left -= Put(bar, piece, step, Math.Min(left, (int)Math.Floor(bar.Rest / step)));
+                }
             }
             foreach (CutBar b in result.Bars)
             {
@@ -103,6 +105,15 @@ namespace ESKD.MaterialSync.Core
             // Отход — всё, что не стало ни заготовкой, ни деловым обрезком: захват, торцовка, пропилы, короткие хвосты.
             result.WasteMm = Math.Max(0, result.BoughtMm - result.CleanMm - result.BusinessRests.Sum());
             return result;
+        }
+
+        private static int Put(CutBar bar, double piece, double step, int count)
+        {
+            if (count <= 0) return 0;
+            for (int i = 0; i < count; i++) bar.Pieces.Add(piece);
+            bar.Used += step * count;
+            bar.Rest -= step * count;
+            return count;
         }
 
         /// <summary>Листовой прокат (Т-13): площадь заготовок с коэффициентом отхода → целые листы формата.</summary>

@@ -72,6 +72,59 @@ namespace ESKD.MaterialSync.Core
             }
             return sb.ToString();
         }
+
+        /// <summary>Причина пропуска, при которой выгружать было нечего: у детали нет чертежа (её проверяет правило «г»)
+        /// или документ уже выдан и защищён (Т-30). Остальные пропуски — несделанная выгрузка.</summary>
+        public static bool IsBenignSkip(string reason)
+        {
+            string r = (reason ?? "").Trim();
+            return r.StartsWith("нет чертежа", StringComparison.OrdinalIgnoreCase) ||
+                r.StartsWith("документ выдан в производство", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Разбор `_Экспорт.txt` обратно: выгруженные файлы с суммами и пропуски «документ — причина».
+        /// Проверка изделия (Т-32е) сверяет по ним наличие файлов и суммы, а не ищет имя по всему тексту.
+        /// </summary>
+        public static ExportLog Parse(string text)
+        {
+            ExportLog log = new ExportLog();
+            string block = "";
+            foreach (string raw in (text ?? "").Replace("\r", "").Split('\n'))
+            {
+                string line = raw.TrimEnd();
+                if (line.Length == 0) continue;
+                if (!line.StartsWith("  ", StringComparison.Ordinal))
+                {
+                    block = line.StartsWith("Выгружено", StringComparison.Ordinal) ? "files"
+                        : line.StartsWith("Пропущено", StringComparison.Ordinal) ? "skipped"
+                        : line.StartsWith("Замечания", StringComparison.Ordinal) ? "warnings" : "";
+                    continue;
+                }
+                string body = line.Trim();
+                if (block == "files")
+                {
+                    int gap = body.IndexOf("  ", StringComparison.Ordinal);
+                    if (gap <= 0) continue;
+                    string sum = body.Substring(0, gap).Trim();
+                    string file = body.Substring(gap).Trim();
+                    log.Files.Add(file);
+                    if (Regex.IsMatch(sum, "^[0-9a-fA-F]{64}$")) log.Checksums[file] = sum.ToLowerInvariant();
+                }
+                else if (block == "skipped") log.Skipped.Add(body);
+                else if (block == "warnings") log.Warnings.Add(body);
+            }
+            return log;
+        }
+
+        /// <summary>Документ и причина из строки пропуска «документ — причина».</summary>
+        public static KeyValuePair<string, string> SplitSkip(string line)
+        {
+            string s = line ?? "";
+            int dash = s.IndexOf(" — ", StringComparison.Ordinal);
+            return dash < 0 ? new KeyValuePair<string, string>(s.Trim(), "")
+                : new KeyValuePair<string, string>(s.Substring(0, dash).Trim(), s.Substring(dash + 3).Trim());
+        }
     }
 
     /// <summary>
