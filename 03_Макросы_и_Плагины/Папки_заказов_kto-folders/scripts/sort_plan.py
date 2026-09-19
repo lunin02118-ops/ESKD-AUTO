@@ -50,6 +50,9 @@ TEMPLATE_DIRS = {"01_исходные данные", "документы", "фо
                  "01 кд в pdf", "02 чпу и раскрой", "лазер_лист", "труборез", "03 заявки в цеха",
                  "бкад", "bcad", "схемы сборки"}
 BAD_CHARS = re.compile(r'[№«»,!+#<>:"/\\|?*]')
+# Файл, изменённый недавно, в план переноса не попадает: с ним могут работать прямо сейчас (ТЗ-03 §2 п. 5).
+FRESH_HOURS = 2
+FRESH = datetime.timedelta(hours=FRESH_HOURS)
 OLD_RE = re.compile(r"(\.bak\b|\(\d+\)$|\bкопия\b|\bстар(ый|ая|ое)\b|\bold\b|резервная_копия)", re.I)
 DESIG_TAIL = re.compile(r"^(.+)\.\d{2}\.\d{3}(-\d{2})?$")
 # Имя заказа (ТЗ-03 §4.2): <№>[-<п>]_[<Код>_]<Объект>_<Город>; код — Т, Ал, Аст, ВЭД (кириллица).
@@ -84,6 +87,15 @@ def designation(stem):
     return token if DESIG_TAIL.match(token) else None
 
 
+# Латинские буквы, неотличимые от кириллицы: «85T» и «85Т» в именах файлов — одно изделие, а не два.
+LOOKALIKE = str.maketrans("ABCEHKMOPTXaceopxy", "АВСЕНКМОРТХасеорху")
+
+
+def ckey(s):
+    """Ключ сравнения шифра/обозначения: латинские двойники букв заменены кириллицей, регистр не важен."""
+    return low((s or "").translate(LOOKALIKE))
+
+
 def cipher_of(desig):
     base = re.sub(r"-\d{2}$", "", desig)
     return re.sub(r"(\.00)*\.000$", "", base) if base.endswith(".000") else None
@@ -113,43 +125,55 @@ class Planner:
             dirs[:] = [d for d in dirs if not d.startswith("_МИГРАЦИЯ")]
             for f in files:
                 self.files.append(os.path.join(root, f))
-        self.d5_roots = {os.path.dirname(p) for p in self.files if p.lower().endswith(".drs")}
+        # Папка проекта D5 уезжает в визуализацию целиком, но не корень разбираемой папки: если .drs лежит
+        # «в куче» рядом с СЗ и моделями, целиком уехали бы и они.
+        self.d5_roots = {os.path.dirname(p) for p in self.files if p.lower().endswith(".drs")} - {os.path.normpath(self.src)}
         self.products = self._products(products)
 
     # ---------- изделия ----------
     def _products(self, given):
-        found = {}  # cipher -> name из главной сборки/чертежа
+        # Ключ — ckey(шифра): латиница и кириллица в одном шифре не делят изделие на два.
+        found, shown, spellings = {}, {}, {}  # ключ -> наименование, первое написание, все написания
         for p in self.files:
             stem = os.path.splitext(os.path.basename(p))[0]
             d = designation(stem)
             c = cipher_of(d) if d else None
             if c is None:
                 continue
+            k = ckey(c)
+            shown.setdefault(k, c)
+            spellings.setdefault(k, set()).add(c)
             rest = stem[len(stem.split()[0]):] if " " in stem else ""
-            prev = found.get(c)
+            prev = found.get(k)
             if prev is None or (not prev and rest.strip()):
-                found[c] = rest.strip(" _")
-        tops = {c: n for c, n in found.items()
-                if not any(c != o and c.startswith(o + ".") for o in found)}
+                found[k] = rest.strip(" _")
+        for k, names in spellings.items():
+            if len(names) > 1:
+                self.questions.append("Шифр записан по-разному (латиница/кириллица): " + ", ".join(sorted(names)) +
+                                      f" — считаю одним изделием «{shown[k]}»")
+        tops = {k: n for k, n in found.items()
+                if not any(k != o and k.startswith(o + ".") for o in found)}
         prods, used = {}, set()
         for spec in given:
             m = re.match(r"^(.*?)=(\d+):(.*)$", spec)
             if not m:
                 sys.exit(f"Неверный --product: {spec}")
             c, nn, name = m.group(1).strip(), int(m.group(2)), m.group(3).strip()
-            prods[c] = product_folder(nn, c, name)
+            prods[ckey(c)] = product_folder(nn, c, name)
             used.add(nn)
         nxt = max(used, default=0)
-        for c in sorted(tops):
-            if c not in prods:
+        for k in sorted(tops):
+            if k not in prods:
                 nxt += 1
-                prods[c] = product_folder(nxt, c, tops[c] or c)
+                c = shown[k]
+                prods[k] = product_folder(nxt, c, tops[k] or c)
                 self.questions.append(f"Изделие «{c}» пронумеровано И{nxt:02d} автоматически — сверьте с СЗ")
         return prods
 
     def product_for(self, path, stem):
         d = designation(stem)
         if d:
+            d = ckey(d)
             best = max((c for c in self.products if c and (d == c or d.startswith(c + "."))),
                        key=len, default=None)
             if best:
@@ -159,10 +183,10 @@ class Planner:
             return self.products[""]
         if len(self.products) == 1:
             return next(iter(self.products.values()))
-        lp = low(os.path.relpath(path, self.src))
+        lp = ckey(os.path.relpath(path, self.src))
         for c, folder in self.products.items():
-            words = [w for w in low(folder).split("_", 2)[-1].split() if len(w) > 3]
-            if (c and low(c) in lp) or (words and all(w in lp for w in words)):
+            words = [w for w in ckey(folder).split("_", 2)[-1].split() if len(w) > 3]
+            if (c and c in lp) or (words and all(w in lp for w in words)):
                 return folder
         return "И00_Не разобрано"
 
@@ -188,7 +212,11 @@ class Planner:
                 base_name = stem                                   # Stol.frw.bak -> Stol.frw
             else:
                 base = re.sub(r"(\.bak)+$", "", stem, flags=re.I)  # x.bak.bak.bdf -> x.bdf
-                base_name = re.sub(r"\s*\(\d+\)$", "", base) + ext  # x (1).bdf -> x.bdf
+                base = re.sub(r"\s*\(\d+\)$", "", base)                # x (1).bdf -> x.bdf
+                # «x - копия», «x копия (2)», «x_old», «x старый» -> x: иначе у копии без основного файла
+                # base_name совпадал с именем, и она уходила в _Аннулировано без вопроса (ТЗ-03 §4.5).
+                base = re.sub(r"[\s_\-]*(копия|old|стар(ый|ая|ое))(\s*\(\d+\))?$", "", base, flags=re.I).strip()
+                base_name = (base or stem) + ext
             main = os.path.join(os.path.dirname(path), base_name)
             self._inner = True
             try:
@@ -206,7 +234,7 @@ class Planner:
         corpus = bool(parts & {"корпус", "бкад", "bcad"}) or "bcad" in rel_dir
         metal = "металл" in rel_dir
 
-        if re.match(r"^(сз|служебн)", lstem) or "сводная" in lstem or "заявка на изг" in lstem:
+        if re.match(r"^(сз\b|сз[\s_\-\d№]|служебн)", lstem) or "сводная" in lstem or "заявка на изг" in lstem:
             return name, "sz", ""
         if lstem.startswith("списани") or "списани" in rel_dir:
             self.questions.append(f"Списание → корень заказа (папки _Производство больше нет, ТЗ-04): {path}")
@@ -276,9 +304,14 @@ class Planner:
     # ---------- план ----------
     def build(self):
         rows = []
+        fresh_since = datetime.datetime.now() - FRESH
         for p in sorted(self.files):
             dst, rule, note = self.classify(p)
             st = os.stat(long_path(p))
+            if dst is not None and datetime.datetime.fromtimestamp(st.st_mtime) > fresh_since:
+                # С файлом, возможно, прямо сейчас работают (ТЗ-03 §2 п. 5): не переносим, разберём позже.
+                self.questions.append(f"Изменён менее {FRESH_HOURS} ч назад — не трогаю, перестройте план позже: {p}")
+                dst, rule, note = None, "fresh", f"изменён менее {FRESH_HOURS} ч назад"
             rows.append(dict(src=p, dst=os.path.join(self.order, dst) if dst else "",
                              action="skip" if dst is None else "copy", rule=rule, note=note,
                              size=st.st_size, mtime=datetime.datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds"),

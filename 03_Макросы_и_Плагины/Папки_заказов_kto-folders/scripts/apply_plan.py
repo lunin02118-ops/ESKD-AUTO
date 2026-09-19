@@ -9,7 +9,9 @@ python apply_plan.py --plan ... --apply --move --quarantine <папка>   # к�
 - если в месте назначения уже есть файл: тот же SHA-256 — пропуск; другой — новый файл кладётся
   в <папка назначения>\\_Конфликт_<дата>\\ и попадает в журнал (ничего не перезаписывается);
 - --move: исходник переносится в карантин с сохранением относительного пути (не удаляется);
-- журнал: apply_log.csv рядом с планом.
+- журнал: apply_log_<дата-время>.csv рядом с планом (у каждого запуска свой);
+- пути назначения обязаны лежать внутри папки заказа, иначе запуск останавливается без действий;
+- --move не трогает исходник, изменённый менее 2 ч назад.
 """
 import argparse
 import csv
@@ -26,6 +28,16 @@ def long_path(p):
     if os.name == "nt" and not p.startswith("\\\\?\\"):
         return "\\\\?\\UNC\\" + p[2:] if p.startswith("\\\\") else "\\\\?\\" + p
     return p
+
+
+def inside(path, root):
+    """path лежит внутри root (с учётом регистра Windows и «..»)."""
+    p = os.path.normcase(os.path.abspath(path))
+    r = os.path.normcase(os.path.abspath(root)).rstrip("\\/")
+    return p.startswith(r + os.sep)
+
+
+FRESH = datetime.timedelta(hours=2)
 
 
 def sha256(path):
@@ -54,6 +66,16 @@ def main():
     folders_file = os.path.join(plan_dir, "folders.txt")
     folders = [l.strip() for l in open(folders_file, encoding="utf-8") if l.strip()] if os.path.exists(folders_file) else []
 
+    # Колонку dst разрешено править руками (SKILL.md): опечатка или абсолютный путь увели бы файлы в чужой заказ
+    # или в корень _Заявки. Всё, что пишется, должно лежать внутри папки заказа — иначе ничего не делаем.
+    outside = [r["dst"] for r in rows if r["action"] == "copy" and not inside(r["dst"], meta["order"])]
+    outside += [d for d in folders if not inside(d, meta["order"])]
+    if outside:
+        print(f"ОСТАНОВЛЕНО: {len(outside)} путей вне папки заказа {meta['order']}:")
+        for d in outside[:20]:
+            print("  ", d)
+        sys.exit(2)
+
     todo = [r for r in rows if r["action"] == "copy"]
     print(f"Заказ: {meta['order']}\nФайлов в плане: {len(rows)}, к переносу: {len(todo)}, "
           f"пропуск: {len(rows) - len(todo)}, папок создать: {len(folders)}")
@@ -65,7 +87,7 @@ def main():
     for d in folders:
         os.makedirs(long_path(d), exist_ok=True)
 
-    stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M")
+    stamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
     log = []
     ok = err = same = conflict = 0
     for r in todo:
@@ -76,6 +98,8 @@ def main():
                 raise FileNotFoundError("исходник пропал")
             if sha256(src) != want:
                 raise RuntimeError("исходник изменился после построения плана — перестройте план")
+            if a.move and datetime.datetime.now() - datetime.datetime.fromtimestamp(os.stat(long_path(src)).st_mtime) < FRESH:
+                raise RuntimeError("исходник изменён менее 2 ч назад — с ним, возможно, работают; не трогаю")
             if os.path.exists(long_path(dst)):
                 if sha256(dst) == want:
                     status = "уже есть"
@@ -104,7 +128,8 @@ def main():
             err += 1
         log.append({"src": src, "dst": final, "status": status, "sha256": want})
 
-    log_path = os.path.join(plan_dir, "apply_log.csv")
+    # Журнал каждого запуска — свой файл: повторный запуск того же плана не затирает историю.
+    log_path = os.path.join(plan_dir, f"apply_log_{stamp}.csv")
     with open(log_path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, ["src", "dst", "status", "sha256"], delimiter=";")
         w.writeheader()
