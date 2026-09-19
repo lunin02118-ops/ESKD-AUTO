@@ -375,7 +375,7 @@ class StaticRepository(StaticTestCase):
         self.assertTrue(result["sandboxRemoved"], "временный раздел реестра не удалён")
 
     def test_T0_setup_writes_swplus_files_only_when_changed(self):
-        """T0: установщик переписывает файлы SWPlus только при отличии, фамилии и организации дописывает в конец (WP-3.4);
+        """T0: установщик переписывает файлы SWPlus только при отличии, свою фамилию и организацию ставит первыми — MProp берёт первую строку (WP-3.4, З-3);
         функции — в модуле EskdDeploy.psm1, запись идёт в локальную копию."""
         module = ROOT / "01_Настройки_SolidWorks" / "EskdDeploy.psm1"
         out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",

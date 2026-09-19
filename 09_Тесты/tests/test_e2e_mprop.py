@@ -10,7 +10,7 @@ import json
 import unittest
 from pathlib import Path
 
-from eskd_e2e import build, mprop, paths
+from eskd_e2e import build, com, mprop, paths
 from eskd_e2e.testing import SwTestCase, known_defect
 
 A01 = "ПРТИ.468211.101 Пластина опорная.sldprt"
@@ -22,6 +22,12 @@ A15 = "ПРТИ.468211.111 Стойка трубная.sldprt"
 A17 = "ПРТИ.468211.113 Прокладка.sldprt"
 A18 = "ПРТИ.468211.114 Планка регулировочная.sldprt"
 A20 = "ПРТИ.468211.116-01 Упор.sldprt"
+
+
+# Реквизиты, которые пишут MProp и надстройка; «Формат» приходит из чертежа (З-1), служебные свойства фикстур не
+# восстанавливаются — их после «Удалить все свойства» нет ни у кого.
+REQUISITES = ("Обозначение", "Наименование", "Наименование_ФБ", "Конструктор", "Контора", "Раздел", "Материал_ФБ",
+              "Материал_Таблица", "Материал_Строка", "Масса_ФБ", "Масса_Таблица", "Сборка1_ФБ", "Сборка2_ФБ")
 
 
 class MPropCompatibility(SwTestCase):
@@ -160,6 +166,50 @@ class MPropCompatibility(SwTestCase):
         mark = self.mark("M19-after-mprop")
         self.s.save(doc)
         self.assertNoPropertyWrites(mark, "сохранение после MProp изменило свойства")
+
+    def test_M20_refill_after_mprop_delete_all_properties(self):
+        """M20 (З-3): «Удалить все свойства» MProp (свойства всех уровней и «Сводка») → «Применить» MProp → сохранение
+        возвращает реквизиты, как были: обозначение, наименование, фамилия, организация, материал. Списки MProp — как их
+        пишет установщик (своя фамилия и организация первыми): сразу после MProp «Разработал» и «Контора» — свои; пустые
+        списки не обрывают MProp ошибкой 380."""
+        lists = mprop.swplus_copy(self.s.run_dir).parent
+        saved = {n: (lists / n).read_bytes() for n in ("MProp_Fam.txt", "MProp_Firm.txt")}
+        cases = {"списки установщика": ("Тестов Т.Т.\r\nИванов И.И.\r\n", "ООО «Испытание»\r\n\r\nТОО «Троя»\r\nТР\r\n"),
+                 "пустые списки": ("", "")}
+        try:
+            for case, (fam, firm) in cases.items():
+                with self.subTest(case=case):
+                    (lists / "MProp_Fam.txt").write_bytes(fam.encode("cp1251"))
+                    (lists / "MProp_Firm.txt").write_bytes(firm.encode("cp1251"))
+                    path = self.s.workspace_copy(paths.FIXTURES_A / A01, subdir=f"{self._case_name()}/{len(fam)}")
+                    doc = self.s.open(path)
+                    self.addCleanup(self.s.close_all)
+                    self.s.save(doc)
+                    before = mprop.snapshot(doc)
+                    for cfg in [""] + list(com.as_list(doc.GetConfigurationNames)):
+                        cpm = com.dyn(doc.Extension.CustomPropertyManager(cfg))
+                        for name in list(com.prop_names(cpm)):
+                            cpm.Delete2(name)
+                    for info in range(5):  # как CmdDelete_Click: заголовок, тема, автор, ключевые слова, комментарий
+                        o = doc._oleobj_
+                        o.Invoke(o.GetIDsOfNames("SummaryInfo"), 0, 4, 0, info, "")
+                    run = mprop.apply_without_edits(self.s, doc)
+                    self.assertEqual([], self.s.watchdog.pop_unexpected(), "окна MProp")
+                    self.assertTrue(run.get("ok"), run)
+                    if fam:
+                        self.assertEqual("Тестов Т.Т.", str(doc.SummaryInfo(2)), "«Разработал» MProp — своя фамилия")
+                        self.assertEqual("ООО «Испытание»", mprop.snapshot(doc)["levels"]["00"].get("Контора"), "«Контора» MProp")
+                    self.s.save(doc)
+                    after = mprop.snapshot(doc)
+                    lost = {f"{level} · {name}": (value, after["levels"].get(level, {}).get(name))
+                            for level, props in before["levels"].items() for name, value in props.items()
+                            if name in REQUISITES and after["levels"].get(level, {}).get(name) != value}
+                    self.assertEqual({}, lost, "реквизиты после повторного заполнения: было → стало")
+                    self.assertEqual(before["author"], after["author"], "Сводка → Автор")
+                    self.s.close_all()
+        finally:
+            for name, data in saved.items():
+                (lists / name).write_bytes(data)
 
 
 if __name__ == "__main__":

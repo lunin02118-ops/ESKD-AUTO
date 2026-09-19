@@ -151,9 +151,9 @@ try {
     $master = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "Master\Master.ini"), $cp1251))
     Expect "Master.ini: основные надписи источника" $master[3] ($sheetFormats + "\")
     $fam = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "MProp\MProp_Fam.txt"), $cp1251))
-    Expect "MProp_Fam.txt: фамилия в конце" $fam[-1] "Тестов Т.Т."
+    Expect "MProp_Fam.txt: фамилия первой (З-3)" $fam[0] "Тестов Т.Т."
     $firm = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "MProp\MProp_Firm.txt"), $cp1251))
-    Expect "MProp_Firm.txt: пара в конце" ($firm[-2] + "|" + $firm[-1]) "ООО «Проверка»|"
+    Expect "MProp_Firm.txt: пара первой (З-3)" ($firm[0] + "|" + $firm[1]) "ООО «Проверка»|"
 
     $after = Snapshot $source
     $changed = @($after.Keys | Where-Object { $before[$_] -ne $after[$_] }) + @($before.Keys | Where-Object { -not $after.ContainsKey($_) })

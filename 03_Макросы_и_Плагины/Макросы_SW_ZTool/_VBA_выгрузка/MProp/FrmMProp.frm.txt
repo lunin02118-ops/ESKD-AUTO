@@ -1481,7 +1481,7 @@ ChkConf_Click
     ' Проверка свойства Контора
     CboFirm.Value = swModel.CustomInfo2(sConfigName, prpFirm)
     If CboFirm.Value = "" Then
-        CboFirm.ListIndex = 0
+        If CboFirm.ListCount > 0 Then CboFirm.ListIndex = 0 ' ЕСКД З-3: пустой список организаций — без ошибки 380
     End If
     ' Обозначение
         ' Получение имени модели для Обозначения
@@ -1903,7 +1903,7 @@ End If
 For i = 0 To jfam
     Разработал.AddItem Fam(i)
 Next i
-Разработал.Value = swModel.SummaryInfo(2)
+Разработал.Value = swModel.SummaryInfo(2): If Разработал.Value = "" And Разработал.ListCount > 0 Then Разработал.ListIndex = 0 ' ЕСКД З-3: после «Удалить все свойства» — первая фамилия списка
 
 ' Заполнение списка Проверил и проверка свойства Проверил
 Проверил.Clear

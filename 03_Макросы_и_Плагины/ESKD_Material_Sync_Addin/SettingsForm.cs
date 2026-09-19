@@ -989,6 +989,8 @@ namespace ESKD.MaterialSync
             }
         }
 
+        // З-3: MProp при пустом свойстве берёт первую строку списка — фамилия и организация из настроек стоят первыми
+        // (Core.SwPlusLists); остальные строки сохраняются.
         private static void SyncFullListToSwPlus(string[] paths, string primary, string secondary)
         {
             foreach (string path in paths)
@@ -996,22 +998,9 @@ namespace ESKD.MaterialSync
                 try
                 {
                     if (!File.Exists(path)) continue;
-                    List<string> names = new List<string>();
-                    foreach (string line in File.ReadAllLines(path, Encoding.GetEncoding(1251)))
-                    {
-                        string t = line.Trim();
-                        if (t.Length > 0 && !names.Contains(t)) names.Add(t);
-                    }
-                    bool changed = false;
-                    foreach (string candidate in new[] { primary, secondary })
-                    {
-                        if (!string.IsNullOrEmpty(candidate) && !names.Contains(candidate))
-                        {
-                            names.Add(candidate);
-                            changed = true;
-                        }
-                    }
-                    if (changed) File.WriteAllLines(path, names.ToArray(), Encoding.GetEncoding(1251));
+                    string[] lines = File.ReadAllLines(path, Encoding.GetEncoding(1251));
+                    string[] names = Core.SwPlusLists.Families(lines, primary, secondary);
+                    if (!Same(lines, names)) File.WriteAllLines(path, names, Encoding.GetEncoding(1251));
                 }
                 catch (Exception ex)
                 {
@@ -1020,7 +1009,7 @@ namespace ESKD.MaterialSync
             }
         }
 
-        // Формат MProp: пары строк «организация» / «буквенный код». Новая организация добавляется в конец с пустым кодом.
+        // Формат MProp: пары строк «организация» / «буквенный код»; организация из настроек — первой парой.
         private static void SyncFirmsToSwPlus(string[] paths, string primaryOrg)
         {
             if (string.IsNullOrEmpty(primaryOrg)) return;
@@ -1030,21 +1019,22 @@ namespace ESKD.MaterialSync
                 {
                     if (!File.Exists(path)) continue;
                     string[] lines = File.ReadAllLines(path, Encoding.GetEncoding(1251));
-                    for (int i = 0; i < lines.Length; i += 2)
-                    {
-                        if (string.Equals(lines[i].Trim(), primaryOrg, StringComparison.OrdinalIgnoreCase)) return;
-                    }
-                    List<string> output = new List<string>(lines);
-                    if (output.Count % 2 == 1) output.Add("");
-                    output.Add(primaryOrg);
-                    output.Add("");
-                    File.WriteAllLines(path, output.ToArray(), Encoding.GetEncoding(1251));
+                    string[] output = Core.SwPlusLists.Firms(lines, primaryOrg);
+                    if (!Same(lines, output)) File.WriteAllLines(path, output, Encoding.GetEncoding(1251));
                 }
                 catch (Exception ex)
                 {
                     Core.Log.Error("MProp_Firm.txt", ex);
                 }
             }
+        }
+
+        private static bool Same(string[] a, string[] b)
+        {
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+                if (!string.Equals(a[i], b[i], StringComparison.Ordinal)) return false;
+            return true;
         }
 
         private void BtnSave_Click(object sender, EventArgs e)

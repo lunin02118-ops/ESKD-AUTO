@@ -207,26 +207,46 @@ function Write-SwPlusLines {
 }
 
 function Add-SwPlusFamily {
-    # MProp_Fam.txt: фамилия на строке; новая — в конец.
+    # MProp_Fam.txt: фамилия на строке. Фамилия этого рабочего места — первой: после «Удалить все свойства» MProp
+    # берёт «Разработал» из первой строки списка (З-3). Остальные строки — по порядку, без пустых и повторов.
     param([Parameter(Mandatory = $true)][string]$Path, [string]$Name)
     if (-not $Name -or -not $Name.Trim()) { return $false }
+    $name = $Name.Trim()
     $lines = @()
     if (Test-Path -LiteralPath $Path) { $lines = @([System.IO.File]::ReadAllLines($Path, [System.Text.Encoding]::GetEncoding(1251))) }
-    if (@($lines | Where-Object { $_.Trim() -eq $Name.Trim() }).Count) { return $false }
-    return Write-SwPlusLines -Path $Path -Lines (@($lines | Where-Object { $_.Trim() -ne "" }) + @($Name.Trim()))
+    $rest = New-Object System.Collections.Generic.List[string]
+    foreach ($line in $lines) {
+        $t = $line.Trim()
+        if ($t -and $t -ne $name -and -not ($rest | Where-Object { $_ -eq $t })) { $rest.Add($t) }
+    }
+    $new = @($name) + @($rest)
+    if (($new -join "`n") -ceq ($lines -join "`n")) { return $false }
+    return Write-SwPlusLines -Path $Path -Lines $new
 }
 
 function Add-SwPlusFirm {
-    # MProp_Firm.txt: пары строк «организация / код»; новая пара — в конец.
+    # MProp_Firm.txt: пары строк «организация / код». Организация этого рабочего места — первой парой (со своим кодом):
+    # при пустой «Конторе» MProp берёт первую (FrmMProp: CboFirm.ListIndex = 0, З-3).
     param([Parameter(Mandatory = $true)][string]$Path, [string]$Name)
     if (-not $Name -or -not $Name.Trim()) { return $false }
+    $name = $Name.Trim()
     $lines = @()
     if (Test-Path -LiteralPath $Path) { $lines = @([System.IO.File]::ReadAllLines($Path, [System.Text.Encoding]::GetEncoding(1251))) }
+    $code = ""
+    $rest = New-Object System.Collections.Generic.List[string]
+    $seen = @{}
     for ($i = 0; $i -lt $lines.Count; $i += 2) {
-        if ($lines[$i].Trim() -eq $Name.Trim()) { return $false }
+        $firm = $lines[$i].Trim()
+        $c = if ($i + 1 -lt $lines.Count) { $lines[$i + 1].Trim() } else { "" }
+        if (-not $firm) { continue }
+        if ($firm -eq $name) { $code = $c; continue }
+        if ($seen.ContainsKey($firm)) { continue }
+        $seen[$firm] = $true
+        $rest.Add($firm); $rest.Add($c)
     }
-    if ($lines.Count % 2 -eq 1) { $lines += "" }
-    return Write-SwPlusLines -Path $Path -Lines ($lines + @($Name.Trim(), ""))
+    $new = @($name, $code) + @($rest)
+    if (($new -join "`n") -ceq ($lines -join "`n")) { return $false }
+    return Write-SwPlusLines -Path $Path -Lines $new
 }
 
 function Set-EskdMasterIniFormats {
