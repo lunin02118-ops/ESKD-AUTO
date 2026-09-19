@@ -588,8 +588,11 @@ class StaticRepository(StaticTestCase):
         self.assertIn("IsOpenedReadOnly()", revision, "ревизия отказывает документу только для чтения")
         self.assertRegex(revision, r"string saveProblem = Write\(", "ревизия проверяет, сохранился ли штамп")
         lzk = (ADDIN / "Sw" / "LzkService.cs").read_text(encoding="utf-8")
-        self.assertLess(lzk.index('_workbookPath + ".new"'), lzk.index("File.Move(_workbookPath, archive)"),
+        self.assertLess(lzk.index("File.Copy(_tempWorkbook, fresh"), lzk.index("ReplacePrevious(fresh)"),
                         "новая книга ЛЗК записана до того, как прежняя уехала в архив")
+        self.assertIn("File.Copy(previous, _workbookPath", lzk, "не встала новая книга — прежняя возвращается на место")
+        self.assertIn("inputs.ReadError = ex.Message", (ADDIN / "Core" / "LzkBook.cs").read_text(encoding="utf-8"),
+                      "нечитаемая прежняя книга не затирается молча")
         ready = (ADDIN / "Sw" / "ReadyService.cs").read_text(encoding="utf-8")
         self.assertLess(ready.index("ExcelPdf.Export(workbook, staged"), ready.index("File.Move(target, archive)"),
                         "PDF листов участков сделаны до того, как прежние уехали в архив")

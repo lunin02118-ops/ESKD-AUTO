@@ -87,7 +87,7 @@ $excludeDirs = @(".git", ".claude", "08_Результаты_Тестирова�
                  "Backups", "Legacy_Builds", "_VBA_выгрузка", "__pycache__",
                  "swtools",             # клон репозитория SWTools у разработчика (ТЗ-02 огр. 4а) не публикуется
                  "SWTools_Установщик")  # установщик SWTools — только в общей папке (-SwToolsSetup), зеркало его не удаляет
-$excludeFiles = @("*_old", "*.clean_old", "*.f40_old", '~$*', "*.tmp", "toolkit_release.json")
+$excludeFiles = @(".git", "*_old", "*.clean_old", "*.f40_old", '~$*', "*.tmp", "toolkit_release.json")  # .git — файл-ссылка worktree
 $releaseFile = Join-Path $Target "toolkit_release.json"
 Remove-Item -LiteralPath $releaseFile -Force -ErrorAction SilentlyContinue  # на время копирования выпуск не считается опубликованным
 & robocopy.exe $repo $Target /MIR /R:2 /W:5 /NP /NFL /NDL /XD @excludeDirs /XF @excludeFiles | Out-Host

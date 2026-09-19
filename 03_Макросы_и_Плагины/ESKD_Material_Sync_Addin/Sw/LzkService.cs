@@ -19,10 +19,10 @@ namespace ESKD.MaterialSync.Sw
     /// <summary>
     /// Кнопка К-4 «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37, ТЗ-04): окно «Операции» с тиражом, сроком и цветом → запись «Операции»
     /// и «Габарит» в новые модели изделия → сохранение сборки → SWTools без окна по пресету «ЛЗК» → живая книга:
-    /// паспорт, участки, расход, нормы → ЛЗК_&lt;шифр&gt;.xlsx в «04_Сопроводительная документация» изделия (прежняя —
-    /// в _Аннулировано, введённое в ней переносится) и отчёт _Ведомость.txt.
-    /// SWTools ждётся таймером в потоке SolidWorks: синхронное ожидание заблокировало бы надстройку SWTools,
-    /// которая читает модель в этом же потоке.
+    /// паспорт, участки, расход, нормы → ЛЗК_&lt;шифр&gt;.xlsx: в структуре заказа — в «04_Сопроводительная документация»
+    /// изделия (прежняя — в _Аннулировано), вне её — рядом со сборкой (прежняя — в резервную копию); введённое переносится.
+    /// SWTools ждётся в потоке SolidWorks — таймером и в простое (опрос из постоянной подписки EventHub): синхронное
+    /// ожидание заблокировало бы надстройку SWTools, которая читает модель в этом же потоке.
     /// </summary>
     public sealed class LzkService
     {
@@ -51,8 +51,8 @@ namespace ESKD.MaterialSync.Sw
         private Timer _timer;
         private DateTime _started;
         private LzkHeader _header;
-        private SldWorks _events;
         private bool _finishing;
+        private bool _finished;
         private bool _exitedEarly;
 
         private LzkService(ISldWorks app)
@@ -72,12 +72,15 @@ namespace ESKD.MaterialSync.Sw
         /// </summary>
         public static void Start(ISldWorks app, bool interactive)
         {
-            _silent = !interactive;
             if (_running != null)
             {
-                Info("Ведомость ЛЗК уже формируется — дождитесь окончания.", MessageBoxIcon.Information);
+                // Идущий запуск не трогаем: его режим (окно итога или тихий) остаётся прежним.
+                if (interactive) MessageBox.Show("Ведомость ЛЗК уже формируется — дождитесь окончания.", "ЕСКД: Ведомость ЛЗК",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                else Log.Warn("Ведомость ЛЗК: уже формируется");
                 return;
             }
+            _silent = !interactive;
             LzkService service = new LzkService(app);
             try
             {
@@ -149,9 +152,6 @@ namespace ESKD.MaterialSync.Sw
             _inOrder = LzkNaming.InModelsFolder(_assemblyPath);
             _workbookPath = _inOrder ? LzkNaming.WorkbookPath(_productFolder, _cipher) : LzkNaming.LooseWorkbookPath(_assemblyPath, _cipher);
             _legacyPath = LzkNaming.LegacyWorkbookPath(_productFolder, _cipher);
-            if (!_inOrder)
-                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_assemblyPath),
-                    "сборка лежит не в папке «01_3D»: книга ЛЗК записана рядом со сборкой, новых папок нет"));
             foreach (string busy in new[] { _workbookPath, _legacyPath })
                 if (FileLocked(busy))
                 {
@@ -160,6 +160,13 @@ namespace ESKD.MaterialSync.Sw
                 }
             // Введённое в прежней книге (тираж, срок, цвет, нормы, указания) переносится в новую.
             _inputs = LzkInputs.Read(File.Exists(_workbookPath) ? _workbookPath : "");
+            if (_inputs.ReadError.Length > 0)
+            {
+                Info("Прежняя книга " + Path.GetFileName(_workbookPath) + " не читается (" + _inputs.ReadError + "): введённое в ней — " +
+                     "тираж, срок, цвет, нормы — не перенести.\n\nОткройте её в Excel и сохраните заново (или переименуйте, чтобы " +
+                     "собрать книгу с нуля) и нажмите кнопку ещё раз.", MessageBoxIcon.Warning);
+                return false;
+            }
             _options.Inputs = _inputs;
             if (!ReadReferences()) return false;
 
@@ -219,7 +226,7 @@ namespace ESKD.MaterialSync.Sw
             // Операции отмечаются и пишутся в свои модели изделия, где бы они ни лежали: детали сборки бывают и в другой
             // папке (замечание владельца 19.09.2026 — иначе у них «?» и участки пустые). Не правятся только покупные и
             // модели базы эталонов и библиотеки, общие для всех заказов.
-            List<LzkItem> editable = _items.Where(i => !i.IsPurchased && (i.InProduct || !i.InBase)).ToList();
+            List<LzkItem> editable = _items.Where(i => !i.IsPurchased && (!i.InBase || (_inOrder && i.InProduct))).ToList();
             if (interactive && editable.Count > 0)
             {
                 Dictionary<string, string> chosen;
@@ -242,7 +249,7 @@ namespace ESKD.MaterialSync.Sw
             }
 
             // Модель базы без «Операций» — операции по признакам модели, только в книге: файл базы не трогаем.
-            foreach (LzkItem i in _items.Where(i => !i.IsPurchased && i.InBase && !i.InProduct && string.IsNullOrWhiteSpace(i.Operations)))
+            foreach (LzkItem i in _items.Where(i => !i.IsPurchased && !editable.Contains(i) && string.IsNullOrWhiteSpace(i.Operations)))
             {
                 i.Operations = LzkOperations.Join(LzkOperations.Suggest(traits[i.Path]));
                 _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(i.Path),
@@ -496,12 +503,6 @@ namespace ESKD.MaterialSync.Sw
             return found;
         }
 
-        /// <summary>Площадь поверхности экземпляра, м² (для узла — сумма тел всех деталей).</summary>
-        /// <summary>
-        /// Площадь поверхности под покраску, м². Считается по документу самой модели: масса-свойство сборки,
-        /// которому скармливают тела компонента, возвращает площадь всего документа (боевая проверка 17.09.2026 —
-        /// у трёх разных деталей выходило одно и то же число).
-        /// </summary>
         /// <summary>Плотность материала детали, кг/м³; 0 — не определена.</summary>
         private static double Density(ModelDoc2 model)
         {
@@ -517,6 +518,11 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
+        /// <summary>
+        /// Площадь поверхности под покраску, м². Считается по документу самой модели: масса-свойство сборки,
+        /// которому скармливают тела компонента, возвращает площадь всего документа (боевая проверка 17.09.2026 —
+        /// у трёх разных деталей выходило одно и то же число).
+        /// </summary>
         private double Area(ModelDoc2 model, Component2 comp)
         {
             try
@@ -641,10 +647,9 @@ namespace ESKD.MaterialSync.Sw
             foreach (KeyValuePair<LzkItem, bool> kv in allInside) kv.Key.InsidePaintedUnit = kv.Value;
         }
 
-        /// <summary>«Операции» и «Габарит» — в общие свойства новых моделей изделия; изменённые модели сохраняются молча (Т-3).</summary>
         /// <summary>
-        /// «Операции» и размер — в модели. Модель, которую не записать (только для чтения, не сохраняется), книге не мешает:
-        /// её операции идут в книгу из окна «Операции», а в замечаниях — какие модели остались без записи.
+        /// «Операции» и «Габарит» — в модели (изменённые сохраняются молча, Т-3). Модель, которую не записать (только для
+        /// чтения, не сохраняется), книге не мешает: её операции идут в книгу, а в замечаниях — какие модели остались без записи.
         /// </summary>
         private void WriteProperties(List<LzkItem> editable, Dictionary<string, ModelDoc2> models)
         {
@@ -813,19 +818,20 @@ namespace ESKD.MaterialSync.Sw
             }
             _started = DateTime.Now;
             Status("ЕСКД: ведомость ЛЗК — SWTools выгружает спецификацию…");
-            // Завершение SWTools проверяется в простое SolidWorks (как отложенные задачи EventHub) и по таймеру.
-            _events = _app as SldWorks;
-            if (_events != null) _events.OnIdleNotify += OnIdle;
+            // Завершение SWTools проверяется по таймеру и в простое SolidWorks — из постоянной подписки EventHub (PollIdle):
+            // таймер WinForms в SolidWorks, запущенном через COM, не срабатывает, а подписываться и отписываться от
+            // OnIdleNotify из его же обработчика нельзя (класс ошибки M07).
             _timer = new Timer { Interval = 500 };
             _timer.Tick += OnTick;
             _timer.Start();
             return true;
         }
 
-        private int OnIdle()
+        /// <summary>Опрос из простоя SolidWorks (EventHub.OnIdle).</summary>
+        public static void PollIdle()
         {
-            Poll();
-            return 0;
+            LzkService running = _running;
+            if (running != null) running.Poll();
         }
 
         private void OnTick(object sender, EventArgs e)
@@ -860,12 +866,13 @@ namespace ESKD.MaterialSync.Sw
                 _finishing = true;
                 if (_timer != null) _timer.Stop();
                 Log.Error("Ведомость ЛЗК: завершение", ex);
-                Finish(null, ex.Message);
+                if (!_finished) Finish(null, ex.Message);
             }
         }
 
         private void Finish(SwToolsExport.Outcome outcome, string problem)
         {
+            _finished = true;
             LzkResult result = null;
             try
             {
@@ -885,11 +892,14 @@ namespace ESKD.MaterialSync.Sw
                     try
                     {
                         Deliver();
+                        if (!_inOrder)
+                            _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_assemblyPath),
+                                "сборка лежит не в папке «01_3D»: книга ЛЗК записана рядом со сборкой, новых папок нет"));
                     }
-                    catch (Exception ex)
+                    catch (UnauthorizedAccessException ex)
                     {
-                        if (!(ex is UnauthorizedAccessException || ex is IOException)) throw;
-                        // Сборка в папке без права записи (чужой ресурс, архив, защищённая папка): книга не пропадает.
+                        // Папка без права записи (чужой ресурс, архив, защищённая папка): книга не пропадает. Прочие
+                        // ошибки (книгу открыли в Excel, сеть) — отказ: прежняя книга возвращена на место.
                         Log.Error("Ведомость ЛЗК: запись рядом со сборкой", ex);
                         string denied = Path.GetDirectoryName(_workbookPath);
                         _inOrder = false;
@@ -911,28 +921,46 @@ namespace ESKD.MaterialSync.Sw
             {
                 Cleanup();
             }
-            Report(result, problem);
+            try
+            {
+                Report(result, problem);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Ведомость ЛЗК: итог", ex);
+            }
         }
 
-        /// <summary>Готовая книга из временной папки — на место; прежняя книга и ведомость старого образца — в архив.</summary>
+        /// <summary>
+        /// Готовая книга из временной папки — на место. Прежняя книга: в структуре заказа — в «_Аннулировано», вне её — в
+        /// резервную копию (LzkNaming.BackupPath); не встала новая — прежняя возвращается на место, «.new» не остаётся.
+        /// </summary>
         private void Deliver()
         {
-            // Новая книга сначала ложится рядом («.new»): упадёт копирование на NAS — прежняя книга останется на месте.
             Directory.CreateDirectory(Path.GetDirectoryName(_workbookPath));
             string fresh = _workbookPath + ".new";
-            if (File.Exists(fresh)) File.Delete(fresh);
-            File.Copy(_tempWorkbook, fresh, false);
-            if (File.Exists(_workbookPath) && !_inOrder)
+            try
             {
-                // Вне структуры заказа папок не заводим: прежняя книга заменяется, введённое в ней уже перенесено в новую.
-                File.Delete(_workbookPath);
+                // Новая книга сначала ложится рядом («.new»): упадёт копирование на NAS — прежняя книга на месте.
+                if (File.Exists(fresh)) File.Delete(fresh);
+                File.Copy(_tempWorkbook, fresh, false);
+                if (File.Exists(_workbookPath)) ReplacePrevious(fresh);
+                else File.Move(fresh, _workbookPath);
             }
-            else if (File.Exists(_workbookPath))
+            finally
             {
-                string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_workbookPath));
-                Directory.CreateDirectory(Path.GetDirectoryName(archive));
-                File.Move(_workbookPath, archive);
-                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_workbookPath), "прежняя книга перенесена в «" + LzkNaming.ArchiveFolder + "»: " + Path.GetFileName(archive)));
+                try
+                {
+                    if (File.Exists(fresh)) File.Delete(fresh);
+                }
+                catch (IOException ex)
+                {
+                    Log.Error("Ведомость ЛЗК: " + fresh, ex);
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    Log.Error("Ведомость ЛЗК: " + fresh, ex);
+                }
             }
             // Ведомость старого образца (в корне изделия) заменяется книгой ЛЗК — два документа об одном не нужны.
             if (_inOrder && File.Exists(_legacyPath))
@@ -942,7 +970,35 @@ namespace ESKD.MaterialSync.Sw
                 File.Move(_legacyPath, archive);
                 _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_legacyPath), "ведомость старого образца перенесена в «" + LzkNaming.ArchiveFolder + "»"));
             }
-            File.Move(fresh, _workbookPath);
+        }
+
+        private void ReplacePrevious(string fresh)
+        {
+            DateTime stamp = File.GetLastWriteTime(_workbookPath);
+            string previous = _inOrder ? LzkNaming.ArchivePath(_productFolder, _cipher, stamp) : LzkNaming.BackupPath(_cipher, stamp);
+            Directory.CreateDirectory(Path.GetDirectoryName(previous));
+            File.Copy(_workbookPath, previous, false);
+            try
+            {
+                File.Delete(_workbookPath);
+                File.Move(fresh, _workbookPath);
+            }
+            catch
+            {
+                if (!File.Exists(_workbookPath)) File.Copy(previous, _workbookPath, false);
+                if (!_inOrder) File.Delete(previous);
+                throw;
+            }
+            if (_inOrder)
+            {
+                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_workbookPath),
+                    "прежняя книга перенесена в «" + LzkNaming.ArchiveFolder + "»: " + Path.GetFileName(previous)));
+            }
+            else
+            {
+                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_workbookPath),
+                    "прежняя книга заменена, её копия — " + previous));
+            }
         }
 
         private void Report(LzkResult result, string problem)
@@ -988,12 +1044,6 @@ namespace ESKD.MaterialSync.Sw
 
         private void Cleanup()
         {
-            if (_events != null)
-            {
-                try { _events.OnIdleNotify -= OnIdle; }
-                catch (COMException ex) { Log.Error("Ведомость ЛЗК: отписка от OnIdleNotify", ex); }
-                _events = null;
-            }
             if (_timer != null)
             {
                 _timer.Stop();
@@ -1070,6 +1120,11 @@ namespace ESKD.MaterialSync.Sw
             catch (IOException)
             {
                 return true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Папка только для чтения — книга не занята; запись уйдёт в запасное место.
+                return false;
             }
         }
 

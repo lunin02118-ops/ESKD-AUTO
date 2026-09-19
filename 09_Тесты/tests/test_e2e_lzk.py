@@ -144,6 +144,29 @@ class Lzk(SwTestCase):
         self.assertTrue(status.startswith("ok|"), status)
         self.assertEqual([], [d.name for d in folder.iterdir() if d.is_dir()], "и после повторного запуска")
         self.assertEqual(["ЛЗК_Стол письменный.xlsx"], sorted(f.name for f in folder.glob("*.xlsx")))
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        backup = next((line.split("её копия — ", 1)[1].strip() for line in notices.splitlines() if "её копия — " in line), "")
+        self.assertTrue(backup and Path(backup).is_file(), f"копия прежней книги вне папки сборки\n{notices}")
+        self.addCleanup(Path(backup).unlink, True)
+        self.assertNotEqual(folder.resolve(), Path(backup).parent.resolve())
+
+    def test_L08_unreadable_previous_book_is_not_overwritten(self):
+        """L08: прежняя книга рядом со сборкой не читается — кнопка отказывает и её не трогает: введённое в ней
+        (тираж, срок, нормы) не должно пропасть молча."""
+        from eskd_e2e import build
+
+        folder = self.case_dir / "Где угодно"
+        folder.mkdir(parents=True, exist_ok=True)
+        part = self.s.workspace_copy(Path(paths.FIXTURES_A) / SHEET_PART, subdir=f"{self._case_name()}/Где угодно")
+        asm, _ = build.assembly(self.s, [(part, 0, 0, 0)])
+        self.s.save_as(asm, folder / "Тумба.sldasm")
+        broken = folder / "ЛЗК_Тумба.xlsx"
+        broken.write_bytes(b"not a zip workbook")
+        self.s.activate(asm)
+        status = self._build()
+        self.path("outcome.txt").write_text(status, encoding="utf-8")
+        self.assertTrue(status.startswith("error|") and "не читается" in status, status)
+        self.assertEqual(b"not a zip workbook", broken.read_bytes(), "прежняя книга не тронута")
 
     def test_L07_readonly_models_and_denied_folder_still_give_book(self):
         """L07: чужая сборка — деталь занята (только для чтения), в папку сборки писать нельзя. Раньше кнопка обрывалась

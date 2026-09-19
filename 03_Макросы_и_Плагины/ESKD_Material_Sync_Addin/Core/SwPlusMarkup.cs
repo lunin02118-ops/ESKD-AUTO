@@ -11,12 +11,6 @@ namespace ESKD.MaterialSync.Core
     {
         private static readonly CultureInfo Ru = CultureInfo.GetCultureInfo("ru-RU");
 
-        private static readonly string[] BlankShapes =
-        {
-            "Лист", "Труба", "Круг", "Швеллер", "Уголок", "Полоса", "Квадрат", "Шестигранник", "Профиль", "Лента",
-            "Двутавр", "Проволока", "Пруток", "Фольга", "Плита", "Сетка", "Рельс"
-        };
-
         /// <summary>Есть ли в значении разметка SolidWorks или перевод строки — такие значения не переформатируются.</summary>
         public static bool HasMarkup(string value)
         {
@@ -81,19 +75,6 @@ namespace ESKD.MaterialSync.Core
                 !t.EndsWith(tail, StringComparison.OrdinalIgnoreCase))
                 return null;
             return t.Substring(LiveMassHead.Length, t.Length - LiveMassHead.Length - tail.Length);
-        }
-
-        /// <summary>Форма заготовки из начала строки сортамента: «Труба», «Лист» …</summary>
-        public static string BlankShape(string sortament)
-        {
-            if (string.IsNullOrWhiteSpace(sortament)) return "";
-            string t = sortament.Trim();
-            foreach (string s in BlankShapes)
-            {
-                if (t.StartsWith(s + " ", StringComparison.OrdinalIgnoreCase) || string.Equals(t, s, StringComparison.OrdinalIgnoreCase))
-                    return s;
-            }
-            return "";
         }
     }
 }

@@ -34,7 +34,7 @@ namespace ESKD.MaterialSync.Sw
             {
                 ModelDoc2 doc = app.ActiveDoc as ModelDoc2;
                 if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
-                    return Fail(app, interactive, "Откройте главную сборку изделия (папка «" + LzkNaming.ModelsFolder + "») и нажмите кнопку ещё раз.");
+                    return Fail(app, interactive, "Откройте главную сборку изделия и нажмите кнопку ещё раз.");
                 string assembly = DocInfo.PathOf(doc);
                 if (assembly.Length == 0) return Fail(app, interactive, "Сборка ещё не сохранена в файл.");
                 string product = LzkNaming.ProductFolder(assembly);

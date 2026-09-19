@@ -1,5 +1,4 @@
-# Huge driver installers and archives
-07_Драйверы_NVIDIA/
+# Архив рабочей копии (вне git)
 99_Архив/
 
 # Temporary and build artifacts
@@ -19,9 +18,6 @@ build_temp/
 # Allow Drw System Automation distribution binaries
 !03_Макросы_и_Плагины/Drw_System_Automation/**
 
-# Test output artifacts
-08_Результаты_Тестирования/Auto_E2E_Test_Output/
-
 # Registry deployment backups (machine-specific)
 01_Настройки_SolidWorks/Реестровые_Профили/Backups/
 
@@ -38,9 +34,6 @@ build_temp/
 *.clean_old
 *.f40_old
 
-# Отчёты прежнего Test_Suite с отметкой времени
-08_Результаты_Тестирования/Test_Suite/TEST_REPORT_2*.md
-
 # SWTools — отдельный репозиторий lunin02118-ops/swtools, в инструментарий ЕСКД не входит (ТЗ-02 §3.5, огр. 4а)
 03_Макросы_и_Плагины/swtools/
 # Установщик SWTools публикуется в общую папку ключом Publish-EskdToolkit -SwToolsSetup
@@ -48,3 +41,6 @@ build_temp/
 
 # Персональные данные — не публикуется (репозиторий открытый)
 06_Документация/Регламент_КТО_Металл/06_Примеры_документов/Пример_Служебная_записка_*.docx
+
+# Локальные настройки Claude Code
+.claude/

@@ -41,6 +41,19 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>
+        /// Резервная копия прежней книги сборки вне структуры заказа: рядом со сборкой папок не заводим, поэтому прежняя
+        /// книга — в «%LOCALAPPDATA%\ESKD\ЛЗК_прежние\ЛЗК_&lt;шифр&gt;_&lt;дата_время&gt;.xlsx» (без затирания).
+        /// </summary>
+        public static string BackupPath(string cipher, DateTime stamp)
+        {
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ESKD", "ЛЗК_прежние");
+            string stem = WorkbookPrefix + SafeFileName(cipher) + "_" + stamp.ToString("yyyy-MM-dd_HHmm", CultureInfo.InvariantCulture);
+            string path = Path.Combine(dir, stem + ".xlsx");
+            for (int i = 2; File.Exists(path); i++) path = Path.Combine(dir, stem + "_" + i + ".xlsx");
+            return path;
+        }
+
+        /// <summary>
         /// Рядом со сборкой писать нельзя (чужой ресурс, архив, защищённая папка) — книга в «Документы», без новых папок.
         /// </summary>
         public static string FallbackWorkbookPath(string cipher)
@@ -217,11 +230,6 @@ namespace ESKD.MaterialSync.Core
             MaterialKind byName = Kind(material);
             if (byName != MaterialKind.Unknown || densityKgM3 <= 0) return byName;
             return densityKgM3 >= MetalDensityKgM3 ? MaterialKind.RolledMetal : MaterialKind.NonMetal;
-        }
-
-        public static bool IsRolledMetal(string material)
-        {
-            return Kind(material) == MaterialKind.RolledMetal;
         }
 
         /// <summary>Сортамент, который режут лазером по листу.</summary>

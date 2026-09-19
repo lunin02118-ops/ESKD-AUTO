@@ -372,14 +372,6 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>Печать листа: область, повторяемая шапка (строка) — именованными диапазонами книги.</summary>
-        /// <summary>Спрятать лист: служебные листы книги («Цвета», «Комплект») людям в глаза не лезут.</summary>
-        public void Hide(string sheetName)
-        {
-            XElement node = _workbook.Root.Element(Main + "sheets").Elements(Main + "sheet")
-                .FirstOrDefault(s => string.Equals((string)s.Attribute("name"), sheetName, StringComparison.OrdinalIgnoreCase));
-            if (node != null) node.SetAttributeValue("state", "hidden");
-        }
-
         public void SetPrintNames(string sheetName, string printArea, int repeatRow)
         {
             int index = SheetIndex(sheetName);
