@@ -29,7 +29,7 @@ sys.path.insert(0, str(HERE))
 from eskd_e2e import paths, testing  # noqa: E402
 
 SUITES = {
-    "static": ["tests.test_static"],
+    "static": ["tests.test_static", "tests.test_order_folders"],
     "unit": ["tests.test_unit"],
     "contract": ["tests.test_contract"],
     "e2e": ["tests.test_e2e_persistence", "tests.test_e2e_model", "tests.test_e2e_bch",

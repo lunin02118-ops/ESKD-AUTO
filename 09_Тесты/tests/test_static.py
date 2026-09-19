@@ -920,6 +920,20 @@ class StaticRepository(StaticTestCase):
                     found.append(f"{f.name}:{n}: {line.strip()[:100]}")
         self.assertEqual([], found)
 
+    def test_T0_no_code_writes_production_folder(self):
+        """T0 (ТЗ-04 Р4-2, аудит 19.09.2026): папки «_Производство» больше нет — ни надстройка, ни установщик, ни
+        скрипты заказов в неё не пишут; цех работает из папки изделия с отметкой _Выдано."""
+        found = []
+        for base in (ROOT / "03_Макросы_и_Плагины", ROOT / "01_Настройки_SolidWorks"):
+            for src in base.rglob("*"):
+                if src.suffix.lower() not in (".cs", ".ps1", ".psm1", ".py", ".bas", ".cls", ".frm"):
+                    continue
+                for n, line in enumerate(src.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+                    if re.search(r"_Производство|04_ПРОИЗВОДСТВО", line) and "больше нет" not in line \
+                            and "не пополн" not in line:
+                        found.append(f"{src.relative_to(ROOT)}:{n}: {line.strip()[:100]}")
+        self.assertEqual([], found)
+
     def test_T0_test_ids_are_unique(self):
         """T0 (аудит 19.09.2026): номер сценария вида P01 встречается только в одном файле — фильтр -k и ссылки
         в документах однозначны."""
