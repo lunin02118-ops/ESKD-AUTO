@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """E2E, группа L — кнопка «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37, ТЗ-04): операции, габарит, выгрузка SWTools без окна,
 живая книга ЛЗК — паспорт, участки, расход, нормы — в «04_Сопроводительная документация» изделия."""
+import os
 import time
 import unittest
 import winreg
@@ -109,6 +110,75 @@ class Lzk(SwTestCase):
         for designation, path in (("ПРТИ.468211.101", parts[0]), ("ПРТИ.468211.111", parts[1])):
             with self.subTest(disk=designation):
                 self.assertEqual(ops[designation], V(self.persisted(path), "Операции"), "операции записаны в модель")
+
+    def test_L06_assembly_in_any_folder(self):
+        """L06 (замечание владельца 19.09.2026): главная сборка — в любой папке, вне заказа и без «01_3D»; детали — рядом и
+        в другой папке. Книга ЛЗК формируется в «04_Сопроводительная документация» рядом со сборкой, на всю сборку."""
+        from eskd_e2e import build
+
+        folder = self.case_dir / "Рабочая папка" / "Новый стол"
+        folder.mkdir(parents=True, exist_ok=True)
+        near = self.s.workspace_copy(Path(paths.FIXTURES_A) / SHEET_PART, subdir=f"{self._case_name()}/Рабочая папка/Новый стол")
+        other = self.s.workspace_copy(Path(paths.FIXTURES_A) / "ПРТИ.468211.111 Стойка трубная.sldprt",
+                                      subdir=f"{self._case_name()}/Детали где-то ещё")
+        asm, opened = build.assembly(self.s, [(near, 0, 0, 0), (other, 0, 0.15, 0)])
+        self.s.save_as(asm, folder / "Стол письменный.sldasm")
+        for doc in opened:
+            self.s.close(doc)
+        self.s.activate(asm)
+        status = self._build()
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.path("outcome.txt").write_text(status + "\n\n" + notices, encoding="utf-8")
+        self.assertTrue(status.startswith("ok|"), f"{status}\n{notices}")
+        workbook = Path(status.split("|")[1])
+        self.assertEqual((folder / DOCS).resolve(), workbook.parent.resolve(), "книга рядом со сборкой")
+        self.assertTrue(workbook.is_file(), "книга ЛЗК")
+        ops, on_sections = self._sections(workbook)
+        for designation in ("ПРТИ.468211.101", "ПРТИ.468211.111"):
+            with self.subTest(part=designation):
+                self.assertNotIn(ops.get(designation) or "?", ("?", ""), f"операции: {ops}\n{notices}")
+                self.assertIn(designation, on_sections, f"на участках: {on_sections}")
+
+    def test_L07_readonly_models_and_denied_folder_still_give_book(self):
+        """L07: чужая сборка — деталь занята (только для чтения), в папку сборки писать нельзя. Раньше кнопка обрывалась
+        «Ведомость не сформирована»; теперь книга — в «Документы\\ЕСКД\\ЛЗК\\<сборка>», операции детали — в книге."""
+        import subprocess
+        import shutil
+        from eskd_e2e import build
+
+        stamp = time.strftime("%H%M%S")
+        name = f"Стол чужой L07 {stamp}"
+        folder = self.case_dir / "Чужая папка"
+        folder.mkdir(parents=True, exist_ok=True)
+        part = self.s.workspace_copy(Path(paths.FIXTURES_A) / SHEET_PART, subdir=f"{self._case_name()}/Чужая папка")
+        asm, opened = build.assembly(self.s, [(part, 0, 0, 0)])
+        asm_path = folder / f"{name}.sldasm"
+        self.s.save_as(asm, asm_path)
+        self.s.close_all()
+        before = part.read_bytes()
+
+        user = os.environ["USERNAME"]
+        subprocess.run(["icacls", str(folder), "/deny", f"{user}:(AD,WD)"], check=True, capture_output=True)
+        self.addCleanup(subprocess.run, ["icacls", str(folder), "/remove:d", user], capture_output=True)
+
+        self.s.open(part, readonly=True)
+        doc = self.s.open(asm_path)
+        self.s.activate(doc)
+        status = self._build()
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.path("outcome.txt").write_text(status + "\n\n" + notices, encoding="utf-8")
+        self.assertTrue(status.startswith("ok|"), f"{status}\n{notices}")
+        workbook = Path(status.split("|")[1])
+        self.assertEqual(name, workbook.parent.parent.name, "запасная папка: Документы/ЕСКД/ЛЗК/<сборка>")
+        self.addCleanup(shutil.rmtree, workbook.parent.parent, True)
+        self.assertTrue(workbook.is_file(), "книга ЛЗК")
+        self.assertIn("записать нельзя", notices)
+        self.assertIn("только для чтения", notices)
+        ops, on_sections = self._sections(workbook)
+        self.assertNotIn(ops.get("ПРТИ.468211.101") or "?", ("?", ""), f"операции: {ops}\n{notices}")
+        self.assertIn("ПРТИ.468211.101", on_sections)
+        self.s.close_all()
+        self.assertEqual(before, part.read_bytes(), "деталь только для чтения не изменена")
 
     def test_L05_base_parts_get_operations_only_in_book(self):
         """L05: детали из базы («_Библиотека проектирования») — операции по модели в книге и на участках, файл базы не меняется."""

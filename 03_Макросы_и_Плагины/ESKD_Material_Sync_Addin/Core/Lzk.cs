@@ -26,6 +26,16 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>
+        /// Папка изделия, когда рядом со сборкой писать нельзя (чужой ресурс, архив, защищённая папка):
+        /// «Документы\ЕСКД\ЛЗК\&lt;имя сборки&gt;» — книга не пропадает, куда бы ни положили сборку.
+        /// </summary>
+        public static string FallbackFolder(string assemblyPath)
+        {
+            string documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            return Path.Combine(documents, "ЕСКД", "ЛЗК", SafeFileName(Path.GetFileNameWithoutExtension(assemblyPath) ?? "Изделие"));
+        }
+
+        /// <summary>
         /// Шифр изделия: из имени папки «И&lt;nn&gt;_&lt;шифр&gt;_…», иначе обозначение главной сборки без нулевых хвостов
         /// (КОД.00.00.000 → КОД), иначе обозначение как есть, иначе имя файла сборки.
         /// </summary>

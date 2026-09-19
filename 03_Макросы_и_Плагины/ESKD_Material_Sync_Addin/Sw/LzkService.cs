@@ -122,13 +122,13 @@ namespace ESKD.MaterialSync.Sw
             _doc = _app.ActiveDoc as ModelDoc2;
             if (_doc == null || _doc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
             {
-                Info("Откройте главную сборку изделия (папка «01_3D») и нажмите кнопку ещё раз.", MessageBoxIcon.Information);
+                Info("Откройте главную сборку изделия (из любой папки) и нажмите кнопку ещё раз.", MessageBoxIcon.Information);
                 return false;
             }
             _assemblyPath = DocInfo.PathOf(_doc);
             if (_assemblyPath.Length == 0)
             {
-                Info("Сборка ещё не сохранена в файл. Сохраните её в папку «01_3D» изделия.", MessageBoxIcon.Information);
+                Info("Сборка ещё не сохранена в файл. Сохраните её (в любую папку) и нажмите кнопку ещё раз.", MessageBoxIcon.Information);
                 return false;
             }
             string exe = SwToolsExe();
@@ -246,17 +246,20 @@ namespace ESKD.MaterialSync.Sw
                     "модель базы: операции предложены по модели и записаны только в книгу, файл базы не изменён"));
             }
 
-            if (!WriteProperties(editable, models)) return false;
+            WriteProperties(editable, models);
             MarkPaintedUnits(instances, top);
             PaintedAssemblyAreas(instances, top, byKey, traits);
 
             Status("ЕСКД: ведомость ЛЗК — сохранение сборки…");
+            // Сборку, которую не сохранить (только для чтения, чужая, защищённая папка), SWTools читает с диска как есть:
+            // книга собирается всё равно (замечание владельца 19.09.2026 — ЛЗК из любой папки).
             int errors = 0, warnings = 0;
-            if (!_doc.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
-            {
-                Info("Сборка не сохранена (код " + errors + "). Ведомость не сформирована.", MessageBoxIcon.Warning);
-                return false;
-            }
+            if (_doc.IsOpenedReadOnly())
+                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_assemblyPath),
+                    "сборка открыта только для чтения: состав взят из сохранённого файла"));
+            else if (!_doc.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
+                _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_assemblyPath),
+                    "сборка не сохранена (код " + errors + "): состав взят из сохранённого файла", "Сохраните сборку и пересоберите книгу"));
 
             _header = new LzkHeader
             {
@@ -636,7 +639,11 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>«Операции» и «Габарит» — в общие свойства новых моделей изделия; изменённые модели сохраняются молча (Т-3).</summary>
-        private bool WriteProperties(List<LzkItem> editable, Dictionary<string, ModelDoc2> models)
+        /// <summary>
+        /// «Операции» и размер — в модели. Модель, которую не записать (только для чтения, не сохраняется), книге не мешает:
+        /// её операции идут в книгу из окна «Операции», а в замечаниях — какие модели остались без записи.
+        /// </summary>
+        private void WriteProperties(List<LzkItem> editable, Dictionary<string, ModelDoc2> models)
         {
             List<string> readOnly = new List<string>();
             List<KeyValuePair<LzkItem, ModelDoc2>> changed = new List<KeyValuePair<LzkItem, ModelDoc2>>();
@@ -651,12 +658,8 @@ namespace ESKD.MaterialSync.Sw
                 if (model.IsOpenedReadOnly()) readOnly.Add(Path.GetFileName(item.Path));
                 else changed.Add(new KeyValuePair<LzkItem, ModelDoc2>(item, model));
             }
-            if (readOnly.Count > 0)
-            {
-                Info("Эти модели открыты только для чтения (заняты другим пользователем или защищены), свойства в них не записать:\n\n" +
-                     string.Join("\n", readOnly.ToArray()) + "\n\nВедомость не сформирована.", MessageBoxIcon.Warning);
-                return false;
-            }
+            foreach (string name in readOnly)
+                NotWritten(name, "модель открыта только для чтения (занята другим пользователем или защищена)");
             int n = 0;
             foreach (KeyValuePair<LzkItem, ModelDoc2> kv in changed)
             {
@@ -667,20 +670,26 @@ namespace ESKD.MaterialSync.Sw
                 if (!kv.Key.SizeIsEstimate && kv.Key.Size.Length > 0) w.Set("", LzkOperations.SizePropertyName, kv.Key.Size);
                 if (w.Failures > 0)
                 {
-                    Info("Не удалось записать свойства в " + Path.GetFileName(kv.Key.Path) + ". Подробности — в журнале ЕСКД.", MessageBoxIcon.Warning);
-                    return false;
+                    NotWritten(Path.GetFileName(kv.Key.Path), "свойства не записались (подробности — в журнале ЕСКД)");
+                    continue;
                 }
                 if (object.ReferenceEquals(kv.Value, _doc)) continue;
                 CleanPreview(kv.Value);
                 int errors = 0, warnings = 0;
                 if (!kv.Value.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
                 {
-                    Info("Модель " + Path.GetFileName(kv.Key.Path) + " не сохранена (код " + errors + "). Ведомость не сформирована.", MessageBoxIcon.Warning);
-                    return false;
+                    NotWritten(Path.GetFileName(kv.Key.Path), "модель не сохранена (код " + errors + ")");
+                    continue;
                 }
                 Log.Info("Ведомость ЛЗК: свойства записаны — " + kv.Key.Path);
             }
-            return true;
+        }
+
+        private void NotWritten(string model, string reason)
+        {
+            Log.Warn("Ведомость ЛЗК: " + model + " — " + reason);
+            _notes.Add(Notices.Of(NoticeLevel.Warning, model, reason + ": операции записаны только в книгу",
+                "Когда модель станет доступна для записи, пересоберите книгу — операции запишутся и в модель"));
         }
 
         // ------------------------------------------------------------------ SWTools
@@ -870,27 +879,24 @@ namespace ESKD.MaterialSync.Sw
 
                 if (problem.Length == 0)
                 {
-                    // Новая книга сначала ложится рядом («.new»): упадёт копирование на NAS — прежняя книга останется на месте.
-                    Directory.CreateDirectory(Path.GetDirectoryName(_workbookPath));
-                    string fresh = _workbookPath + ".new";
-                    if (File.Exists(fresh)) File.Delete(fresh);
-                    File.Copy(_tempWorkbook, fresh, false);
-                    if (File.Exists(_workbookPath))
+                    try
                     {
-                        string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_workbookPath));
-                        Directory.CreateDirectory(Path.GetDirectoryName(archive));
-                        File.Move(_workbookPath, archive);
-                        _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_workbookPath), "прежняя книга перенесена в «" + LzkNaming.ArchiveFolder + "»: " + Path.GetFileName(archive)));
+                        Deliver();
                     }
-                    // Ведомость старого образца (в корне изделия) заменяется книгой ЛЗК — два документа об одном не нужны.
-                    if (File.Exists(_legacyPath))
+                    catch (Exception ex)
                     {
-                        string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_legacyPath), true);
-                        Directory.CreateDirectory(Path.GetDirectoryName(archive));
-                        File.Move(_legacyPath, archive);
-                        _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_legacyPath), "ведомость старого образца перенесена в «" + LzkNaming.ArchiveFolder + "»"));
+                        if (!(ex is UnauthorizedAccessException || ex is IOException)) throw;
+                        // Сборка в папке без права записи (чужой ресурс, архив, защищённая папка): книга не пропадает.
+                        Log.Error("Ведомость ЛЗК: запись рядом со сборкой", ex);
+                        string denied = Path.GetDirectoryName(_workbookPath);
+                        _productFolder = LzkNaming.FallbackFolder(_assemblyPath);
+                        _workbookPath = LzkNaming.WorkbookPath(_productFolder, _cipher);
+                        _legacyPath = LzkNaming.LegacyWorkbookPath(_productFolder, _cipher);
+                        Deliver();
+                        _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_workbookPath),
+                            "в папку «" + denied + "» записать нельзя (" + ex.Message.Trim() + "): книга сохранена в «" +
+                            Path.GetDirectoryName(_workbookPath) + "»", "Перенесите книгу к изделию, когда папка станет доступна"));
                     }
-                    File.Move(fresh, _workbookPath);
                 }
                 if (outcome != null && outcome.Version.Length > 0) Log.Info("Ведомость ЛЗК: SWTools " + outcome.Version);
             }
@@ -903,7 +909,37 @@ namespace ESKD.MaterialSync.Sw
             {
                 Cleanup();
             }
+            Report(result, problem);
+        }
 
+        /// <summary>Готовая книга из временной папки — на место; прежняя книга и ведомость старого образца — в архив.</summary>
+        private void Deliver()
+        {
+            // Новая книга сначала ложится рядом («.new»): упадёт копирование на NAS — прежняя книга останется на месте.
+            Directory.CreateDirectory(Path.GetDirectoryName(_workbookPath));
+            string fresh = _workbookPath + ".new";
+            if (File.Exists(fresh)) File.Delete(fresh);
+            File.Copy(_tempWorkbook, fresh, false);
+            if (File.Exists(_workbookPath))
+            {
+                string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_workbookPath));
+                Directory.CreateDirectory(Path.GetDirectoryName(archive));
+                File.Move(_workbookPath, archive);
+                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_workbookPath), "прежняя книга перенесена в «" + LzkNaming.ArchiveFolder + "»: " + Path.GetFileName(archive)));
+            }
+            // Ведомость старого образца (в корне изделия) заменяется книгой ЛЗК — два документа об одном не нужны.
+            if (File.Exists(_legacyPath))
+            {
+                string archive = LzkNaming.ArchivePath(_productFolder, _cipher, File.GetLastWriteTime(_legacyPath), true);
+                Directory.CreateDirectory(Path.GetDirectoryName(archive));
+                File.Move(_legacyPath, archive);
+                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_legacyPath), "ведомость старого образца перенесена в «" + LzkNaming.ArchiveFolder + "»"));
+            }
+            File.Move(fresh, _workbookPath);
+        }
+
+        private void Report(LzkResult result, string problem)
+        {
             if (problem.Length > 0)
             {
                 Status("ЕСКД: ведомость ЛЗК не сформирована");
