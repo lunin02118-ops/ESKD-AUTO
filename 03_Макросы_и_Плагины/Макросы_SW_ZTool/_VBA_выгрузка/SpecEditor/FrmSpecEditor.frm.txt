@@ -1704,7 +1704,7 @@ If MSort = 0 Then ' Новая спецификация
                     Set swView = swView.GetNextView
                 Loop
             End If
-            vSheetProps = swSheet.GetProperties: SwpBomAnchor swDraw, swSheet ' ЕСКД: спецификация в левом нижнем углу листа
+            vSheetProps = swSheet.GetProperties: SwpBomAnchorWarn swDraw, swSheet ' ЕСКД: спецификация в левом нижнем углу листа
             Set swBomTable = swView.InsertBomTable4(True, vSheetProps(5) - 0.005, 0.068, swBOMConfigurationAnchor_BottomRight, swBomType_TopLevelOnly, sConfigName, sSource1, False, swNumberingType_e.swIndentedBOMNotSet, False)
             Set swBomFeat = swBomTable.BomFeature ' ********
             ReDim sTemp(0)

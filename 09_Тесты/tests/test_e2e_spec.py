@@ -146,11 +146,25 @@ class SpecBchLayout(SwTestCase):
             ann.SetColumnWidth(c, w, 0)  # swTableRowColChange_TableSizeCanChange
         drw.ForceRebuild3(False)
         self.assertEqual([205.0, 5.0], bom_anchor(drw), "точка привязки BOM листа")
+        self.assertTrue(bool(drw.GetEditSheet), "после правки основной надписи лист вернулся в режим листа")
         self.assertTrue(bool(ann.Anchored), "таблица привязана к точке")
         self.assertEqual([205.0, 5.0], [round(float(x) * 1000, 1) for x in list(com.dyn(ann.GetAnnotation).GetPosition)[:2]],
                          "правый нижний угол таблицы — в точке привязки, низ — на рамке")
         width = sum(float(ann.GetColumnWidth(c)) for c in range(int(ann.ColumnCount))) * 1000
         self.assertAlmostEqual(20.0, 205.0 - width, delta=0.5, msg=f"левый край — на рамке 20 мм (ширина {width:.1f} мм)")
+
+    def test_S11_deliberate_bom_anchor_is_kept(self):
+        """S11 (аудит 19.09, М-В4): точку привязки BOM, поставленную не форматкой SWPlus (205; 68), SpecEditor не переставляет;
+        лист после проверки не остаётся в режиме редактирования основной надписи."""
+        from eskd_e2e import build
+        drw = self.s.new_doc(paths.DRAWING_TEMPLATE)
+        build.set_sheet_format(drw, build.sheet_format("A3-A-1"), 420, 297)
+        set_bom_anchor(drw, 0.1, 0.05)
+        self.assertEqual([100.0, 50.0], bom_anchor(drw), "точка поставлена намеренно")
+        self._macro("swp_bom_anchor_active_sheet", "SwpAnchorError")
+        self.assertEqual([100.0, 50.0], bom_anchor(drw), "SpecEditor точку не тронул")
+        self.assertTrue(bool(drw.GetEditSheet), "лист в режиме листа, не основной надписи")
+        self.s.close(drw)
 
     def test_S09_spec_layout_does_not_rewrite_models(self):
         """S09 (З-9): SpecEditor не переписывает свойства моделей — у деталей БЧ «Наименование», «Запись_БЧ» и «Примечание»

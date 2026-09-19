@@ -1,6 +1,6 @@
 {
  "MProp/MProp.swp": {
-  "sha256": "cfcbf7339a545271fa5bfacfefc2b58a223a0deec5c7597fbdb4a41bff582e72",
+  "sha256": "3d1a0155fd4bf4b557eb812fe5ef26311a6d5498887e02525071d497cfa62bb5",
   "modules": {
    "FrmMProp.frm.txt": 4062,
    "FrmMProp_Pref.frm.txt": 145,
@@ -20,18 +20,18 @@
   }
  },
  "SpecEditor/SpecEditor.swp": {
-  "sha256": "e85dd019ffb68e493543bb319c4c8b56e4f9dd16c6688973160279f3f593c441",
+  "sha256": "0eb26259aebd73c4b3c271a4ff8289fdf53db3518e2c203cfb2070ffcaf5d9b9",
   "modules": {
    "FrmSpecEditor.frm.txt": 5083,
    "FrmSpecEditor_Doc.frm.txt": 209,
    "FrmSpecEditor_Pref.frm.txt": 357,
-   "SpecEditor_run.bas.txt": 522,
+   "SpecEditor_run.bas.txt": 612,
    "SpecEditor_top.bas.txt": 65,
    "ThisLibrary.cls.txt": 9
   }
  },
  "DProp/DProp.swp": {
-  "sha256": "bb8038488ee5598407739679fd5431d795d0426966d1ef83837a0759845f2a5f",
+  "sha256": "cc4a29a9353ca78d71b73c48a8e98753283898b7aa6e1953ddf8cd2f2c842ab1",
   "modules": {
    "DProp_run.bas.txt": 120,
    "DProp_top.bas.txt": 63,
@@ -41,7 +41,7 @@
   }
  },
  "Master/Master.swp": {
-  "sha256": "a81a3004f438814962db840cd152fe56cc30ed818a0c396e46ae3b12d378ac16",
+  "sha256": "5fb423e1d27722487c5895ac68709621cb98c8d283fd7fa83f70bb4c376614f1",
   "modules": {
    "FrmMaster.frm.txt": 1026,
    "FrmMaster_Pref.frm.txt": 290,
