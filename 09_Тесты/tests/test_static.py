@@ -271,13 +271,15 @@ class StaticRepository(StaticTestCase):
 
     @tags("smoke")
     def test_T0_dictionary_has_43_names_and_flags(self):
-        """T0: словарь SWPlus читается: 43 имени, разбор имени файла включён, разделитель — пробел."""
+        """T0: словарь SWPlus читается: 43 имени, разбор имени файла включён, разделитель — пробел; строки 51/53 — «Операции» и
+        «Ревизия» (ТЗ-02 Т-15, Т-17)."""
         lines = paths.SWPLUS_DICTIONARY.read_bytes().decode("cp1251").split("\r\n")
         self.assertGreaterEqual(len(lines), 50)
         self.assertEqual("Обозначение", lines[0])
         self.assertEqual("Количество", lines[42])
         self.assertEqual("1", lines[47].strip(), "prpFileName")
         self.assertEqual(" ", lines[48], "prpNameSep")
+        self.assertEqual(["Операции", "0", "Ревизия", "0"], lines[50:54], "доп. свойства 1 и 2 — общие (ТЗ-02 Т-15)")
 
     @tags("smoke")
     def test_T0_addin_code_has_no_legacy_alias_writes(self):
