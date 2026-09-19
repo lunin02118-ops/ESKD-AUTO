@@ -32,11 +32,28 @@ Set-Value "$swRoot\Performance" "Use GPU Silhouette Edges" 0
 Set-Value "$swRoot\General" "Software OGL Alarm" 1
 Set-Value "$swRoot\General" "Use Software OGL" 0
 
+# AllowList — база видеокарт самого SolidWorks (больше тысячи ключей). Снимаем только маску настройки рабочего места
+# (Workarounds = 0x32408: RealView + аппаратный конвейер в обход проверки SolidWorks) — из-за неё SolidWorks 2025 SP3
+# на игровой GeForce падает при запуске в sldappu.dll. Базу видеокарт не трогаем.
 $allowList = "HKCU:\Software\SolidWorks\AllowList"
+$mask = 0x32408
+$cleared = 0
 if (Test-Path -LiteralPath $allowList) {
-    Remove-Item -LiteralPath $allowList -Recurse -Force
-    Write-Host "  маска RealView (AllowList) снята"
+    foreach ($key in (Get-ChildItem -LiteralPath $allowList -Recurse -ErrorAction SilentlyContinue)) {
+        if ($key.SubKeyCount -gt 0) { continue }
+        $value = $key.GetValue("Workarounds", $null)
+        if ($null -eq $value -or [int]$value -ne $mask) { continue }
+        Remove-Item -LiteralPath $key.PSPath -Force -ErrorAction SilentlyContinue
+        $cleared++
+    }
+    $current = Join-Path $allowList "Current"
+    if ((Test-Path -LiteralPath $current) -and [int](Get-ItemProperty -LiteralPath $current -Name "Workarounds" -ErrorAction SilentlyContinue).Workarounds -eq $mask) {
+        Remove-ItemProperty -LiteralPath $current -Name "Workarounds" -Force -ErrorAction SilentlyContinue
+        $cleared++
+    }
 }
+if ($cleared) { Write-Host "  маска RealView (AllowList) снята: $cleared записей" }
+else { Write-Host "  маски RealView (AllowList) нет — ничего снимать не нужно" }
 
 Write-Host ""
 Write-Host "Готово. Запустите SolidWorks." -ForegroundColor Green

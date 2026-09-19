@@ -115,7 +115,15 @@ class StaticRepository(StaticTestCase):
         self.assertIn("$hardwareGraphics", setup, "конвейер включается без проверки видеокарты")
         pipeline = setup.index('"Use Performance Pipeline 2020" 1')
         self.assertLess(setup.index("$hardwareGraphics = switch"), pipeline, "конвейер включается до проверки видеокарты")
-        self.assertIn('if ($hardwareGraphics -and $nvidia.Count)', setup, "маска RealView пишется без видеокарты NVIDIA")
+        self.assertIn('if ($RealView -and $hardwareGraphics -and $nvidia.Count)', setup,
+                      "маска RealView пишется без явного ключа -RealView")
+        self.assertIn("[switch]$RealView", setup, "нет ключа -RealView")
+        safe = (ROOT / "01_Настройки_SolidWorks" / "Безопасная_графика_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        for text, why in ((setup, "установщик"), (safe, "скорая помощь")):
+            with self.subTest(file=why):
+                self.assertNotIn('Remove-Item -LiteralPath $allowList -Recurse', text,
+                                 "чистка удаляет базу видеокарт SolidWorks целиком")
+                self.assertIn("0x32408", text, "чистка не опознаёт маску настройки рабочего места")
         gui = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
         self.assertIn('"-Graphics", "Safe"', gui, "в окне настройки нет безопасной графики")
         self.assertTrue((ROOT / "01_Настройки_SolidWorks" / "Безопасная_графика_SolidWorks.ps1").is_file(),
