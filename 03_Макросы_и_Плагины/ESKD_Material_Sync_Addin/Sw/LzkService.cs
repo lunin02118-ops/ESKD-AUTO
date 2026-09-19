@@ -213,7 +213,10 @@ namespace ESKD.MaterialSync.Sw
             }
             _items.AddRange(byKey.Values);
 
-            List<LzkItem> editable = _items.Where(i => i.InProduct && !i.IsPurchased).ToList();
+            // Операции отмечаются и пишутся в свои модели изделия, где бы они ни лежали: детали сборки бывают и в другой
+            // папке (замечание владельца 19.09.2026 — иначе у них «?» и участки пустые). Не правятся только покупные и
+            // модели базы эталонов и библиотеки, общие для всех заказов.
+            List<LzkItem> editable = _items.Where(i => !i.IsPurchased && (i.InProduct || !i.InBase)).ToList();
             if (interactive && editable.Count > 0)
             {
                 Dictionary<string, string> chosen;
@@ -233,6 +236,14 @@ namespace ESKD.MaterialSync.Sw
                 // Без окна — то же, что «Сформировать» без правок: пустые «Операции» получают предложенные по модели.
                 foreach (LzkItem i in editable)
                     if (string.IsNullOrWhiteSpace(i.Operations)) i.Operations = LzkOperations.Join(LzkOperations.Suggest(traits[i.Path]));
+            }
+
+            // Модель базы без «Операций» — операции по признакам модели, только в книге: файл базы не трогаем.
+            foreach (LzkItem i in _items.Where(i => !i.IsPurchased && i.InBase && !i.InProduct && string.IsNullOrWhiteSpace(i.Operations)))
+            {
+                i.Operations = LzkOperations.Join(LzkOperations.Suggest(traits[i.Path]));
+                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(i.Path),
+                    "модель базы: операции предложены по модели и записаны только в книгу, файл базы не изменён"));
             }
 
             if (!WriteProperties(editable, models)) return false;
@@ -347,6 +358,7 @@ namespace ESKD.MaterialSync.Sw
                 Configuration = cfg,
                 IsAssembly = assembly,
                 InProduct = LzkNaming.IsInside(path, _productFolder),
+                InBase = ProductLocator.Locate(path).InBase,
                 IsPurchased = ComponentKind.IsPurchased(w, model, path, "Ведомость ЛЗК"),
                 Designation = Prop(w, active, "Обозначение"),
                 Name = Prop(w, active, "Наименование"),

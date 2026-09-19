@@ -359,6 +359,8 @@ namespace ESKD.MaterialSync.Core
         public bool IsAssembly;
         public bool IsPurchased;
         public bool InProduct;
+        /// <summary>Модель базы эталонов или библиотеки («02_БАЗА», «_Библиотека проектирования»): её файл не правится.</summary>
+        public bool InBase;
         public string Operations = "";
         public int Quantity;
         public double AreaM2 = double.NaN;

@@ -61,6 +61,71 @@ class Lzk(SwTestCase):
             time.sleep(1)
         return status
 
+    def _outside(self, folder):
+        """Сборка в папке изделия, её детали — в папке folder вне изделия (относительно каталога теста). Возвращает
+        (папка изделия, пути деталей, итог кнопки, замечания)."""
+        from eskd_e2e import build
+
+        product = self.case_dir / PRODUCT
+        (product / "01_3D").mkdir(parents=True, exist_ok=True)
+        for name in ("Нормативы_производства.xlsx", "ЛЗК_бланки.xlsx"):
+            ref = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / name
+            (self.case_dir / ref.name).write_bytes(ref.read_bytes())
+        parts = [self.s.workspace_copy(Path(paths.FIXTURES_A) / n, subdir=f"{self._case_name()}/{folder}")
+                 for n in (SHEET_PART, "ПРТИ.468211.111 Стойка трубная.sldprt")]
+        asm, opened = build.assembly(self.s, [(parts[0], 0, 0, 0), (parts[1], 0, 0.15, 0)])
+        self.s.save_as(asm, product / "01_3D" / ASM)
+        for doc in opened:
+            self.s.close(doc)
+        self.s.activate(asm)
+        status = self._build()
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.path("outcome.txt").write_text(status + "\n\n" + notices, encoding="utf-8")
+        self.assertTrue(status.startswith("ok|"), f"{status}\n{notices}")
+        return product, parts, status, notices
+
+    def _sections(self, workbook):
+        """{обозначение: операции} ведомости и обозначения на листах участков."""
+        import openpyxl
+        wb = openpyxl.load_workbook(workbook)
+        main = wb["Ведомость"]
+        ops = {main.cell(r, 3).value: main.cell(r, 9).value for r in range(7, main.max_row + 1) if main.cell(r, 10).value}
+        on_sections = {wb[s].cell(r, 2).value for s in ("Заготовительный", "Сварочный", "Покрасочный", "Комплектовочный")
+                       for r in range(6, wb[s].max_row + 1)}
+        return ops, on_sections
+
+    def test_L04_parts_outside_product_folder(self):
+        """L04 (замечание владельца 19.09.2026): сборка в папке изделия, её детали — в другой папке. Книга ЛЗК — на всю
+        сборку: у деталей из другой папки операции (не «?»), записанные в их модели, и они есть на участках."""
+        product, parts, _, notices = self._outside("Детали_общие")
+        workbook = product / DOCS / BOOK
+        self.assertTrue(workbook.is_file(), "книга ЛЗК изделия")
+        ops, on_sections = self._sections(workbook)
+        for designation, path in (("ПРТИ.468211.101", parts[0]), ("ПРТИ.468211.111", parts[1])):
+            with self.subTest(part=designation):
+                self.assertNotIn(ops.get(designation) or "?", ("?", ""), f"операции детали из другой папки: {ops}\n{notices}")
+                self.assertIn(designation, on_sections, f"деталь из другой папки на участках: {on_sections}")
+        self.s.close_all()
+        for designation, path in (("ПРТИ.468211.101", parts[0]), ("ПРТИ.468211.111", parts[1])):
+            with self.subTest(disk=designation):
+                self.assertEqual(ops[designation], V(self.persisted(path), "Операции"), "операции записаны в модель")
+
+    def test_L05_base_parts_get_operations_only_in_book(self):
+        """L05: детали из базы («_Библиотека проектирования») — операции по модели в книге и на участках, файл базы не меняется."""
+        base = "_Библиотека проектирования/Общие детали"
+        before = {}
+        for n in (SHEET_PART, "ПРТИ.468211.111 Стойка трубная.sldprt"):
+            src = Path(paths.FIXTURES_A) / n
+            before[n] = src.read_bytes()
+        product, parts, _, notices = self._outside(base)
+        ops, on_sections = self._sections(product / DOCS / BOOK)
+        for designation, path in (("ПРТИ.468211.101", parts[0]), ("ПРТИ.468211.111", parts[1])):
+            with self.subTest(part=designation):
+                self.assertNotIn(ops.get(designation) or "?", ("?", ""), f"операции детали базы: {ops}")
+                self.assertIn(designation, on_sections, f"деталь базы на участках: {on_sections}")
+                self.assertEqual(before[path.name], path.read_bytes(), "файл базы не изменён")
+        self.assertIn("модель базы", notices, "пометка, что операции только в книге")
+
     @tags("smoke")
     def test_L01_builds_workbook_with_sheets(self):
         """L01: книга ЛЗК_<шифр>.xlsx в «04_Сопроводительная документация» — паспорт, участки, расход, нормы; «Операции» и «Габарит» в модели."""
