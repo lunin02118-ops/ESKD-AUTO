@@ -132,7 +132,7 @@ def windows_display_name():
     return ""
 
 
-def build_command(engine, author, firm, close_mode, drew=True, block=False, ru=False):
+def build_command(engine, author, firm, close_mode, drew=True, block=False, ru=False, safe_graphics=False):
     """Командная строка установщика: без вопросов в консоли, вывод в UTF-8; флаги чекбоксов."""
     cmd = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", engine,
            "-Author", author, "-CloseMode", close_mode, "-NonInteractive", "-Utf8Output"]
@@ -144,6 +144,9 @@ def build_command(engine, author, firm, close_mode, drew=True, block=False, ru=F
         cmd += ["-SwInternetBlock"]
     if ru:
         cmd += ["-DrewRussian"]
+    if safe_graphics:
+        # Аппаратный конвейер графики не включается: лечение ПК, на котором SolidWorks после настройки не стартует.
+        cmd += ["-Graphics", "Safe"]
     return cmd
 
 
@@ -237,12 +240,15 @@ class ConfiguratorApp:
         self.var_drew = tk.BooleanVar(value=True)
         self.var_block = tk.BooleanVar(value=False)
         self.var_ru = tk.BooleanVar(value=True)
+        self.var_safe_gfx = tk.BooleanVar(value=False)
         ttk.Checkbutton(comp, text="Drew — Gov-издание (лицензия встроена, без активации и кейгена)",
                         variable=self.var_drew).pack(anchor=tk.W)
         ttk.Checkbutton(comp, text="Отучение SolidWorks от сети (файрвол + hosts; запросит права администратора)",
                         variable=self.var_block).pack(anchor=tk.W)
         ttk.Checkbutton(comp, text="Русский интерфейс Drew (DREW_LANG=ru)",
                         variable=self.var_ru).pack(anchor=tk.W)
+        ttk.Checkbutton(comp, text="Безопасная графика (если SolidWorks не запускается или окно чёрное)",
+                        variable=self.var_safe_gfx).pack(anchor=tk.W)
 
         log_frame = ttk.LabelFrame(root, text=" Ход настройки ", padding=6)
         log_frame.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 6))
@@ -318,7 +324,8 @@ class ConfiguratorApp:
         self.log.configure(state=self.tk.DISABLED)
         self.set_status("Идёт настройка…", "text")
         cmd = build_command(self.engine, author, self.var_firm.get().strip(), close_mode,
-                             drew=self.var_drew.get(), block=self.var_block.get(), ru=self.var_ru.get())
+                             drew=self.var_drew.get(), block=self.var_block.get(), ru=self.var_ru.get(),
+                             safe_graphics=self.var_safe_gfx.get())
         threading.Thread(target=self.run_engine, args=(cmd,), daemon=True).start()
 
     def run_engine(self, cmd):

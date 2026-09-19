@@ -23,7 +23,8 @@ VERSION = "HKEY_CURRENT_USER\\Software\\SolidWorks\\SOLIDWORKS 2025"
 # Разделы версии, которые остаются вместе с подразделами: параметры системы и документов, пути, импорт и экспорт.
 KEEP_TREE = {
     "Assemblies", "Auto Dimension Drawing", "Auto Dimension Sketch", "AutoFix", "Colors", "Compression", "ContentManager",
-    "Convert view to sketch", "Crosshatch", "DesignCheck", "Dimensions", "Direct Edit", "Document Templates", "Drawings",
+    "Collab", "Convert view to sketch", "Crosshatch", "DesignCheck", "Dimensions", "Direct Edit", "Document Templates",
+    "Drawings",
     "Edges", "eDrawings", "Export Settings", "ExtFolder", "ExtReferences", "Feature Colors", "FeatureWorks",
     "File Utilities", "GhostMissingRefs", "IgesSettings", "ImportSettings", "LineFont", "LineFontWeight", "Material",
     "Menu Customizations", "Page", "Planes", "PlasticsMode", "Reference Triad", "Regeneration", "SheetMetal",
@@ -35,8 +36,13 @@ KEEP_SUBTREES = {"General\\DontAskAgainOptions"}
 # Разделы, от которых остаются только значения самого раздела (параметры), без подразделов с накопленными данными.
 KEEP_ROOT_VALUES = {"General", "Performance", "Hole Wizard"}
 # Значения, которые описывают конкретный ПК или сеанс, а не настройку отдела.
+# Графика — слепок видеокарты того ПК, где снимали профиль: на другой машине SolidWorks с ним не запускается
+# (замечание владельца 20.09.2026). Видеокарту настраивает установщик по железу рабочего места.
 DROP_VALUES = re.compile(r'^"(Last Run SolidWorks|Import Electrical Excel names|JumpListFileName|Last user path|'
-                         r'AutoCenterMass|EULA Accepted[^"]*|document\d+|Recent[^"]*|Last[^"]*Folder[^"]*)"=', re.I)
+                         r'AutoCenterMass|EULA Accepted[^"]*|document\d+|Recent[^"]*|Last[^"]*Folder[^"]*|'
+                         r'Saved OGL Settings|OGL Display Shaders|OpenGL MultiSample|Enable Layer Mask|'
+                         r'Use Performance Pipeline 2020|Use GPU Silhouette Edges|Use Software OGL|Software OGL Alarm|'
+                         r'Large Assembly Settings|Open Documents On Startup|PreviousSelectedSWSTDList)"=', re.I)
 
 SECTION = re.compile(r"^\[(-?)(HKEY_[^\]]+)\]\s*$")
 
