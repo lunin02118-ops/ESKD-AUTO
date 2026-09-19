@@ -14,6 +14,29 @@ namespace ESKD.MaterialSync.Core
         public const string SavedFormatProperty = "Формат_до_БЧ";
         public const string SavedRemarkProperty = "Примечание_до_БЧ";
 
+        /// <summary>
+        /// Строки записи БЧ после наименования — дробь материала и размер заготовки (З-9). «Наименование» детали БЧ — одно
+        /// название, как у любой детали: графа «Наименование» спецификации связана с ним, и SpecEditor пишет туда ровно то,
+        /// что в нём уже лежит; остальные строки SpecEditor читает из этого свойства модели.
+        /// </summary>
+        public const string LinesProperty = "Запись_БЧ";
+
+        /// <summary>Строки записи после первой (наименования) — значение «Запись_БЧ».</summary>
+        public static string Lines(string record)
+        {
+            if (string.IsNullOrEmpty(record)) return "";
+            string t = record.Replace("\r\n", "\n");
+            int nl = t.IndexOf('\n');
+            return nl >= 0 ? t.Substring(nl + 1).Trim('\n') : "";
+        }
+
+        /// <summary>Вся запись для спецификации: наименование и строки «Запись_БЧ».</summary>
+        public static string Join(string title, string lines)
+        {
+            string tail = (lines ?? "").Replace("\r\n", "\n").Trim('\n');
+            return tail.Length > 0 ? (title ?? "").Trim() + "\n" + tail : (title ?? "").Trim();
+        }
+
         /// <summary>Значение «Наименования» — запись БЧ: несколько строк или дробь материала.</summary>
         public static bool IsRecord(string value)
         {

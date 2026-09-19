@@ -33,7 +33,7 @@ def _empty(value, before):
 FIRST_APPLY_GENERAL = {
     "Number": lambda v, b: v == b["levels"]["общие"].get("Обозначение", ""),
     "Description": lambda v, b: v == b["levels"]["общие"].get("Наименование", "").replace("\n", " "),
-    "RenameSWP": _is("0"), "Доп.свойство_1": _empty, "Доп.свойство_2": _empty, "Заимствование": _empty,
+    "RenameSWP": _is("0"), "Операции": _empty, "Ревизия": _empty, "Заимствование": _empty,
     "Классификатор": _is("False"), "Наименование2": _empty, "Обозначение2": _empty, "Примечание": _empty,
     "Проект_ФБ": _empty, "Раздел": _is("Детали", "Сборочные единицы"), "Сборка": _is("False", "True"), "Удален": _is("НЕТ"),
 }

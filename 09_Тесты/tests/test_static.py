@@ -106,6 +106,31 @@ class StaticRepository(StaticTestCase):
         self.assertIn('Replace("%TOOLKIT%", $toolkit)', setup, "установщик не подставляет папку инструментария")
         self.assertNotIn("$layout.DrwAutomation", setup, "поле раскладки, которого нет")
 
+    def test_T0_export_paths_follow_order_structure(self):
+        """ТЗ-03 ред. 8 §4.3, регламент §7.2: выгрузки из чертежа в папке 01_3D ложатся в папки изделия —
+        PDF в 02_PDF (только из чертежей, без листов развёртки), DXF в 03_ЧПУ\\Лазер_Лист; линии сгиба в DXF не удаляются;
+        резервные копии SolidWorks — в существующий каталог %TEMP%."""
+        import xml.etree.ElementTree as ET
+        path = ROOT / "03_Макросы_и_Плагины" / "Drw_System_Automation" / "Drew-Blueprints.xml"
+        root = ET.fromstring(path.read_text(encoding="utf-8-sig"))
+        presets = {}
+        for e in root.iter("ExportSettings"):
+            ft = e.findtext("FileType")
+            if ft:
+                presets.setdefault(ft, []).append(e)
+        for pdf in presets["Pdf"]:
+            self.assertEqual("<Directory>..\\02_PDF\\<Filename>", pdf.findtext("PathPattern"))
+            self.assertEqual(("false", "true", "false"), (pdf.findtext("EnableForAssemblies"), pdf.findtext("EnableForDrawings"),
+                                                          pdf.findtext("EnableForParts")), "PDF только из чертежей")
+            self.assertEqual("true", pdf.findtext("SkipFlatPatternSheetsPdf"), "лист развёртки попадёт в PDF")
+        for dxf in presets["Dxf"]:
+            self.assertEqual("<Directory>..\\03_ЧПУ\\Лазер_Лист\\<Filename>", dxf.findtext("PathPattern"))
+        reg = (ROOT / "01_Настройки_SolidWorks" / "Реестровые_Профили" / "01_SW2025_Корпоративный_Стандарт_ЕСКД.reg").read_bytes().decode("utf-16")
+        self.assertIn('"DXF/DWG Remove Bend Lines For FlatpatternToDXF"=dword:00000000', reg, "линии сгиба удаляются из DXF")
+        self.assertNotIn("TempSW", reg, "опечатка в пути резервных копий")
+        tt = (ROOT / "03_Макросы_и_Плагины" / "Макросы_SW_ZTool" / "SWPlusMacro_v_2018_SP0.0" / "ТТ" / "apply_tt_profile.py").read_text(encoding="utf-8")
+        self.assertNotRegex(tt, r"(?i)[a-z]:\\\\?Work", "зашитый путь ПК разработчика в apply_tt_profile.py")
+
     @tags("smoke")
     def test_T0_installer_batch_is_ascii_and_finds_setup(self):
         """T0: УСТАНОВИТЬ_ЕСКД.bat — только ASCII, путь к Setup находится маской (Д-23), права администратора не
@@ -246,13 +271,15 @@ class StaticRepository(StaticTestCase):
 
     @tags("smoke")
     def test_T0_dictionary_has_43_names_and_flags(self):
-        """T0: словарь SWPlus читается: 43 имени, разбор имени файла включён, разделитель — пробел."""
+        """T0: словарь SWPlus читается: 43 имени, разбор имени файла включён, разделитель — пробел; строки 51/53 — «Операции» и
+        «Ревизия» (ТЗ-02 Т-15, Т-17)."""
         lines = paths.SWPLUS_DICTIONARY.read_bytes().decode("cp1251").split("\r\n")
         self.assertGreaterEqual(len(lines), 50)
         self.assertEqual("Обозначение", lines[0])
         self.assertEqual("Количество", lines[42])
         self.assertEqual("1", lines[47].strip(), "prpFileName")
         self.assertEqual(" ", lines[48], "prpNameSep")
+        self.assertEqual(["Операции", "0", "Ревизия", "0"], lines[50:54], "доп. свойства 1 и 2 — общие (ТЗ-02 Т-15)")
 
     @tags("smoke")
     def test_T0_addin_code_has_no_legacy_alias_writes(self):
@@ -350,7 +377,7 @@ class StaticRepository(StaticTestCase):
         self.assertTrue(result["sandboxRemoved"], "временный раздел реестра не удалён")
 
     def test_T0_setup_writes_swplus_files_only_when_changed(self):
-        """T0: установщик переписывает файлы SWPlus только при отличии, фамилии и организации дописывает в конец (WP-3.4);
+        """T0: установщик переписывает файлы SWPlus только при отличии, свою фамилию и организацию ставит первыми — MProp берёт первую строку (WP-3.4, З-3);
         функции — в модуле EskdDeploy.psm1, запись идёт в локальную копию."""
         module = ROOT / "01_Настройки_SolidWorks" / "EskdDeploy.psm1"
         out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
@@ -446,8 +473,8 @@ class StaticRepository(StaticTestCase):
             body = m.group(1)
             return set(re.findall(r'"([^"]+)"', body)) | {consts[ref.split(".")[-1]] for ref in re.findall(r"\b[A-Z]\w*\.\w+", body)}
 
-        groups = {a: declared(a) for a in ("DefaultNames", "SwPlusServiceNames", "LegacyExtraNames", "AddinNames", "TemplateNames")}
-        self.assertEqual({"Материал_Строка", "Формат_до_БЧ", "Примечание_до_БЧ"}, groups["AddinNames"])
+        groups = {a: declared(a) for a in ("DefaultNames", "SwPlusServiceNames", "LegacyExtraNames", "AddinNames", "TemplateNames", "ExtraNames")}
+        self.assertEqual({"Материал_Строка", "Формат_до_БЧ", "Примечание_до_БЧ", "Запись_БЧ"}, groups["AddinNames"])
         known = set().union(*groups.values())
 
         call = re.compile(r'\b(?:Set|SetIfEmpty|Raw|Resolved|Delete|Exists|Get)\(\s*(?:"[^"]*"|[^,()"]*)\s*,\s*"([^"]+)"')
@@ -536,6 +563,39 @@ class StaticRepository(StaticTestCase):
                 wrong.append(f"{fid}: копия детали изменена после сборки")
             if item.get("drawing") and digest(paths.FIXTURES_B / item["drawing"]) != item["drawing_sha256"]:
                 wrong.append(f"{fid}: копия чертежа изменена после сборки")
+        self.assertEqual([], wrong)
+
+    def test_T0_dprop_form_opening_does_not_change_drawing(self):
+        """T0 (Д-64, решение владельца 19.09.2026): открытие формы DProp чертёж не меняет — в UserForm_Activate нет
+        SheetsControl (переименование листов, ЛРИ, «Листов»); нумерацию делает «Исправить оформление чертежа»."""
+        text = (ROOT / "03_Макросы_и_Плагины" / "Макросы_SW_ZTool" / "_VBA_выгрузка" / "DProp" / "FrmDProp.frm.txt"
+                ).read_text(encoding="utf-8")
+        activate = re.search(r"(?ms)^Public Sub UserForm_Activate\(\)$(.*?)^End Sub$", text).group(1)
+        self.assertNotRegex(activate, r"(?m)^\s*SheetsControl\s*$", "открытие формы переименовывает листы")
+        standard = re.search(r"(?ms)^Private Sub CmdStandard_Click\(\).*?$(.*?)^End Sub$", text).group(1)
+        self.assertIn("SheetsControl", standard, "«Исправить оформление чертежа» нумерует листы")
+
+    def test_T0_fixture_corpus_a_matches_manifest(self):
+        """T0 (Д-44): файлы корпуса А совпадают с хешами манифеста, манифест помнит шаблоны, из которых корпус собран.
+        Корпус А сознательно собран из шаблонов до нормализации (13.09.2026): так выглядят модели, уже лежащие в заказах,
+        и на них держатся проверки прежних алиасов (Д-18, I03). Текущие шаблоны проверяют модели, которые тесты строят
+        на лету (build.plate, X05, контракт C*). Изменённый файл корпуса — пересборка fixtures/build_fixtures.py."""
+
+        def digest(path):
+            return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+        manifest = json.loads(paths.FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+        self.assertEqual({paths.PART_TEMPLATE.name, paths.ASSEMBLY_TEMPLATE.name, paths.DRAWING_TEMPLATE.name},
+                         set(manifest["templates"]), "манифест помнит шаблоны сборки корпуса")
+        wrong = []
+        for fid, item in manifest["fixtures"].items():
+            hashes = item["sha256"] if isinstance(item.get("sha256"), dict) else {item["file"]: item.get("sha256")}
+            for name, expected in hashes.items():
+                path = paths.FIXTURES_A / name
+                if not path.is_file():
+                    wrong.append(f"{fid}: нет файла {name}")
+                elif digest(path) != expected:
+                    wrong.append(f"{fid}: {name} изменён после сборки корпуса")
         self.assertEqual([], wrong)
 
     def test_T0_dll_built_from_current_sources(self):
@@ -762,13 +822,13 @@ class StaticRepository(StaticTestCase):
         self.assertGreater(len(settings), 10, "параметры реестра в Settings.cs не найдены")
         self.assertEqual([], sorted(n for n in settings if f"`{n}`" not in guide), "параметры ESKD_Settings без описания в руководстве")
         buttons = [b for b in re.findall(r'AddCommandItem2\("([^"]*)"', (ADDIN / "SwAddin.cs").read_text(encoding="utf-8")) if b]
-        self.assertEqual(3, len(buttons), buttons)
+        self.assertEqual(12, len(buttons), buttons)
         self.assertEqual([], [b for b in buttons if f"**{b}**" not in guide], "кнопки вкладки ЕСКД без описания в руководстве")
 
         existing = set()
         for src in (paths.TESTS / "tests").glob("test_*.py"):
             existing |= set(re.findall(r"def test_([A-Z]\d{2})_", src.read_text(encoding="utf-8")))
-        ids = r"[PMBDSRIC]\d{2}(?:,\s*[PMBDSRIC]\d{2})*"
+        ids = r"[PMBDSRICGK]\d{2}(?:,\s*[PMBDSRICGK]\d{2})*"
         cited = set()
         for text in (guide, readme):
             for group in re.findall(r"\((%s)\)|\|\s*(%s)\s*\||тест[а-я]*\s+(%s)" % (ids, ids, ids), text):
@@ -798,9 +858,28 @@ class StaticRepository(StaticTestCase):
         raw = Path(paths.MATERIAL_DB).read_bytes().decode("utf-16").replace('encoding="UTF-16"', 'encoding="UTF-8"')
         root = ET.fromstring(raw.encode("utf-8"))
         materials = list(root.iter("material"))
-        self.assertEqual(124, len(materials), "число записей библиотеки: 114 и 10 копий прежних имён")
+        self.assertEqual(128, len(materials), "число записей библиотеки: 118 и 10 копий прежних имён")
         self.assertEqual(len(materials), len({m.get("matid") for m in materials}), "matid уникальны")
         self.assertEqual(len(materials), len({m.get("name") for m in materials}), "имена уникальны — SolidWorks ищет материал по имени")
+
+        # MProp (SWPlus) читает библиотеку построчно через Split(…, vbCrLf): при переводах строк LF весь файл для него
+        # одна строка, и выбор базы падает с «Несовпадение типов» (З-4). Каждая классификация и материал — на своей строке CRLF.
+        text = Path(paths.MATERIAL_DB).read_bytes().decode("utf-16")
+        self.assertEqual(0, len(re.findall(r"(?<!\r)\n", text)), "в библиотеке переводы строк без CR — MProp не разберёт файл")
+        lines = text.split("\r\n")
+        self.assertEqual(len(materials), sum("material name" in s for s in lines), "каждый материал на отдельной строке")
+        self.assertEqual(len(list(root.iter("classification"))), sum("classification name" in s for s in lines),
+                         "каждая классификация на отдельной строке")
+
+        # З-5: материал с внешним видом, которого нет в SolidWorks 2025, не назначается вовсе — «Применить» молча
+        # ничего не делает (так было у всех ЛДСП, МДФ, фанеры, кромки, HPL и полимеров). Пути сверяются с установленным SW.
+        appearances = Path(r"C:\Program Files\SOLIDWORKS Corp\SOLIDWORKS\data\graphics\Materials")
+        if appearances.is_dir():
+            shaders = {s.get("path") for s in root.iter("pwshader2")}
+            self.assertEqual(set(), {p for p in shaders if not (appearances / p.lstrip("\\")).is_file()},
+                             "внешние виды материалов, которых нет в SolidWorks 2025")
+        self.assertEqual([], [m.get("name") for m in materials if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", ET.tostring(m, encoding="unicode"))],
+                         "управляющие символы в записи материала (\\t, \\f в путях)")
 
         # Аудит 15.09.2026, C1: имена в дереве — по действующим ГОСТ; прежние имена — копиями в группе «99», чтобы старые
         # модели нашли свой материал. У копии те же поля, что у переименованной записи.
@@ -873,6 +952,53 @@ class StaticRepository(StaticTestCase):
                 if pattern.search(line):
                     found.append(f"{f.name}:{n}: {line.strip()[:100]}")
         self.assertEqual([], found)
+
+    def test_T0_no_code_writes_production_folder(self):
+        """T0 (ТЗ-04 Р4-2, аудит 19.09.2026): папки «_Производство» больше нет — ни надстройка, ни установщик, ни
+        скрипты заказов в неё не пишут; цех работает из папки изделия с отметкой _Выдано."""
+        found = []
+        for base in (ROOT / "03_Макросы_и_Плагины", ROOT / "01_Настройки_SolidWorks"):
+            for src in base.rglob("*"):
+                if src.suffix.lower() not in (".cs", ".ps1", ".psm1", ".py", ".bas", ".cls", ".frm"):
+                    continue
+                for n, line in enumerate(src.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+                    if re.search(r"_Производство|04_ПРОИЗВОДСТВО", line) and "больше нет" not in line \
+                            and "не пополн" not in line:
+                        found.append(f"{src.relative_to(ROOT)}:{n}: {line.strip()[:100]}")
+        self.assertEqual([], found)
+
+    def test_T0_test_ids_are_unique(self):
+        """T0 (аудит 19.09.2026): номер сценария вида P01 встречается только в одном файле — фильтр -k и ссылки
+        в документах однозначны."""
+        where = {}
+        for src in sorted((paths.TESTS / "tests").glob("test_*.py")):
+            for tid in set(re.findall(r"def test_([A-Z]\d{2})_", src.read_text(encoding="utf-8"))):
+                where.setdefault(tid, []).append(src.name)
+        self.assertEqual({}, {k: v for k, v in where.items() if len(v) > 1})
+
+    def test_T0_runner_reports_failed_subtests(self):
+        """T0 (аудит 19.09.2026): упавший подтест попадает в отчёт раннера и делает прогон красным — раньше тест
+        с упавшим подтестом пропадал из отчёта и итога."""
+        import io
+        import sys
+        sys.path.insert(0, str(paths.TESTS))
+        import run_tests
+
+        class Probe(unittest.TestCase):
+            def test_sub(self):
+                for i in (1, 2):
+                    with self.subTest(i=i):
+                        self.assertEqual(1, i)
+
+            def test_ok(self):
+                with self.subTest(i=1):
+                    pass
+
+        result = unittest.TextTestRunner(resultclass=run_tests.Recorder, stream=io.StringIO()).run(
+            unittest.TestLoader().loadTestsFromTestCase(Probe))
+        self.assertEqual([("test_ok", "pass"), ("test_sub (i=2)", "fail")],
+                         sorted((r["id"].rsplit(".", 1)[-1], r["status"]) for r in result.records))
+
 
 if __name__ == "__main__":
     unittest.main()

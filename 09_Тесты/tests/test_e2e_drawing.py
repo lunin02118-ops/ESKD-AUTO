@@ -154,15 +154,48 @@ class Drawing(SwTestCase):
 
     @known_defect("Д-06")
     def test_D06_drawing_save_does_not_modify_model(self):
-        """D06: сохранение чертежа не пишет в модель."""
+        """D06: сохранение чертежа не пишет в модель ничего, кроме формата своих листов для спецификации (З-1, D13)."""
         model = self._prepare_model()
         before = self.persisted(model)
         drawing = self.copy_fixture(A10)
         drw = self.s.open(drawing)
         self.s.save(drw)
+        self.wait_idle()
         self.s.close(drw)
         self.s.close_all()
-        self.assertEqual(before, self.persisted(model))
+        self.assertEqual(without_format(before), without_format(self.persisted(model)))
+
+    def test_D13_drawing_save_fills_model_format_for_specification(self):
+        """D13 (З-1): сохранение чертежа пишет формат его листов в «Формат» модели — графу «Формат» спецификации:
+        у «Пластины» лист 1 — А3, лист 2 — А4, поэтому «*)» и «*) А4, А3» в «Примечании» (ГОСТ Р 2.106-2019, как SpecEditor);
+        модель сохранена и не осталась «грязной», повторное сохранение чертежа ничего не пишет."""
+        model = self._prepare_model()
+        doc = self.s.open(model)
+        for cfg in ("",) + tuple(com.as_list(doc.GetConfigurationNames)):
+            com.dyn(doc.Extension.CustomPropertyManager(cfg)).Add3("Формат", 30, "A3", 1)
+        self.s.save(doc)
+        drw = self.s.open(self.copy_fixture(A10))
+        sizes = [tuple(round(float(v) * 1000) for v in list(com.dyn(drw.Sheet(n)).GetProperties2)[5:7])
+                 for n in com.as_list(drw.GetSheetNames)]
+        self.assertEqual([(420, 297), (210, 297)], sizes, "листы фикстуры: А3 и А4")
+        self.s.save(drw)
+        self.wait_idle()
+        self.assertFalse(bool(doc.GetSaveFlag), "модель сохранена после записи формата")
+        mark = self.mark("D13-second-save")
+        self.s.save(drw)
+        self.wait_idle()
+        self.assertNoPropertyWrites(mark, "повторное сохранение чертежа снова пишет в модель")
+        self.s.close_all()
+        props = self.persisted(model)
+        levels = list(props["configs"]) + ([None] if len(props["configs"]) <= 1 else [])
+        self.assertEqual({c: ("*)", "*) А4, А3") for c in levels},
+                         {c: (oracles.value(props, "Формат", c), oracles.value(props, "Примечание", c)) for c in levels})
+
+
+def without_format(dump):
+    """Дамп свойств без «Формата» и «Примечания» — их сохранение чертежа пишет по З-1."""
+    strip = lambda level: {k: v for k, v in level.items() if k not in ("Формат", "Примечание")}
+    return {"general": strip(dump["general"]), "configs": {c: strip(v) for c, v in dump["configs"].items()}}
 
 
 GOST_2_301 = {"A0": (1189, 841), "A1": (841, 594), "A2": (594, 420), "A3": (420, 297), "A4": (297, 210)}
@@ -234,7 +267,11 @@ class SheetFormats(SwTestCase):
             for note, cell in expected_notes:
                 if note not in notes:
                     found.append(f"нет заметки {note}")
-                elif not oracles.inside(notes[note]["extent_mm"], cells[cell], tol=1.0):
+                # Габарит текста включает надстрочные и подстрочные поля шрифта, а в A0-A-1 и A1-P-1 номер листа
+                # набран крупнее, чем в остальных форматках, и выступает за 5-мм графу на 0,99 мм — допуск 1 мм стоял
+                # на самой границе и зависел от того, как запущен SolidWorks. Графы отстоят друг от друга не меньше
+                # чем на 5 мм, поэтому 1,5 мм по-прежнему ловит заметку не в своей графе.
+                elif not oracles.inside(notes[note]["extent_mm"], cells[cell], tol=1.5):
                     found.append(f"{note} {notes[note]['extent_mm']} вне графы {cell}")
             if (round(props[5] * 1000), round(props[6] * 1000)) != (width, height):
                 found.append(f"лист {props[5] * 1000:.0f}×{props[6] * 1000:.0f} вместо {width}×{height}")

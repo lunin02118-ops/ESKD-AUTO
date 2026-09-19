@@ -1,0 +1,270 @@
+Attribute VB_Name = "PDFCreatorPrint"
+Attribute VB_Base = "0{2BD031F6-053D-474C-A650-83AD16BE3F27}{FB563FF1-80F0-4C27-A3F4-544330D79CA4}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = False
+Option Explicit
+'Dim swApp As Object
+'Dim swModel As Object
+'Dim swDraw As Object
+'Dim swModelDocExt As Object
+'Dim ps As Object
+'Dim swSheet As Object
+Dim swApp As SldWorks.SldWorks
+Dim swModel As SldWorks.ModelDoc2
+Dim swDraw As SldWorks.DrawingDoc
+Dim swModelDocExt As SldWorks.ModelDocExtension
+Dim ps As SldWorks.PageSetup
+Dim swSheet As SldWorks.Sheet
+Dim sSource As String
+Dim sSource1 As String
+Dim StrTemp As String
+Dim sIni3 As Integer
+Dim sIni10 As Integer
+Dim sIni11 As Integer
+Dim sDirName As String
+Dim sDrawName As String
+Dim ok As Boolean
+Dim i As Integer ' Счетчик
+Dim j As Integer ' Счетчик
+Dim vSheetNames As Variant
+Dim vSheetNamesPrint As Variant
+Dim strSheetNames() As String
+Dim vSheetProps As Variant ' Переменная - свойства страницы
+Dim nTemp(1) As Long
+Dim vSheetNamesOut As Variant
+
+Private WithEvents PDFCreator1 As PDFCreator.clsPDFCreator
+Attribute PDFCreator1.VB_VarHelpID = -1
+
+#If VBA7 Then
+    Private Declare PtrSafe Sub Sleep Lib "kernel32.dll" (ByVal dwMilliseconds As Long)
+#Else
+    Private Declare Sub Sleep Lib "kernel32.dll" (ByVal dwMilliseconds As Long)
+#End If
+
+Private Sub CmdExit_Click()
+PDFCreator1.cPrinterStop = True
+Sleep 1000
+PDFCreator1.cClose
+Set PDFCreator1 = Nothing
+Finish
+End Sub
+
+Private Sub UserForm_Activate()
+HWNDActiveWindow
+KeepFormOnTop
+Set swApp = Application.SldWorks
+'Set swApp = CreateObject("SldWorks.Application")
+Set swModel = swApp.ActiveDoc
+Set swModelDocExt = swModel.Extension
+Set swDraw = swModel
+vSheetNames = swDraw.GetSheetNames
+
+sSource = swApp.GetCurrentMacroPathName             ' Get macro path+filename
+sSource1 = Left$(sSource, Len(sSource) - 3) & "dat"    ' файл с данными
+
+Open sSource1 For Input As #1
+    Line Input #1, StrTemp
+    sIni3 = CInt(StrTemp)
+    Line Input #1, StrTemp
+    sIni10 = CInt(StrTemp)
+    Line Input #1, StrTemp
+    sIni11 = CInt(StrTemp)
+    Line Input #1, sDirName
+    Line Input #1, sDrawName
+    Line Input #1, StrTemp
+    j = CInt(StrTemp)
+    For i = 0 To j
+        ReDim Preserve strSheetNames(i)
+        Line Input #1, StrTemp
+        strSheetNames(i) = StrTemp
+    Next i
+Close #1
+vSheetNamesPrint = strSheetNames
+
+Set PDFCreator1 = New clsPDFCreator
+With PDFCreator1
+    If .cStart("/NoProcessingAtStartup") = False Then
+        swApp.SendMsgToUser ("Закройте монитор печати PDFCreator. PDF не создан!")
+        Open sSource1 For Output As #1
+            Print #1, "***"
+        Close #1
+        Finish
+        Exit Sub
+    End If
+End With
+
+'принтер по умолчанию
+swDraw.Printer = "PDFCreator"
+
+With PDFCreator1
+    .cOption("UseAutosave") = 1
+    .cOption("UseAutosaveDirectory") = 1
+    .cOption("AutosaveDirectory") = sDirName
+    .cOption("AutosaveFilename") = sDrawName
+    .cOption("AutosaveFormat") = sIni3 ' 0 = PDF
+    .cOption("StandardTitle") = swDraw.SummaryInfo(0)
+    .cOption("UseStandardAuthor") = 1
+    .cOption("StandardAuthor") = swDraw.SummaryInfo(2)
+    .cOption("PDFGeneralResolution") = sIni11
+'    .cOption("UseFixPapersize") = 0
+'    Debug.Print "UseFixPapersize", .cOption("UseFixPapersize")
+'    .cOption("DontUseDocumentSettings") = 1
+'    Debug.Print "DontUseDocumentSettings", .cOption("DontUseDocumentSettings")
+'    .cOption("UseCustomPageSize") = 1
+'    .cOption("Papersize") = "PostScript Custom Page Size"
+    .cClearCache
+'    Debug.Print "DeviceHeightPoints", PDFCreator1.cOption("DeviceHeightPoints"), "DeviceWidthPoints", PDFCreator1.cOption("DeviceWidthPoints")
+End With
+
+' Общие настройки
+swModelDocExt.UsePageSetup = swPageSetupInUse_Application
+If sIni10 = 0 Then
+    ok = swApp.SetUserPreferenceIntegerValue(swPageSetupPrinterDrawingColor, swPageSetup_BlackAndWhite)
+Else
+    ok = swApp.SetUserPreferenceIntegerValue(swPageSetupPrinterDrawingColor, swPageSetup_ColorGrey)
+End If
+'swApp.SetUserPreferenceToggle swPageSetupHighQuality, True
+
+'ok = swDraw.SetUserPreferenceToggle(swPageSetupHighQuality, True)
+'swApp.SetUserPreferenceToggle swPageSetupPrinterDrawingScaleToFit, True
+'ok = swDraw.SetUserPreferenceToggle(swPageSetupPrinterDrawingScaleToFit, True)
+'swApp.SetUserPreferenceToggle swPageSetupPrinterUsePrinterMargin, True
+
+'swModelDocExt.UsePageSetup = swPageSetupInUse_DrawingSheet
+'swModelDocExt.UsePageSetup = swPageSetupInUse_Document
+'swModelDocExt.UsePageSetup = swPageSetupInUse_Application
+'Set ps = swDraw.PageSetup
+Set ps = swModelDocExt.AppPageSetup
+'ps.DrawingColor = swPageSetup_BlackAndWhite
+
+ps.HighQuality = True
+ps.ScaleToFit = True
+'ps.PrinterPaperSize = 32767
+'Debug.Print "ps.PrinterPaperWidth", ps.PrinterPaperWidth, "ps.PrinterPaperLength", ps.PrinterPaperLength
+'Debug.Print "DeviceHeightPoints", PDFCreator1.cOption("DeviceHeightPoints"), "DeviceWidthPoints", PDFCreator1.cOption("DeviceWidthPoints")
+
+' Настройки отдельных листов
+For i = 0 To UBound(vSheetNames)
+    For j = 0 To UBound(vSheetNamesPrint)
+        If vSheetNames(i) = vSheetNamesPrint(j) Then
+            ok = swDraw.ActivateSheet(vSheetNames(i))
+            Set swSheet = swDraw.GetCurrentSheet
+'            Set ps = swSheet.IPageSetup
+'            ps.HighQuality = True
+'            Debug.Print "ps.PrinterPaperSize", ps.PrinterPaperSize
+            Orientation
+            Debug.Print "vSheetProps(5)", vSheetProps(5), "vSheetProps(6)", vSheetProps(6)
+'            ps.PrinterPaperLength = CLng(vSheetProps(5) * 10000)
+'            ps.PrinterPaperWidth = CLng(vSheetProps(6) * 10000)
+            nTemp(0) = i + 1
+            nTemp(1) = i + 1
+            Debug.Print "nTemp", nTemp(0), nTemp(1)
+            vSheetNamesOut = nTemp
+            swModelDocExt.PrintOut2 (vSheetNamesOut), 1, False, "PDFCreator", ""
+            Sleep 1000
+            Exit For
+        End If
+    Next j
+Next i
+        
+'    ok = swDraw.ActivateSheet(vSheetNames(i))
+'    Set swSheet = swDraw.GetCurrentSheet
+'    Set ps = swSheet.IPageSetup
+'    ps.ScaleToFit = True
+'    vSheetProps = swSheet.GetProperties
+'    Debug.Print ps.PrinterPaperSize
+'    PDFCreator1.cOption("DeviceHeightPoints") = CDbl(vSheetProps(6) * 1000 * 72 / 25.4)
+'    Debug.Print "ps.PrinterPaperWidth", ps.PrinterPaperWidth, "ps.PrinterPaperLength", ps.PrinterPaperLength
+'    PDFCreator1.cOption("DeviceWidthPoints") = CDbl(vSheetProps(5) * 1000 * 72 / 25.4)
+'    Debug.Print "DeviceHeightPoints", PDFCreator1.cOption("DeviceHeightPoints"), "DeviceWidthPoints", PDFCreator1.cOption("DeviceWidthPoints")
+
+'DoEvents
+'swModelDocExt.PrintOut2 (vSheetNames), 1, False, "PDFCreator", ""
+'DoEvents
+
+Sleep 3000
+PDFCreator1.cCombineAll
+Sleep 1000
+PDFCreator1.cPrinterStop = False
+Sleep 250
+'DoEvents
+
+'Hide
+'Unload Me
+End Sub
+
+Private Sub PDFCreator1_eReady()
+PDFCreator1.cPrinterStop = True
+Sleep 1000
+PDFCreator1.cClose
+Set PDFCreator1 = Nothing
+Finish
+End Sub
+
+Private Sub PDFCreator1_eError()
+swApp.SendMsgToUser ("Ошибка печати! PDF не создан!")
+Open sSource1 For Output As #1
+    Print #1, "***"
+Close #1
+Finish
+End Sub
+
+Private Sub Orientation() 'Анализ формата чертежа
+
+vSheetProps = swSheet.GetProperties
+
+If vSheetProps(5) <= vSheetProps(6) Then
+    ps.Orientation = swPageSetupOrient_Portrait
+    ok = swApp.SetUserPreferenceIntegerValue(swPageSetupPrinterOrientation, swPageSetupOrient_Portrait)
+    Debug.Print "ok=", ok
+    Select Case vSheetProps(5)
+    Case Is <= 0.21
+        ps.PrinterPaperSize = 9 ' A4
+    Case Is > 0.21
+        ps.PrinterPaperSize = 8 ' A3
+    End Select
+    Select Case vSheetProps(5)
+    Case 0.297
+        ps.PrinterPaperSize = 8 ' A3
+    Case 0.42
+        ps.PrinterPaperSize = 66 ' A2
+    Case 0.594
+        ps.PrinterPaperSize = 145 ' A1
+    Case Is >= 0.841
+        ps.PrinterPaperSize = 144 ' A0
+    End Select
+Else
+    ps.Orientation = swPageSetupOrient_Landscape
+    ok = swApp.SetUserPreferenceIntegerValue(swPageSetupPrinterOrientation, swPageSetupOrient_Landscape)
+    Debug.Print "ok=", ok
+    Select Case vSheetProps(5) ' Ширина листа
+    Case Is <= 0.297
+        ps.PrinterPaperSize = 9 ' A4
+    Case Is > 0.297
+        ps.PrinterPaperSize = 9 ' A3
+    End Select
+    Select Case vSheetProps(5)
+    Case 0.42
+        ps.PrinterPaperSize = 8 ' A3
+    Case 0.594
+        ps.PrinterPaperSize = 66 ' A2
+    Case 0.841
+        ps.PrinterPaperSize = 145 ' A1
+    Case Is >= 1.189
+        ps.PrinterPaperSize = 144 ' A0
+    End Select
+End If
+
+End Sub
+
+Private Sub Finish()
+Hide
+Unload Me
+'End
+End Sub
+

@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Проверка записи файлов SWPlus установщиком (T0, WP-3.4): без изменений — без записи, справочники только дополняются.
+    Проверка записи файлов SWPlus установщиком (T0, WP-3.4): без изменений — без записи, своя фамилия и организация — первыми (З-3).
 .DESCRIPTION
     Функции Write-SwPlusLines, Add-SwPlusFamily и Add-SwPlusFirm извлекаются из Setup_Workstation_SolidWorks.ps1
     разбором AST (сам установщик не запускается) и проверяются на копиях справочников во временном каталоге.
@@ -49,25 +49,29 @@ try {
             Expect "$tt без изменений не переписывается" (Write-SwPlusLines -Path $path -Lines $lines) $false
         }
 
-        # новая фамилия и организация — в конец, индексы прежних записей не сдвигаются
+        # своя фамилия и организация — первыми (З-3: MProp при пустом свойстве берёт первую строку), остальные по порядку
         $famLines = @([System.IO.File]::ReadAllLines($fam, $cp1251))
         Expect "новая фамилия записана" (Add-SwPlusFamily -Path $fam -Name "Новиков Н.Н.") $true
         $after = @([System.IO.File]::ReadAllLines($fam, $cp1251))
-        Expect "первая фамилия на месте" $after[0] $famLines[0]
-        Expect "новая фамилия в конце" $after[-1] "Новиков Н.Н."
-        Expect "кодировка cp1251 и CRLF" ([System.IO.File]::ReadAllText($fam, $cp1251).EndsWith("Новиков Н.Н.`r`n")) $true
+        Expect "новая фамилия первой" $after[0] "Новиков Н.Н."
+        Expect "прежние фамилии по порядку" ($after[1..($after.Count - 1)] -join "|") ($famLines -join "|")
+        Expect "кодировка cp1251 и CRLF" ([System.IO.File]::ReadAllText($fam, $cp1251).StartsWith("Новиков Н.Н.`r`nПетров П.П.`r`n")) $true
+        Expect "существующая фамилия поднимается первой" (Add-SwPlusFamily -Path $fam -Name "Сидоров С.С.") $true
+        Expect "порядок после подъёма" (@([System.IO.File]::ReadAllLines($fam, $cp1251)) -join "|") "Сидоров С.С.|Новиков Н.Н.|Петров П.П."
         $firmLines = @([System.IO.File]::ReadAllLines($firm, $cp1251))
         Expect "новая организация записана" (Add-SwPlusFirm -Path $firm -Name "ООО «Новая»") $true
         $afterFirm = @([System.IO.File]::ReadAllLines($firm, $cp1251))
         Expect "пары сохранены" ($afterFirm.Count % 2) 0
-        Expect "новая пара в конце" $afterFirm[-2] "ООО «Новая»"
-        Expect "первая организация на месте" $afterFirm[0] $firmLines[0]
+        Expect "новая пара первой" ($afterFirm[0] + "|" + $afterFirm[1]) "ООО «Новая»|"
+        Expect "прежние пары по порядку" ($afterFirm[2..($afterFirm.Count - 1)] -join "|") ($firmLines -join "|")
+        Expect "существующая организация поднимается со своим кодом" (Add-SwPlusFirm -Path $firm -Name "ТОО «Троя»") $true
+        Expect "порядок пар после подъёма" (@([System.IO.File]::ReadAllLines($firm, $cp1251)) -join "|") "ТОО «Троя»|ТР|ООО «Новая»||АО «Завод»|"
 
         # нечётный файл организаций дополняется до пар
         $odd = Join-Path $temp "odd_firm.txt"
         [System.IO.File]::WriteAllText($odd, "А`r`n", $cp1251)
         [void](Add-SwPlusFirm -Path $odd -Name "Б")
-        Expect "нечётный файл" ([System.IO.File]::ReadAllText($odd, $cp1251)) "А`r`n`r`nБ`r`n`r`n"
+        Expect "нечётный файл" ([System.IO.File]::ReadAllText($odd, $cp1251)) "Б`r`n`r`nА`r`n`r`n"
     }
 } catch {
     $problems.Add("исключение: $($_.Exception.Message)")

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -24,7 +24,7 @@ namespace ESKD.MaterialSync
         public const string Version = "6.0.0";
         private const int CommandGroupId = 9997;
         private const string TabTitle = "ЕСКД";
-        private static readonly int[] CommandUserIds = { 9900, 9901, 9902, 9903 };
+        private static readonly int[] CommandUserIds = { 9900, 9901, 9902, 9903, 9904, 9905, 9906, 9907, 9908, 9909, 9910, 9911, 9912 };
 
         private ISldWorks _app;
         private ICommandManager _commands;
@@ -133,6 +133,38 @@ namespace ESKD.MaterialSync
                 "Синхронизировать", 1, "SyncCurrentDoc", "EnableCommand", CommandUserIds[2], buttons);
             int bch = group.AddCommandItem2("Деталь БЧ", -1, "Установить или снять признак безчертёжной детали (ГОСТ Р 2.109-2023)",
                 "Деталь БЧ", 2, "ToggleDrawingless", "EnableBchCommand", CommandUserIds[3], buttons);
+            int lzk = group.AddCommandItem2("Ведомость ЛЗК", -1,
+                "Операции, тираж и срок, выгрузка SWTools — книга ЛЗК с участками и калькулятором расхода в «04_Сопроводительная документация» изделия",
+                "Ведомость ЛЗК", 3, "BuildLzk", "EnableLzkCommand", CommandUserIds[4], buttons);
+            int check = group.AddCommandItem2("Проверить изделие", -1,
+                "Состав, перестроение, реквизиты, чертежи и ведомость — отчёт _Проверка.txt с итогом ГОТОВО, ЗАМЕЧАНИЯ или БРАК",
+                "Проверить изделие", 4, "CheckProduct", "EnableCheckCommand", CommandUserIds[5], buttons);
+            // Пункт «Отчёт проверки» живёт в меню «Инструменты → ЕСКД» и на панели инструментов: на вкладке
+            // ему места нет, а открыть прежний отчёт, ничего не проверяя, бывает нужно (ТЗ-02 Т-34).
+            int report = group.AddCommandItem2("Отчёт проверки", -1, "Открыть последний отчёт _Проверка.txt, не проверяя заново",
+                "Отчёт проверки", 5, "ShowCheckReport", "EnableCheckCommand", CommandUserIds[6], buttons);
+            int export = group.AddCommandItem2("Выгрузить в производство", -1,
+                "PDF чертежей, DXF развёрток и IGS профиля в папки изделия — отчёт _Экспорт.txt",
+                "Выгрузить в производство", 6, "ExportProduct", "EnableExportCommand", CommandUserIds[7], buttons);
+            int independent = group.AddCommandItem2("Сделать независимым", -1,
+                "Выделенный эталон или чужая деталь становится своей копией в 01_3D — с чертежом и новым номером",
+                "Сделать независимым", 7, "MakeIndependent", "EnableIndependentCommand", CommandUserIds[8], buttons);
+            int revision = group.AddCommandItem2("Новая ревизия", -1,
+                "Поднять ревизию выданного чертежа: штамп, строка в Изменения.xlsx и выгрузка с суффиксом _ИзмN",
+                "Новая ревизия", 8, "NewRevision", "EnableRevisionCommand", CommandUserIds[9], buttons);
+            // Снимок делает куратор базы и делает редко: место ему в меню «Инструменты → ЕСКД», а не на вкладке.
+            int snapshot = group.AddCommandItem2("Снимок эталона", -1,
+                "Сложить нынешнее состояние эталона в _Версии и записать строку в Изменения.xlsx",
+                "Снимок эталона", 9, "EtalonSnapshot", "EnableEtalonCommand", CommandUserIds[10], buttons);
+            // «Готово к производству» — на одно изделие (ТЗ-04 Р4-8): работает на открытой главной сборке.
+            // Закрытие заказа — работа Начальника КТО: документ для него не нужен, поэтому
+            // кнопки доступны и без открытой модели (Т-38, Т-44), а на вкладке стоят последними.
+            int issue = group.AddCommandItem2("Готово к производству", -1,
+                "Проверить изделие, сделать PDF листов участков и расхода из книги ЛЗК и отметить изделие готовым — отчёт _Выдано в папке изделия",
+                "Готово к производству", 10, "ReadyForProduction", "EnableReadyCommand", CommandUserIds[11], buttons);
+            int close = group.AddCommandItem2("Закрыть заказ", -1,
+                "Собрать комплекты изделий, сдать заказ в архив _Архив и убрать папку в _Сдано",
+                "Закрыть заказ", 11, "CloseOrder", "EnableCloseCommand", CommandUserIds[12], buttons);
             group.HasToolbar = true;
             group.HasMenu = true;
             group.Activate();
@@ -145,14 +177,31 @@ namespace ESKD.MaterialSync
                 Core.Log.Error("SetToolbarVisibility", ex);
             }
 
-            int[] ids = { group.get_CommandID(settings), group.get_CommandID(sync), group.get_CommandID(bch) };
+            int[] ids =
+            {
+                group.get_CommandID(settings), group.get_CommandID(sync), group.get_CommandID(bch),
+                group.get_CommandID(lzk), group.get_CommandID(check), group.get_CommandID(report),
+                group.get_CommandID(export), group.get_CommandID(independent), group.get_CommandID(revision),
+                group.get_CommandID(snapshot), group.get_CommandID(issue), group.get_CommandID(close)
+            };
             _commandIds = ids;
+            for (int i = 0; i < ids.Length; i++)
+                if (ids[i] <= 0) Core.Log.Error("Команда «" + CommandNames[i] + "» не создана: идентификатор " + ids[i]);
             foreach (int docType in new[] { (int)swDocumentTypes_e.swDocPART, (int)swDocumentTypes_e.swDocASSEMBLY, (int)swDocumentTypes_e.swDocDRAWING })
             {
                 try
                 {
                     bool part = docType == (int)swDocumentTypes_e.swDocPART;
-                    int[] wanted = part ? ids : new[] { ids[0], ids[1] };
+                    bool assembly = docType == (int)swDocumentTypes_e.swDocASSEMBLY;
+                    // Порядок идентификаторов тот же, что в CommandNames; «Отчёт проверки» (ids[5]) живёт
+                    // только в меню, на вкладку идут «Выгрузить в производство» (ids[6]) и у сборки
+                    // «Сделать независимым» (ids[7]) — в том порядке, в каком идёт работа над изделием.
+                    // «Новая ревизия» (ids[8]) живёт там, где живёт ревизия: на чертеже и на БЧ-детали (Т-48).
+                    // «Готово к производству» (ids[10]) и «Закрыть заказ» (ids[11]) завершают работу над изделием и заказом,
+                    // поэтому стоят на вкладке сборки в конце — там, где работа над изделием заканчивается.
+                    int[] wanted = part ? new[] { ids[0], ids[1], ids[2], ids[6], ids[8] }
+                        : assembly ? new[] { ids[0], ids[1], ids[7], ids[3], ids[4], ids[6], ids[10], ids[11] }
+                        : new[] { ids[0], ids[1], ids[8] };
                     CommandTab tab = _commands.GetCommandTab(docType, TabTitle);
 
                     // Вкладка отсутствует, ссылается на чужие команды (у сборки вместо «Синхронизировать» — «Определенный
@@ -177,7 +226,9 @@ namespace ESKD.MaterialSync
                         tab = _commands.AddCommandTab(docType, TabTitle);
                         CommandTabBox box = tab.AddCommandTabBox();
                         int below = (int)swCommandTabButtonTextDisplay_e.swCommandTabButton_TextBelow;
-                        box.AddCommands(wanted, part ? new[] { below, below, below } : new[] { below, below });
+                        int[] texts = new int[wanted.Length];
+                        for (int t = 0; t < texts.Length; t++) texts[t] = below;
+                        box.AddCommands(wanted, texts);
                     }
                 }
                 catch (Exception ex)
@@ -240,7 +291,12 @@ namespace ESKD.MaterialSync
             }
         }
 
-        private static readonly string[] CommandNames = { "Настройки ЕСКД", "Синхронизировать", "Деталь БЧ" };
+        private static readonly string[] CommandNames =
+        {
+            "Настройки ЕСКД", "Синхронизировать", "Деталь БЧ", "Ведомость ЛЗК", "Проверить изделие", "Отчёт проверки",
+            "Выгрузить в производство", "Сделать независимым", "Новая ревизия", "Снимок эталона",
+            "Готово к производству", "Закрыть заказ"
+        };
         private int[] _commandIds;
 
         private static bool SameIds(int[] a, int[] b)
@@ -339,8 +395,9 @@ namespace ESKD.MaterialSync
         {
             try
             {
+                if (ActiveDocType() != (int)swDocumentTypes_e.swDocPART) return 0;
                 ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
-                if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocPART) return 0;
+                if (doc == null) return 0;
                 if (_formatProperty == null) _formatProperty = SyncService.Dictionary(Settings.Read())[Role.Format];
                 string cfg = doc.ConfigurationManager.ActiveConfiguration != null ? doc.ConfigurationManager.ActiveConfiguration.Name : "";
                 string value = FormatValue(doc, cfg) ?? FormatValue(doc, "");
@@ -355,6 +412,23 @@ namespace ESKD.MaterialSync
 
         private string _formatProperty;
         private DateTime _bchDialogClosed = DateTime.MinValue;
+
+        private int _activeType = -1;
+        private DateTime _activeTypeRead = DateTime.MinValue;
+
+        /// <summary>
+        /// Тип активного документа для доступности кнопок. SolidWorks опрашивает каждую кнопку отдельно, и при
+        /// семи командах это семь обращений к ActiveDoc на каждое обновление панели — переключение окна из-за
+        /// этого заметно дорожало (P14). Ответ живёт четверть секунды: за это время окно не сменится.
+        /// </summary>
+        private int ActiveDocType()
+        {
+            if ((DateTime.UtcNow - _activeTypeRead).TotalMilliseconds < 250) return _activeType;
+            ModelDoc2 doc = _app != null ? _app.ActiveDoc as ModelDoc2 : null;
+            _activeType = doc == null ? 0 : doc.GetType();
+            _activeTypeRead = DateTime.UtcNow;
+            return _activeType;
+        }
 
         private string FormatValue(ModelDoc2 doc, string cfg)
         {
@@ -458,6 +532,281 @@ namespace ESKD.MaterialSync
                 Core.Log.Error("ToggleDrawinglessSilent", ex);
                 return BchService.NotPart;
             }
+        }
+
+        /// <summary>Кнопка «Ведомость ЛЗК»: доступна у сборки и неактивна, пока предыдущая ведомость формируется.</summary>
+        public int EnableLzkCommand()
+        {
+            try
+            {
+                if (ActiveDocType() != (int)swDocumentTypes_e.swDocASSEMBLY) return 0;
+                return LzkService.Running ? 0 : 1;
+            }
+            catch (COMException)
+            {
+                return 1;
+            }
+        }
+
+        public void BuildLzk()
+        {
+            LzkService.Start(_app, true);
+        }
+
+        /// <summary>Ведомость ЛЗК без окон (проверки, пакетный запуск). Итог — LzkStatus().</summary>
+        public void BuildLzkSilent()
+        {
+            LzkService.Start(_app, false);
+        }
+
+        /// <summary>«running», «ok|путь|строк|замечаний» или «error|текст».</summary>
+        public string LzkStatus()
+        {
+            return LzkService.LastOutcome;
+        }
+
+        /// <summary>Кнопка «Проверить изделие» доступна на сборке (ТЗ-02 Т-2, Т-25).</summary>
+        public int EnableCheckCommand()
+        {
+            try
+            {
+                return ActiveDocType() == (int)swDocumentTypes_e.swDocASSEMBLY ? 1 : 0;
+            }
+            catch (COMException)
+            {
+                return 1;
+            }
+        }
+
+        public void CheckProduct()
+        {
+            CheckService.Run(_app, true);
+        }
+
+        /// <summary>Проверка изделия без окон. Итог — CheckStatus().</summary>
+        public void CheckProductSilent()
+        {
+            CheckService.Run(_app, false);
+        }
+
+        /// <summary>Открыть последний отчёт проверки, не проверяя заново (Т-34).</summary>
+        public void ShowCheckReport()
+        {
+            CheckService.ShowLast(_app, true);
+        }
+
+        /// <summary>Последний отчёт без окон: итог — CheckStatus().</summary>
+        public void ShowCheckReportSilent()
+        {
+            CheckService.ShowLast(_app, false);
+        }
+
+        /// <summary>«ok|итог|брак|замечаний|отчёт» или «error|текст».</summary>
+        public string CheckStatus()
+        {
+            return CheckService.LastOutcome;
+        }
+
+        /// <summary>Кнопка «Выгрузить в производство» доступна на сборке изделия и на детали (ТЗ-02 Т-25).</summary>
+        public int EnableExportCommand()
+        {
+            try
+            {
+                int type = ActiveDocType();
+                return type == (int)swDocumentTypes_e.swDocASSEMBLY || type == (int)swDocumentTypes_e.swDocPART ? 1 : 0;
+            }
+            catch (COMException)
+            {
+                return 1;
+            }
+        }
+
+        public void ExportProduct()
+        {
+            ExportService.Run(_app, true);
+        }
+
+        /// <summary>Выгрузка без окон. Итог — ExportStatus().</summary>
+        public void ExportProductSilent()
+        {
+            ExportService.Run(_app, false);
+        }
+
+        /// <summary>«ok|файлов|пропущено|отчёт» или «error|текст».</summary>
+        public string ExportStatus()
+        {
+            return ExportService.LastOutcome;
+        }
+
+        /// <summary>
+        /// Кнопка «Сделать независимым» доступна в сборке (ТЗ-02 Т-19). Выделение здесь не проверяется:
+        /// SolidWorks опрашивает доступность постоянно, а разбор дерева на каждый опрос сделал бы
+        /// переключение окон заметно медленнее — что выделено, кнопка объясняет при нажатии.
+        /// </summary>
+        public int EnableIndependentCommand()
+        {
+            try
+            {
+                return ActiveDocType() == (int)swDocumentTypes_e.swDocASSEMBLY ? 1 : 0;
+            }
+            catch (COMException)
+            {
+                return 1;
+            }
+        }
+
+        public void MakeIndependent()
+        {
+            IndependentService.Run(_app, true);
+        }
+
+        /// <summary>
+        /// Сделать выделенное независимым без окон (Т-9). Обозначение и наименование пустые — берутся
+        /// предложенные; withDrawing: 1 — с чертежом, 0 — без, -1 — как есть рядом с исходной моделью.
+        /// </summary>
+        public void MakeIndependentSilent(string designation, string name, int withDrawing)
+        {
+            IndependentService.Run(_app, false, designation, name,
+                withDrawing < 0 ? (bool?)null : withDrawing != 0);
+        }
+
+        /// <summary>«ok|создано|пропущено|оборванных размеров|» или «error|текст» (отчёта _Независимые.txt нет).</summary>
+        public string IndependentStatus()
+        {
+            return IndependentService.LastOutcome;
+        }
+
+        /// <summary>
+        /// Замечания последней кнопки — то, что показало (или показало бы без окна) окно «Замечания»: строка на
+        /// замечание «УРОВЕНЬ — документ — текст → что сделать». Для автотестов вместо текстовых отчётов.
+        /// </summary>
+        public string LastNotices()
+        {
+            return Notices.LastText;
+        }
+
+        /// <summary>
+        /// Кнопка «Новая ревизия» доступна на чертеже и БЧ-детали выданного изделия (ТЗ-02 Т-48).
+        /// Причина недоступности видна в подсказке: конструктору важно знать, что документ ещё черновик.
+        /// </summary>
+        public int EnableRevisionCommand()
+        {
+            try
+            {
+                int type = ActiveDocType();
+                if (type != (int)swDocumentTypes_e.swDocDRAWING && type != (int)swDocumentTypes_e.swDocPART) return 0;
+                return RevisionService.Unavailable(_app).Length == 0 ? 1 : 0;
+            }
+            catch (COMException)
+            {
+                return 0;
+            }
+        }
+
+        /// <summary>Почему «Новая ревизия» недоступна — текст для подсказки и автотестов.</summary>
+        public string RevisionUnavailable()
+        {
+            return RevisionService.Unavailable(_app);
+        }
+
+        public void NewRevision()
+        {
+            RevisionService.Run(_app, true);
+        }
+
+        /// <summary>Новая ревизия без окон (Т-9): что изменено, код причины, задел.</summary>
+        public void NewRevisionSilent(string what, string code, string backlog)
+        {
+            RevisionService.Run(_app, false, what, code, backlog);
+        }
+
+        /// <summary>«ok|ревизия|строка журнала|выгрузка» или «error|текст».</summary>
+        public string RevisionStatus()
+        {
+            return RevisionService.LastOutcome;
+        }
+
+        /// <summary>Кнопка «Снимок эталона» доступна в сборке базы эталонов (ТЗ-02 Т-53).</summary>
+        public int EnableEtalonCommand()
+        {
+            try
+            {
+                if (ActiveDocType() != (int)swDocumentTypes_e.swDocASSEMBLY) return 0;
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                string path = doc == null ? "" : (doc.GetPathName() ?? "");
+                return path.Length > 0 && ProductLocator.Locate(path).InBase ? 1 : 0;
+            }
+            catch (COMException)
+            {
+                return 0;
+            }
+        }
+
+        public void EtalonSnapshot()
+        {
+            EtalonService.Run(_app, true);
+        }
+
+        /// <summary>Снимок эталона без окон (Т-9): что изменено и код причины.</summary>
+        public void EtalonSnapshotSilent(string what, string code)
+        {
+            EtalonService.Run(_app, false, what, code);
+        }
+
+        /// <summary>«ok|папка снимка|файлов|применяемость» или «error|текст».</summary>
+        public string EtalonStatus()
+        {
+            return EtalonService.LastOutcome;
+        }
+
+        // --------------------------------------------------------------- К-5 «Готово к производству» (ТЗ-04 Р4-8)
+
+        /// <summary>Кнопка на вкладке сборки; без открытой сборки объясняет, что открыть.</summary>
+        public int EnableReadyCommand()
+        {
+            return 1;
+        }
+
+        public void ReadyForProduction()
+        {
+            ReadyService.Run(_app, true);
+        }
+
+        /// <summary>Без окон (автотесты): активная главная сборка изделия.</summary>
+        public void ReadyForProductionSilent()
+        {
+            ReadyService.Run(_app, false);
+        }
+
+        /// <summary>«ok|отчёт|pdf|папка изделия» или «error|текст».</summary>
+        public string ReadyStatus()
+        {
+            return ReadyService.LastOutcome;
+        }
+
+        // --------------------------------------------------------------- К-6 «Закрыть заказ» (Т-44…Т-47)
+
+        /// <summary>Закрытие заказа тоже не требует документа — наоборот, требует, чтобы их не было (Т-44).</summary>
+        public int EnableCloseCommand()
+        {
+            return 1;
+        }
+
+        public void CloseOrder()
+        {
+            CloseOrderService.Run(_app, true, "", "");
+        }
+
+        /// <summary>Закрытие без окон (Т-9): папка заказа и корень архива.</summary>
+        public void CloseOrderSilent(string orderFolder, string archiveRoot)
+        {
+            CloseOrderService.Run(_app, false, orderFolder, archiveRoot);
+        }
+
+        /// <summary>«ok|архив|файлов|сдано» или «error|текст».</summary>
+        public string CloseOrderStatus()
+        {
+            return CloseOrderService.LastOutcome;
         }
 
         // Пакетная очистка файлов v5 — отдельной утилитой ESKD_Sync.exe /clean (Sw.MigrationService), а не методом надстройки:

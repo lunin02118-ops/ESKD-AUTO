@@ -1,6 +1,6 @@
 {
  "MProp/MProp.swp": {
-  "sha256": "03508fad7974e7330f448e847e326a5308ee0aca586c5e045f1cd37ce4f8191c",
+  "sha256": "cfcbf7339a545271fa5bfacfefc2b58a223a0deec5c7597fbdb4a41bff582e72",
   "modules": {
    "FrmMProp.frm.txt": 4062,
    "FrmMProp_Pref.frm.txt": 145,
@@ -20,18 +20,18 @@
   }
  },
  "SpecEditor/SpecEditor.swp": {
-  "sha256": "ba4de8c696534c250b4a4aa5e4244b5e2bd7936243a81cee61c95edd793292a5",
+  "sha256": "e85dd019ffb68e493543bb319c4c8b56e4f9dd16c6688973160279f3f593c441",
   "modules": {
    "FrmSpecEditor.frm.txt": 5083,
    "FrmSpecEditor_Doc.frm.txt": 209,
    "FrmSpecEditor_Pref.frm.txt": 357,
-   "SpecEditor_run.bas.txt": 454,
+   "SpecEditor_run.bas.txt": 522,
    "SpecEditor_top.bas.txt": 65,
    "ThisLibrary.cls.txt": 9
   }
  },
  "DProp/DProp.swp": {
-  "sha256": "55c601da26a22e84e4ffaac8a84f023f7c2214910388e1ec8f02bf4079b326db",
+  "sha256": "bb8038488ee5598407739679fd5431d795d0426966d1ef83837a0759845f2a5f",
   "modules": {
    "DProp_run.bas.txt": 120,
    "DProp_top.bas.txt": 63,
@@ -47,6 +47,32 @@
    "FrmMaster_Pref.frm.txt": 290,
    "Master_run.bas.txt": 182,
    "Master_top.bas.txt": 64,
+   "ThisLibrary.cls.txt": 9
+  }
+ },
+ "SaveAsPDF/SaveAsPDF.swp": {
+  "sha256": "bc62609735da878ac2bcaaffd72a2f021398f2b824afc2c5c0221af1554c2b0e",
+  "modules": {
+   "API_Printer.bas.txt": 27,
+   "SaveAsPDF.frm.txt": 1624,
+   "SaveAsPDF_run.bas.txt": 132,
+   "SaveAsPDF_top.bas.txt": 63,
+   "ThisLibrary.cls.txt": 9
+  }
+ },
+ "SaveAsPDF/PDFCreator.swp": {
+  "sha256": "01740810bddf5d55fca9e03bf3eee019e37e4b84ed57abf7aabd2108920ac513",
+  "modules": {
+   "PDFCreatorPrint.frm.txt": 271,
+   "PDFCreatorPrint_run.bas.txt": 73,
+   "PDFCreatorPrint_top.bas.txt": 63,
+   "ThisLibrary.cls.txt": 9
+  }
+ },
+ "SaveDRW/SaveDRW.swp": {
+  "sha256": "d2cf1714568ef2bcb9f2b049fabc3f285d0589d727b3b9abcc199255580a0050",
+  "modules": {
+   "SaveDRW_run.bas.txt": 1041,
    "ThisLibrary.cls.txt": 9
   }
  }

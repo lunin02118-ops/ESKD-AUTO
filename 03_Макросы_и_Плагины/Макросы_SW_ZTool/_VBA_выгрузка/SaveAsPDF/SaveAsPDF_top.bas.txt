@@ -1,0 +1,62 @@
+Attribute VB_Name = "SaveAsPDF_top"
+#If VBA7 Then
+Private Declare PtrSafe Function SetWindowPos Lib "user32.dll" _
+    (ByVal hwnd As LongPtr, _
+    ByVal hWndInsertAfter As LongPtr, _
+    ByVal X As Long, _
+    ByVal Y As Long, _
+    ByVal cx As Long, _
+    ByVal cy As Long, _
+    ByVal wFlags As Long) As Long
+#Else
+Private Declare Function SetWindowPos Lib "user32.dll" _
+    (ByVal hwnd As Long, _
+    ByVal hWndInsertAfter As Long, _
+    ByVal X As Long, _
+    ByVal Y As Long, _
+    ByVal cx As Long, _
+    ByVal cy As Long, _
+    ByVal wFlags As Long) As Long
+#End If
+
+Public Sub HWNDActiveWindow()
+    hwndAW = GetActiveWindow
+End Sub
+
+Public Sub KeepFormOnTop()
+
+Dim RetVal As Long
+  
+
+Const SWP_NOMOVE = 2
+Const SWP_NOSIZE = 1
+Const SWP_WNDFLAGS = SWP_NOMOVE Or SWP_NOSIZE
+Const HWND_TOP = 0
+Const HWND_TOPMOST = -1
+Const HWND_NOTOPMOST = -2
+
+hwnd = hwndAW
+
+RetVal = SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_WNDFLAGS)
+
+End Sub
+
+Public Sub NotKeepFormOnTop()
+
+Dim RetVal As Long
+  
+Const SWP_NOMOVE = 2
+Const SWP_NOSIZE = 1
+Const SWP_WNDFLAGS = SWP_NOMOVE Or SWP_NOSIZE
+Const HWND_TOP = 0
+Const HWND_TOPMOST = -1
+Const HWND_NOTOPMOST = -2
+
+hwnd = hwndAW
+
+RetVal = SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_WNDFLAGS)
+
+End Sub
+
+
+

@@ -5,7 +5,9 @@
     1. Собирает надстройку ЕСКД (build.ps1) и окно настройки (PyInstaller) — пропуск ключом -SkipBuild.
     2. Проверяет автотесты static (без SolidWorks) на собранной надстройке — пропуск ключом -SkipTests.
     3. Копирует репозиторий в папку -Target зеркалом robocopy без служебных папок разработки.
-    4. Последним пишет toolkit_release.json: версия, коммит, дата, кто опубликовал.
+    4. С ключом -SwToolsSetup кладёт установщик SWTools в 03_Макросы_и_Плагины\SWTools_Установщик (в репозитории
+       его нет; зеркало эту папку не трогает, прежний выпуск SWTools без ключа остаётся).
+    5. Последним пишет toolkit_release.json: версия, коммит, дата, кто опубликовал.
 
     Конструкторы после публикации запускают 01_Настройки_SolidWorks\Настройка_Рабочего_Места_SolidWorks.exe из
     общей папки: шаблоны, форматки и библиотеки у всех обновляются сразу, макросы и надстройка — после запуска окна.
@@ -16,12 +18,17 @@
     Общая папка инструментария, например Z:\00_ИНСТРУМЕНТЫ\Инструменты_Конструктора или \\сервер\КТО\Инструменты.
 .EXAMPLE
     .\Publish-EskdToolkit.ps1 -Target "Z:\00_ИНСТРУМЕНТЫ\Инструменты_Конструктора"
+.EXAMPLE
+    .\Publish-EskdToolkit.ps1 -Target "Z:\00_ИНСТРУМЕНТЫ\Инструменты_Конструктора" -SwToolsSetup "D:\сборки\SWTools-1.1.109-Setup.exe"
+.PARAMETER SwToolsSetup
+    Установщик SWTools-<версия>-Setup.exe из сборки SWTools; рядом должен лежать его .manifest.json.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Target,
     [switch]$SkipTests,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [string]$SwToolsSetup = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -77,7 +84,9 @@ if (-not $SkipTests) {
 
 Write-Host "`nКопирование в $Target ..." -ForegroundColor Gray
 $excludeDirs = @(".git", ".claude", "08_Результаты_Тестирования", "09_Тесты", "99_Архив", "07_Драйверы_NVIDIA", "build_temp",
-                 "Backups", "Legacy_Builds", "_VBA_выгрузка", "__pycache__")
+                 "Backups", "Legacy_Builds", "_VBA_выгрузка", "__pycache__",
+                 "swtools",             # клон репозитория SWTools у разработчика (ТЗ-02 огр. 4а) не публикуется
+                 "SWTools_Установщик")  # установщик SWTools — только в общей папке (-SwToolsSetup), зеркало его не удаляет
 $excludeFiles = @("*_old", "*.clean_old", "*.f40_old", '~$*', "*.tmp", "toolkit_release.json")
 $releaseFile = Join-Path $Target "toolkit_release.json"
 Remove-Item -LiteralPath $releaseFile -Force -ErrorAction SilentlyContinue  # на время копирования выпуск не считается опубликованным
@@ -85,14 +94,30 @@ Remove-Item -LiteralPath $releaseFile -Force -ErrorAction SilentlyContinue  # н
 $rc = $LASTEXITCODE
 if ($rc -ge 8) { Stop-Publish "robocopy завершился с кодом ${rc}: часть файлов не скопирована (занятые файлы — закройте окно настройки у пользователей)." }
 
+if ($SwToolsSetup) {
+    try {
+        $swTools = Publish-EskdSwToolsSetup -SetupPath $SwToolsSetup -TargetRoot $Target
+        Write-Host "[OK] SWTools $($swTools.Version): $($swTools.SetupPath)" -ForegroundColor Green
+    } catch {
+        Stop-Publish "SWTools не опубликован: $($_.Exception.Message)"
+    }
+} else {
+    $swTools = $null
+    try { $swTools = Get-EskdSwToolsRelease -SourceRoot $Target } catch { Write-Host "[ВНИМАНИЕ] $($_.Exception.Message)" -ForegroundColor Yellow }
+    if ($swTools) { Write-Host "SWTools в общей папке: $($swTools.Version) (без изменений)." -ForegroundColor Gray }
+    else { Write-Host "[ВНИМАНИЕ] В общей папке нет установщика SWTools — укажите -SwToolsSetup." -ForegroundColor Yellow }
+}
+
 $date = Get-Date
 $release = [ordered]@{
     version   = $date.ToString("yyyy.MM.dd.HHmm")
     date      = $date.ToString("dd.MM.yyyy HH:mm")
     commit    = "$commit$(if ($dirty) { '+изменения' })"
     publisher = "$env:USERDOMAIN\$env:USERNAME"
+    # SHA-256 опубликованных файлов локальной копии: по ним установщик проверяет источник и копию (ТЗ-01 Т-39, -Mode Check)
+    files     = @(New-EskdReleaseFiles -SourceRoot $Target)
 }
-[System.IO.File]::WriteAllText($releaseFile, ($release | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+[System.IO.File]::WriteAllText($releaseFile, ($release | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "`n[OK] Опубликован выпуск $($release.version) (коммит $($release.commit)) в $Target" -ForegroundColor Green
 Write-Host "Конструкторам: запустить $Target\01_Настройки_SolidWorks\Настройка_Рабочего_Места_SolidWorks.exe" -ForegroundColor Green
 exit 0

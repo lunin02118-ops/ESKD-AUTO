@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Оракулы: свойства на диске, штамп, положение заметок, журнал надстройки, геометрия ГОСТ."""
 import re
+import time
 from pathlib import Path
 
 from . import com, paths
@@ -125,12 +126,35 @@ def each_sheet(drw):
         drw.ActivateSheet(original)
 
 
-def stamp(drw):
-    """Заметки форматок всех листов: {лист: {имя заметки: запись}}."""
+def stamp(drw, attempts=3):
+    """Заметки форматок всех листов: {лист: {имя заметки: запись}}.
+
+    Габарит текста SolidWorks считает при отрисовке: у только что открытого чертежа он бывает вырожденным
+    (нулевая высота у непустой заметки). Тогда лист перерисовывается и замер повторяется.
+    """
     result = {}
-    for sheet_name, sheet_view, _ in each_sheet(drw):
-        result[sheet_name] = {n["name"]: n for n in notes_of_view(sheet_view)}
+    for attempt in range(attempts):
+        result = {}
+        for sheet_name, sheet_view, _ in each_sheet(drw):
+            result[sheet_name] = {n["name"]: n for n in notes_of_view(sheet_view)}
+        flat = [n for sheet in result.values() for n in sheet.values()]
+        if not any(_flat_extent(n) for n in flat) or attempt == attempts - 1:
+            break
+        # Только перерисовка: масштаб вида (ViewZoomtofit2) сам меняет замер габарита.
+        com.dyn(drw).GraphicsRedraw2()
+        time.sleep(0.5)
     return result
+
+
+def _flat_extent(note):
+    """Габарит непустой заметки нулевой высоты — признак незавершённой отрисовки.
+
+    Нулевая ширина бывает и у готовой заметки: связанное свойство пустое, печатать нечего.
+    """
+    ext = note.get("extent_mm")
+    if not note.get("text") or not ext:
+        return False
+    return abs(ext[4] - ext[1]) < 0.001
 
 
 def note_positions(drw):

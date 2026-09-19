@@ -201,7 +201,11 @@ namespace ESKD.MaterialSync.Sw
                 {
                     string execution;
                     bool isBase;
-                    bool recognized = DesignationParser.ExtractExecutionFromConfigName(RootConfigurationName(doc, cfg), out execution, out isBase);
+                    // Исполнение — по имени самой конфигурации: производная «01» от «00» — это исполнение -01, а не базовое
+                    // (замечание владельца 18.09.2026, «Укосина»). Корневая — только если своё имя не читается как исполнение
+                    // («00SM-FLAT-PATTERN» разбирается сам, «Покраска» под «01» берёт номер у «01»).
+                    bool recognized = DesignationParser.ExtractExecutionFromConfigName(cfg, out execution, out isBase) ||
+                        DesignationParser.ExtractExecutionFromConfigName(RootConfigurationName(doc, cfg), out execution, out isBase);
                     string cfgCurrent = w.Raw(cfg, number);
                     string cfgExpected;
                     if (recognized)
@@ -253,9 +257,8 @@ namespace ESKD.MaterialSync.Sw
             if (string.IsNullOrEmpty(now.Title)) return;
             string currentTitle = w.Raw("", title);
             Provenance titleState = ProvenanceRule.Classify(currentTitle, now.Title, before != null ? before.Title : null, false);
-            // У детали БЧ «Наименование» — запись для спецификации; потерянную запись восстанавливает BchService.UpdateOnSave
+            // У детали БЧ «Наименование» — такое же название, как у любой детали; строки записи — в «Запись_БЧ» (З-9)
             bool bch = !isAssembly && BchService.IsBch(w, dict);
-            if (bch && !BchRecord.IsRecord(currentTitle) && ProvenanceRule.ShouldWrite(titleState)) titleState = Provenance.Current;
             string effective = currentTitle ?? "";
             if (ProvenanceRule.ShouldWrite(titleState))
             {
@@ -593,6 +596,9 @@ namespace ESKD.MaterialSync.Sw
         /// Единицы массы документа, как выставляет MProp (FrmMProp:2339, 2449–2468, 3353–3368); true — масса в граммах (суффикс
         /// « г» у выражения, FrmMProp:2848). При переключении единиц — предупреждение в строке состояния.
         /// </summary>
+        /// <summary>Начало предупреждения о единицах массы: их выставляет сама синхронизация, конструктору решать нечего.</summary>
+        internal const string MassUnitsWarning = "Единицы массы документа переключены, как в MProp";
+
         private static bool MassUnitsAsMProp(PropertyWriter w, ModelDoc2 doc, string active, SyncReport report)
         {
             int[] prefs =
@@ -625,7 +631,7 @@ namespace ESKD.MaterialSync.Sw
             if (changed)
             {
                 System.Globalization.CultureInfo ru = System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
-                report.Warnings.Add(string.Format("Единицы массы документа переключены, как в MProp: {0} (масса {1})",
+                report.Warnings.Add(string.Format(MassUnitsWarning + ": {0} (масса {1})",
                     units.Grams ? "граммы — см, г, см³, 1 знак" : "килограммы — м, кг, м³, 2 знака",
                     units.Grams ? (mass * 1000).ToString("0.#", ru) + " г" : mass.ToString("0.##", ru) + " кг"));
             }

@@ -17,6 +17,7 @@ $script:Rel = @{
     Libraries     = "04_Библиотеки_Материалов_и_Профилей"
     Fonts         = "05_Шрифты"
     Setup         = "01_Настройки_SolidWorks"
+    SwTools       = "03_Макросы_и_Плагины\SWTools_Установщик"
 }
 
 # Файлы надстройки, которые нужны для работы (исходники и скрипты сборки не копируются).
@@ -71,6 +72,7 @@ function Get-EskdLayout {
         SourceSwPlus     = Join-Path $SourceRoot $r.SwPlus
         SheetFormats     = Join-Path $SourceRoot $r.SheetFormats
         Fonts            = Join-Path $SourceRoot $r.Fonts
+        SwTools          = Join-Path $SourceRoot $r.SwTools
         LocalAddin       = Join-Path $LocalRoot $r.Addin
         LocalAddinDll    = Join-Path (Join-Path $LocalRoot $r.Addin) "ESKD_Material_Sync_v5.dll"
         LocalSwPlus      = Join-Path $LocalRoot $r.SwPlus
@@ -153,12 +155,57 @@ function Copy-EskdFile {
     if ($copy.IsReadOnly) { $copy.IsReadOnly = $false }
 }
 
+function Get-EskdInstanceFiles {
+    <#
+    Файлы выпуска, которые попадают в локальную копию: надстройка (файлы $AddinFiles и Icons) и вся папка SWPlus.
+    Relative — путь от корня инструментария (он же — от корня локальной копии), State — файл настроек макросов
+    ($SwPlusStateFiles): пользователь его меняет, поэтому обновление и проверка его не сравнивают.
+    #>
+    param([Parameter(Mandatory = $true)][pscustomobject]$Layout)
+    $root = $Layout.SourceRoot.TrimEnd('\')
+    $sources = New-Object System.Collections.Generic.List[string]
+    foreach ($name in $script:AddinFiles) {
+        $src = Join-Path $Layout.SourceAddin $name
+        if (Test-Path -LiteralPath $src) { $sources.Add($src) }
+    }
+    $icons = Join-Path $Layout.SourceAddin "Icons"
+    if (Test-Path -LiteralPath $icons) { foreach ($f in Get-ChildItem -LiteralPath $icons -File) { $sources.Add($f.FullName) } }
+    if (Test-Path -LiteralPath $Layout.SourceSwPlus) {
+        foreach ($f in Get-ChildItem -LiteralPath $Layout.SourceSwPlus -File -Recurse) { $sources.Add($f.FullName) }
+    }
+    $swplusPrefix = $script:Rel.SwPlus.ToLowerInvariant() + "\"
+    $stateLow = @($script:SwPlusStateFiles | ForEach-Object { $swplusPrefix + $_.ToLowerInvariant() })
+    foreach ($src in $sources) {
+        $rel = $src.Substring($root.Length + 1)
+        [pscustomobject]@{
+            Source   = $src
+            Local    = Join-Path $Layout.LocalRoot $rel
+            Relative = $rel
+            State    = $stateLow -contains $rel.ToLowerInvariant()
+        }
+    }
+}
+
+function Get-EskdFileSha256 {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function New-EskdReleaseFiles {
+    # Для toolkit_release.json (ТЗ-01 Т-39): относительный путь и SHA-256 каждого файла локальной копии.
+    param([Parameter(Mandatory = $true)][string]$SourceRoot)
+    $layout = Get-EskdLayout -SourceRoot $SourceRoot -LocalRoot $SourceRoot
+    foreach ($f in Get-EskdInstanceFiles -Layout $layout) {
+        [ordered]@{ path = $f.Relative; sha256 = (Get-EskdFileSha256 -Path $f.Source); state = [bool]$f.State }
+    }
+}
+
 function Copy-EskdLocalInstance {
     <#
-    Локальная копия: надстройка (файлы $AddinFiles и Icons) и вся папка SWPlus. Основные надписи (02) и библиотека
-    материалов не копируется: SolidWorks и надстройка берут её только из общей папки (решение владельца 14.09.2026). Файлы выпуска заменяются
-    версией источника; файлы настроек макросов ($SwPlusStateFiles), уже существующие локально, не трогаются.
-    Возвращает сводку: Copied, Kept, Skipped.
+    Локальная копия: файлы Get-EskdInstanceFiles. Основные надписи (02) и библиотека материалов не копируются:
+    SolidWorks и надстройка берут их только из общей папки (решение владельца 14.09.2026). Файлы выпуска заменяются
+    версией источника; файлы настроек макросов, уже существующие локально, не трогаются.
+    Возвращает сводку: Copied, Kept, Same.
     #>
     param([Parameter(Mandatory = $true)][pscustomobject]$Layout)
     $copied = New-Object System.Collections.Generic.List[string]
@@ -169,29 +216,57 @@ function Copy-EskdLocalInstance {
     if (-not (Test-Path -LiteralPath $sourceDll)) {
         throw "В папке инструментария нет собранной надстройки ($sourceDll). Опубликуйте выпуск: 01_Настройки_SolidWorks\Publish-EskdToolkit.ps1"
     }
-    $pairs = New-Object System.Collections.Generic.List[object]
-    foreach ($name in $script:AddinFiles) {
-        $src = Join-Path $Layout.SourceAddin $name
-        if (Test-Path -LiteralPath $src) { $pairs.Add(@($src, (Join-Path $Layout.LocalAddin $name), $false)) }
-    }
-    $icons = Join-Path $Layout.SourceAddin "Icons"
-    if (Test-Path -LiteralPath $icons) {
-        foreach ($f in Get-ChildItem -LiteralPath $icons -File) { $pairs.Add(@($f.FullName, (Join-Path $Layout.LocalAddin "Icons\$($f.Name)"), $false)) }
-    }
-    $stateLow = @($script:SwPlusStateFiles | ForEach-Object { $_.ToLowerInvariant() })
-    foreach ($f in Get-ChildItem -LiteralPath $Layout.SourceSwPlus -File -Recurse) {
-        $rel = $f.FullName.Substring($Layout.SourceSwPlus.TrimEnd('\').Length + 1)
-        $pairs.Add(@($f.FullName, (Join-Path $Layout.LocalSwPlus $rel), ($stateLow -contains $rel.ToLowerInvariant())))
-    }
-
-    foreach ($p in $pairs) {
-        $src, $dst, $isState = $p
-        if ($isState -and (Test-Path -LiteralPath $dst)) { $kept.Add($dst); continue }
-        if (Test-EskdFileSame -A $src -B $dst) { $same++; continue }
-        Copy-EskdFile -Source $src -Target $dst
-        $copied.Add($dst)
+    foreach ($f in Get-EskdInstanceFiles -Layout $Layout) {
+        if ($f.State -and (Test-Path -LiteralPath $f.Local)) { $kept.Add($f.Local); continue }
+        if (Test-EskdFileSame -A $f.Source -B $f.Local) { $same++; continue }
+        Copy-EskdFile -Source $f.Source -Target $f.Local
+        $copied.Add($f.Local)
     }
     return [pscustomobject]@{ Copied = @($copied); Kept = @($kept); Same = $same }
+}
+
+function Test-EskdInstall {
+    <#
+    Режим Check (ТЗ-01 Т-13, Т-18): сверка выпуска, установленной версии и локальной копии. Ничего не меняет.
+    Code: 0 — актуально; 10 — нужно обновление (не установлено или установлен другой выпуск); 20 — повреждено (файл
+    локальной копии пропал или изменён); 40 — выпуск не опубликован или файлы источника не совпадают с его хешами.
+    Файлы настроек макросов не сравниваются: их меняет пользователь.
+    #>
+    param([Parameter(Mandatory = $true)][pscustomobject]$Layout, [string]$InstalledVersion = "")
+    $problems = New-Object System.Collections.Generic.List[string]
+    $result = { param($code, $state) [pscustomobject]@{ Code = $code; State = $state; Problems = @($problems) } }
+    if (-not (Test-Path -LiteralPath $Layout.Release)) {
+        $problems.Add("Нет toolkit_release.json: выпуск не опубликован (Publish-EskdToolkit.ps1).")
+        return & $result 40 "Выпуск не опубликован"
+    }
+    $json = [System.IO.File]::ReadAllText($Layout.Release, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+    $files = @($json.files)
+    if (-not $files.Count) {
+        $problems.Add("В toolkit_release.json нет хешей файлов: выпуск опубликован прежней версией публикации — опубликуйте заново.")
+        return & $result 40 "Выпуск без хешей"
+    }
+    foreach ($f in $files) {
+        $src = Join-Path $Layout.SourceRoot $f.path
+        if (-not (Test-Path -LiteralPath $src)) { $problems.Add("В источнике нет файла выпуска: $($f.path)"); continue }
+        if ((Get-EskdFileSha256 -Path $src) -ne $f.sha256) { $problems.Add("Файл источника не совпадает с выпуском: $($f.path)") }
+    }
+    if ($problems.Count) { return & $result 40 "Источник не совпадает с выпуском" }
+    if (-not $InstalledVersion) {
+        $problems.Add("Инструментарий на этом рабочем месте не установлен.")
+        return & $result 10 "Не установлено"
+    }
+    if ($InstalledVersion -ne [string]$json.version) {
+        $problems.Add("Установлен выпуск $InstalledVersion, опубликован $($json.version).")
+        return & $result 10 "Требуется обновление"
+    }
+    foreach ($f in $files) {
+        if ($f.state) { continue }
+        $local = Join-Path $Layout.LocalRoot $f.path
+        if (-not (Test-Path -LiteralPath $local)) { $problems.Add("В локальной копии нет файла: $($f.path)"); continue }
+        if ((Get-EskdFileSha256 -Path $local) -ne $f.sha256) { $problems.Add("Файл локальной копии изменён: $($f.path)") }
+    }
+    if ($problems.Count) { return & $result 20 "Повреждено" }
+    return & $result 0 "Актуально"
 }
 
 # WP-3.4: справочники SWPlus записываются, только если содержимое меняется; фамилии и организации дописываются в конец.
@@ -205,26 +280,46 @@ function Write-SwPlusLines {
 }
 
 function Add-SwPlusFamily {
-    # MProp_Fam.txt: фамилия на строке; новая — в конец.
+    # MProp_Fam.txt: фамилия на строке. Фамилия этого рабочего места — первой: после «Удалить все свойства» MProp
+    # берёт «Разработал» из первой строки списка (З-3). Остальные строки — по порядку, без пустых и повторов.
     param([Parameter(Mandatory = $true)][string]$Path, [string]$Name)
     if (-not $Name -or -not $Name.Trim()) { return $false }
+    $name = $Name.Trim()
     $lines = @()
     if (Test-Path -LiteralPath $Path) { $lines = @([System.IO.File]::ReadAllLines($Path, [System.Text.Encoding]::GetEncoding(1251))) }
-    if (@($lines | Where-Object { $_.Trim() -eq $Name.Trim() }).Count) { return $false }
-    return Write-SwPlusLines -Path $Path -Lines (@($lines | Where-Object { $_.Trim() -ne "" }) + @($Name.Trim()))
+    $rest = New-Object System.Collections.Generic.List[string]
+    foreach ($line in $lines) {
+        $t = $line.Trim()
+        if ($t -and $t -ne $name -and -not ($rest | Where-Object { $_ -eq $t })) { $rest.Add($t) }
+    }
+    $new = @($name) + @($rest)
+    if (($new -join "`n") -ceq ($lines -join "`n")) { return $false }
+    return Write-SwPlusLines -Path $Path -Lines $new
 }
 
 function Add-SwPlusFirm {
-    # MProp_Firm.txt: пары строк «организация / код»; новая пара — в конец.
+    # MProp_Firm.txt: пары строк «организация / код». Организация этого рабочего места — первой парой (со своим кодом):
+    # при пустой «Конторе» MProp берёт первую (FrmMProp: CboFirm.ListIndex = 0, З-3).
     param([Parameter(Mandatory = $true)][string]$Path, [string]$Name)
     if (-not $Name -or -not $Name.Trim()) { return $false }
+    $name = $Name.Trim()
     $lines = @()
     if (Test-Path -LiteralPath $Path) { $lines = @([System.IO.File]::ReadAllLines($Path, [System.Text.Encoding]::GetEncoding(1251))) }
+    $code = ""
+    $rest = New-Object System.Collections.Generic.List[string]
+    $seen = @{}
     for ($i = 0; $i -lt $lines.Count; $i += 2) {
-        if ($lines[$i].Trim() -eq $Name.Trim()) { return $false }
+        $firm = $lines[$i].Trim()
+        $c = if ($i + 1 -lt $lines.Count) { $lines[$i + 1].Trim() } else { "" }
+        if (-not $firm) { continue }
+        if ($firm -eq $name) { $code = $c; continue }
+        if ($seen.ContainsKey($firm)) { continue }
+        $seen[$firm] = $true
+        $rest.Add($firm); $rest.Add($c)
     }
-    if ($lines.Count % 2 -eq 1) { $lines += "" }
-    return Write-SwPlusLines -Path $Path -Lines ($lines + @($Name.Trim(), ""))
+    $new = @($name, $code) + @($rest)
+    if (($new -join "`n") -ceq ($lines -join "`n")) { return $false }
+    return Write-SwPlusLines -Path $Path -Lines $new
 }
 
 function Set-EskdMasterIniFormats {
@@ -273,15 +368,16 @@ function Reset-EskdSolidWorksProfile {
     Сброс настроек пользователя SolidWorks перед импортом корпоративного профиля (решение владельца 15.09.2026): раздел
     HKCU\...\SolidWorks\<версия> удаляется целиком, как «Сброс настроек» SolidWorks Rx, чтобы результат установки не
     зависел от прежнего состояния ПК. Сохраняются только данные пользователя, а не настройки: принятие лицензионного
-    соглашения (Security), списки последних файлов и папок, путь Toolbox и панель быстрого доступа (QAT): SolidWorks 2025
-    при запуске стирает всю панель, если в ней нет его базовых кнопок Btn0..Btn10, и кнопки SWPlus пропадают.
+    соглашения (Security), списки последних файлов и папок, путь Toolbox, панель быстрого доступа (QAT): SolidWorks 2025
+    при запуске стирает всю панель, если в ней нет его базовых кнопок Btn0..Btn10, и кнопки SWPlus пропадают,
+    а также раздел графики и конвейера производительности (Performance), чтобы пользовательские настройки OpenGL не сбрасывались.
     Лицензии, надстройки при запуске и ESKD_Settings лежат вне раздела версии и не затрагиваются. Возвращает сводку: Existed, Preserved.
     #>
     param([Parameter(Mandatory = $true)][string]$UserRoot, [Parameter(Mandatory = $true)][string]$SwVersion)
     if ($UserRoot -notmatch '^HKCU:\\(.+)$') { throw "Сброс только в HKCU: $UserRoot" }
     $sub = $Matches[1].TrimEnd('\') + "\SolidWorks\$SwVersion"
     $hkcu = [Microsoft.Win32.Registry]::CurrentUser
-    $keepTrees = @("Security", "Recent File List", "Recent Folder List", "Recent Macro File List", "User Interface\CommandManager\QAT")
+    $keepTrees = @("Security", "Recent File List", "Recent Folder List", "Recent Macro File List", "User Interface\CommandManager\QAT", "Performance")
     $keepValues = @(@{ Key = "General"; Name = "Toolbox Data Location" })
     $version = $hkcu.OpenSubKey($sub)
     if ($null -eq $version) { return [pscustomobject]@{ Existed = $false; Preserved = @() } }
@@ -317,6 +413,87 @@ function Reset-EskdSolidWorksProfile {
         }
     } finally { $restored.Close() }
     return [pscustomobject]@{ Existed = $true; Preserved = @($saved.Name) + @($savedValues | ForEach-Object { "$($_.Key)\$($_.Name)" }) }
+}
+
+# ------------------------------------------------------------------ SWTools
+# Установщик SWTools не хранится в репозитории: Publish-EskdToolkit -SwToolsSetup кладёт его в общую папку
+# (03_Макросы_и_Плагины\SWTools_Установщик) вместе с описанием swtools_release.json, установщик рабочего места ставит его оттуда.
+
+function Get-EskdSwToolsRelease {
+    # Описание выпуска SWTools в папке инструментария или $null.
+    param([Parameter(Mandatory = $true)][string]$SourceRoot)
+    $dir = Join-Path $SourceRoot $script:Rel.SwTools
+    $file = Join-Path $dir "swtools_release.json"
+    if (-not (Test-Path -LiteralPath $file)) { return $null }
+    $json = [System.IO.File]::ReadAllText($file, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+    foreach ($field in "version", "setup", "sha256", "eula_sha256") {
+        if (-not "$($json.$field)".Trim()) { throw "В $file нет поля $field" }
+    }
+    if ("$($json.setup)" -match '[\\/]') { throw "В $file поле setup должно быть именем файла: $($json.setup)" }
+    return [pscustomobject]@{
+        Version    = [version]"$($json.version)"
+        SetupPath  = Join-Path $dir "$($json.setup)"
+        Sha256     = "$($json.sha256)".ToLowerInvariant()
+        EulaSha256 = "$($json.eula_sha256)".ToLowerInvariant()
+        Commit     = "$($json.source_commit)"
+    }
+}
+
+function Get-EskdSwToolsInstalledVersion {
+    # Версия установленного SWTools (запись удаления программ) или $null.
+    foreach ($root in "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall") {
+        foreach ($key in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
+            $entry = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+            if ($entry -and "$($entry.DisplayName)" -eq "SWTools" -and "$($entry.DisplayVersion)" -match '^\d+(\.\d+){1,3}$') {
+                return [version]"$($entry.DisplayVersion)"
+            }
+        }
+    }
+    return $null
+}
+
+function Test-EskdSwToolsUpdateNeeded {
+    # Ставить ли SWTools: не установлен или установлен старее выпуска. Более новая версия на ПК не понижается.
+    param([Parameter(Mandatory = $true)][version]$Release, [version]$Installed)
+    return (-not $Installed) -or ($Installed -lt $Release)
+}
+
+function Get-EskdSwToolsLicensePath {
+    return (Join-Path $env:LOCALAPPDATA "Lunin V\SWTools\license-v2.bin")
+}
+
+function Publish-EskdSwToolsSetup {
+    # Кладёт установщик SWTools в папку выпуска и пишет swtools_release.json по манифесту сборки SWTools
+    # (<Setup>.manifest.json рядом с установщиком: версия, коммит, SHA-256 EULA для тихой установки).
+    param([Parameter(Mandatory = $true)][string]$SetupPath, [Parameter(Mandatory = $true)][string]$TargetRoot)
+    $setup = Get-Item -LiteralPath $SetupPath -ErrorAction Stop
+    $manifestPath = [System.IO.Path]::ChangeExtension($setup.FullName, ".manifest.json")
+    if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Нет манифеста сборки SWTools: $manifestPath" }
+    $manifest = [System.IO.File]::ReadAllText($manifestPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+    $sha = (Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ("$($manifest.setup.sha256)".ToLowerInvariant() -ne $sha) { throw "SHA-256 установщика SWTools не совпадает с манифестом: $($setup.FullName)" }
+    $eula = "$($manifest.installer_behavior.silent_install_eula_sha256)".ToLowerInvariant()
+    if ($eula -notmatch '^[0-9a-f]{64}$') { throw "В манифесте SWTools нет SHA-256 EULA для тихой установки" }
+    $dir = Join-Path $TargetRoot $script:Rel.SwTools
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    $releaseFile = Join-Path $dir "swtools_release.json"
+    Remove-Item -LiteralPath $releaseFile -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -LiteralPath $dir -Filter "SWTools-*Setup.exe" -File | Where-Object { $_.Name -ne $setup.Name } | Remove-Item -Force
+    $copy = Join-Path $dir $setup.Name
+    Copy-Item -LiteralPath $setup.FullName -Destination $copy -Force
+    if ((Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha) {
+        throw "Установщик SWTools скопирован с ошибкой: $copy"
+    }
+    $release = [ordered]@{
+        version       = "$($manifest.product_version)"
+        setup         = $setup.Name
+        sha256        = $sha
+        eula_sha256   = $eula
+        source_commit = "$($manifest.source_commit)"
+        artifact_kind = "$($manifest.artifact_kind)"
+    }
+    [System.IO.File]::WriteAllText($releaseFile, ($release | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
+    return Get-EskdSwToolsRelease -SourceRoot $TargetRoot
 }
 
 Export-ModuleMember -Function *-Eskd*, Write-SwPlusLines, Add-SwPlusFamily, Add-SwPlusFirm

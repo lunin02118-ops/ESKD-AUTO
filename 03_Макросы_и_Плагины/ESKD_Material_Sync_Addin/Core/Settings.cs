@@ -29,6 +29,30 @@ namespace ESKD.MaterialSync.Core
         public bool DryRun;
         public string DictionaryPath = "";
 
+        /// <summary>Раздел сведений об установке: папка инструментария, из которой настроено рабочее место.</summary>
+        public const string InstallKeyPath = @"Software\SolidWorks\ESKD_Install";
+
+        /// <summary>
+        /// Справочники производства в папке инструментария (02_Шаблоны_и_Форматки\Справочники): нормативы, бланки ЛЗК.
+        /// Путь — из «SourceRoot» сведений об установке; не установлено — пусто.
+        /// </summary>
+        public static string ReferenceFolder()
+        {
+            try
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(InstallKeyPath))
+                {
+                    string root = key == null ? "" : Str(key, "SourceRoot");
+                    return root.Length == 0 ? "" : System.IO.Path.Combine(System.IO.Path.Combine(root, "02_Шаблоны_и_Форматки"), "Справочники");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Settings.ReferenceFolder", ex);
+                return "";
+            }
+        }
+
         public static Settings Read()
         {
             Settings s = new Settings();

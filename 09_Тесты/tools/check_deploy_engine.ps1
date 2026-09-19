@@ -5,7 +5,7 @@
     Собирает во временном каталоге папку инструментария с непривычным именем (пробелы, кириллица, не
     «_Инструменты_Конструктора»), ставит всем файлам атрибут «только чтение» и запускает установщик из неё с
     временной локальной копией и временным разделом реестра HKCU:\Software\ESKD_DeployTest_*. Настоящий реестр,
-    шрифты и Drew не затрагиваются, SolidWorks не нужен.
+    шрифты, Drew и SWTools не затрагиваются, SolidWorks не нужен.
 
     Проверяется: источник не изменился (ни одного нового или изменённого файла); пути SolidWorks — на источник,
     кнопки и папка макросов — на локальную копию; надстройка зарегистрирована из локальной копии; Master.ini указывает
@@ -34,9 +34,10 @@ function Snapshot($root) {
 }
 
 $cp1251 = [System.Text.Encoding]::GetEncoding(1251)
-$id = [guid]::NewGuid().ToString("N")
-$temp = Join-Path ([System.IO.Path]::GetTempPath()) "eskd_deploy_$id"
-$source = Join-Path $temp "Сетевая папка\Инструменты КТО"
+# Короткие имена: самый длинный файл инструментария — 154 знака, путь во %TEMP% должен уложиться в 260 (MAX_PATH)
+$id = [guid]::NewGuid().ToString("N").Substring(0, 8)
+$temp = Join-Path ([System.IO.Path]::GetTempPath()) "eskd_d_$id"
+$source = Join-Path $temp "Сеть КТО\Инструменты КТО"
 $local = Join-Path $temp "Профиль\ESKD\Toolkit"
 $registryName = "ESKD_DeployTest_$id"
 $sandbox = "HKCU:\Software\$registryName"
@@ -51,11 +52,15 @@ try {
     $addinRel = "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin"
     foreach ($rel in @("02_Шаблоны_и_Форматки", $swplusRel, "04_Библиотеки_Материалов_и_Профилей\Библиотека материалов",
                        "04_Библиотеки_Материалов_и_Профилей\Профили резьбы", "01_Настройки_SolidWorks\Реестровые_Профили")) {
+        $srcDir = Join-Path $RepoRoot $rel
         $dst = Join-Path $source $rel
         New-Item -ItemType Directory -Path $dst -Force | Out-Null
-        Copy-Item -Path (Join-Path (Join-Path $RepoRoot $rel) "*") -Destination $dst -Recurse -Force -Exclude "Backups"
+        & robocopy.exe "$srcDir" "$dst" /E /NFL /NDL /NJH /NJS /XD "Backups" | Out-Null
     }
     Remove-Item -LiteralPath (Join-Path $source "01_Настройки_SolidWorks\Реестровые_Профили\Backups") -Recurse -Force -ErrorAction SilentlyContinue
+    # Соседняя папка библиотеки проектирования, как «_Библиотека проектирования\_ крепеж и фурнитура» на NAS
+    $fasteners = Join-Path (Split-Path -Path $source -Parent) "_ крепеж и фурнитура"
+    New-Item -ItemType Directory -Path $fasteners -Force | Out-Null
     foreach ($name in @("Setup_Workstation_SolidWorks.ps1", "EskdDeploy.psm1")) {
         Copy-Item -LiteralPath (Join-Path $RepoRoot "01_Настройки_SolidWorks\$name") -Destination (Join-Path $source "01_Настройки_SolidWorks\$name")
     }
@@ -67,7 +72,7 @@ try {
     }
     Copy-Item -LiteralPath (Join-Path (Join-Path $RepoRoot $addinRel) "Icons") -Destination $addinDst -Recurse
     New-Item -ItemType Directory -Path (Join-Path $source "04_Библиотеки_Материалов_и_Профилей\Профили сварных деталей") -Force | Out-Null
-    Get-ChildItem -LiteralPath $source -File -Recurse | ForEach-Object { $_.IsReadOnly = $true }
+    Get-ChildItem -LiteralPath $source -File -Recurse | ForEach-Object { try { $_.IsReadOnly = $true } catch {} }
     $before = Snapshot $source
 
     # Разбор профиля отдельно: при тестовом корне нет HKLM и все разделы — в тестовом корне
@@ -88,8 +93,9 @@ try {
     $setupArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $setup, "-Author", "Тестов Т.Т.", "-Firm", "ООО «Проверка»",
               "-CloseMode", "Skip", "-NonInteractive", "-LocalRoot", $local, "-RegistryRoot", $sandbox, "-SwVersion", "SOLIDWORKS 2025", "-Utf8Output")
     $run = {
+        param([string[]]$extra = @())
         $psi = New-Object System.Diagnostics.ProcessStartInfo "powershell.exe"
-        $psi.Arguments = ($setupArgs | ForEach-Object { if ($_ -match '[\s«»"]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ } }) -join " "
+        $psi.Arguments = (@($setupArgs) + $extra | ForEach-Object { if ($_ -match '[\s«»"]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ } }) -join " "
         $psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; $psi.RedirectStandardError = $true
         $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
         $p = [System.Diagnostics.Process]::Start($psi)
@@ -113,6 +119,15 @@ try {
     Expect "кнопка MProp — локальная копия" (Read-Value "$swKey\User Defined Macros\01 - Macro Folder" "Source Path") (Join-Path $localSwPlus "MProp\MProp.swp")
     Expect "шаблон детали по умолчанию — источник" (Read-Value "$swKey\Document Templates" "Default Part template") (Join-Path $source "02_Шаблоны_и_Форматки\Шаблоны документов\Деталь.prtdot")
     Expect "Toolbox не подставлен из профиля" (Read-Value "$swKey\General" "Toolbox Data Location") $null
+    # Библиотека проектирования: папка крепежа рядом с инструментарием (как на NAS) — в «Расположение файлов»
+    Expect "библиотека проектирования — крепёж и фурнитура" (Read-Value $ext "Content Manager Folders") $fasteners
+    # Т-57: папки поиска ссылок от места запуска; Т-56: режим совместной работы из профиля
+    Expect "папки поиска ссылок" (Read-Value $ext "Document Folders") ($fasteners + ";" + (Join-Path $source "04_Библиотеки_Материалов_и_Профилей\Профили сварных деталей"))
+    Expect "поиск по папкам включён" (Read-Value $ext "Use Search Rules") 1
+    Expect "многопользовательская среда" (Read-Value "$swKey\Collab" "Enable Collab") 1
+    Expect "проверка чужих изменений" (Read-Value "$swKey\Collab" "Ping Files") 1
+    # З-2: тип отображения по умолчанию на чертеже — «Невидимые линии отображаются» (swHiddenEdgeDisplayDefault = 1)
+    Expect "чертёж: невидимые линии отображаются" (Read-Value "$swKey\Drawings" "Display Mode") 1
     $dll = Join-Path $local "$addinRel\ESKD_Material_Sync_v5.dll"
     Expect "CodeBase надстройки — локальная копия" (Read-Value "$sandbox\Classes\CLSID\{B64E6875-B101-4D5C-B245-FF8D50772E25}\InprocServer32" "CodeBase") ("file:///" + $dll.Replace('\', '/'))
     Expect "автозагрузка надстройки" (Read-Value "$sandbox\SolidWorks\AddInsStartup\{B64E6875-B101-4D5C-B245-FF8D50772E25}" "(default)") 1
@@ -127,6 +142,10 @@ try {
     Expect "QAT: базовая кнопка SolidWorks Btn10" (Read-Value $qat "Btn10") "1,54325"
     Expect "QAT: кнопка MProp Btn11" (Read-Value $qat "Btn11") "1,33639"
     Expect "QAT: кнопка SaveAsPDF Btn19" (Read-Value $qat "Btn19") "1,33647"
+    Expect "производительность: конвейер 2020 включён" (Read-Value "$swKey\Performance" "Use Performance Pipeline 2020") 1
+    Expect "производительность: кромки силуэта включены" (Read-Value "$swKey\Performance" "Use GPU Silhouette Edges") 1
+    Expect "производительность: тревога OGL выключена" (Read-Value "$swKey\General" "Software OGL Alarm") 0
+    Expect "производительность: программный OGL выключен" (Read-Value "$swKey\General" "Use Software OGL") 0
 
     $exported = Join-Path $temp "sandbox.reg"
     $null = & reg.exe export "HKCU\Software\$registryName" $exported /y 2>&1
@@ -143,9 +162,9 @@ try {
     $master = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "Master\Master.ini"), $cp1251))
     Expect "Master.ini: основные надписи источника" $master[3] ($sheetFormats + "\")
     $fam = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "MProp\MProp_Fam.txt"), $cp1251))
-    Expect "MProp_Fam.txt: фамилия в конце" $fam[-1] "Тестов Т.Т."
+    Expect "MProp_Fam.txt: фамилия первой (З-3)" $fam[0] "Тестов Т.Т."
     $firm = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "MProp\MProp_Firm.txt"), $cp1251))
-    Expect "MProp_Firm.txt: пара в конце" ($firm[-2] + "|" + $firm[-1]) "ООО «Проверка»|"
+    Expect "MProp_Firm.txt: пара первой (З-3)" ($firm[0] + "|" + $firm[1]) "ООО «Проверка»|"
 
     $after = Snapshot $source
     $changed = @($after.Keys | Where-Object { $before[$_] -ne $after[$_] }) + @($before.Keys | Where-Object { -not $after.ContainsKey($_) })
@@ -181,6 +200,7 @@ try {
     Expect "сброс: путь Toolbox сохранён" (Read-Value "$swKey\General" "Toolbox Data Location") "C:\Мой Toolbox"
     Expect "сброс: кнопка пользователя в QAT сохранена" (Read-Value $qat "Btn20") "1,40001"
     Expect "сброс: QAT после повторной установки — Btn0..Btn19" (@(0..19 | Where-Object { Read-Value $qat "Btn$_" }).Count) 20
+    Expect "сброс: конвейер производительности сохранён" (Read-Value "$swKey\Performance" "Use Performance Pipeline 2020") 1
     Expect "сброс: фамилия вне раздела версии не тронута" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
     $output += "`n--- повторная установка ---`n" + $output2
     Expect "код выхода повторной установки" $code2 0
@@ -193,14 +213,111 @@ try {
     Expect "фамилия не задвоена" (@($fam2 | Where-Object { $_ -eq "Тестов Т.Т." }).Count) 1
     $after2 = Snapshot $source
     Expect "источник не изменён повторной установкой" (@($after2.Keys | Where-Object { $before[$_] -ne $after2[$_] }) -join ", ") ""
+    $logs = @(Get-ChildItem -LiteralPath (Join-Path (Split-Path -Path $local -Parent) "Logs") -Filter "install_*.log" -ErrorAction SilentlyContinue)
+    Expect "журнал установки записан" ($logs.Count -ge 1) $true
+    Expect "журнал установки — в ESKD_Install" ([bool](Read-Value "$sandbox\SolidWorks\ESKD_Install" "LastLog")) $true
+    if ($logs.Count) { Expect "в журнале — итог установки" ([System.IO.File]::ReadAllText($logs[0].FullName).Contains("НАСТРОЙКА ЗАВЕРШЕНА")) $true }
+
+    # ТЗ-01 -Mode Check: выпуск без хешей — 40; опубликованный выпуск, установлена рабочая копия — 10; после установки
+    # выпуска — 0; испорченный файл локальной копии — 20; изменённый файл источника — 40. Check ничего не меняет.
+    $code, $out = & $run @("-Mode", "Check")
+    $output += "`n--- проверка без выпуска ---`n" + $out
+    Expect "Check: выпуск не опубликован" $code 40
+    $releaseFile = Join-Path $source "toolkit_release.json"
+    $releaseJson = [ordered]@{ version = "2026.09.19.1200"; date = "19.09.2026 12:00"; commit = "test"; publisher = "test";
+                              files = @(New-EskdReleaseFiles -SourceRoot $source) }
+    [System.IO.File]::WriteAllText($releaseFile, ($releaseJson | ConvertTo-Json -Depth 4), (New-Object System.Text.UTF8Encoding($false)))
+    Expect "выпуск: хеши файлов надстройки и SWPlus" (@($releaseJson.files | Where-Object { $_.path -like "*ESKD_Material_Sync_v5.dll" -or $_.path -like "*MProp.swp" }).Count) 2
+    Expect "выпуск: файлы настроек помечены" (@($releaseJson.files | Where-Object { $_.state -and $_.path -like "*MProp_Fam.txt" }).Count) 1
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check: установлена рабочая копия, опубликован выпуск — нужно обновление" $code 10
+    $code, $out = & $run
+    $output += "`n--- установка выпуска ---`n" + $out
+    Expect "установка выпуска" $code 0
+    Expect "установка сверила копию с выпуском" ($out.Contains("совпадает с выпуском 2026.09.19.1200")) $true
+    Expect "ESKD_Install: версия выпуска" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "ReleaseVersion") "2026.09.19.1200"
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check: актуально" $code 0
+    $localBefore = Snapshot $local
+    [System.IO.File]::AppendAllText((Join-Path $localSwPlus "MProp\MProp_Fam.txt"), "Коллега К.К.`r`n", $cp1251)
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check: правка файла настроек пользователя — не повреждение" $code 0
+    [System.IO.File]::WriteAllText($sort, "испорчено", $cp1251)
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check: испорченный файл локальной копии" $code 20
+    Expect "Check: назван испорченный файл" ($out.Contains("MProp_Sort.txt")) $true
+    $srcFile = Get-Item -LiteralPath (Join-Path $source "$swplusRel\MProp\MProp_Sort.txt")
+    $srcFile.IsReadOnly = $false
+    $srcBytes = [System.IO.File]::ReadAllBytes($srcFile.FullName)
+    [System.IO.File]::AppendAllText($srcFile.FullName, "x", $cp1251)
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check: источник не совпадает с выпуском" $code 40
+    Expect "Check: локальная копия не тронута" ((Snapshot $local).Keys.Count) $localBefore.Keys.Count
+    [System.IO.File]::WriteAllBytes($srcFile.FullName, $srcBytes)
+
+    # ТЗ-01 -Mode Uninstall: регистрация, кнопки SWPlus, вкладка, локальная копия и ESKD_Install — долой; фамилия,
+    # базовые кнопки SolidWorks и кнопка пользователя в панели быстрого доступа остаются.
+    $code, $out = & $run @("-Mode", "Uninstall")
+    $output += "`n--- удаление ---`n" + $out
+    Expect "Uninstall: код выхода" $code 0
+    Expect "Uninstall: регистрация COM снята" (Test-Path -LiteralPath "$sandbox\Classes\CLSID\{B64E6875-B101-4D5C-B245-FF8D50772E25}") $false
+    Expect "Uninstall: автозагрузка снята" (Test-Path -LiteralPath "$sandbox\SolidWorks\AddInsStartup\{B64E6875-B101-4D5C-B245-FF8D50772E25}") $false
+    Expect "Uninstall: кнопки SWPlus убраны" (@(11..19 | Where-Object { Read-Value $qat "Btn$_" }).Count) 0
+    Expect "Uninstall: базовая кнопка SolidWorks осталась" (Read-Value $qat "Btn0") "1,21781"
+    Expect "Uninstall: кнопка пользователя осталась" (Read-Value $qat "Btn20") "1,40001"
+    Expect "Uninstall: макросы на локальную копию убраны" (Read-Value "$swKey\User Defined Macros\01 - Macro Folder" "Source Path") $null
+    Expect "Uninstall: локальная копия удалена" (Test-Path -LiteralPath $local) $false
+    Expect "Uninstall: ESKD_Install удалён" (Test-Path -LiteralPath "$sandbox\SolidWorks\ESKD_Install") $false
+    Expect "Uninstall: фамилия осталась" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
+    $code, $out = & $run @("-Mode", "Check")
+    Expect "Check после удаления: не установлено" $code 10
 } catch {
     $problems.Add("исключение: $($_.Exception.Message) @ $($_.InvocationInfo.ScriptLineNumber)")
 } finally {
     if (Test-Path -LiteralPath $sandbox) { Remove-Item -LiteralPath $sandbox -Recurse -Force }
     if (Test-Path -LiteralPath $temp) {
-        Get-ChildItem -LiteralPath $temp -File -Recurse -Force | ForEach-Object { $_.IsReadOnly = $false }
+        Get-ChildItem -LiteralPath $temp -File -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object { try { $_.IsReadOnly = $false } catch {} }
         Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+# Выпуск SWTools: публикация установщика по манифесту сборки, описание выпуска, решение об установке (без запуска установщика)
+$swtTemp = Join-Path ([System.IO.Path]::GetTempPath()) "eskd_swt_$id"
+try {
+    Import-Module (Join-Path $RepoRoot "01_Настройки_SolidWorks\EskdDeploy.psm1") -Force -DisableNameChecking
+    $build = Join-Path $swtTemp "сборка"
+    $share = Join-Path $swtTemp "общая папка"
+    New-Item -ItemType Directory -Path $build, $share -Force | Out-Null
+    $setup = Join-Path $build "SWTools-1.1.109-LOCAL-TEST-Setup.exe"
+    [System.IO.File]::WriteAllBytes($setup, [byte[]](1..64))
+    $sha = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+    $eula = "ab" * 32
+    $manifest = @{ product_version = "1.1.109"; source_commit = "72ba847"; artifact_kind = "local-test-installer";
+                   setup = @{ sha256 = $sha }; installer_behavior = @{ silent_install_eula_sha256 = $eula } }
+    [System.IO.File]::WriteAllText([System.IO.Path]::ChangeExtension($setup, ".manifest.json"), ($manifest | ConvertTo-Json -Depth 3))
+    Expect "без выпуска SWTools — нет описания" (Get-EskdSwToolsRelease -SourceRoot $share) ""
+    $old = Join-Path $share "03_Макросы_и_Плагины\SWTools_Установщик\SWTools-1.1.100-Setup.exe"
+    New-Item -ItemType Directory -Path (Split-Path -Parent $old) -Force | Out-Null
+    [System.IO.File]::WriteAllBytes($old, [byte[]](1..4))
+    $rel = Publish-EskdSwToolsSetup -SetupPath $setup -TargetRoot $share
+    Expect "версия выпуска SWTools" $rel.Version "1.1.109"
+    Expect "SHA-256 установщика SWTools" $rel.Sha256 $sha
+    Expect "SHA-256 EULA SWTools" $rel.EulaSha256 $eula
+    Expect "установщик SWTools в общей папке" (Test-Path -LiteralPath $rel.SetupPath) $true
+    Expect "прежний установщик SWTools удалён" (Test-Path -LiteralPath $old) $false
+    Expect "описание перечитывается" (Get-EskdSwToolsRelease -SourceRoot $share).SetupPath $rel.SetupPath
+    Expect "не установлен — ставить" (Test-EskdSwToolsUpdateNeeded -Release $rel.Version) $true
+    Expect "старее выпуска — ставить" (Test-EskdSwToolsUpdateNeeded -Release $rel.Version -Installed ([version]"1.1.102")) $true
+    Expect "та же версия — не ставить" (Test-EskdSwToolsUpdateNeeded -Release $rel.Version -Installed ([version]"1.1.109")) $false
+    Expect "новее выпуска — не понижать" (Test-EskdSwToolsUpdateNeeded -Release $rel.Version -Installed ([version]"1.2.0")) $false
+    [System.IO.File]::WriteAllBytes($setup, [byte[]](1..65))
+    $refused = $false
+    try { Publish-EskdSwToolsSetup -SetupPath $setup -TargetRoot $share | Out-Null } catch { $refused = $true }
+    Expect "установщик, не совпадающий с манифестом, не публикуется" $refused $true
+    Expect "после отказа прежнее описание цело" (Get-EskdSwToolsRelease -SourceRoot $share).Sha256 $sha
+} catch {
+    $problems.Add("SWTools: исключение: $($_.Exception.Message) @ $($_.InvocationInfo.ScriptLineNumber)")
+} finally {
+    Remove-Item -LiteralPath $swtTemp -Recurse -Force -ErrorAction SilentlyContinue
 }
 Expect "настоящая ветка ESKD_Install не создана тестом" (Test-Path "HKCU:\Software\SolidWorks\ESKD_Install") $liveInstallBefore
 Expect "настоящая фамилия не изменена" (Read-Value "HKCU:\Software\SolidWorks\ESKD_Settings" "Author") $liveAuthorBefore

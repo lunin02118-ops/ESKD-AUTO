@@ -11,11 +11,18 @@
         настройки рядом с собой, DLL надстройки SolidWorks держит открытой. Настройки макросов при повторной
         установке сохраняются; кнопки SWPlus и надстройка — на локальную копию; в Master.ini — основные надписи источника;
       * корпоративный профиль реестра, 9 кнопок SWPlus, вкладка ЕСКД, фамилия и организация, избранные материалы;
-      * шрифты ГОСТ (без прав администратора — в профиль пользователя), модуль Drew.
+      * шрифты ГОСТ (без прав администратора — в профиль пользователя), модуль Drew;
+      * SWTools из общей папки (тихая установка с запросом прав администратора; лицензию активирует конструктор).
     В источник не пишет ничего: папка инструментария может быть только для чтения. Надстройку не собирает — сборку
     кладёт в источник публикация (Publish-EskdToolkit.ps1). Права администратора не нужны.
 
     Повторный запуск — обновление: файлы выпуска заменяются, настройки макросов пользователя остаются.
+    Каждый запуск пишет журнал в %LOCALAPPDATA%\ESKD\Logs (хранятся последние 20).
+.PARAMETER Mode
+    Install — установка или обновление (по умолчанию). Check — сверка выпуска, установленной версии и локальной копии
+    по SHA-256 без изменений; код выхода 0 — актуально, 10 — нужно обновление, 20 — повреждено, 40 — выпуск не
+    опубликован или источник не совпадает с хешами (ТЗ-01 Т-18). Uninstall — снять регистрацию надстройки, кнопки SWPlus
+    и вкладку ЕСКД, удалить локальную копию и сведения об установке; фамилия и настройки ЕСКД, шрифты, Drew остаются.
 .PARAMETER Author
     Фамилия и инициалы для штампа. По умолчанию — из ESKD_Settings, иначе полное имя учётной записи Windows.
 .PARAMETER Firm
@@ -29,15 +36,18 @@
     Локальная копия (по умолчанию %LOCALAPPDATA%\ESKD\Toolkit).
 .PARAMETER RegistryRoot
     Корень HKCU\Software для записи (по умолчанию HKCU:\Software). Автотест передаёт временный раздел
-    HKCU:\Software\ESKD_DeployTest_*: тогда HKLM, шрифты и Drew не трогаются.
+    HKCU:\Software\ESKD_DeployTest_*: тогда HKLM, шрифты, Drew и SWTools не трогаются.
 .EXAMPLE
     .\Setup_Workstation_SolidWorks.ps1
+.EXAMPLE
+    .\Setup_Workstation_SolidWorks.ps1 -Mode Check
 .EXAMPLE
     .\Setup_Workstation_SolidWorks.ps1 -Author "Иванов И.И." -Firm "ТОО «Троя»" -CloseMode Graceful -NonInteractive
 #>
 
 [CmdletBinding()]
 param (
+    [ValidateSet("Install", "Check", "Uninstall")][string]$Mode = "Install",
     [string]$Author = "",
     [string]$Firm = "",
     [string]$SwVersion = "",
@@ -47,6 +57,8 @@ param (
     [switch]$NonInteractive,
     [switch]$SkipFonts,
     [switch]$SkipDrew,
+    [switch]$SkipSwTools,
+    [switch]$SkipProfileReset,
     [switch]$SwInternetBlock,
     [switch]$DrewRussian,
     [switch]$Utf8Output,
@@ -191,6 +203,18 @@ if (-not $SourceRoot) {
     exit 2
 }
 if (-not $LocalRoot) { $LocalRoot = Get-EskdDefaultLocalRoot }
+# Журнал запуска: рядом с локальной копией (%LOCALAPPDATA%\ESKD\Logs), последние 20 — администратору для разбора.
+$logDir = Join-Path (Split-Path -Path $LocalRoot -Parent) "Logs"
+$logPath = Join-Path $logDir ("{0}_{1}.log" -f $Mode.ToLowerInvariant(), (Get-Date -Format "yyyyMMdd_HHmmss"))
+try {
+    New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+    Start-Transcript -LiteralPath $logPath -Force | Out-Null
+    Get-ChildItem -LiteralPath $logDir -Filter "*.log" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 20 |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+} catch {
+    Write-Host "[ВНИМАНИЕ] Журнал не ведётся: $($_.Exception.Message)" -ForegroundColor Yellow
+    $logPath = ""
+}
 $layout = Get-EskdLayout -SourceRoot $SourceRoot -LocalRoot $LocalRoot
 $release = Get-EskdRelease -Path $layout.Release
 $SwVersion = Get-SolidWorksRegistryVersion -Requested $SwVersion
@@ -203,6 +227,67 @@ Write-Host "Выпуск:               $($release.Version) $($release.Date)" -F
 Write-Host "Локальная копия:      $LocalRoot" -ForegroundColor White
 Write-Host "SolidWorks:           $SwVersion" -ForegroundColor White
 if ($sandbox) { Write-Host "Тестовый корень реестра: $U" -ForegroundColor Magenta }
+if ($logPath) { Write-Host "Журнал:               $logPath" -ForegroundColor White }
+$install = "$U\SolidWorks\ESKD_Install"
+
+if ($Mode -eq "Check") {
+    Write-Step "Проверка установки (ничего не меняется)..."
+    $check = Test-EskdInstall -Layout $layout -InstalledVersion ([string](Get-RegValue $install "ReleaseVersion"))
+    foreach ($line in $check.Problems | Select-Object -First 30) { Write-Info $line }
+    if ($check.Problems.Count -gt 30) { Write-Info "… и ещё $($check.Problems.Count - 30)." }
+    if ($check.Code -eq 0) { Write-Ok "Актуально: выпуск $($release.Version), локальная копия совпадает с выпуском." }
+    else { Write-Warn "$($check.State) (код $($check.Code))." }
+    exit $check.Code
+}
+
+if ($Mode -eq "Uninstall") {
+    Write-Step "Удаление инструментария ЕСКД с рабочего места..."
+    if (-not (Close-SolidWorks -Mode $CloseMode)) {
+        Write-Fail "Удаление прервано: SolidWorks не закрыт. Изменения не вносились."
+        exit 3
+    }
+    try {
+        . (Join-Path $layout.SourceAddin "Register-EskdAddin.ps1")
+        Unregister-EskdAddin -UserRoot $U -MachineRoot "HKLM:\Software" -SystemWide:((Test-IsAdmin) -and -not $sandbox)
+        Write-Ok "Регистрация надстройки ЕСКД снята."
+    } catch {
+        Write-Fail "Регистрация надстройки: $($_.Exception.Message)"
+    }
+    $swRootU = "$U\SolidWorks\$SwVersion"
+    $qatU = "$swRootU\User Interface\CommandManager\QAT\GB0"
+    # Кнопки SWPlus Btn11..Btn19 = 1,33639..1,33647 (шаг [5/9]); базовые кнопки SolidWorks и кнопки пользователя остаются.
+    for ($i = 11; $i -le 19; $i++) {
+        if ([string](Get-RegValue $qatU "Btn$i") -eq ("1,{0}" -f (33628 + $i))) { Remove-ItemProperty -LiteralPath $qatU -Name "Btn$i" -ErrorAction SilentlyContinue }
+    }
+    for ($cid = 33639; $cid -le 33647; $cid++) { Remove-ItemProperty -LiteralPath "$swRootU\Menu Customizations" -Name "$cid" -ErrorAction SilentlyContinue }
+    foreach ($macro in @(Get-ChildItem -LiteralPath "$swRootU\User Defined Macros" -ErrorAction SilentlyContinue)) {
+        $macroPath = [string](Get-RegValue $macro.PSPath "Source Path")
+        if ($macroPath -and $macroPath.StartsWith($LocalRoot, [StringComparison]::OrdinalIgnoreCase)) {
+            Remove-Item -LiteralPath $macro.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Ok "Кнопки SWPlus убраны."
+    foreach ($ctx in @("PartContext", "AssyContext", "DrwContext")) {
+        foreach ($tab in @(Get-ChildItem -LiteralPath "$swRootU\User Interface\CommandManager\$ctx" -ErrorAction SilentlyContinue)) {
+            if ([string](Get-RegValue $tab.PSPath "RefName") -eq "ЕСКД" -or
+                [string](Get-RegValue $tab.PSPath "ModuleName") -eq "{B64E6875-B101-4D5C-B245-FF8D50772E25}") {
+                Remove-Item -LiteralPath $tab.PSPath -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    Write-Ok "Вкладка ЕСКД убрана."
+    # Локальная копия удаляется, только если это она: в папке лежит надстройка или SWPlus (защита от ошибочного -LocalRoot).
+    if ((Test-Path -LiteralPath $layout.LocalAddinDll) -or (Test-Path -LiteralPath $layout.LocalSwPlus)) {
+        Remove-Item -LiteralPath $LocalRoot -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $LocalRoot) { Write-Warn "Локальная копия удалена не полностью (файлы заняты): $LocalRoot" }
+        else { Write-Ok "Локальная копия удалена: $LocalRoot" }
+    } elseif (Test-Path -LiteralPath $LocalRoot) {
+        Write-Warn "Папка $LocalRoot не похожа на локальную копию ЕСКД — не удалена."
+    }
+    Remove-Item -LiteralPath $install -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Ok "Сведения об установке удалены. Фамилия и настройки ЕСКД, шрифты, Drew оставлены."
+    exit 0
+}
 
 # Фамилия и организация
 $settingsKey = "$U\SolidWorks\ESKD_Settings"
@@ -248,6 +333,14 @@ Write-Step "[2/9] Копирование макросов SWPlus и надстр
 try {
     $copy = Copy-EskdLocalInstance -Layout $layout
     Write-Ok ("Локальная копия: обновлено файлов {0}, без изменений {1}, настройки пользователя сохранены {2}." -f $copy.Copied.Count, $copy.Same, $copy.Kept.Count)
+    # Сверка копии с хешами выпуска (ТЗ-01 Т-28): файл, испорченный при копировании по сети, не должен остаться незамеченным.
+    $releaseCheck = Test-EskdInstall -Layout $layout -InstalledVersion $release.Version
+    if ($releaseCheck.Code -eq 0) { Write-Ok "Локальная копия совпадает с выпуском $($release.Version) по SHA-256." }
+    elseif ($releaseCheck.Code -eq 40 -and $release.Version -eq "рабочая копия") { Write-Info "Выпуск не опубликован (рабочая копия) — сверка по хешам пропущена." }
+    else {
+        $failures++
+        Write-Fail "$($releaseCheck.State): $(@($releaseCheck.Problems | Select-Object -First 5) -join '; ')"
+    }
 } catch {
     Write-Fail $_.Exception.Message
     exit 2
@@ -270,18 +363,23 @@ $backupRoot = Join-Path (Split-Path -Path $LocalRoot -Parent) "Backups"
 $backupFailed = Backup-SolidWorksRegistryKeys -BackupRoot $backupRoot -RegistryKeys @("$regKeyUser\SolidWorks\$SwVersion", "$regKeyUser\SolidWorks\AddInsStartup")
 # Сброс к стандартным перед профилем: результат установки не зависит от прежних настроек ПК (решение владельца 15.09.2026).
 # Без удачной резервной копии раздела версии сброс не выполняется — настройки удаляются только с возможностью вернуть.
-try {
-    if ($backupFailed -contains "$regKeyUser\SolidWorks\$SwVersion") { throw "нет резервной копии $regKeyUser\SolidWorks\$SwVersion — сброс отменён" }
-    $reset = Reset-EskdSolidWorksProfile -UserRoot $U -SwVersion $SwVersion
-    if ($reset.Existed) {
-        Write-Ok ("Настройки $SwVersion сброшены к стандартным; сохранены: " + $(if ($reset.Preserved) { $reset.Preserved -join ", " } else { "нечего" }) +
-                  ". Прежние — в $backupRoot")
-    } else {
-        Write-Info "Настроек $SwVersion у пользователя ещё нет — сбрасывать нечего."
+# При указании -SkipProfileReset сброс пропускается, чтобы сохранить индивидуальные настройки конструктора.
+if (-not $SkipProfileReset) {
+    try {
+        if ($backupFailed -contains "$regKeyUser\SolidWorks\$SwVersion") { throw "нет резервной копии $regKeyUser\SolidWorks\$SwVersion — сброс отменён" }
+        $reset = Reset-EskdSolidWorksProfile -UserRoot $U -SwVersion $SwVersion
+        if ($reset.Existed) {
+            Write-Ok ("Настройки $SwVersion сброшены к стандартным; сохранены: " + $(if ($reset.Preserved) { $reset.Preserved -join ", " } else { "нечего" }) +
+                      ". Прежние — в $backupRoot")
+        } else {
+            Write-Info "Настроек $SwVersion у пользователя ещё нет — сбрасывать нечего."
+        }
+    } catch {
+        $failures++
+        Write-Fail "Сброс настроек SolidWorks: $($_.Exception.Message)"
     }
-} catch {
-    $failures++
-    Write-Fail "Сброс настроек SolidWorks: $($_.Exception.Message)"
+} else {
+    Write-Info "Сброс профиля SolidWorks пропущен (-SkipProfileReset)."
 }
 if (Test-Path -LiteralPath $layout.RegProfile) {
     $regText = [System.IO.File]::ReadAllText($layout.RegProfile, [System.Text.Encoding]::Unicode)
@@ -311,26 +409,85 @@ foreach ($folderKey in @("$swRoot\ExtReferences", "$swRoot\ExtFolder")) {
 }
 Write-Ok "Шаблоны свойств и библиотека материалов: $SourceRoot"
 
-# Toolbox — только если найден рядом с инструментарием или в стандартной папке; иначе прежнее значение не трогается
-$toolbox = @(
-    (Join-Path (Split-Path -Path $SourceRoot -Parent) "_Библиотека проектирования\_Toolbox"),
-    "C:\SOLIDWORKS Data", "C:\SOLIDWORKS Data 2025"
-) | Where-Object { (Test-Path (Join-Path $_ "lang\russian\swbrowser.sldedb")) -or (Test-Path (Join-Path $_ "lang\english\swbrowser.sldedb")) } |
+# Toolbox — только если найден рядом с инструментарием или в стандартной папке и у пользователя пути ещё нет
+# (Р-4: Toolbox не используется); иначе прежнее значение не трогается
+# Выпуск лежит либо рядом с папкой «_Библиотека проектирования» (локальная схема), либо внутри неё
+# (сетевая схема: ...\_Библиотека проектирования\_инструменты_конструктора) — проверяем оба варианта.
+$sourceParent = Split-Path -Path $SourceRoot -Parent
+$toolboxCandidates = @(
+    (Join-Path $sourceParent "_Toolbox"),
+    (Join-Path $sourceParent "_Библиотека проектирования\_Toolbox")
+)
+if (-not $sandbox) { $toolboxCandidates += @("C:\SOLIDWORKS Data", "C:\SOLIDWORKS Data 2025") }
+$currentToolbox = [string](Get-RegValue "$swRoot\General" "Toolbox Data Location")
+$toolbox = $toolboxCandidates | Where-Object { (Test-Path (Join-Path $_ "lang\russian\swbrowser.sldedb")) -or (Test-Path (Join-Path $_ "lang\english\swbrowser.sldedb")) } |
     Select-Object -First 1
-if ($toolbox) {
+if (-not $currentToolbox -and $toolbox) {
     Set-Reg "$swRoot\General" "Toolbox Data Location" $toolbox
     if ($machine) { Set-ItemProperty -Path "HKLM:\SOFTWARE\SolidWorks\$SwVersion\General" -Name "Toolbox Data Location" -Value $toolbox -ErrorAction SilentlyContinue }
     Write-Ok "Toolbox: $toolbox"
+} elseif ($currentToolbox) {
+    Write-Info "Toolbox пользователя сохранён: $currentToolbox"
 } else {
     Write-Info "Toolbox рядом с папкой инструментария не найден — путь Toolbox не меняется."
 }
-Set-Reg "$swRoot\Performance" "Use Performance Pipeline 2020" 0 "DWord"
-
-# RealView для видеокарт этого ПК
-try {
-    foreach ($gpu in @(Get-CimInstance Win32_VideoController -ErrorAction Stop | ForEach-Object { $_.Name } | Where-Object { $_ })) {
-        Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\$gpu" "Workarounds" 0x30408 "DWord"
+# Библиотека проектирования — крепёж и фурнитура с NAS (замечание владельца 18.09.2026). В «Расположении файлов»
+# это пункт «Библиотека проектирования»: API swFileLocationsDesignLibrary (38), в реестре — «Content Manager Folders».
+# Ищется так же, как Toolbox: рядом с инструментарием или внутри «_Библиотека проектирования».
+$designLibrary = @(
+    (Join-Path $sourceParent "_ крепеж и фурнитура"),
+    (Join-Path $sourceParent "_Библиотека проектирования\_ крепеж и фурнитура")
+) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if ($designLibrary) {
+    foreach ($folderKey in @("$swRoot\ExtReferences", "$swRoot\ExtFolder")) {
+        Set-Reg $folderKey "Content Manager Folders" $designLibrary
     }
+    Write-Ok "Библиотека проектирования: $designLibrary"
+} else {
+    Write-Info "Папка «_ крепеж и фурнитура» рядом с инструментарием не найдена — библиотека проектирования не меняется."
+}
+# Папки поиска ссылочных документов (ТЗ-02 Т-57): от места запуска — стандартные изделия (02_БАЗА), крепёж и фурнитура,
+# профили сварных деталей инструментария; поиск по папкам включён. Режим совместной работы (Т-56) — в профиле, раздел Collab.
+$referenceFolders = @(
+    (Join-Path $sourceParent "_стандартные изделия"),
+    (Join-Path $sourceParent "_Библиотека проектирования\_стандартные изделия"),
+    $designLibrary,
+    (Join-Path $SourceRoot "04_Библиотеки_Материалов_и_Профилей\Профили сварных деталей")
+) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
+if ($referenceFolders) {
+    foreach ($folderKey in @("$swRoot\ExtReferences", "$swRoot\ExtFolder")) {
+        Set-Reg $folderKey "Document Folders" (@($referenceFolders) -join ";")
+        Set-Reg $folderKey "Use Search Rules" 1 "DWord"
+    }
+    Write-Ok "Папки поиска ссылок: $(@($referenceFolders) -join '; ')"
+}
+Set-Reg "$swRoot\Performance" "Use Performance Pipeline 2020" 1 "DWord"
+Set-Reg "$swRoot\Performance" "Use GPU Silhouette Edges" 1 "DWord"
+Set-Reg "$swRoot\General" "Software OGL Alarm" 0 "DWord"
+Set-Reg "$swRoot\General" "Use Software OGL" 0 "DWord"
+Write-Ok "Производительность: аппаратный конвейер и кромки силуэта включены, программный OpenGL отключён."
+
+# Аппаратное ускорение, конвейер и RealView для видеокарт этого ПК
+try {
+    $nvWorkarounds = 0x32408 # 205832: RealView + Performance Pipeline
+    foreach ($gpu in @(Get-CimInstance Win32_VideoController -ErrorAction Stop | ForEach-Object { $_.Name } | Where-Object { $_ })) {
+        Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\$gpu" "Workarounds" $nvWorkarounds "DWord"
+        Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\$gpu" "Workarounds" $nvWorkarounds "DWord"
+    }
+    # Универсальные ключи для семейств NVIDIA GeForce
+    Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\GeForce" "Workarounds" $nvWorkarounds "DWord"
+    Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\NVIDIA GeForce" "Workarounds" $nvWorkarounds "DWord"
+    Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\GeForce" "Workarounds" $nvWorkarounds "DWord"
+    Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\NVIDIA GeForce" "Workarounds" $nvWorkarounds "DWord"
+    # Текущий рендерер, если уже инициализирован SolidWorks
+    $curKey = "$U\SolidWorks\AllowList\Current"
+    if (Test-Path -LiteralPath $curKey) {
+        $curVendor = [string](Get-RegValue $curKey "Vendor")
+        if ($curVendor -like "*NVIDIA*") {
+            Set-Reg $curKey "Workarounds" $nvWorkarounds "DWord"
+        }
+    }
+    Write-Ok "AllowList: RealView и аппаратный конвейер графики активированы для GPU."
 } catch { Write-Info "Видеокарта не определена — RealView не настраивается." }
 
 # 4. Очистка устаревших надстроек и вкладок
@@ -479,8 +636,8 @@ for ($i = 0; $i -lt $favList.Count; $i++) {
 Set-Reg "$swRoot\Material" "__NumOfFavs" $favList.Count "DWord"
 Write-Ok "Фамилия, организация и избранные материалы записаны."
 
-# 7. Шрифты и Drew
-Write-Step "[7/9] Шрифты ГОСТ и модуль Drew..."
+# 7. Шрифты, Drew и SWTools
+Write-Step "[7/9] Шрифты ГОСТ, модуль Drew и SWTools..."
 if ($sandbox -or $SkipFonts) {
     Write-Info "Шрифты пропущены."
 } elseif (Test-Path -LiteralPath $layout.Fonts) {
@@ -663,6 +820,73 @@ if ($sandbox -or $SkipDrew) {
     }
 }
 
+# SWTools: выгрузка спецификаций, в том числе для кнопки «Ведомость ЛЗК». Установщик из общей папки (Publish-EskdToolkit
+# -SwToolsSetup), тихая установка с запросом прав администратора; лицензию конструктор активирует сам в окне SWTools.
+if ($sandbox -or $SkipSwTools) {
+    Write-Info "SWTools пропущен."
+} else {
+    $swToolsRelease = $null
+    try { $swToolsRelease = Get-EskdSwToolsRelease -SourceRoot $SourceRoot } catch { $failures++; Write-Fail "Описание выпуска SWTools: $($_.Exception.Message)" }
+    $swToolsInstalled = Get-EskdSwToolsInstalledVersion
+    if (-not $swToolsRelease) {
+        if ($swToolsInstalled) { Write-Info "SWTools $swToolsInstalled установлен; в общей папке выпуска SWTools нет." }
+        else { Write-Warn "SWTools не установлен, а в общей папке нет его установщика ($($layout.SwTools)). Кнопка «Ведомость ЛЗК» не будет работать." }
+    } elseif (-not (Test-EskdSwToolsUpdateNeeded -Release $swToolsRelease.Version -Installed $swToolsInstalled)) {
+        Write-Ok "SWTools $swToolsInstalled уже установлен (выпуск $($swToolsRelease.Version))."
+    } elseif (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
+        Write-Warn "Установка SWTools $($swToolsRelease.Version) отложена: SolidWorks открыт. Закройте его и запустите настройку ещё раз."
+    } elseif (-not (Test-Path -LiteralPath $swToolsRelease.SetupPath)) {
+        $failures++
+        Write-Fail "Нет установщика SWTools: $($swToolsRelease.SetupPath)"
+    } else {
+        # Копия во временной папке: установщик не запускается с сетевого ресурса и сверяется с описанием выпуска.
+        $swToolsTemp = Join-Path $env:TEMP ("ESKD_SWTools_" + [guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $swToolsTemp -Force | Out-Null
+        $swToolsSetup = Join-Path $swToolsTemp (Split-Path -Leaf $swToolsRelease.SetupPath)
+        try {
+            Copy-Item -LiteralPath $swToolsRelease.SetupPath -Destination $swToolsSetup -Force -ErrorAction Stop
+            if ((Get-FileHash -LiteralPath $swToolsSetup -Algorithm SHA256).Hash.ToLowerInvariant() -ne $swToolsRelease.Sha256) {
+                $failures++
+                Write-Fail "Установщик SWTools не совпадает с выпуском (SHA-256) — не запускается: $($swToolsRelease.SetupPath)"
+            } else {
+                $from = if ($swToolsInstalled) { "обновление с $swToolsInstalled" } else { "установка" }
+                Write-Info "SWTools $($swToolsRelease.Version): $from. Подтвердите запрос прав администратора."
+                $swToolsProc = $null
+                try {
+                    $swToolsProc = Start-Process -FilePath $swToolsSetup -Verb RunAs -PassThru -ErrorAction Stop `
+                        -ArgumentList "/S", "/SWTOOLS_EULA_SHA256=$($swToolsRelease.EulaSha256)"
+                } catch {
+                    $failures++
+                    Write-Fail "Установщик SWTools не запущен (запрос прав отклонён?): $($_.Exception.Message)"
+                }
+                if ($swToolsProc) {
+                    if (-not $swToolsProc.WaitForExit(600000)) {
+                        $failures++
+                        Write-Fail "Установка SWTools не завершилась за 10 минут."
+                    } else {
+                        $after = Get-EskdSwToolsInstalledVersion
+                        if ($swToolsProc.ExitCode -eq 0 -and $after -and $after -ge $swToolsRelease.Version) {
+                            Write-Ok "SWTools $after установлен."
+                        } else {
+                            $failures++
+                            Write-Fail "Установщик SWTools завершился с кодом $($swToolsProc.ExitCode); установлена версия: $(if ($after) { $after } else { 'нет' })."
+                        }
+                    }
+                }
+            }
+        } catch {
+            $failures++
+            Write-Fail "SWTools: $($_.Exception.Message)"
+        } finally {
+            Remove-Item -LiteralPath $swToolsTemp -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (Get-EskdSwToolsInstalledVersion) {
+        if (Test-Path -LiteralPath (Get-EskdSwToolsLicensePath)) { Write-Ok "Лицензия SWTools: файл лицензии есть." }
+        else { Write-Warn "Лицензия SWTools не активирована: откройте SWTools из SolidWorks и активируйте лицензию. До этого кнопка «Ведомость ЛЗК» не работает." }
+    }
+}
+
 # 8. Отучение SolidWorks от сети (опция, галочка в окне)
 Write-Step "[8/9] Отучение SolidWorks от сети..."
 if ($SwInternetBlock) {
@@ -709,7 +933,6 @@ if ($DrewRussian) {
 }
 
 # Сведения об установке
-$install = "$U\SolidWorks\ESKD_Install"
 Set-Reg $install "SourceRoot" $SourceRoot
 Set-Reg $install "LocalRoot" $LocalRoot
 Set-Reg $install "ReleaseVersion" $release.Version
@@ -718,6 +941,7 @@ Set-Reg $install "SwVersion" $SwVersion
 Set-Reg $install "Author" $Author
 Set-Reg $install "InstalledAt" (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Set-Reg $install "LastResult" $(if ($failures) { "FAILED" } else { "OK" })
+Set-Reg $install "LastLog" $logPath
 
 Write-Host ""
 if ($failures) {

@@ -416,6 +416,16 @@ namespace ESKD.Tests
             Assert.AreEqual("Стойка\n<STACK size=1>Труба 80х80х4,0 ГОСТ 8639-82<OVER>В 10 ГОСТ 13663-86</STACK>\nL = 300 мм", record, "черт. 40");
         }
 
+        public static void Test_bch_record_splits_into_title_and_lines()
+        {
+            // З-9: «Наименование» — только название, строки записи — «Запись_БЧ»; вместе они дают запись целиком.
+            string record = "Стойка\r\n<STACK size=1>Труба<OVER>В 10</STACK>\r\nL = 300 мм";
+            Assert.AreEqual("<STACK size=1>Труба<OVER>В 10</STACK>\nL = 300 мм", BchRecord.Lines(record), "строки после названия");
+            Assert.AreEqual("", BchRecord.Lines("Стойка"), "одно название");
+            Assert.AreEqual(record.Replace("\r\n", "\n"), BchRecord.Join("Стойка", BchRecord.Lines(record)), "название + строки");
+            Assert.AreEqual("Стойка", BchRecord.Join("Стойка", ""), "без строк");
+        }
+
         public static void Test_own_bch_record_is_recognized()
         {
             Assert.IsTrue(BchRecord.IsOwnRecord("Стойка\n<STACK size=1>Труба<OVER>В 10</STACK>\nL = 300 мм"), "прокат");
@@ -626,7 +636,7 @@ namespace ESKD.Tests
             PropertyDictionary d = PropertyDictionary.Default();
             foreach (string name in PropertyDictionary.AddinNames)
                 Assert.IsFalse(d.IsDictionaryName(name), name + ": вне словаря SWPlus");
-            Assert.AreEqual("Материал_Строка|Формат_до_БЧ|Примечание_до_БЧ", string.Join("|", PropertyDictionary.AddinNames), "имена надстройки (А-5)");
+            Assert.AreEqual("Материал_Строка|Формат_до_БЧ|Примечание_до_БЧ|Запись_БЧ", string.Join("|", PropertyDictionary.AddinNames), "имена надстройки (А-5)");
             Assert.AreEqual("Масса|Материал", string.Join("|", PropertyDictionary.TemplateNames), "живые выражения шаблона");
         }
 

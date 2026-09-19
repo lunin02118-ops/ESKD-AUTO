@@ -1,0 +1,1623 @@
+Attribute VB_Name = "SaveAsPDF"
+Attribute VB_Base = "0{62C5A634-9B3F-41C0-8347-3D9A5F6EE348}{94A9AEEA-9C36-4434-A895-34A6CFD6044D}"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Attribute VB_TemplateDerived = False
+Attribute VB_Customizable = False
+Option Explicit
+'Dim swApp As Object
+'Dim swModel As Object
+'Dim swDraw As Object
+'Dim swDraw1 As Object
+'Dim swModExt As Object
+'Dim swSheet As Object
+'Dim swView As Object
+'Dim swSelMgr As Object
+'Dim swNote As Object
+'Dim swAnn As Object
+'Dim swTextFormat As Object
+'Dim swModelDocExt As Object
+'Dim swExpPDFData As Object
+Dim swApp As SldWorks.SldWorks
+Dim swModel As SldWorks.ModelDoc2
+Dim swDraw As SldWorks.DrawingDoc
+Dim swDraw1 As SldWorks.DrawingDoc
+Dim swModExt As SldWorks.ModelDocExtension
+Dim swSheet As SldWorks.Sheet
+Dim swView As SldWorks.View
+Dim swSelMgr As SldWorks.SelectionMgr
+Dim swNote As SldWorks.Note
+Dim swAnn As SldWorks.Annotation
+Dim swTextFormat As SldWorks.TextFormat
+Dim swModelDocExt As SldWorks.ModelDocExtension
+Dim swExpPDFData As SldWorks.ExportPdfData
+Dim fs As Object
+Dim fs1 As Object
+Dim fs2 As Object
+' ----------
+Dim sPathName As String
+Dim ok As Boolean
+Dim strSheetFormatName As String
+Dim vSheetNames As Variant
+Dim vSheetNamesPrint As Variant
+Dim strSheetNames() As String
+Dim sDrawName As String
+Dim sDirName As String
+Dim sDirCopyName As String
+Dim sModelName As String
+Dim sConfigName As String
+Dim varTemp As Variant
+Dim varTemp1 As Variant
+Dim strTemp As String
+Dim strTemp1 As String
+Dim sDelName As String
+Dim sNumber As String
+Dim sDrawTrueName
+Dim vSheetProps As Variant ' Переменная - свойства страницы
+Dim x1 As Double
+Dim y1 As Double
+Dim z1 As Double
+Dim x2 As Double
+Dim y2 As Double
+Dim z2 As Double
+Dim Source As String
+Dim Source1 As String
+Dim Source2 As String
+Dim Source3 As String
+Dim Source4 As String
+Dim Source5 As String
+Dim Source6 As String
+Dim lErrors As Long
+Dim lWarnings As Long
+Dim MyDate As Variant
+Dim MyDay As Variant
+Dim MyMonth As Variant
+Dim MyYear As Variant
+Dim strData As String
+Dim lRetval As Long
+Dim ConfNumb As Single ' Общее число конфигураций
+Dim sFormatArray() As String
+Dim intDRWSheet As Integer
+Dim m As Integer ' Метка
+Dim m1 As Integer ' Метка
+Dim iResult As Integer
+Dim n As Integer ' Носитель
+Dim k As Integer ' Носитель
+Dim k1 As Integer ' Носитель
+Dim k2 As Integer ' Носитель
+Dim i As Integer ' Счетчик
+Dim i1 As Integer ' Счетчик
+Dim j As Integer ' Счетчик
+Dim MChk As Integer  ' Метка проверки формата: 0 - можно проверять формат; 1 - нельзя проверять формат
+Dim sIni1 As Integer
+Dim sIni2 As Integer
+Dim sIni3 As Integer
+Dim sIni4 As Integer
+Dim sIni5 As Integer
+Dim sIni6 As Integer
+Dim sIni7 As String
+Dim sIni8 As String
+Dim sIni9 As String
+Dim sIni10 As Integer
+Dim sIni11 As Integer
+Dim lOrient As Long
+Dim MExit As Integer ' Метка выхода
+Dim MRev As Integer ' Метка Изм.
+Dim strRev As String ' Изм.
+Dim ModelLess As Integer ' Метка отсутствия модели
+Dim sSheetsNames1 As String ' Имена листов со старыми версиями
+Dim sSheetsNames2 As String ' Имена листов с нечитаемыми форматами
+Dim sSheetsNames3 As String ' Имена листов с проблемами оформления
+Dim strMsg As String ' Строка сообщения пользователю
+Dim MyDateTime As Date
+Dim TemplateName As String
+Dim FormatArr(27, 2) As String
+' *** MyProperties
+    Dim prpNumber As String
+    Dim prpDocCode As String
+    Dim prpDocDescription As String
+    Dim prpDescription As String
+    Dim prpDescriptionMulti As String
+    Dim prpCode As String
+    Dim prpFormat As String
+    Dim prpRemark As String
+    Dim prpLit As String
+    Dim prpLitTable As String
+    Dim prpFirm As String
+    Dim prpSection As String
+    Dim prpGroup As String
+    '
+    Dim prpDesigner As String
+    Dim prpTester As String
+    Dim prpTechcontrol As String
+    Dim prpWorkType As String
+    Dim prpPerson As String
+    Dim prpNormcontrol As String
+    Dim prpApprove As String
+    '
+    Dim prpMass As String
+    Dim prpMassTable As String
+    Dim prpMaterial As String
+    Dim prpMaterialTable As String
+    '
+    Dim prpFirstApply As String
+    Dim prpInformNumber As String
+    '
+    Dim prpFirstApplySP As String
+    Dim prpInformNumberSP As String
+    Dim prpLitSP As String
+    '
+    Dim prpInformNumberVP As String
+    Dim prpDescriptionVP As String
+    Dim prpProductCodeVP As String
+    Dim prpNumberDocVP As String
+    Dim prpVendorVP As String
+    Dim prpRemarkVP As String
+    '
+    Dim prpProject As String
+    Dim prpDraftNumber As String
+    Dim prpDraftDescription As String
+    Dim prpDraftFirstApply As String
+    Dim prpDraftFirstApplySP As String
+    '
+    Dim prpBlank As String
+    '
+    Dim prpBor As String
+    '
+    Dim prpQuantity As String
+    '
+    Dim prpTestVersion As Integer
+    Dim prpTestFormat As Integer
+    Dim prpTestName As Integer
+    Dim prpTestStandard As Integer
+    '
+    Dim prpFileName As Integer
+    Dim prpNameSep As String
+    '
+    Dim prpFontSize As String
+    '
+    Dim prpAddPRP1 As String
+    Dim prpAddPRP2 As String
+    '
+    Dim prpLeftTopCorner As Integer
+    Dim prpTopAll As Integer
+' *** MyStandard
+    Dim stdFontName As String
+    Dim stdFontSize As Double
+    Dim stdFontItalic As Integer
+    Dim stdFontBold As Integer
+    Dim stdDay As String
+    Dim stdMonth As String
+    Dim stdYear As String
+    Dim stdHour As String
+    Dim stdMinute As String
+    Dim stdSecond As String
+
+Private Sub UserForm_Activate()
+HWNDActiveWindow
+If prpLeftTopCorner = 1 Then ' Окно макроса в левом верхнем углу
+    SaveAsPDF.Left = 10
+    SaveAsPDF.Top = 10
+End If
+If prpTopAll = 1 Then ' Окно макроса поверх всех
+    KeepFormOnTop
+End If
+Set swApp = Application.SldWorks
+'Set swApp = CreateObject("SldWorks.Application")
+Set swModel = swApp.ActiveDoc
+Set swModelDocExt = swModel.Extension
+Set fs = CreateObject("Scripting.FileSystemObject")
+
+' Проверка открытого документа
+If swModel Is Nothing Then
+    swApp.SendMsgToUser ("Откройте чертеж! Файл не создан! Свойства не внесены!")
+    Finish
+    Exit Sub
+End If
+If swModel.GetType <> swDocDRAWING Then
+    swApp.SendMsgToUser ("Откройте чертеж! Файл не создан! Свойства не внесены!")
+    Finish
+    Exit Sub
+End If
+Set swDraw = swModel
+
+' Проверка пути сохранения
+sPathName = swDraw.GetPathName
+If sPathName = "" Then
+    swApp.SendMsgToUser ("Сохраните чертеж! Файл не создан! Свойства не внесены!")
+    Finish
+    Exit Sub
+End If
+
+' Имя чертежа и имена листов
+sDrawName = swDraw.GetTitle
+vSheetNames = swDraw.GetSheetNames
+vSheetNamesPrint = swDraw.GetSheetNames
+' Отрезаем лишнее от имени файла чертежа
+varTemp = InStrRev(sDrawName, "-")
+If varTemp > 0 Then
+    sDrawName = Left$(sDrawName, varTemp - 2)
+Else
+    swApp.SendMsgToUser ("Неверное имя чертежа! PDF не создан! Свойства не внесены!")
+    Finish
+    Exit Sub
+End If
+sDirName = Left$(sPathName, Len(sPathName) - Len(sDrawName) - 7)
+
+Debug.Print "sPathName=", sPathName
+Debug.Print "sDrawName=", sDrawName
+Debug.Print "sDirName=", sDirName
+
+' Пути
+Source = swApp.GetCurrentMacroPathName ' Get macro path+filename
+Source1 = Left$(Source, Len(Source) - 23) & "SpecEditor\MyProperties_1.ini" ' Путь к списку свойств
+Source2 = Left$(Source, Len(Source) - 3) & "ini" ' Путь к ini-файлу
+Source3 = Left$(Source, Len(Source) - 23) & "SpecEditor\MyProperties_2.ini" ' Путь к списку свойств
+Source4 = Left$(Source, Len(Source) - 23) & "SpecEditor\MyStandard.sldstd" ' Путь к файлу стандарта
+Source5 = Left$(Source, Len(Source) - 13) & "PDFCreator.swp" ' Путь к макросу PDFCreator.swp
+Source6 = Left$(Source, Len(Source) - 13) & "PDFCreator.dat" ' Путь к файлу PDFCreator.dat
+
+' Чтение ini файла
+Open Source2 For Input As #1
+    Line Input #1, strTemp
+    sIni1 = CInt(Left$(strTemp, 1)) ' 0 - SaveAs PDF; 1 - PDFCreator
+    If sIni1 = 1 Then
+        If MPrint = 0 Then
+            lRetval = swApp.SendMsgToUser2("PDFCreator не установлен. Будет использован встроенный PDF. Продолжить?", swMbWarning, swMbYesNo)
+            If lRetval = swMbHitNo Then
+                swApp.SendMsgToUser ("PDF не создан! Свойства не внесены!")
+                Close #1
+                Finish
+                Exit Sub
+            End If
+            sIni1 = 0
+        End If
+    End If
+    Line Input #1, strTemp
+    sIni2 = CInt(Left$(strTemp, 1)) ' 0 - Independent mode; 1 - Part of the macros group
+    Line Input #1, strTemp
+    sIni3 = CInt(Left$(strTemp, 1)) ' 0 - PDF; 1 - PNG, 2 = JPEG, 3 = BMP, 4 = PCX, 5 = TIFF
+    Line Input #1, strTemp
+    sIni4 = CInt(Left$(strTemp, 1)) ' 0 - Рядом; 1 - Папка PDF или TIFF
+    Line Input #1, strTemp
+    sIni5 = CInt(Left$(strTemp, 1)) ' 0 - Не учитывать Изм.; 1 - Учитывать Изм.
+    Line Input #1, strTemp
+    sIni6 = CInt(Left$(strTemp, 1)) ' 0 - Рядом; 1 - Папка Архив (мода fd)
+    Line Input #1, strTemp
+    varTemp = InStr(strTemp, "'")
+    sIni7 = Left$(strTemp, varTemp - 2) ' Имя папки
+    Line Input #1, strTemp
+    varTemp = InStr(strTemp, "'")
+    sIni8 = Left$(strTemp, varTemp - 2) ' Часть суффикса
+    Line Input #1, strTemp
+    varTemp = InStr(strTemp, "'")
+    sIni9 = Left$(strTemp, varTemp - 2) ' Имя папки Архив (мода fd)
+    Line Input #1, strTemp
+    sIni10 = CInt(Left$(strTemp, 1)) ' 0 - ч/б; 1 - цвет.
+    Line Input #1, strTemp
+    varTemp = InStr(strTemp, "'")
+    sIni11 = CInt(Left$(strTemp, varTemp - 2)) ' DPI
+Close #1
+
+' Определение имени файла
+sPathName = Left(sPathName, Len(sPathName) - 7)
+If sIni3 = 0 Then
+    sPathName = sPathName & ".pdf"
+Else
+    sPathName = sPathName & ".tif"
+End If
+' Добавляем путь к папке
+If sIni4 = 1 Then
+    varTemp = InStrRev(sPathName, "\")
+    If sIni3 = 0 Then ' PDF
+        sPathName = Left$(sPathName, varTemp - 1) & "\PDF" & Right$(sPathName, Len(sPathName) - varTemp + 1)
+        sDirName = sDirName & "PDF\"
+    Else ' TIF
+        sPathName = Left$(sPathName, varTemp - 1) & "\TIF" & Right$(sPathName, Len(sPathName) - varTemp + 1)
+        sDirName = sDirName & "TIF\"
+    End If
+    If fs.FolderExists(sDirName) = False Then
+        MkDir sDirName
+    End If
+End If
+
+m = 0 ' Метка проблем с моделью
+If sIni2 = 1 Then
+    ' Получение первого листа
+    ok = swDraw.ActivateSheet(vSheetNames(0))
+    Set swSheet = swDraw.GetCurrentSheet
+    
+    ' Проверка наличия модели
+    Set swView = swDraw.GetFirstView
+    m1 = 0
+    If swSheet.CustomPropertyView = "По умолчанию" Or swSheet.CustomPropertyView = "Default" Then
+        Set swView = swView.GetNextView ' Получаем первый вид
+    Else
+        Do Until swView Is Nothing
+            If swView.GetName2 = swSheet.CustomPropertyView Then
+                m1 = 1
+                Exit Do
+            End If
+            Set swView = swView.GetNextView
+        Loop
+        If m1 = 0 Then
+            Set swView = swDraw.GetFirstView
+            Set swView = swView.GetNextView
+            swApp.SendMsgToUser ("Не удалось определить вид из свойств листа. Используется первый вид.")
+        End If
+    End If
+    If swView Is Nothing Then
+        lRetval = swApp.SendMsgToUser2("Отсутствует модель! Продолжить?", swMbWarning, swMbYesNo)
+        If lRetval = swMbHitNo Then
+            swApp.SendMsgToUser ("PDF не создан! Свойства не внесены!")
+            Finish
+            Exit Sub
+        Else
+            m = 1
+        End If
+    Else
+        If swView.ReferencedDocument Is Nothing Then
+            lRetval = swApp.SendMsgToUser2("Отсутствует модель! Продолжить?", swMbWarning, swMbYesNo)
+            If lRetval = swMbHitNo Then
+                swApp.SendMsgToUser ("PDF не создан! Свойства не внесены!")
+                Finish
+                Exit Sub
+            Else
+                m = 1
+            End If
+        End If
+    End If
+End If
+sDelName = ""
+MRev = 0 ' Метка Изм.
+If sIni2 = 1 And m = 0 Then ' Часть группы макросов и проблем с моделью нет
+    MyProperties
+    If prpTestStandard = 1 Then
+        MyStandard
+    End If
+    
+    ' Получаем имя модели и конфигурации
+    Set swModel = swView.ReferencedDocument
+    sConfigName = swView.ReferencedConfiguration
+    ConfNumb = swModel.GetConfigurationCount ' Общее число конфигураций
+    sModelName = swModel.GetTitle
+    
+    ' Проверка на наличие расширения в имени файла модели
+    If Len(sModelName) > 7 Then
+        strTemp = Mid$(sModelName, Len(sModelName) - 6, 4)
+        If strTemp = ".SLD" Or strTemp = ".sld" Then
+            sModelName = Left$(sModelName, Len(sModelName) - 7)
+        End If
+    End If
+    'Debug.Print "sModelName=", sModelName
+    'Debug.Print "sConfigName=", sConfigName
+    'Debug.Print "Number=", swModel.CustomInfo2("", "Number")
+    'Debug.Print "Обозначение=", swModel.CustomInfo2(sConfigName, prpNumber)
+    'Debug.Print "Сборка1_ФБ=", swModel.CustomInfo2(sConfigName, prpDocCode)
+
+    ' Проверка правильности имени чертежа
+    ' Определяем Number
+    sNumber = swModel.CustomInfo2("", "Number")
+    sNumber = Replace(sNumber, "$PRP:" & Chr$(34) & "SW-File Name" & Chr$(34), sModelName)
+
+    If prpTestName = 1 Then
+        ' Определяем правильное имя чертежа
+        varTemp = InStr(sModelName, prpNameSep)
+        If swModel.CustomInfo2(sConfigName, "Исполнение") = "1" Or swModel.CustomInfo2(sConfigName, "Исполнение") = "-1" Or swModel.CustomInfo2(sConfigName, "Исполнение") = "True" Then
+            If prpFileName = 1 And varTemp > 0 Then
+                sDrawTrueName = Left$(sModelName, varTemp - 1) & "-" & Left$(sConfigName, 2) & Right$(sModelName, Len(sModelName) - varTemp + 1)
+            Else
+                sDrawTrueName = sModelName & "-" & Left$(sConfigName, 2)
+            End If
+        ElseIf swModel.CustomInfo2(sConfigName, "Исполнение") = "2" Then
+            strTemp = swModel.CustomInfo2(sConfigName, prpNumber)
+            varTemp1 = InStrRev(strTemp, "-")
+            If varTemp1 > 0 Then
+                strTemp = Right$(strTemp, Len(strTemp) - varTemp1)
+            Else
+                strTemp = ""
+            End If
+            If prpFileName = 1 And varTemp > 0 Then
+                sDrawTrueName = Left$(sModelName, varTemp - 1) & "-" & strTemp & Right$(sModelName, Len(sModelName) - varTemp + 1)
+            Else
+                sDrawTrueName = sModelName & "-" & strTemp
+            End If
+        Else
+            sDrawTrueName = sModelName
+        End If
+        varTemp = InStr(sDrawTrueName, prpNameSep)
+        m = 0
+        If Left$(vSheetNames(0), 2) = "VP" Then
+            m = 1
+            If prpFileName = 1 And varTemp > 0 Then
+                sDrawTrueName = Left$(sDrawTrueName, varTemp - 1) & "ВП" & Right$(sDrawTrueName, Len(sDrawTrueName) - varTemp + 1)
+            Else
+                sDrawTrueName = sDrawTrueName & "ВП"
+            End If
+        Else
+            If swModel.CustomInfo2(sConfigName, prpDocCode) <> "СБ" And swModel.CustomInfo2(sConfigName, prpDocCode) <> "" Then
+                If prpFileName = 1 And varTemp > 0 Then
+                    sDrawTrueName = Left$(sDrawTrueName, varTemp - 1) & swModel.CustomInfo2(sConfigName, prpDocCode) & Right$(sDrawTrueName, Len(sDrawTrueName) - varTemp + 1)
+                Else
+                    sDrawTrueName = sDrawTrueName & swModel.CustomInfo2(sConfigName, prpDocCode)
+                End If
+            End If
+        End If
+        ' Собственно проверка
+        If sDrawName <> sDrawTrueName Then
+            lRetval = swApp.SendMsgToUser2("Неверное имя файла чертежа!" & Chr$(10) & "Правильное имя: " & sDrawTrueName & Chr$(10) & "Продолжить?", swMbWarning, swMbYesNo)
+            If lRetval = swMbHitNo Then
+                swApp.SendMsgToUser ("PDF не создан! Свойства не внесены!")
+                Finish
+                Exit Sub
+            End If
+        End If
+    End If
+    If MRun = 2 Then ' Назначаем имена по Обозначению
+        sDrawName = swModel.CustomInfo2(sConfigName, prpNumber)
+        If sIni6 = 1 Then
+            sDirName = sDirName & sIni9 & "\"
+            If fs.FolderExists(sDirName) = False Then
+                MkDir sDirName
+            End If
+        End If
+        If sIni3 = 0 Then ' PDF
+            sPathName = sDirName & sDrawName & ".pdf"
+        Else
+            sPathName = sDirName & sDrawName & ".tif"
+        End If
+    End If
+    If prpTestName = 1 Then
+        ' Определяем имя старого файла с добавлением СБ
+        varTemp = InStr(sPathName, sDrawName) ' Начало имени файла
+        varTemp = InStr(varTemp, sPathName, prpNameSep) ' Положение разделителя
+        varTemp1 = InStr(sDrawName, prpNameSep)
+        If prpFileName = 1 And varTemp > 0 Then
+            sDelName = Left$(sPathName, varTemp - 1) & "СБ" & Right$(sPathName, Len(sPathName) - varTemp + 1)
+        Else
+            If sIni3 = 0 Then ' PDF
+                sDelName = Left$(sPathName, Len(sPathName) - 4) & "СБ.pdf"
+            Else
+                sDelName = Left$(sPathName, Len(sPathName) - 4) & "СБ.tif"
+            End If
+        End If
+        ' Уточнение имени pdf и удаление pdf-ок с неправильными именами
+        If sIni1 = 1 Or sIni1 = 0 And sIni3 = 0 Then ' PDFCreator или PDF
+            For i = 0 To UBound(vSheetNames) ' Ищем листы спецификации
+                If Left$(vSheetNames(i), 2) = "SP" Then
+                    m = 1
+                End If
+            Next i
+            If swModel.CustomInfo2(sConfigName, prpDocCode) = "СБ" And m = 0 Then ' Проверяем наличие файлов со старыми именами (без добавления СБ)
+                If fs.FileExists(sPathName) = True Then
+                    lRetval = swApp.SendMsgToUser2("Существует ранее сохраненный файл " & sPathName & Chr$(10) & "Удаляем его?", swMbWarning, swMbYesNo)
+                    If lRetval = swMbHitYes Then
+                        Kill sPathName
+                    End If
+                End If
+                If prpFileName = 1 And varTemp > 0 Then
+                    sPathName = Left$(sPathName, varTemp - 1) & "СБ" & Right$(sPathName, Len(sPathName) - varTemp + 1)
+                    sDrawName = Left$(sDrawName, varTemp1 - 1) & "СБ" & Right$(sDrawName, Len(sDrawName) - varTemp1 + 1)
+                Else
+                    If sIni3 = 0 Then ' PDF
+                        sPathName = Left$(sPathName, Len(sPathName) - 4) & "СБ.pdf"
+                    Else
+                        sPathName = Left$(sPathName, Len(sPathName) - 4) & "СБ.tif"
+                    End If
+                    sDrawName = sDrawName & "СБ"
+                End If
+            End If
+            If m = 1 Then ' Проверяем наличие файлов со старыми именами (с добавлением СБ)
+                If fs.FileExists(sDelName) = True Then
+                    lRetval = swApp.SendMsgToUser2("Существует ранее сохраненный файл " & sDelName & Chr$(10) & "Удаляем его?", swMbWarning, swMbYesNo)
+                    If lRetval = swMbHitYes Then
+                        Kill sDelName
+                    End If
+                End If
+            End If
+        End If
+    End If
+    
+    ' Проверка Заимствования
+    strTemp = swModel.CustomInfo2("", prpBor)
+    If strTemp <> "" Then
+        strTemp = Left$(strTemp, Len(strTemp) - 1)
+        strTemp = Replace(strTemp, "$", ", ")
+        strMsg = "Внимание! Вы сохраняете документ, который заимствован в следующих проектах:" _
+        & Chr$(10) & strTemp & Chr$(10) & "Вы хотите продолжить?"
+        lRetval = swApp.SendMsgToUser2(strMsg, swMbQuestion, swMbYesNo)
+        If lRetval = swMbHitNo Then
+            Finish
+            Exit Sub
+        End If
+    End If
+    
+    ' Вызов тестов
+    Tests
+    If MExit = 1 Then
+        Finish
+        Exit Sub
+    End If
+
+    ' Получение и вставка свойств
+    ' Наименование и Description
+    swDraw.SummaryInfo(0) = swModel.SummaryInfo(0)
+    ok = swDraw.AddCustomInfo2("Description", 30, swModel.SummaryInfo(0))
+    swDraw.CustomInfo2("", "Description") = swModel.SummaryInfo(0)
+    ' Конструктор
+    swDraw.SummaryInfo(2) = swModel.SummaryInfo(2)
+    ' Number
+    ok = swDraw.AddCustomInfo2("Number", 30, sNumber)
+    swDraw.CustomInfo2("", "Number") = sNumber
+End If
+If sIni2 = 1 Then ' Часть группы макросов
+    If MRun = 0 Or MRun = 2 Then ' Обновляем дату
+        ' Дата
+        ' Определяем дату
+        MyDate = Date
+        MyDay = Day(MyDate)
+        MyMonth = Month(MyDate)
+        MyYear = Year(MyDate)
+        strData = CStr(MyDay) & "." & CStr(MyMonth) & "." & Right$(CStr(MyYear), 2)
+        ' Активируем первый лист
+        ok = swDraw.ActivateSheet(vSheetNames(0))
+        Set swSheet = swDraw.GetCurrentSheet
+        strSheetFormatName = swSheet.GetSheetFormatName()
+        Set swSelMgr = swDraw.SelectionManager
+        ' Проверяем наличие изменений (Revision)
+        strTemp = "Revision4@" & strSheetFormatName
+        ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+        If ok = True Then ' Есть заметка Revision4
+            Set swNote = swSelMgr.GetSelectedObject2(1)
+            strTemp = swNote.GetText()
+            If Len(strTemp) < 2 Then ' Изменений еще не было
+                ' Устанавливаем дату Разраб.
+                For i = 0 To UBound(vSheetNames)
+                    ok = swDraw.ActivateSheet(vSheetNames(i))
+                    Set swSheet = swDraw.GetCurrentSheet
+                    strSheetFormatName = swSheet.GetSheetFormatName()
+                    strTemp = "Date@" & strSheetFormatName
+                    ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+                    If ok = True Then
+                        Set swNote = swSelMgr.GetSelectedObject2(1)
+                        swNote.SetText strData
+                    End If
+                Next i
+            Else ' Изменения были
+                MRev = 1
+                ' Устанавливаем дату Изм.
+                For i = 0 To UBound(vSheetNames)
+                    ok = swDraw.ActivateSheet(vSheetNames(i))
+                    Set swSheet = swDraw.GetCurrentSheet
+                    strSheetFormatName = swSheet.GetSheetFormatName()
+                    strTemp = "Revision4@" & strSheetFormatName
+                    ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+                    If ok = True Then
+                        Set swNote = swSelMgr.GetSelectedObject2(1)
+                        swNote.SetText strData
+                    End If
+                Next i
+                If sIni5 = 1 Then  ' Копируем старые версии
+                    ' Определяем номер изменения
+                    strRev = swDraw.CustomInfo2("", "Revision")
+                    If strRev <> "" And strRev <> "нет" Then
+                        n = CInt(strRev) - 1
+                        If n < 10 Then
+                            strRev = "0" & Trim(CStr(n))
+                        Else
+                            strRev = Trim(CStr(n))
+                        End If
+                    End If
+                    Debug.Print "sPathName=", sPathName
+                    If fs.FileExists(sPathName) = True Then
+                        ' Определяем директорию для копирования
+                        sDirCopyName = sDirName & sIni7 & "\"
+                        If fs.FolderExists(sDirCopyName) = False Then
+                            MkDir sDirCopyName
+                        End If
+                        If sIni1 = 1 Or sIni1 = 0 And sIni3 = 0 And strRev <> "" And strRev <> "нет" Then ' PDFCreator или PDF
+                            ' Копируем файл
+                            varTemp = InStrRev(sPathName, "\")
+                            strTemp = Left$(sPathName, varTemp - 1) & "\" & sIni7 & Right$(sPathName, Len(sPathName) - varTemp + 1)
+                            strTemp = Left(strTemp, Len(strTemp) - 4) & "_" & sIni8 & strRev & Right(strTemp, 4)
+                            If fs.FileExists(strTemp) = False Then
+                                fs.MoveFile sPathName, strTemp
+                            End If
+                        End If
+                    End If
+                End If
+            End If
+        End If
+    End If
+   
+    If prpTestName = 1 Then ' Отбор нужных листов
+        j = 0
+        For i = 0 To UBound(vSheetNames)
+            If Left$(vSheetNames(i), 3) = "DRW" Or Left$(vSheetNames(i), 4) = "Лист" Or Left$(vSheetNames(i), 5) = "Sheet" Or Left$(vSheetNames(i), 2) = "SP" Or Left$(vSheetNames(i), 2) = "VP" Or Left$(vSheetNames(i), 3) = "LRI" Then
+                ReDim Preserve strSheetNames(j)
+                strSheetNames(j) = vSheetNames(i)
+                j = j + 1
+            Else
+                lRetval = swApp.SendMsgToUser2("Лист " & vSheetNames(i) & " имеет нестандартное имя." & Chr$(10) & "Сохраняем его?", swMbWarning, swMbYesNo)
+                If lRetval = swMbHitYes Then
+                    ReDim Preserve strSheetNames(j)
+                    strSheetNames(j) = vSheetNames(i)
+                    j = j + 1
+                End If
+            End If
+        Next i
+        If j = 0 Then
+            swApp.SendMsgToUser ("Нет корректных листов для сохранения! PDF не создан!")
+            Finish
+            Exit Sub
+        End If
+        vSheetNamesPrint = strSheetNames
+    End If
+End If
+
+' Удаляем точки из размеров
+Dim swDispDim As SldWorks.DisplayDimension
+Dim CalloutBelow As String
+Dim swViewTemp As SldWorks.View
+For i = 0 To UBound(vSheetNamesPrint)
+    ok = swDraw.ActivateSheet(vSheetNames(i))
+    Set swSheet = swDraw.GetCurrentSheet
+    Set swViewTemp = swDraw.GetFirstView
+    Do While Not swViewTemp Is Nothing
+        Set swDispDim = swViewTemp.GetFirstDisplayDimension5
+        Do While Not swDispDim Is Nothing
+            CalloutBelow = swDispDim.GetText(swDimensionTextCalloutBelow) ' Текст под размером
+            CalloutBelow = Replace(CalloutBelow, "<stack size=0.2> <stack size=5>", "<stack size=0.25 divider=no> <stack size=4 divider=no>")
+            CalloutBelow = Replace(CalloutBelow, "<stack>", "<stack size=0.25 divider=no> <stack size=4 divider=no>")
+            swDispDim.SetText swDimensionTextCalloutBelow, CalloutBelow
+            Set swDispDim = swDispDim.GetNext5
+        Loop
+        Set swViewTemp = swViewTemp.GetNextView
+    Loop
+Next i
+
+' Перестраиваем чертеж
+swDraw.Rebuild (swRebuildAll)
+ok = swDraw.GraphicsRedraw2()
+
+If sIni1 = 0 Then ' Встроенный сохранятель
+    If sIni3 = 0 Then ' PDF
+        'To export drawing sheets to PDF:
+        'Get the ExportPdfData object using SldWorks::GetExportFileData.
+        'Set the sheets to export to PDF using ExportPdfData::SetSheets.
+        'Save the sheets using ModelDocExtension::SaveAs.
+        Set swExpPDFData = swApp.GetExportFileData(swExportPdfData)
+        ok = swExpPDFData.SetSheets(swExportData_ExportSpecifiedSheets, vSheetNamesPrint)
+        If ok = False Then
+            swApp.SendMsgToUser ("Ошибка сохранения! PDF не создан!")
+            Finish
+            Exit Sub
+        End If
+        
+        'swUserPreferenceToggle_e
+        If sIni10 = 0 Then
+            swApp.SetUserPreferenceToggle swPDFExportInColor, False
+        Else
+            swApp.SetUserPreferenceToggle swPDFExportInColor, True
+        End If
+        swApp.SetUserPreferenceToggle swPDFExportEmbedFonts, True
+        swApp.SetUserPreferenceToggle swPDFExportHighQuality, True
+        swApp.SetUserPreferenceToggle swPDFExportPrintHeaderFooter, False
+        swApp.SetUserPreferenceToggle swPDFExportUseCurrentPrintLineWeights, True
+        
+        ok = swModelDocExt.SaveAs(sPathName, swSaveAsCurrentVersion, swSaveAsOptions_Silent, swExpPDFData, lErrors, lWarnings)
+        If ok = False Then
+            swApp.SendMsgToUser ("Ошибка сохранения! PDF не создан!")
+            Finish
+            Exit Sub
+        End If
+    Else ' Tif
+        For i = 0 To UBound(vSheetNames)
+            For j = 0 To UBound(vSheetNamesPrint)
+                If vSheetNames(i) = vSheetNamesPrint(j) Then
+                    ok = swDraw.ActivateSheet(vSheetNames(i))
+                    Set swSheet = swDraw.GetCurrentSheet
+                    vSheetProps = swSheet.GetProperties
+                    FormatSize ' Определяем формат
+                    ReDim Preserve strSheetNames(j)
+                    strTemp = Left(sPathName, Len(sPathName) - 4) & "_" & vSheetNames(i) & "_" & TemplateName & ".tif" ' Имя сохраняемого файла
+                    strSheetNames(j) = strTemp
+                    If MRev = 1 And sIni5 = 1 And fs.FileExists(strTemp) = True Then ' Копируем старые версии
+                        ' Определяем директорию для копирования
+                        sDirCopyName = sDirName & sIni7 & "\"
+                        If fs.FolderExists(sDirCopyName) = False Then
+                            MkDir sDirCopyName
+                        End If
+                        If strRev <> "" And strRev <> "нет" Then
+                            ' Копируем файл
+                            varTemp = InStrRev(strTemp, "\")
+                            strTemp1 = Left$(strTemp, varTemp - 1) & "\" & sIni7 & Right$(strTemp, Len(strTemp) - varTemp + 1)
+                            strTemp1 = Left(strTemp1, Len(strTemp1) - 4) & "_" & sIni8 & strRev & Right(strTemp1, 4)
+                            If fs.FileExists(strTemp1) = False Then
+                                fs.MoveFile strTemp, strTemp1
+                            End If
+                        End If
+                    End If
+                    
+                    If sIni10 = 0 Then
+                        ok = swApp.SetUserPreferenceIntegerValue(swTiffImageType, swTiffImageBlackAndWhite)
+                        ok = swApp.SetUserPreferenceIntegerValue(swTiffCompressionScheme, swTiffGroup4FaxCompression)
+                    Else
+                        ok = swApp.SetUserPreferenceIntegerValue(swTiffImageType, swTiffImageRGB)
+                        ok = swApp.SetUserPreferenceIntegerValue(swTiffCompressionScheme, swTiffPackbitsCompression)
+                    End If
+                    ok = swApp.SetUserPreferenceIntegerValue(swTiffScreenOrPrintCapture, 1)
+                    ok = swApp.SetUserPreferenceIntegerValue(swTiffPrintDPI, sIni11)
+                    ok = swApp.SetUserPreferenceIntegerValue(swTiffPrintPaperSize, swDwgPapersUserDefined)
+                    ok = swApp.SetUserPreferenceDoubleValue(swTiffPrintDrawingPaperWidth, vSheetProps(5))
+                    ok = swApp.SetUserPreferenceDoubleValue(swTiffPrintDrawingPaperHeight, vSheetProps(6))
+                    swApp.SetUserPreferenceToggle swTiffPrintScaleToFit, True
+            
+                    ok = swDraw.SaveAs4(strTemp, swSaveAsCurrentVersion, swSaveAsOptions_Silent, lErrors, lWarnings)
+                    If ok = False Then
+                        swApp.SendMsgToUser ("Ошибка сохранения! TIF не создан!")
+                        Debug.Print strTemp
+                        Finish
+                        Exit Sub
+                    End If
+                    Debug.Print strTemp
+                End If
+            Next j
+        Next i
+        
+        ' Удаление негодных Tif-ов
+        If fs.FolderExists(sDirName) = True Then
+            Set fs1 = fs.GetFolder(sDirName)
+            For Each fs2 In fs1.files
+                m = 0
+                strTemp = sDirName & fs2.Name
+                Debug.Print strTemp
+                If sDelName <> "" Then
+                    strTemp1 = Left$(sDelName, Len(sDelName) - 4) ' Проверяем наличие файлов со старыми именами (с СБ)
+                    If InStr(1, strTemp, strTemp1, vbTextCompare) > 0 And Right$(strTemp, 4) = ".tif" Then
+                        If fs.FileExists(strTemp) = True Then
+                            m = 1
+                        End If
+                    End If
+                End If
+                strTemp1 = Left(sPathName, Len(sPathName) - 4)
+                Debug.Print strTemp1
+                If InStr(1, strTemp, strTemp1, vbTextCompare) > 0 And Right$(strTemp, 4) = ".tif" Then ' Ищем прочие ненужные файлы
+                    m = 1
+                    For j = 0 To UBound(strSheetNames)
+                        If StrComp(strSheetNames(j), strTemp, vbTextCompare) = 0 Then
+                            m = 0
+                        End If
+                    Next j
+                End If
+                If m = 1 Then
+                    lRetval = swApp.SendMsgToUser2("Существует ранее сохраненный файл " & strTemp & Chr$(10) & "Удаляем его?", swMbQuestion, swMbYesNo)
+                    If lRetval = swMbHitYes Then
+                        Kill strTemp
+                    Else
+                        If MRev = 1 And sIni5 = 1 Then
+                            lRetval = swApp.SendMsgToUser2("Переместить данный файл в папку " & sIni7 & "?", swMbQuestion, swMbYesNo)
+                            If lRetval = swMbHitYes Then ' Копируем старые версии
+                                ' Определяем директорию для копирования
+                                sDirCopyName = sDirName & sIni7 & "\"
+                                If fs.FolderExists(sDirCopyName) = False Then
+                                    MkDir sDirCopyName
+                                End If
+                                If strRev <> "" And strRev <> "нет" Then
+                                    ' Копируем файл
+                                    varTemp = InStrRev(strTemp, "\")
+                                    strTemp1 = Left$(strTemp, varTemp - 1) & "\" & sIni7 & Right$(strTemp, Len(strTemp) - varTemp + 1)
+                                    strTemp1 = Left(strTemp1, Len(strTemp1) - 4) & "_" & sIni8 & strRev & Right(strTemp1, 4)
+                                    If fs.FileExists(strTemp1) = False Then
+                                        fs.MoveFile strTemp, strTemp1
+                                    End If
+                                End If
+                            End If
+                        End If
+                    End If
+                End If
+            Next
+        End If
+    End If
+Else ' PDFCreator
+    Open Source6 For Output As #1
+        Print #1, sIni3
+        Print #1, sIni10
+        Print #1, sIni11
+        Print #1, sDirName
+        Print #1, sDrawName
+        Print #1, UBound(vSheetNamesPrint)
+        For i = 0 To UBound(vSheetNamesPrint)
+            Print #1, vSheetNamesPrint(i)
+        Next i
+    Close #1
+    
+    ok = swApp.RunMacro(Source5, "PDFCreatorPrint_run", "main")
+    
+    Open Source6 For Input As #1
+        Line Input #1, strTemp
+    Close #1
+    If strTemp = "***" Then
+        Finish
+        Exit Sub
+    End If
+End If
+
+' Возвращение первого листа
+ok = swDraw.ActivateSheet(vSheetNames(0))
+
+' Позиционирование листа
+Set swSheet = swDraw.GetCurrentSheet
+vSheetProps = swSheet.GetProperties
+x1 = 0
+y1 = 0
+z1 = 0
+x2 = vSheetProps(5)
+y2 = vSheetProps(6)
+z2 = 0
+swDraw.ViewZoomTo2 x1, y1, z1, x2, y2, z2
+
+If sIni2 = 1 Then
+    ' Сохранение чертежа
+    swDraw.Save2 False
+End If
+
+'If sIni1 = 0 Then
+    Finish
+'End If
+End Sub
+
+Private Sub Tests()
+If prpTestVersion = 1 Or prpTestFormat = 1 Or prpTestStandard = 1 Then
+    ' Проверка свойства "Формат_ФБ"
+    MExit = 0
+    MChk = 0
+    If swModel.CustomInfo2(sConfigName, "Формат_ФБ") = "-1" Or swModel.CustomInfo2(sConfigName, "Формат_ФБ") = "True" Then
+    ElseIf swModel.CustomInfo2(sConfigName, "Формат_ФБ") = "" Then
+        ok = swModel.AddCustomInfo3(sConfigName, "Формат_ФБ", 30, "")
+        swModel.CustomInfo2(sConfigName, "Формат_ФБ") = "True"
+    Else
+        MChk = 1
+    End If
+    ReDim sFormatArray(UBound(vSheetNames))
+    ' Считываем и проверяем форматы всех листов
+    intDRWSheet = 0
+    k = 0
+    k1 = 0
+    k2 = 0
+    sSheetsNames1 = ""
+    sSheetsNames2 = ""
+    sSheetsNames3 = ""
+    Set swSelMgr = swDraw.SelectionManager
+    For i = 0 To UBound(vSheetNames)
+        ok = swDraw.ActivateSheet(vSheetNames(i))
+        Set swSheet = swDraw.GetCurrentSheet
+        strSheetFormatName = swSheet.GetSheetFormatName()
+        ' Проверка версии и оформления
+        If Left$(vSheetNames(i), 3) = "DRW" Or Left$(vSheetNames(i), 4) = "Лист" Or Left$(vSheetNames(i), 5) = "Sheet" Or Left$(vSheetNames(i), 2) = "SP" Or Left$(vSheetNames(i), 2) = "VP" Or Left$(vSheetNames(i), 3) = "LRI" Then
+            If prpTestVersion = 1 Then
+                ' Проверка версии форматки
+                strTemp = "Version@" & strSheetFormatName
+                ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+                If ok = True Then
+                    Set swNote = swSelMgr.GetSelectedObject2(1)
+                    strTemp = swNote.GetText()
+                    ' Проверка версии
+                    If Right$(strTemp, 1) <> "3" Then
+                        k1 = k1 + 1
+                        sSheetsNames1 = sSheetsNames1 & vSheetNames(i) & ", "
+                    End If
+                Else
+                    k1 = k1 + 1
+                    sSheetsNames1 = sSheetsNames1 & vSheetNames(i) & ", "
+                End If
+            End If
+            If prpTestStandard = 1 Then
+                ' Проверка оформления
+                m = 0
+                Set swView = swDraw.GetFirstView
+                If Not swView Is Nothing Then
+                    Set swNote = swView.GetFirstNote()
+                    j = 0
+                    While j = 0
+                        If Not swNote Is Nothing Then
+                            Set swAnn = swNote.GetAnnotation()
+                            If Not swAnn.OwnerType = swAnnotationOwner_DrawingTemplate Then ' Исключаем объекты форматки
+                                Set swNote = swNote.GetNext
+                            Else
+                                j = 1
+                            End If
+                        Else
+                            j = 1
+                        End If
+                    Wend
+                    If Not swNote Is Nothing Then
+                        Set swAnn = swNote.GetAnnotation()
+                        Set swTextFormat = swAnn.GetTextFormat(0)
+                        If swTextFormat.TypeFaceName <> stdFontName Then
+                            m = 1
+                        End If
+                        If swTextFormat.Italic = True And stdFontItalic = 0 Then
+                            m = 1
+                        ElseIf swTextFormat.Italic = False And stdFontItalic = 1 Then
+                            m = 1
+                        End If
+                        If swTextFormat.Bold = True And stdFontBold = 0 Then
+                            m = 1
+                        ElseIf swTextFormat.Bold = False And stdFontBold = 1 Then
+                            m = 1
+                        End If
+                    Else
+                        m = 1
+                    End If
+                Else
+                    m = 1
+                End If
+                Set swView = swView.GetNextView
+                If Not swView Is Nothing Then
+                    Set swNote = swView.GetFirstNote()
+                    If Not swNote Is Nothing Then
+                        Set swAnn = swNote.GetAnnotation()
+                        Set swTextFormat = swAnn.GetTextFormat(0)
+                        If swTextFormat.TypeFaceName <> stdFontName Then
+                            m = 1
+                        End If
+                        If swTextFormat.Italic = True And stdFontItalic = 0 Then
+                            m = 1
+                        ElseIf swTextFormat.Italic = False And stdFontItalic = 1 Then
+                            m = 1
+                        End If
+                        If swTextFormat.Bold = True And stdFontBold = 0 Then
+                            m = 1
+                        ElseIf swTextFormat.Bold = False And stdFontBold = 1 Then
+                            m = 1
+                        End If
+                    End If
+                End If
+                Set swModExt = swDraw.Extension
+                Set swTextFormat = swModExt.GetUserPreferenceTextFormat(swDetailingDimensionTextFormat, swDetailingDimension)
+                If swTextFormat.TypeFaceName <> stdFontName Or swTextFormat.CharHeight <> stdFontSize / 1000 Then
+                    m = 1
+                End If
+                If swTextFormat.Italic = True And stdFontItalic = 0 Then
+                    m = 1
+                ElseIf swTextFormat.Italic = False And stdFontItalic = 1 Then
+                    m = 1
+                End If
+                If swTextFormat.Bold = True And stdFontBold = 0 Then
+                    m = 1
+                ElseIf swTextFormat.Bold = False And stdFontBold = 1 Then
+                    m = 1
+                End If
+                If m = 1 Then
+                    k2 = k2 + 1
+                    sSheetsNames2 = sSheetsNames2 & vSheetNames(i) & ", "
+                End If
+            End If
+        End If
+        If prpTestFormat = 1 And MChk = 0 Then ' Формат читается из чертежа
+            If Left$(vSheetNames(i), 3) = "DRW" Or Left$(vSheetNames(i), 4) = "Лист" Or Left$(vSheetNames(i), 5) = "Sheet" Or Left$(vSheetNames(i), 3) = "LRI" Then
+                ' Проверка имени формата
+                strTemp = "Format@" & strSheetFormatName
+                ok = swDraw.Extension.SelectByID2(strTemp, "NOTE", 0, 0, 0, False, 0, Nothing, 0)
+                If ok = True Then
+                    Set swNote = swSelMgr.GetSelectedObject2(1)
+                    strTemp = swNote.GetText()
+                    ' Проверка корректности и длины записи
+                    If Len(Trim(strTemp)) > 8 And Left$(strTemp, 6) = "Формат" Then
+                        sFormatArray(intDRWSheet) = Right$(strTemp, Len(strTemp) - 7)
+                        intDRWSheet = intDRWSheet + 1
+                    Else
+                        k = k + 1
+                        sSheetsNames3 = sSheetsNames3 & vSheetNames(i) & ", "
+                    End If
+                Else
+                    k = k + 1
+                    sSheetsNames3 = sSheetsNames3 & vSheetNames(i) & ", "
+                End If
+            End If
+        End If
+    Next i
+    If k1 > 0 Then
+        sSheetsNames1 = Left$(sSheetsNames1, Len(sSheetsNames1) - 2)
+        strMsg = "Лист(ы) " & sSheetsNames1 & " имеют нестандартную или устаревшую основную надпись." & Chr$(10) & "Текст основной надписи может отображаться неверно." & Chr$(10) & "Для исправления используйте макрос DProp" & Chr$(10) & "Продолжить?"
+        lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+        If lRetval = swMbHitNo Then
+            MExit = 1
+            Exit Sub
+        End If
+    End If
+    If k2 > 0 Then
+        sSheetsNames2 = Left$(sSheetsNames2, Len(sSheetsNames2) - 2)
+        strMsg = "Лист(ы) " & sSheetsNames2 & " имеют ошибки оформления." & Chr$(10) & "Для исправления используйте макрос DProp" & Chr$(10) & "Продолжить?"
+        lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+        If lRetval = swMbHitNo Then
+            MExit = 1
+            Exit Sub
+        End If
+    End If
+    If prpTestFormat = 1 Then ' Есть проверка формата
+        If swModel.CustomInfo2(sConfigName, prpDocCode) = "СБ" Then
+            ok = swModel.AddCustomInfo3(sConfigName, "Формат_ФБ", 30, "")
+            swModel.CustomInfo2(sConfigName, "Формат_ФБ") = "True"
+            ok = swModel.AddCustomInfo3(sConfigName, prpFormat, 30, "")
+            swModel.CustomInfo2(sConfigName, prpFormat) = "А4"
+        ElseIf swModel.CustomInfo2(sConfigName, prpDocCode) = "ВП" Then
+            ok = swModel.AddCustomInfo3(sConfigName, "Формат_ФБ", 30, "")
+            swModel.CustomInfo2(sConfigName, "Формат_ФБ") = "True"
+            ok = swModel.AddCustomInfo3(sConfigName, prpFormat, 30, "")
+            swModel.CustomInfo2(sConfigName, prpFormat) = "А3"
+        Else
+            If MChk = 0 Then ' Формат читается из чертежа
+                If k = 0 And intDRWSheet > 0 Then ' Все прочитанные форматы определены
+                    ' Определяем число листов
+                    If intDRWSheet > 1 Then ' Листов больше одного
+                        m = 0
+                        ' Сортируем форматы
+                        For i = 0 To intDRWSheet - 1
+                            strTemp = sFormatArray(i)
+                            n = i
+                            For j = i To intDRWSheet - 2
+                                ' Длина равна, левые части нет
+                                If Len(strTemp) = Len(sFormatArray(j + 1)) And Left$(strTemp, 2) <> Left$(sFormatArray(j + 1), 2) Then
+                                    iResult = StrComp(Left$(sFormatArray(j + 1), 2), Left$(strTemp, 2), 1)
+                                    Select Case iResult
+                                    Case -1 ' меньше
+                                        m = 1
+                                    Case 0 ' равняется
+                                    Case 1 ' больше
+                                        strTemp = sFormatArray(j + 1)
+                                        n = j + 1
+                                        m = 1
+                                    End Select
+                                ' Длина не равна, левые части равны
+                                ElseIf Len(strTemp) <> Len(sFormatArray(j + 1)) And Left$(strTemp, 2) = Left$(sFormatArray(j + 1), 2) Then
+                                    iResult = StrComp(sFormatArray(j + 1), strTemp, 1)
+                                    Select Case iResult
+                                    Case -1
+                                        strTemp = sFormatArray(j + 1)
+                                        n = j + 1
+                                        m = 1
+                                    Case 0
+                                    Case 1
+                                        m = 1
+                                    End Select
+                                ' Длина равна, левые части тоже
+                                ElseIf Len(strTemp) = Len(sFormatArray(j + 1)) And Left$(strTemp, 2) = Left$(sFormatArray(j + 1), 2) Then
+                                    iResult = StrComp(Right$(sFormatArray(j + 1), 1), Right$(strTemp, 1), 1)
+                                    Select Case iResult
+                                    Case -1
+                                        strTemp = sFormatArray(j + 1)
+                                        n = j + 1
+                                        m = 1
+                                    Case 0
+                                    Case 1
+                                        m = 1
+                                    End Select
+                                ' Длина не равна, левые части не равны
+                                Else
+                                    iResult = StrComp(Left$(sFormatArray(j + 1), 2), Left$(strTemp, 2), 1)
+                                    Select Case iResult
+                                    Case -1
+                                        m = 1
+                                    Case 0
+                                    Case 1
+                                        strTemp = sFormatArray(j + 1)
+                                        n = j + 1
+                                        m = 1
+                                    End Select
+                                End If
+                            Next j
+                            sFormatArray(n) = sFormatArray(i)
+                            sFormatArray(i) = strTemp
+                        Next i
+                    End If
+                    ' Заносим формат
+                    ok = swModel.AddCustomInfo3(sConfigName, prpFormat, 30, "")
+                    If m = 0 Or intDRWSheet = 1 Then   ' Все форматы одинаковые или формат всего один
+                        If Len(sFormatArray(0)) > 2 Then ' Формат кратный
+                            swModel.CustomInfo2(sConfigName, prpFormat) = "*)"
+                            ok = swModel.AddCustomInfo3(sConfigName, prpRemark, 30, "")
+                            swModel.CustomInfo2(sConfigName, prpRemark) = "*) " & sFormatArray(0)
+                        Else ' Формат обычный
+                            swModel.CustomInfo2(sConfigName, prpFormat) = sFormatArray(0)
+                        End If
+                    Else 'Форматов много и они разные
+                        ' Формируем запись форматов в примечание
+                        strTemp = ""
+                        For i = 0 To intDRWSheet - 1
+                            If i <> intDRWSheet - 1 Then
+                                If sFormatArray(i) <> sFormatArray(i + 1) Then
+                                    strTemp = strTemp & " " & sFormatArray(i) & ","
+                                End If
+                            Else
+                                strTemp = strTemp & " " & sFormatArray(i) & ","
+                            End If
+                        Next i
+                        swModel.CustomInfo2(sConfigName, prpFormat) = "*)"
+                        ok = swModel.AddCustomInfo3(sConfigName, prpRemark, 30, "")
+                        swModel.CustomInfo2(sConfigName, prpRemark) = "*)" & Left$(strTemp, Len(strTemp) - 1)
+                    End If
+                ElseIf k = 0 And intDRWSheet = 0 Then ' Нет подходящих листов чертежа
+                    ok = swModel.AddCustomInfo3(sConfigName, prpFormat, 30, "")
+                    swModel.CustomInfo2(sConfigName, prpFormat) = ""
+                    lRetval = swApp.SendMsgToUser2("Формат не определен." & Chr$(10) & "Продолжить?", swMbWarning, swMbYesNo)
+                    If lRetval = swMbHitNo Then
+                        MExit = 1
+                        Exit Sub
+                    End If
+                Else ' Один или более форматов не определены
+                    ok = swModel.AddCustomInfo3(sConfigName, prpFormat, 30, "")
+                    swModel.CustomInfo2(sConfigName, prpFormat) = ""
+                    sSheetsNames3 = Left$(sSheetsNames3, Len(sSheetsNames3) - 2)
+                    strMsg = "Лист(ы) " & sSheetsNames3 & " не позволяют определить формат." & Chr$(10) & "Для исправления используйте макрос DProp" & Chr$(10) & "Продолжить?"
+                    lRetval = swApp.SendMsgToUser2(strMsg, swMbWarning, swMbYesNo)
+                    If lRetval = swMbHitNo Then
+                        MExit = 1
+                        Exit Sub
+                    End If
+                End If
+            End If
+        End If
+        ' Очистка Примечания от *)
+        strTemp = swModel.CustomInfo2(sConfigName, prpRemark)
+        If swModel.CustomInfo2(sConfigName, prpFormat) <> "*)" And Left$(strTemp, 2) = "*)" Then
+            ok = swModel.AddCustomInfo3(sConfigName, prpRemark, 30, "")
+            swModel.CustomInfo2(sConfigName, prpRemark) = ""
+        End If
+        ' Синхронизация свойств
+        If ConfNumb = 1 Then
+            ok = swModel.AddCustomInfo3("", prpRemark, 30, "")
+            ok = swModel.AddCustomInfo3("", prpFormat, 30, "")
+            swModel.CustomInfo2("", prpRemark) = swModel.CustomInfo2(sConfigName, prpRemark)
+            swModel.CustomInfo2("", prpFormat) = swModel.CustomInfo2(sConfigName, prpFormat)
+        End If
+    End If
+End If
+End Sub
+
+Private Sub MyProperties()
+' Чтение ini файла
+Open Source1 For Input As #1
+    Line Input #1, strTemp
+    prpNumber = strTemp ' Обозначение
+    Line Input #1, strTemp
+    prpDocCode = strTemp ' Код документа
+    Line Input #1, strTemp
+    prpDocDescription = strTemp ' Наименование документа
+    Line Input #1, strTemp
+    prpDescription = strTemp ' Наименование изделия в одну строку
+    Line Input #1, strTemp
+    prpDescriptionMulti = strTemp ' Наименование изделия в несколько строк
+    Line Input #1, strTemp
+    prpCode = strTemp ' Условное наименование (код)
+    Line Input #1, strTemp
+    prpFormat = strTemp ' Формат
+    Line Input #1, strTemp
+    prpRemark = strTemp ' Примечание
+    Line Input #1, strTemp
+    prpLit = strTemp ' Литера
+    Line Input #1, strTemp
+    prpLitTable = strTemp ' Литера для таблицы параметров
+    Line Input #1, strTemp
+    prpFirm = strTemp ' Наименование организации
+    Line Input #1, strTemp
+    prpSection = strTemp ' Раздел
+    Line Input #1, strTemp
+    prpGroup = strTemp ' Группа
+    '
+    Line Input #1, strTemp
+    prpDesigner = strTemp ' Разраб.
+    Line Input #1, strTemp
+    prpTester = strTemp ' Пров.
+    Line Input #1, strTemp
+    prpTechcontrol = strTemp ' Т.контр.
+    Line Input #1, strTemp
+    prpWorkType = strTemp ' Характер работы
+    Line Input #1, strTemp
+    prpPerson = strTemp ' Фамилия для "Характер работы"
+    Line Input #1, strTemp
+    prpNormcontrol = strTemp ' Н.контр
+    Line Input #1, strTemp
+    prpApprove = strTemp ' Утв.
+    '
+    Line Input #1, strTemp
+    prpMass = strTemp ' Масса
+    Line Input #1, strTemp
+    prpMassTable = strTemp ' Масса для таблицы параметров
+    Line Input #1, strTemp
+    prpMaterial = strTemp ' Материал
+    Line Input #1, strTemp
+    prpMaterialTable = strTemp ' Материал для таблицы параметров
+    '
+    Line Input #1, strTemp
+    prpFirstApply = strTemp ' Перв.примен. для чертежей и ВП
+    Line Input #1, strTemp
+    prpInformNumber = strTemp ' Справ.№ для чертежей
+    '
+    Line Input #1, strTemp
+    prpFirstApplySP = strTemp ' Перв.примен. для спецификации
+    Line Input #1, strTemp
+    prpInformNumberSP = strTemp ' Справ.№ для спецификаций
+    Line Input #1, strTemp
+    prpLitSP = strTemp ' Литера для спецификаций
+    '
+    Line Input #1, strTemp
+    prpInformNumberVP = strTemp ' Справ.№ для ВП
+    Line Input #1, strTemp
+    prpDescriptionVP = strTemp ' Наименование для ВП
+    Line Input #1, strTemp
+    prpProductCodeVP = strTemp ' Код продукции
+    Line Input #1, strTemp
+    prpNumberDocVP = strTemp ' Обозначение документа на поставку
+    Line Input #1, strTemp
+    prpVendorVP = strTemp ' Поставщик
+    Line Input #1, strTemp
+    prpRemarkVP = strTemp ' Примечание для ВП
+    '
+    Line Input #1, strTemp
+    prpProject = strTemp ' Проект (дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftNumber = strTemp ' Эскизное Обозначение (дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftDescription = strTemp ' Эскизное Наименование (дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftFirstApply = strTemp ' Эскизное Перв.примен. для чертежей и ВП(дополнительное свойство)
+    Line Input #1, strTemp
+    prpDraftFirstApplySP = strTemp ' Эскизное Перв.примен. для спецификации (дополнительное свойство)
+    '
+    Line Input #1, strTemp
+    prpBlank = strTemp ' Заготовка
+    '
+    Line Input #1, strTemp
+    prpBor = strTemp ' Заимствование
+    '
+    Line Input #1, strTemp
+    prpQuantity = strTemp ' Количество в СП
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка версии
+        prpTestVersion = 1
+    Else
+        prpTestVersion = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка формата
+        prpTestFormat = 1
+    Else
+        prpTestFormat = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка имен
+        prpTestName = 1
+    Else
+        prpTestName = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Проверка оформления
+        prpTestStandard = 1
+    Else
+        prpTestStandard = 0
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Имя файла
+        prpFileName = 1
+    Else
+        prpFileName = 0
+    End If
+    Line Input #1, strTemp
+    prpNameSep = strTemp ' Разделитель
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Управление шрифтом
+        prpFontSize = 1
+    Else
+        prpFontSize = 0
+    End If
+    '
+    Line Input #1, strTemp
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Доп. свойство №1
+        prpAddPRP1 = 1
+    Else
+        prpAddPRP1 = 0
+    End If
+    Line Input #1, strTemp
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Доп. свойство №2
+        prpAddPRP2 = 1
+    Else
+        prpAddPRP2 = 0
+    End If
+    '
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Окно макроса в левом верхнем углу
+        prpLeftTopCorner = 1
+    Else
+        prpLeftTopCorner = 0
+    End If
+    Line Input #1, strTemp
+    If strTemp = "1" Then ' Окно макроса поверх всех
+        prpTopAll = 1
+    Else
+        prpTopAll = 0
+    End If
+Close #1
+End Sub
+
+Private Sub MyStandard()
+' Чтение ini файла
+Open Source3 For Input As #1
+    Line Input #1, strTemp ' Шрифт
+    stdFontName = strTemp
+    Line Input #1, strTemp ' Размер шрифта
+    strTemp = Replace(strTemp, ".", ",")
+    stdFontSize = CDbl(strTemp)
+    Line Input #1, strTemp ' Наклонный
+    If strTemp = "1" Then
+        stdFontItalic = 1
+    Else
+        stdFontItalic = 0
+    End If
+    Line Input #1, strTemp ' Жирный
+    If strTemp = "1" Then
+        stdFontBold = 1
+    Else
+        stdFontBold = 0
+    End If
+        Line Input #1, strTemp
+    stdDay = strTemp
+    Line Input #1, strTemp
+    stdMonth = strTemp
+    Line Input #1, strTemp
+    stdYear = strTemp
+    Line Input #1, strTemp
+    stdHour = strTemp
+    Line Input #1, strTemp
+    stdMinute = strTemp
+    Line Input #1, strTemp
+    stdSecond = strTemp
+Close #1
+' Проверяем дату у файла стандарта
+MyDateTime = FileDateTime(Source4)
+If stdDay = Day(MyDateTime) And stdMonth = Month(MyDateTime) And stdYear = Year(MyDateTime) And stdHour = Hour(MyDateTime) And stdMinute = Minute(MyDateTime) And stdSecond = Second(MyDateTime) Then
+Else
+    strTemp = swApp.GetUserPreferenceStringValue(swDefaultTemplateDrawing)
+    Set swDraw1 = swApp.NewDocument(strTemp, 0, 0, 0)
+    Set swModExt = swDraw1.Extension
+    ok = swModExt.LoadDraftingStandard(Source4)
+    Set swTextFormat = swModExt.GetUserPreferenceTextFormat(swDetailingDimensionTextFormat, swDetailingDimension)
+    strTemp = swDraw1.GetTitle
+    swApp.QuitDoc strTemp
+    
+    stdFontName = swTextFormat.TypeFaceName
+    stdFontSize = swTextFormat.CharHeight * 1000
+    If swTextFormat.Italic Then
+        stdFontItalic = 1
+    Else
+        stdFontItalic = 0
+    End If
+    If swTextFormat.Bold Then
+        stdFontBold = 1
+    Else
+        stdFontBold = 0
+    End If
+    
+    ' Запись ini
+    Open Source3 For Output As #1
+        Print #1, stdFontName
+        strTemp = LTrim(CStr(stdFontSize))
+        strTemp = Replace(strTemp, ".", ",")
+        Print #1, strTemp
+        If stdFontItalic = 1 Then
+            Print #1, "1"
+        Else
+            Print #1, "0"
+        End If
+        If stdFontBold = 1 Then
+            Print #1, "1"
+        Else
+            Print #1, "0"
+        End If
+        strTemp = Day(MyDateTime)
+        Print #1, strTemp
+        strTemp = Month(MyDateTime)
+        Print #1, strTemp
+        strTemp = Year(MyDateTime)
+        Print #1, strTemp
+        strTemp = Hour(MyDateTime)
+        Print #1, strTemp
+        strTemp = Minute(MyDateTime)
+        Print #1, strTemp
+        strTemp = Second(MyDateTime)
+        Print #1, strTemp
+    Close #1
+End If
+End Sub
+
+Private Sub FormatSize()
+FormatArr(0, 0) = "A4-P"
+FormatArr(0, 1) = "210"
+FormatArr(0, 2) = "297"
+
+FormatArr(1, 0) = "A3-P"
+FormatArr(1, 1) = "297"
+FormatArr(1, 2) = "420"
+
+FormatArr(2, 0) = "A3-A"
+FormatArr(2, 1) = "420"
+FormatArr(2, 2) = "297"
+
+FormatArr(3, 0) = "A2-P"
+FormatArr(3, 1) = "420"
+FormatArr(3, 2) = "594"
+
+FormatArr(4, 0) = "A2-A"
+FormatArr(4, 1) = "594"
+FormatArr(4, 2) = "420"
+
+FormatArr(5, 0) = "A1-P"
+FormatArr(5, 1) = "594"
+FormatArr(5, 2) = "841"
+
+FormatArr(6, 0) = "A1-A"
+FormatArr(6, 1) = "841"
+FormatArr(6, 2) = "594"
+
+FormatArr(7, 0) = "A0-P"
+FormatArr(7, 1) = "841"
+FormatArr(7, 2) = "1189"
+
+FormatArr(8, 0) = "A0-A"
+FormatArr(8, 1) = "1189"
+FormatArr(8, 2) = "841"
+' -------------
+FormatArr(9, 0) = "A4x3-A"
+FormatArr(9, 1) = "630"
+FormatArr(9, 2) = "297"
+
+FormatArr(10, 0) = "A4x4-A"
+FormatArr(10, 1) = "841"
+FormatArr(10, 2) = "297"
+
+FormatArr(11, 0) = "A4x5-A"
+FormatArr(11, 1) = "1051"
+FormatArr(11, 2) = "297"
+
+FormatArr(12, 0) = "A4x6-A"
+FormatArr(12, 1) = "1261"
+FormatArr(12, 2) = "297"
+
+FormatArr(13, 0) = "A4x7-A"
+FormatArr(13, 1) = "1471"
+FormatArr(13, 2) = "297"
+
+FormatArr(14, 0) = "A4x8-A"
+FormatArr(14, 1) = "1682"
+FormatArr(14, 2) = "297"
+
+FormatArr(15, 0) = "A4x9-A"
+FormatArr(15, 1) = "1892"
+FormatArr(15, 2) = "297"
+' -------------
+FormatArr(16, 0) = "A3x3-A"
+FormatArr(16, 1) = "891"
+FormatArr(16, 2) = "420"
+
+FormatArr(17, 0) = "A3x4-A"
+FormatArr(17, 1) = "1189"
+FormatArr(17, 2) = "420"
+
+FormatArr(18, 0) = "A3x5-A"
+FormatArr(18, 1) = "1486"
+FormatArr(18, 2) = "420"
+
+FormatArr(19, 0) = "A3x6-A"
+FormatArr(19, 1) = "1783"
+FormatArr(19, 2) = "420"
+
+FormatArr(20, 0) = "A3x7-A"
+FormatArr(20, 1) = "2080"
+FormatArr(20, 2) = "420"
+' -------------
+FormatArr(21, 0) = "A2x3-A"
+FormatArr(21, 1) = "1261"
+FormatArr(21, 2) = "594"
+
+FormatArr(22, 0) = "A2x4-A"
+FormatArr(22, 1) = "1682"
+FormatArr(22, 2) = "594"
+
+FormatArr(23, 0) = "A2x5-A"
+FormatArr(23, 1) = "2102"
+FormatArr(23, 2) = "594"
+' -------------
+FormatArr(24, 0) = "A1x3-A"
+FormatArr(24, 1) = "1783"
+FormatArr(24, 2) = "841"
+
+FormatArr(25, 0) = "A1x4-A"
+FormatArr(25, 1) = "2378"
+FormatArr(25, 2) = "841"
+' -------------
+FormatArr(26, 0) = "A0x2-A"
+FormatArr(26, 1) = "1682"
+FormatArr(26, 2) = "1189"
+
+FormatArr(27, 0) = "A0x3-A"
+FormatArr(27, 1) = "2523"
+FormatArr(27, 2) = "1189"
+
+TemplateName = FormatArr(0, 0)
+For i1 = 0 To 27
+    If vSheetProps(5) * 1000 = FormatArr(i1, 1) And vSheetProps(6) * 1000 = FormatArr(i1, 2) Then
+        TemplateName = FormatArr(i1, 0)
+        Exit For
+    End If
+Next i1
+TemplateName = Left$(TemplateName, Len(TemplateName) - 2)
+
+End Sub
+
+Private Sub Finish()
+Hide
+Unload Me
+End
+End Sub
+
+
+Private Sub TTTTemp()
+
+                    ' Удаление файлов со старыми именами
+                    Set fs = CreateObject("Scripting.FileSystemObject")
+                    If sDelName <> "" Then
+                        strTemp1 = Left(sDelName, Len(sDelName) - 4) & "_" & vSheetNames(i) & "_" & TemplateName & ".tif"
+                        Debug.Print strTemp1
+                        If fs.FileExists(strTemp1) = True Then ' Проверяем наличие файлов со старыми именами (с СБ)
+                            lRetval = swApp.SendMsgToUser2("Существует ранее сохраненный файл " & strTemp1 & Chr$(10) & "Удаляем его?", swMbWarning, swMbYesNo)
+                            If lRetval = swMbHitYes Then
+                                Kill strTemp1
+                            End If
+                        End If
+                    End If
+                    strTemp1 = Left(sPathName, Len(sPathName) - 4) & "_" & TemplateName & "_" & vSheetNames(i) & ".tif"
+                    If fs.FileExists(strTemp1) = True Then ' Проверяем наличие файлов со старыми именами (с переставленными форматом и именем листа)
+                        lRetval = swApp.SendMsgToUser2("Существует ранее сохраненный файл " & strTemp1 & Chr$(10) & "Удаляем его?", swMbWarning, swMbYesNo)
+                        If lRetval = swMbHitYes Then
+                            Kill strTemp1
+                        End If
+                    End If
+                    strTemp1 = "Лист" & LTrim(CStr(i + 1))
+                    strTemp1 = Left(sPathName, Len(sPathName) - 4) & "_" & TemplateName & "_" & strTemp1 & ".tif"
+                    If fs.FileExists(strTemp1) = True Then ' Проверяем наличие файлов со старыми именами (с переставленными форматом и именем листа ЛИСТ)
+                        lRetval = swApp.SendMsgToUser2("Существует ранее сохраненный файл " & strTemp1 & Chr$(10) & "Удаляем его?", swMbWarning, swMbYesNo)
+                        If lRetval = swMbHitYes Then
+                            Kill strTemp1
+                        End If
+                    End If
+                    strTemp1 = "Sheet" & LTrim(CStr(i + 1))
+                    strTemp1 = Left(sPathName, Len(sPathName) - 4) & "_" & TemplateName & "_" & strTemp1 & ".tif"
+                    If fs.FileExists(strTemp1) = True Then ' Проверяем наличие файлов со старыми именами (с переставленными форматом и именем листа SHEET)
+                        lRetval = swApp.SendMsgToUser2("Существует ранее сохраненный файл " & strTemp1 & Chr$(10) & "Удаляем его?", swMbWarning, swMbYesNo)
+                        If lRetval = swMbHitYes Then
+                            Kill strTemp1
+                        End If
+                    End If
+                    For i1 = 0 To 27 ' Проверяем наличие файлов с неверными форматами
+                    strTemp1 = Left$(FormatArr(i1, 0), Len(FormatArr(i1, 0)) - 2)
+                        If strTemp1 <> TemplateName Then
+                            strTemp1 = Left(sPathName, Len(sPathName) - 4) & "_" & vSheetNames(i) & "_" & strTemp1 & ".tif"
+                            If fs.FileExists(strTemp1) = True Then
+                                lRetval = swApp.SendMsgToUser2("Существует ранее сохраненный файл " & strTemp1 & Chr$(10) & "Удаляем его?", swMbWarning, swMbYesNo)
+                                If lRetval = swMbHitYes Then
+                                    Kill strTemp1
+                                End If
+                            End If
+                        End If
+                    Next i1
+                   
+End Sub
+

@@ -18,7 +18,8 @@ from oletools.olevba import VBA_Parser
 ROOT = Path(__file__).resolve().parents[2]
 SWPLUS = ROOT / "03_Макросы_и_Плагины" / "Макросы_SW_ZTool" / "SWPlusMacro_v_2018_SP0.0"
 EXPORT = ROOT / "03_Макросы_и_Плагины" / "Макросы_SW_ZTool" / "_VBA_выгрузка"
-MACROS = ("MProp/MProp.swp", "SProp/SProp.swp", "SpecEditor/SpecEditor.swp", "DProp/DProp.swp", "Master/Master.swp")
+MACROS = ("MProp/MProp.swp", "SProp/SProp.swp", "SpecEditor/SpecEditor.swp", "DProp/DProp.swp", "Master/Master.swp",
+          "SaveAsPDF/SaveAsPDF.swp", "SaveAsPDF/PDFCreator.swp", "SaveDRW/SaveDRW.swp")
 
 
 def sha256(path):
@@ -31,6 +32,8 @@ def extract(swp):
     parser = VBA_Parser(str(swp))
     try:
         for _, _, vba_filename, code in parser.extract_macros():
+            if vba_filename.startswith("VBA_P-code"):  # псевдомодуль oletools (дамп p-code), не исходный текст
+                continue
             name = re.sub(r"[^\w.\-]+", "_", vba_filename) + ".txt"
             if name in modules:
                 continue
