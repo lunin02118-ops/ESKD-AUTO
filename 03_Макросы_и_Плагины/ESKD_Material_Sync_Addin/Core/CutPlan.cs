@@ -47,7 +47,7 @@ namespace ESKD.MaterialSync.Core
     /// <summary>
     /// Раскрой хлыстов на заготовки (ТЗ-02 Т-13). Задача одномерная и решается жадно «сначала длинные»:
     /// цеху нужен понятный план, который можно проверить глазами, а не идеальная укладка. Нормативы —
-    /// из справочника: длина хлыста, захват станка (эту часть хлыста не режут), торцовка первого реза,
+    /// из справочника: длина хлыста, захват станка (эту часть хлыста не режут), торцовка одного конца,
     /// ширина пропила и нижняя граница делового обрезка.
     /// </summary>
     public static class CutPlan
@@ -67,10 +67,11 @@ namespace ESKD.MaterialSync.Core
             double faceMm, double kerfMm, double businessMm)
         {
             CutResult result = new CutResult { Sortament = sortament ?? "" };
-            // Зона реза: хлыст без захвата станка и без торцовки обоих торцов (справочник: «на каждый торец») —
-            // так же считает формула «Шт. из хлыста» в книге ЛЗК, иначе «оптимально N хл.» расходился бы с таблицей.
+            // Зона реза: хлыст без захвата станка и без торцовки одного конца. Второй конец уходит в захват
+            // и не торцуется (решение владельца 19.09.2026). Так же считает формула «Шт. из хлыста» в книге ЛЗК,
+            // иначе «оптимально N хл.» расходился бы с таблицей.
             double zone = Math.Max(0, barMm - gripMm);
-            double usable = zone - 2 * faceMm;
+            double usable = zone - faceMm;
             // Одинаковые длины раскладываются пачкой: «сначала длинные» даёт тот же план, что и по одной штуке,
             // но тираж в тысячи изделий не превращается в миллиарды сравнений в потоке SolidWorks.
             foreach (IGrouping<double, double> group in (pieces ?? new double[0]).Where(p => p > 0)
@@ -91,7 +92,7 @@ namespace ESKD.MaterialSync.Core
                 }
                 while (left > 0)
                 {
-                    CutBar bar = new CutBar { Used = 2 * faceMm, Rest = usable };
+                    CutBar bar = new CutBar { Used = faceMm, Rest = usable };
                     result.Bars.Add(bar);
                     left -= Put(bar, piece, step, Math.Min(left, (int)Math.Floor(bar.Rest / step)));
                 }

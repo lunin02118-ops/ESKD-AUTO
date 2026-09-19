@@ -281,7 +281,7 @@ namespace ESKD.Tests
                 Assert.AreEqual("556", cost.Get("B7"), "длинная заготовка первой");
                 Assert.AreEqual("4", cost.Get("C7"), "на изделие");
                 Assert.AreEqual("C7*Тираж", cost.Formula("D7"), "всего");
-                Assert.AreEqual("IF(B7>0,MAX(0,TRUNC((Хлыст-Захват-2*Торцовка)/(B7+Рез))),0)", cost.Formula("E7"), "из хлыста");
+                Assert.AreEqual("IF(B7>0,MAX(0,TRUNC((Хлыст-Захват-Торцовка)/(B7+Рез))),0)", cost.Formula("E7"), "из хлыста");
                 Assert.AreEqual("IF(E7>0,ROUNDUP(D7/E7,0),\"?\")", cost.Formula("F7"), "хлыстов");
                 Assert.AreEqual("300", cost.Get("B8"), "вторая длина");
                 Assert.AreEqual("SUM(F7:F8)", cost.Formula("F9"), "итого хлыстов по сортаменту");
