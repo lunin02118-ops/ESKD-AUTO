@@ -115,7 +115,9 @@ class StaticRepository(StaticTestCase):
         self.assertIn("$hardwareGraphics", setup, "конвейер включается без проверки видеокарты")
         pipeline = setup.index('"Use Performance Pipeline 2020" 1')
         self.assertLess(setup.index("$hardwareGraphics = switch"), pipeline, "конвейер включается до проверки видеокарты")
-        self.assertIn('if ($hardwareGraphics -and $nvidia.Count)', setup, "маска RealView пишется без видеокарты NVIDIA")
+        # Готовая маска AllowList роняла SolidWorks 2025 при старте (20.09.2026, GeForce RTX 2080 Ti): её только снимают.
+        self.assertNotIn('Set-Reg "$U\\SolidWorks\\AllowList', setup, "установщик снова пишет маску AllowList")
+        self.assertIn('Remove-Item -LiteralPath $stale', setup, "маска AllowList от прежней настройки не снимается")
         gui = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
         self.assertIn('"-Graphics", "Safe"', gui, "в окне настройки нет безопасной графики")
         self.assertTrue((ROOT / "01_Настройки_SolidWorks" / "Безопасная_графика_SolidWorks.ps1").is_file(),
