@@ -19,7 +19,7 @@
 .EXAMPLE
     .\Publish-EskdToolkit.ps1 -Target "Z:\00_ИНСТРУМЕНТЫ\Инструменты_Конструктора"
 .EXAMPLE
-    .\Publish-EskdToolkit.ps1 -Target "Z:\00_ИНСТРУМЕНТЫ\Инструменты_Конструктора" -SwToolsSetup "D:\сборки\SWTools-1.1.109-Setup.exe"
+    .\Publish-EskdToolkit.ps1 -Target "Z:\00_ИНСТРУМЕНТЫ\Инструменты_Конструктора" -SwToolsSetup "D:\сборки\SWTools-1.1.110-Setup.exe"
 .PARAMETER SwToolsSetup
     Установщик SWTools-<версия>-Setup.exe из сборки SWTools; рядом должен лежать его .manifest.json.
 #>
