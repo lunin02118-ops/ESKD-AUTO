@@ -31,6 +31,13 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Имя папки списка вырезов; у листовой детали — «листовой металл».</summary>
         public string Folder = "";
 
+        /// <summary>
+        /// Деталь, к которой относится позиция. При обходе изделия в одном окне сходятся позиции разных
+        /// деталей, и по одним именам папок списка вырезов («Элемент списка вырезов2») не понять, где они.
+        /// Пусто — окно про одну деталь, её имя уже стоит в заголовке.
+        /// </summary>
+        public string Owner = "";
+
         public StockRequest Request = new StockRequest();
         public StockMatch Match = new StockMatch();
 

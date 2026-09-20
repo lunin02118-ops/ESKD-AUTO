@@ -86,7 +86,11 @@ namespace ESKD.MaterialSync.Sw
                 if (report.Stock.Count == 0) continue;
                 stock[SafePath(part)] = report.Stock;
                 foreach (StockFinding finding in report.Stock)
+                {
+                    // В окне сойдутся позиции разных деталей — без имени детали конструктор не поймёт, где они.
+                    finding.Owner = Title(part);
                     if (finding.NeedsChoice) ask.Add(finding);
+                }
             }
 
             // Один вопрос на всё изделие: лист 6 мм в десяти деталях — это один выбор, а не десять окон.

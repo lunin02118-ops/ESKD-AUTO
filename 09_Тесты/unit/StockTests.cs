@@ -170,6 +170,8 @@ namespace ESKD.Tests
                 Assert.AreEqual(StockPickForm.Describe(first.Match.First), (string)lists[0].Items[0],
                                 "в списке обозначение материала, а не имя файла библиотеки");
 
+                Assert.AreEqual(-1, lists[0].SelectedIndex, "заранее ничего не выбрано: вопрос с готовым ответом — не вопрос");
+
                 lists[0].SelectedIndex = 1;   // конструктор выбрал вторую марку
                 form.ReadChoices();
 
@@ -187,6 +189,30 @@ namespace ESKD.Tests
             using (StockPickForm form = new StockPickForm("", new List<StockFinding> { finding }))
             {
                 Assert.AreEqual(0, form.Chosen.Count, "пока выбор не подтверждён, назначать нечего");
+            }
+        }
+
+        /// <summary>
+        /// При обходе изделия в одном окне сходятся позиции разных деталей. По именам папок списка вырезов
+        /// («Элемент списка вырезов2») не понять, где они, поэтому в строке стоит деталь.
+        /// </summary>
+        public static void Test_Pick_form_names_the_parts_when_walking_a_product()
+        {
+            List<MaterialInfo> library = Library();
+            StockMatch six = Sheet(library, "6,0");
+            StockFinding first = Finding("Элемент списка вырезов2", six, "6,0");
+            StockFinding second = Finding("Элемент списка вырезов2", six, "6,0");
+            first.Owner = "ПРТИ.301111.001 Стойка";
+            second.Owner = "ПРТИ.301111.002 Полка";
+
+            using (StockPickForm form = new StockPickForm("Изделие ПРТИ.301111.000 СБ Рама",
+                                                          new List<StockFinding> { first, second }))
+            {
+                Assert.AreEqual(1, form.Lists().Length, "один типоразмер — один вопрос на обе детали");
+                string caption = form.Captions()[0];
+                Assert.IsTrue(caption.IndexOf("Стойка", StringComparison.Ordinal) >= 0 &&
+                              caption.IndexOf("Полка", StringComparison.Ordinal) >= 0,
+                              "в строке названы обе детали: " + caption);
             }
         }
 
