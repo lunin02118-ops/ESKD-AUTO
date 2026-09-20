@@ -96,6 +96,16 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Stop-Update "Не найден git. Поставьте Git для Windows (https://git-scm.com/download/win) и повторите."
 }
 
+# Обновление нельзя запускать из самой общей папки: раскладка идёт зеркалом и перезапишет этот же скрипт,
+# пока он работает. Запускают его из локальной копии инструментария — она есть на каждой настроенной машине.
+$here = [System.IO.Path]::GetFullPath($PSScriptRoot)
+$dest = [System.IO.Path]::GetFullPath($Target)
+if ($here.StartsWith($dest, [StringComparison]::OrdinalIgnoreCase)) {
+    $local = Join-Path $env:LOCALAPPDATA "ESKD\Toolkit\01_Настройки_SolidWorks"
+    Stop-Update ("Скрипт запущен из самой общей папки ($here) — зеркало перезапишет его во время работы. " +
+                 "Запустите ту же кнопку из локальной копии: $local")
+}
+
 # 1. Свежая копия репозитория
 Say "[1/4] Получение из GitHub..."
 if (Test-Path -LiteralPath (Join-Path $WorkDir ".git")) {
