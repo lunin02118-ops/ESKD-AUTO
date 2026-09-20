@@ -261,6 +261,22 @@ class Stock(SwTestCase):
                          "деталь без материала обходом заполнена")
 
 
+    def test_T11_plain_solid_is_left_alone(self):
+        """T11: решение владельца 21.09.2026 — по геометрии не гадать. Плоская деталь, сделанная вытяжкой,
+        а не листовым металлом, может быть и пластиком, и фанерой: толщина тела о прокате не говорит ничего.
+        Такой детали надстройка не подбирает материал и ничего о нём не сообщает."""
+        path = self.s.ws(self._case_name(), "ПРТИ.301111.051 Пластина точёная.sldprt")
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        doc, _ = build.plate(self.s, 150, 80, 6, None)   # 6 мм: в библиотеке такой лист есть — соблазн подобрать
+        self.s.save_as(doc, path)
+        self.s.wait_addin_idle(timeout=60.0)
+
+        self.assertEqual([], self._report(), "по обычному телу вердиктов нет")
+        self.assertEqual(("", ""), build.material_of(doc, ""), "материал за конструктора не выбран")
+        self.s.close_all()
+        self.assertIsNone(V(self.persisted(path), "Материал_Строка", "00"), "и в свойства ничего не записано")
+
     def test_T10_product_walk_reaches_parts_three_levels_deep(self):
         """T10: изделие — это сборка сборок. Деталь лежит на третьем уровне дерева, а нажимают кнопку
         в корневой сборке: обход обязан дойти и до неё."""

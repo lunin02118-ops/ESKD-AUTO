@@ -256,6 +256,13 @@ namespace ESKD.MaterialSync.Sw
             }
             if (task.Kind == "stock")
             {
+                // Пока задача ждала простоя, документ могли закрыть, переоткрыть только для чтения, а службу —
+                // выключить (так автотесты читают файл, и так делает конструктор в «Настройках ЕСКД»). Назначать
+                // материал и вызывать Save3 в таком состоянии нельзя: это не замечание в журнале, а падение
+                // SolidWorks (R01, 19.09.2026).
+                if (!Settings.Read().ServiceEnabled) { Log.Info("Материал по геометрии: служба выключена, задача отменена"); return; }
+                if (!Alive(task.Doc)) { Log.Info("Материал по геометрии: документ закрыт, задача отменена"); return; }
+                if (ReadOnly(task.Doc)) { Log.Info("Материал по геометрии: документ открыт только для чтения, задача отменена"); return; }
                 ApplyStock(task.Doc);
                 return;
             }
@@ -293,6 +300,28 @@ namespace ESKD.MaterialSync.Sw
         /// недействительны. Если типоразмеру отвечает несколько материалов — спрашиваем конструктора; отложил выбор
         /// («Позже») — ничего не назначаем, замечание уже сказано в строке состояния.
         /// </summary>
+        /// <summary>Документ ещё жив: надстройка о нём знает и его не разрушали. Указатель закрытого документа — падение.</summary>
+        private bool Alive(ModelDoc2 doc)
+        {
+            if (doc == null) return false;
+            foreach (DocState s in _docs)
+                if (object.ReferenceEquals(s.Doc, doc)) return !s.Destroyed;
+            return false;
+        }
+
+        /// <summary>Документ открыт только для чтения. Спрашивать не о чем: сохранить его всё равно нельзя.</summary>
+        private static bool ReadOnly(ModelDoc2 doc)
+        {
+            try
+            {
+                return doc.IsOpenedReadOnly();
+            }
+            catch (Exception)
+            {
+                return true;  // не отвечает — тем более не трогаем
+            }
+        }
+
         private void ApplyStock(ModelDoc2 doc)
         {
             if (doc == null) return;
