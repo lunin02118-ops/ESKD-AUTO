@@ -27,6 +27,8 @@ namespace ESKD.MaterialSync.Sw
     public sealed class LzkService
     {
         private const int TimeoutMinutes = 15;
+        /// <summary>Всего попыток выгрузки SWTools: одна рабочая и одна на потерянный по дороге пакет данных.</summary>
+        private const int Attempts = 2;
         private static LzkService _running;
         private static bool _silent;
         private static string _lastOutcome = "";
@@ -54,6 +56,8 @@ namespace ESKD.MaterialSync.Sw
         private bool _finishing;
         private bool _finished;
         private bool _exitedEarly;
+        /// <summary>Сделано попыток выгрузки: пакет из SolidWorks теряется при занятом окне SWTools, повтор помогает.</summary>
+        private int _attempt = 1;
 
         private LzkService(ISldWorks app)
         {
@@ -858,6 +862,8 @@ namespace ESKD.MaterialSync.Sw
                 _timer.Stop();
                 // SWTools запущен надстройкой SWTools: код завершения этому процессу недоступен, итог — в отчёте.
                 SwToolsExport.Outcome outcome = SwToolsExport.ReadResult(_resultPath);
+                // Пакет с данными потерялся по дороге из SolidWorks — изделие ни при чём, выгрузка повторяется сама.
+                if (SwToolsExport.DeliveryLost(outcome) && _attempt < Attempts && Retry(outcome)) return;
                 string problem = outcome.Ok ? "" : SwToolsExport.Explain(outcome, -1);
                 Finish(outcome, problem);
             }
@@ -868,6 +874,24 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Ведомость ЛЗК: завершение", ex);
                 if (!_finished) Finish(null, ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Повторный запуск выгрузки после потерянного пакета. Прежние временные файлы убираются, таймер заводится
+        /// заново. false — повторить не удалось (отказ уже показан), итог подводится по прежней попытке.
+        /// </summary>
+        private bool Retry(SwToolsExport.Outcome outcome)
+        {
+            _attempt++;
+            Log.Warn("Ведомость ЛЗК: SWTools не получил данные из SolidWorks («" + (outcome.Error ?? "").Trim() +
+                     "») — повтор " + _attempt + " из " + Attempts);
+            CleanupAttempt();
+            _exitedEarly = false;
+            _finishing = false;
+            Status("ЕСКД: ведомость ЛЗК — SolidWorks не передал состав, повтор…");
+            if (Launch()) return true;
+            _finishing = true;
+            return false;
         }
 
         private void Finish(SwToolsExport.Outcome outcome, string problem)
@@ -1044,6 +1068,13 @@ namespace ESKD.MaterialSync.Sw
 
         private void Cleanup()
         {
+            CleanupAttempt();
+            if (object.ReferenceEquals(_running, this)) _running = null;
+        }
+
+        /// <summary>Хвосты одной попытки: таймер, временные файлы SWTools и его процесс. Служба остаётся текущей.</summary>
+        private void CleanupAttempt()
+        {
             if (_timer != null)
             {
                 _timer.Stop();
@@ -1063,7 +1094,6 @@ namespace ESKD.MaterialSync.Sw
             }
             if (_process != null) _process.Dispose();
             _process = null;
-            if (object.ReferenceEquals(_running, this)) _running = null;
         }
 
         // swDisplayOrigins не включён: у модели без окна SolidWorks 2025 отвечает на него RPC_E_SERVERFAULT и может упасть.

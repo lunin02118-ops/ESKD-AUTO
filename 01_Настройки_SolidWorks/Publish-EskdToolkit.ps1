@@ -28,6 +28,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Target,
     [switch]$SkipTests,
     [switch]$SkipBuild,
+    [switch]$SkipGuiBuild,
     [string]$SwToolsSetup = ""
 )
 
@@ -35,6 +36,15 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path -Path $PSScriptRoot -Parent
 $Target = $Target.TrimEnd('\')
 Import-Module (Join-Path $PSScriptRoot "EskdDeploy.psm1") -Force -DisableNameChecking
+
+# Сборка и автотесты пишут ход работы в stderr; при ErrorActionPreference=Stop PowerShell считает это ошибкой
+# и обрывает публикацию на первой же строке. Внешние программы запускаются со снятым режимом, а код возврата
+# проверяется явно (аудит 20.09.2026).
+function Invoke-Native([scriptblock]$Command) {
+    $old = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $Command } finally { $ErrorActionPreference = $old }
+}
 
 function Stop-Publish($message) {
     Write-Host "[ОШИБКА] $message" -ForegroundColor Red
@@ -60,15 +70,23 @@ if ($dirty) { Write-Host "[ВНИМАНИЕ] В репозитории есть 
 
 if (-not $SkipBuild) {
     Write-Host "`nСборка надстройки ЕСКД..." -ForegroundColor Gray
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\build.ps1")
+    Invoke-Native { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\build.ps1") }
     if ($LASTEXITCODE -ne 0) { Stop-Publish "Надстройка не собрана." }
-    Write-Host "`nСборка окна настройки..." -ForegroundColor Gray
-    $sources = Join-Path $PSScriptRoot "_Исходники"
-    & python -m PyInstaller --noconfirm --distpath $PSScriptRoot --workpath (Join-Path $PSScriptRoot "build_temp") `
-        (Join-Path $sources "Настройка_Рабочего_Места_SolidWorks.spec")
-    $code = $LASTEXITCODE
-    Remove-Item -LiteralPath (Join-Path $PSScriptRoot "build_temp") -Recurse -Force -ErrorAction SilentlyContinue
-    if ($code -ne 0) { Stop-Publish "Окно настройки не собрано (PyInstaller)." }
+    # Окно настройки лежит в репозитории собранным, PyInstaller нужен только когда правили его исходники.
+    # На машине без Python (обновление из GitHub у администратора) сборка пропускается — берётся файл из репозитория.
+    $gui = Join-Path $PSScriptRoot "Настройка_Рабочего_Места_SolidWorks.exe"
+    if ($SkipGuiBuild) {
+        if (-not (Test-Path -LiteralPath $gui)) { Stop-Publish "Окно настройки не собрано и его нет в репозитории: $gui" }
+        Write-Host "`nОкно настройки: из репозитория (-SkipGuiBuild)." -ForegroundColor Gray
+    } else {
+        Write-Host "`nСборка окна настройки..." -ForegroundColor Gray
+        $sources = Join-Path $PSScriptRoot "_Исходники"
+        Invoke-Native { & python -m PyInstaller --noconfirm --distpath $PSScriptRoot --workpath (Join-Path $PSScriptRoot "build_temp") `
+            (Join-Path $sources "Настройка_Рабочего_Места_SolidWorks.spec") }
+        $code = $LASTEXITCODE
+        Remove-Item -LiteralPath (Join-Path $PSScriptRoot "build_temp") -Recurse -Force -ErrorAction SilentlyContinue
+        if ($code -ne 0) { Stop-Publish "Окно настройки не собрано (PyInstaller)." }
+    }
 }
 if (-not (Test-Path -LiteralPath (Join-Path $repo "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\ESKD_Material_Sync_v5.dll"))) {
     Stop-Publish "Нет собранной надстройки ESKD_Material_Sync_v5.dll."
@@ -78,7 +96,7 @@ if (-not $SkipTests) {
     # После сборки: проверки собранной надстройки обязаны выполниться, пропуск из-за отсутствия DLL — провал.
     Write-Host "`nАвтотесты static..." -ForegroundColor Gray
     $env:ESKD_REQUIRE_BUILD = "1"
-    try { & python (Join-Path $repo "09_Тесты\run_tests.py") static } finally { Remove-Item Env:\ESKD_REQUIRE_BUILD -ErrorAction SilentlyContinue }
+    try { Invoke-Native { & python (Join-Path $repo "09_Тесты\run_tests.py") static } } finally { Remove-Item Env:\ESKD_REQUIRE_BUILD -ErrorAction SilentlyContinue }
     if ($LASTEXITCODE -ne 0) { Stop-Publish "Автотесты не прошли — публикация отменена." }
 }
 

@@ -106,6 +106,63 @@ class StaticRepository(StaticTestCase):
         self.assertIn('Replace("%TOOLKIT%", $toolkit)', setup, "установщик не подставляет папку инструментария")
         self.assertNotIn("$layout.DrwAutomation", setup, "поле раскладки, которого нет")
 
+    def test_T0_update_from_github_publishes_only_checked_release(self):
+        """T0 (замысел владельца 20.09.2026): обновление инструментария — одна кнопка, которая тянет репозиторий с
+        GitHub и раздаёт его в общую папку. В цех попадает только то, что собралось и прошло автотесты; паролей и
+        токенов скрипт не хранит; имя папки назначения не затирается служебной переменной (PowerShell не различает
+        регистр — из-за этого выпуск однажды уехал мимо NAS)."""
+        folder = ROOT / "01_Настройки_SolidWorks"
+        script = folder / "Обновить_из_GitHub.ps1"
+        self.assertTrue(script.is_file(), "нет скрипта обновления из GitHub")
+        self.assertEqual(b"\xef\xbb\xbf", script.read_bytes()[:3],
+                         "скрипт без BOM: Windows PowerShell 5.1 прочитает кириллицу как мусор")
+        text = script.read_text(encoding="utf-8-sig")
+        self.assertIn("Publish-EskdToolkit.ps1", text, "обновление не идёт через публикацию (сборка и автотесты)")
+        self.assertIn('if ($SkipTests) { $arguments += "-SkipTests" }', text, "автотесты отключаются не только явным ключом")
+        for secret in ("ghp_", "github_pat_", "-Password", "AccessToken", "PersonalAccessToken"):
+            self.assertNotIn(secret, text, "в скрипте обновления хранится секрет: " + secret)
+        shadow = [line for line in text.splitlines()
+                  if re.match(r"\s*\$target\s*=", line, re.IGNORECASE) and "$Target = $Target.TrimEnd" not in line]
+        self.assertEqual([], shadow, "служебная переменная затирает параметр -Target")
+        # toolkit_release.json читается явным UTF-8: Get-Content без -Encoding в PowerShell 5.1 берёт
+        # кодировку системы и молча портит кириллицу (20.09.2026).
+        self.assertNotIn("Get-Content -LiteralPath $releaseFile -Raw | ConvertFrom-Json", text,
+                         "выпуск читается без явной кодировки")
+        launcher = folder / "Обновить_инструментарий_из_GitHub.cmd"
+        self.assertTrue(launcher.is_file(), "нет ярлыка запуска обновления двойным щелчком")
+        self.assertIn("Обновить_из_GitHub.ps1", launcher.read_text(encoding="utf-8"), "ярлык не запускает скрипт обновления")
+
+    def test_T0_release_archive_matches_its_own_manifest(self):
+        """T0 (решение владельца 20.09.2026): выпуск раздаётся архивом со страницы Releases в GitHub — скачал,
+        распаковал куда угодно, запустил окно настройки. Архив собирается тем же публикатором, что и общая папка,
+        поэтому разойтись они не могут; версию архив берёт из toolkit_release.json, а не ставит свою — иначе имя
+        архива врёт о том, что внутри. Без автотестов на Releases ничего не уходит."""
+        script = ROOT / "01_Настройки_SolidWorks" / "Собрать_архив_выпуска.ps1"
+        self.assertTrue(script.is_file(), "нет сборщика архива выпуска")
+        self.assertEqual(b"\xef\xbb\xbf", script.read_bytes()[:3],
+                         "скрипт без BOM: Windows PowerShell 5.1 прочитает кириллицу как мусор")
+        text = script.read_text(encoding="utf-8-sig")
+        self.assertIn("Publish-EskdToolkit.ps1", text, "архив собирается мимо публикации (сборка и автотесты)")
+        self.assertIn('if ($SkipTests) { $arguments += "-SkipTests" }', text, "автотесты отключаются не только явным ключом")
+        # Версия — одна на архив, метку и toolkit_release.json внутри. Читается явным UTF-8: Get-Content без
+        # -Encoding в PowerShell 5.1 берёт кодировку системы и превращает кириллицу в мусор молча.
+        self.assertIn("$Version = \"$(([System.IO.File]::ReadAllText($releaseFile, [System.Text.Encoding]::UTF8) "
+                      "| ConvertFrom-Json).version)\"", text, "версия архива не читается из toolkit_release.json в UTF-8")
+        self.assertNotIn('$Version = (Get-Date)', text, "архив ставит свою отметку времени вместо версии выпуска")
+        tag = re.search(r'\$tag\s*=\s*"v\$Version"', text)
+        self.assertIsNotNone(tag, "метка выпуска строится не из версии")
+        self.assertLess(text.index("$Version ="), tag.start(), "метка выпуска строится до версии")
+        # Путь в Windows — не длиннее 260 знаков, внутри выпуска сидят пути под 155: имя папки в архиве
+        # короткое, а остаток запаса называется вслух, иначе распаковка оборвётся на середине молча.
+        self.assertIn('$inner = "ESKD-AUTO"', text, "папка внутри архива названа длинно — распаковка упрётся в предел пути")
+        self.assertIn("$budget = 259", text, "запас по длине пути не считается")
+        # Имена файлов в архиве кириллические: без UTF-8 они распакуются мусором.
+        self.assertIn("[System.Text.Encoding]::UTF8", text, "имена внутри архива пакуются не в UTF-8")
+        # Публикация — только по явному ключу, и только через gh: пароли и токены скрипт не хранит.
+        self.assertIn("if (-not $Publish) {", text, "архив выкладывается на GitHub без явного ключа -Publish")
+        for secret in ("ghp_", "github_pat_", "-Password", "AccessToken", "PersonalAccessToken"):
+            self.assertNotIn(secret, text, "в сборщике архива хранится секрет: " + secret)
+
     def test_T0_graphics_settings_do_not_depend_on_developer_pc(self):
         """Замечание владельца 20.09.2026: на другом ПК SolidWorks не запускался после настройки. Аппаратный конвейер
         графики включается только на дискретной видеокарте (ключ -Graphics: Auto/Safe/Hardware), программный OpenGL
@@ -115,7 +172,9 @@ class StaticRepository(StaticTestCase):
         self.assertIn("$hardwareGraphics", setup, "конвейер включается без проверки видеокарты")
         pipeline = setup.index('"Use Performance Pipeline 2020" 1')
         self.assertLess(setup.index("$hardwareGraphics = switch"), pipeline, "конвейер включается до проверки видеокарты")
-        self.assertIn('if ($hardwareGraphics -and $nvidia.Count)', setup, "маска RealView пишется без видеокарты NVIDIA")
+        # Готовая маска AllowList роняла SolidWorks 2025 при старте (20.09.2026, GeForce RTX 2080 Ti): её только снимают.
+        self.assertNotIn('Set-Reg "$U\\SolidWorks\\AllowList', setup, "установщик снова пишет маску AllowList")
+        self.assertIn('Remove-Item -LiteralPath $stale', setup, "маска AllowList от прежней настройки не снимается")
         gui = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
         self.assertIn('"-Graphics", "Safe"', gui, "в окне настройки нет безопасной графики")
         self.assertTrue((ROOT / "01_Настройки_SolidWorks" / "Безопасная_графика_SolidWorks.ps1").is_file(),

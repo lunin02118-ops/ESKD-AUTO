@@ -78,9 +78,12 @@ namespace ESKD.MaterialSync.Sw
                 return (quick ? IssuedQuick(path, drawing) : Issued(path, drawing))
                     ? "" : "документ ещё не выдан — правьте свободно";
             }
-            catch (COMException)
+            catch (COMException ex)
             {
-                return "";
+                // Пустая строка означает «препятствий нет» — на занятом SolidWorks это превращало запрет на правку
+                // выданного документа в разрешение (аудит 20.09.2026). Не узнали — значит нельзя.
+                Log.Error("Ревизия: проверка выданного документа", ex);
+                return "SolidWorks не ответил — проверить, выдан ли документ, не удалось; повторите";
             }
         }
 

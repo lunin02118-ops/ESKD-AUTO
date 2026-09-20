@@ -531,35 +531,14 @@ if ($hardwareGraphics) {
     Write-Ok "Графика ($cardNames): аппаратный конвейер не включается — SolidWorks выберет режим сам."
 }
 
-# RealView и конвейер под именами видеокарт — только для дискретных NVIDIA: встроенной Intel/AMD без сертифицированного
-# драйвера RealView даёт артефакты (аудит 19.09, У-В6).
-if ($hardwareGraphics -and $nvidia.Count) {
-    try {
-        $nvWorkarounds = 0x32408 # 205832: RealView + Performance Pipeline
-        foreach ($gpu in $nvidia) {
-            Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\$gpu" "Workarounds" $nvWorkarounds "DWord"
-            Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\$gpu" "Workarounds" $nvWorkarounds "DWord"
-        }
-        # Универсальные ключи для семейств NVIDIA GeForce
-        Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\GeForce" "Workarounds" $nvWorkarounds "DWord"
-        Set-Reg "$U\SolidWorks\AllowList\Gl2Shaders\NV40\NVIDIA GeForce" "Workarounds" $nvWorkarounds "DWord"
-        Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\GeForce" "Workarounds" $nvWorkarounds "DWord"
-        Set-Reg "$U\SolidWorks\AllowList\NVIDIA Corporation\NVIDIA GeForce" "Workarounds" $nvWorkarounds "DWord"
-        # Текущий рендерер, если уже инициализирован SolidWorks
-        $curKey = "$U\SolidWorks\AllowList\Current"
-        if (Test-Path -LiteralPath $curKey) {
-            $curVendor = [string](Get-RegValue $curKey "Vendor")
-            if ($curVendor -like "*NVIDIA*") { Set-Reg $curKey "Workarounds" $nvWorkarounds "DWord" }
-        }
-        Write-Ok "AllowList: RealView и аппаратный конвейер активированы для видеокарты NVIDIA."
-    } catch { Write-Info "AllowList не настроен: $($_.Exception.Message)" }
-} elseif (-not $hardwareGraphics) {
-    # Настройка чужой машины могла оставить маску от прежнего ПК — снимаем её, иначе SolidWorks снова не стартует.
-    foreach ($stale in @("$U\SolidWorks\AllowList\Gl2Shaders", "$U\SolidWorks\AllowList\NVIDIA Corporation")) {
-        if (Test-Path -LiteralPath $stale) { Remove-Item -LiteralPath $stale -Recurse -Force -ErrorAction SilentlyContinue }
-    }
-    Write-Info "RealView не настраивается: дискретной видеокарты NVIDIA нет."
+# AllowList SolidWorks заполняет сам при первом запуске: он записывает туда вендора, рендерер, версию драйвера и маску
+# обхода целиком. Готовая маска от нас (одно значение «Workarounds» без остальных) роняла SolidWorks 2025 при старте —
+# 0xC0000005 сразу, окно не появлялось (проверено 20.09.2026 на GeForce RTX 2080 Ti). Поэтому маски только снимаем:
+# свою прежнюю и оставшуюся от настройки другой машины. RealView SolidWorks включит сам на сертифицированной карте.
+foreach ($stale in @("$U\SolidWorks\AllowList\Gl2Shaders", "$U\SolidWorks\AllowList\NVIDIA Corporation")) {
+    if (Test-Path -LiteralPath $stale) { Remove-Item -LiteralPath $stale -Recurse -Force -ErrorAction SilentlyContinue }
 }
+Write-Info "AllowList не настраивается вручную: RealView и конвейер SolidWorks определяет по драйверу сам."
 
 # 4. Очистка устаревших надстроек и вкладок
 Write-Step "[4/9] Очистка устаревших надстроек и вкладок..."
