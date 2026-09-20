@@ -676,9 +676,39 @@ namespace ESKD.MaterialSync.Core
             return o;
         }
 
+        /// <summary>
+        /// Сбой доставки данных из SolidWorks, а не ошибка в изделии. Надстройка SWTools шлёт в SWTools.exe два пакета —
+        /// дерево изделия и состав; пакет уходит через SendMessageTimeout с флагом «бросить, если окно занято», и при
+        /// занятом окне теряется молча. SWTools этого не замечает и говорит о следствии: узел не выбран, данных нет.
+        /// Модель тут ни при чём — выгрузку надо просто повторить (владелец, 20.09.2026: «Не выбрано ни одного узла»).
+        /// </summary>
+        public static bool DeliveryLost(Outcome o)
+        {
+            if (o == null || !o.Found || o.Ok || o.ExitCode != 1) return false;
+            string error = (o.Error ?? "").Trim();
+            foreach (string known in LostDeliveryErrors)
+            {
+                if (error.StartsWith(known, StringComparison.OrdinalIgnoreCase)) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Сообщения SWTools, которыми оборачивается потерянный пакет (client-src/ZTool/Frmmain.cs).</summary>
+        private static readonly string[] LostDeliveryErrors =
+        {
+            "Не выбрано ни одного узла",
+            "Нет данных для экспорта"
+        };
+
+        /// <summary>Причина, понятная конструктору, когда пакет потерялся и повтор не помог.</summary>
+        public const string DeliveryLostExplanation =
+            "SolidWorks не передал SWTools состав изделия — пакет данных потерялся, повтор не помог. " +
+            "Закройте лишние документы и окно SWTools, если открыто, и нажмите «Ведомость ЛЗК» ещё раз.";
+
         /// <summary>Понятное конструктору объяснение кода завершения SWTools.</summary>
         public static string Explain(Outcome o, int processExitCode)
         {
+            if (DeliveryLost(o)) return DeliveryLostExplanation;
             if (!o.Found)
                 return "SWTools завершился без отчёта" + (processExitCode >= 0 ? " (код " + processExitCode + ")" : "") +
                     ". Проверьте установку SWTools: запустите его из SolidWorks один раз.";

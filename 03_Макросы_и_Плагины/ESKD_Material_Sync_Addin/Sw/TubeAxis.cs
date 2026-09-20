@@ -47,8 +47,18 @@ namespace ESKD.MaterialSync.Sw
                     return axis;
                 }
                 // Выделение работает с активным документом: компонент сборки делается активным на время выгрузки.
+                // Занятый SolidWorks отвечает отказом — тогда ось строилась бы по чужому документу, и IGS уезжал
+                // в глобальной системе координат с отметкой «ok» (аудит 20.09.2026).
                 int errors = 0;
                 app.ActivateDoc3(path, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref errors);
+                ModelDoc2 active = app.ActiveDoc as ModelDoc2;
+                string now = active != null ? active.GetPathName() ?? "" : "";
+                if (!string.Equals(now, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    Log.Warn("Выгрузка: деталь не стала активной (код " + errors + "), активен «" + now + "» вместо «" + path + "»");
+                    axis.Reason = "SolidWorks не сделал деталь активной — ось трубы не построена";
+                    return axis;
+                }
                 axis.Build(line);
             }
             catch (Exception ex)

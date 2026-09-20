@@ -137,6 +137,40 @@ namespace ESKD.Tests
                 File.Delete(path);
             }
         }
+
+        /// <summary>
+        /// U-LZK-2 (владелец, 20.09.2026): потерянный по дороге пакет данных отличается от ошибки в изделии —
+        /// выгрузка повторяется сама, а конструктору называется причина, а не следствие.
+        /// </summary>
+        public static void Test_DeliveryLost_is_told_apart_from_real_errors()
+        {
+            string path = Path.Combine(Path.GetTempPath(), "eskd_swt_" + Guid.NewGuid().ToString("N") + ".txt");
+            try
+            {
+                foreach (string error in new[] { "Не выбрано ни одного узла",
+                                                 "Нет данных для экспорта: SolidWorks не вернул состав модели",
+                                                 "нет данных для экспорта" })
+                {
+                    File.WriteAllText(path, "schema=swtools.headless-bom-export.v1\r\nstatus=FAILED\r\nexit_code=1\r\nerror=" + error + "\r\n");
+                    SwToolsExport.Outcome lost = SwToolsExport.ReadResult(path);
+                    Assert.IsTrue(SwToolsExport.DeliveryLost(lost), "потерянный пакет: " + error);
+                    Assert.AreEqual(SwToolsExport.DeliveryLostExplanation, SwToolsExport.Explain(lost, -1), "причина, а не следствие: " + error);
+                }
+
+                // Настоящие отказы повторять нельзя: повтор ничего не изменит, а конструктор ждёт вдвое дольше.
+                File.WriteAllText(path, "schema=swtools.headless-bom-export.v1\r\nstatus=FAILED\r\nexit_code=3\r\nerror=Нет действующей лицензии\r\n");
+                Assert.IsFalse(SwToolsExport.DeliveryLost(SwToolsExport.ReadResult(path)), "лицензия — не потеря пакета");
+                File.WriteAllText(path, "schema=swtools.headless-bom-export.v1\r\nstatus=FAILED\r\nexit_code=1\r\nerror=Шаблон пресета должен быть книгой .xlsx\r\n");
+                Assert.IsFalse(SwToolsExport.DeliveryLost(SwToolsExport.ReadResult(path)), "шаблон — не потеря пакета");
+                File.WriteAllText(path, "schema=swtools.headless-bom-export.v1\r\nstatus=OK\r\nexit_code=0\r\nrows=3\r\nerror=\r\n");
+                Assert.IsFalse(SwToolsExport.DeliveryLost(SwToolsExport.ReadResult(path)), "успех — не потеря пакета");
+                Assert.IsFalse(SwToolsExport.DeliveryLost(null), "нет итога — не потеря пакета");
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
     }
 
     public static class LzkWorkbookTests

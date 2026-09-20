@@ -351,7 +351,13 @@ namespace ESKD.MaterialSync.Sw
                         if (w.Exists(cfg, name)) w.Set(cfg, name, "");
                 SyncService.SyncModel(app, model, new SyncRequest { Reason = "сделано независимым" });
                 int errors = 0, warnings = 0;
-                model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings);
+                // Несохранённый документ раньше засчитывался как готовый: реквизиты оставались только в памяти
+                // и терялись при закрытии (аудит 20.09.2026).
+                if (!model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
+                {
+                    Log.Warn("Сделать независимым: деталь не сохранена (код " + errors + ") " + target);
+                    log.Skip(title, "новая деталь не сохранена (код " + errors + "): откройте её и сохраните");
+                }
             }
             catch (Exception ex)
             {
@@ -395,7 +401,13 @@ namespace ESKD.MaterialSync.Sw
                 drawing.ForceRebuild3(false);
                 entry.Dangling = Dangling(drw);
                 int saveErrors = 0, saveWarnings = 0;
-                drawing.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref saveErrors, ref saveWarnings);
+                // Чертёж засчитывался готовым независимо от того, лёг он на диск или нет (аудит 20.09.2026).
+                if (!drawing.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref saveErrors, ref saveWarnings))
+                {
+                    Log.Warn("Сделать независимым: чертёж не сохранён (код " + saveErrors + ") " + targetDrawing);
+                    log.Skip(title, "чертёж не сохранён (код " + saveErrors + "): откройте его и сохраните");
+                    return;
+                }
                 entry.Drawing = targetDrawing;
             }
             catch (Exception ex)

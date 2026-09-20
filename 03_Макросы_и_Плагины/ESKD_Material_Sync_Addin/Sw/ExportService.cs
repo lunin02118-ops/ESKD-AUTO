@@ -344,7 +344,11 @@ namespace ESKD.MaterialSync.Sw
             {
                 // Развёртку SolidWorks отдаёт только активному документу: компонент сборки, открытый в фоне,
                 // получает отказ без объяснения (боевой заказ NC3-7R). Активная сборка возвращается в конце.
-                Activate(app, item.Path);
+                if (!Activate(app, item.Path))
+                {
+                    log.Skip(Path.GetFileName(item.Path), "SolidWorks не сделал деталь активной: DXF не сделан");
+                    return;
+                }
                 // Выравнивание — 12 чисел, список видов — массив строк: null в этих параметрах
                 // SolidWorks молча отвергает, и развёртка не выгружается.
                 double[] alignment = new double[12];
@@ -424,17 +428,27 @@ namespace ESKD.MaterialSync.Sw
             return double.NaN;
         }
 
-        /// <summary>Сделать документ активным — экспорт развёртки и IGS работает только с активным окном.</summary>
-        private static void Activate(ISldWorks app, string path)
+        /// <summary>
+        /// Сделать документ активным — экспорт развёртки и IGS работает только с активным окном. false — не стал
+        /// активным: занятый SolidWorks отвечает отказом, и выгрузка пошла бы по чужому документу, но с отметкой «ok»
+        /// (аудит 20.09.2026). Проверяется не код возврата, а сам активный документ: он и есть признак успеха.
+        /// </summary>
+        private static bool Activate(ISldWorks app, string path)
         {
             try
             {
                 int errors = 0;
                 app.ActivateDoc3(path, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref errors);
+                ModelDoc2 active = app.ActiveDoc as ModelDoc2;
+                string now = active != null ? active.GetPathName() ?? "" : "";
+                if (string.Equals(now, path, StringComparison.OrdinalIgnoreCase)) return true;
+                Log.Warn("Выгрузка: документ не стал активным (код " + errors + "), активен «" + now + "» вместо «" + path + "»");
+                return false;
             }
             catch (COMException ex)
             {
                 Log.Error("Выгрузка: активация " + path, ex);
+                return false;
             }
         }
 

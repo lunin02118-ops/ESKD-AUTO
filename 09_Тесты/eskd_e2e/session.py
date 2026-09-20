@@ -332,18 +332,29 @@ class SwSession:
         Закрыть документ или снять с него подписки зонда раньше нельзя: SolidWorks принимает внешний COM-вызов
         посреди Save3 и падает (R01, 19.09.2026). Каждый опрос отдаёт SolidWorks простой."""
         deadline = time.time() + timeout
+        refused = 0
         while time.time() < deadline:
             try:
                 addin = self.eskd() if self.eskd_loaded else None
                 if addin is None or int(com.call(addin, "PendingIdleTasks")) == 0:
                     return True
+                refused = 0
             except Exception:
-                return False
+                # Занятый SolidWorks отклоняет вызов — это «ещё не простаивает», а не «ждать больше не надо».
+                # Прежний мгновенный выход и давал закрытие документа посреди Save3 (R01, аудит 20.09.2026).
+                refused += 1
+                if refused >= 5:
+                    return False
             time.sleep(0.2)
         return False
 
     def close(self, doc):
-        self.wait_addin_idle()
+        if not self.wait_addin_idle():
+            # Закрывать документ, пока надстройка не отработала отложенные задачи, нельзя: SolidWorks падает
+            # на внешнем COM-вызове посреди Save3. Даём ему ещё простоя и пишем это в вывод теста.
+            print("ВНИМАНИЕ: надстройка не отчиталась о простое перед закрытием документа — дополнительная пауза")
+            time.sleep(2.0)
+            self.wait_addin_idle(timeout=30.0)
         try:
             title = doc.GetTitle
         except Exception:
@@ -365,7 +376,9 @@ class SwSession:
         time.sleep(0.3)
 
     def close_all(self):
-        self.wait_addin_idle()
+        if not self.wait_addin_idle():
+            time.sleep(2.0)
+            self.wait_addin_idle(timeout=30.0)
         for doc in list(self._opened):
             self.close(doc)
         try:

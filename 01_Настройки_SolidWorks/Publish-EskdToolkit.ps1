@@ -28,6 +28,7 @@ param(
     [Parameter(Mandatory = $true)][string]$Target,
     [switch]$SkipTests,
     [switch]$SkipBuild,
+    [switch]$SkipGuiBuild,
     [string]$SwToolsSetup = ""
 )
 
@@ -62,13 +63,21 @@ if (-not $SkipBuild) {
     Write-Host "`nСборка надстройки ЕСКД..." -ForegroundColor Gray
     & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\build.ps1")
     if ($LASTEXITCODE -ne 0) { Stop-Publish "Надстройка не собрана." }
-    Write-Host "`nСборка окна настройки..." -ForegroundColor Gray
-    $sources = Join-Path $PSScriptRoot "_Исходники"
-    & python -m PyInstaller --noconfirm --distpath $PSScriptRoot --workpath (Join-Path $PSScriptRoot "build_temp") `
-        (Join-Path $sources "Настройка_Рабочего_Места_SolidWorks.spec")
-    $code = $LASTEXITCODE
-    Remove-Item -LiteralPath (Join-Path $PSScriptRoot "build_temp") -Recurse -Force -ErrorAction SilentlyContinue
-    if ($code -ne 0) { Stop-Publish "Окно настройки не собрано (PyInstaller)." }
+    # Окно настройки лежит в репозитории собранным, PyInstaller нужен только когда правили его исходники.
+    # На машине без Python (обновление из GitHub у администратора) сборка пропускается — берётся файл из репозитория.
+    $gui = Join-Path $PSScriptRoot "Настройка_Рабочего_Места_SolidWorks.exe"
+    if ($SkipGuiBuild) {
+        if (-not (Test-Path -LiteralPath $gui)) { Stop-Publish "Окно настройки не собрано и его нет в репозитории: $gui" }
+        Write-Host "`nОкно настройки: из репозитория (-SkipGuiBuild)." -ForegroundColor Gray
+    } else {
+        Write-Host "`nСборка окна настройки..." -ForegroundColor Gray
+        $sources = Join-Path $PSScriptRoot "_Исходники"
+        & python -m PyInstaller --noconfirm --distpath $PSScriptRoot --workpath (Join-Path $PSScriptRoot "build_temp") `
+            (Join-Path $sources "Настройка_Рабочего_Места_SolidWorks.spec")
+        $code = $LASTEXITCODE
+        Remove-Item -LiteralPath (Join-Path $PSScriptRoot "build_temp") -Recurse -Force -ErrorAction SilentlyContinue
+        if ($code -ne 0) { Stop-Publish "Окно настройки не собрано (PyInstaller)." }
+    }
 }
 if (-not (Test-Path -LiteralPath (Join-Path $repo "03_Макросы_и_Плагины\ESKD_Material_Sync_Addin\ESKD_Material_Sync_v5.dll"))) {
     Stop-Publish "Нет собранной надстройки ESKD_Material_Sync_v5.dll."

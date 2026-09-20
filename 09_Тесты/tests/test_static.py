@@ -106,6 +106,28 @@ class StaticRepository(StaticTestCase):
         self.assertIn('Replace("%TOOLKIT%", $toolkit)', setup, "установщик не подставляет папку инструментария")
         self.assertNotIn("$layout.DrwAutomation", setup, "поле раскладки, которого нет")
 
+    def test_T0_update_from_github_publishes_only_checked_release(self):
+        """T0 (замысел владельца 20.09.2026): обновление инструментария — одна кнопка, которая тянет репозиторий с
+        GitHub и раздаёт его в общую папку. В цех попадает только то, что собралось и прошло автотесты; паролей и
+        токенов скрипт не хранит; имя папки назначения не затирается служебной переменной (PowerShell не различает
+        регистр — из-за этого выпуск однажды уехал мимо NAS)."""
+        folder = ROOT / "01_Настройки_SolidWorks"
+        script = folder / "Обновить_из_GitHub.ps1"
+        self.assertTrue(script.is_file(), "нет скрипта обновления из GitHub")
+        self.assertEqual(b"\xef\xbb\xbf", script.read_bytes()[:3],
+                         "скрипт без BOM: Windows PowerShell 5.1 прочитает кириллицу как мусор")
+        text = script.read_text(encoding="utf-8-sig")
+        self.assertIn("Publish-EskdToolkit.ps1", text, "обновление не идёт через публикацию (сборка и автотесты)")
+        self.assertIn('if ($SkipTests) { $arguments += "-SkipTests" }', text, "автотесты отключаются не только явным ключом")
+        for secret in ("ghp_", "github_pat_", "-Password", "AccessToken", "PersonalAccessToken"):
+            self.assertNotIn(secret, text, "в скрипте обновления хранится секрет: " + secret)
+        shadow = [line for line in text.splitlines()
+                  if re.match(r"\s*\$target\s*=", line, re.IGNORECASE) and "$Target = $Target.TrimEnd" not in line]
+        self.assertEqual([], shadow, "служебная переменная затирает параметр -Target")
+        launcher = folder / "Обновить_инструментарий_из_GitHub.cmd"
+        self.assertTrue(launcher.is_file(), "нет ярлыка запуска обновления двойным щелчком")
+        self.assertIn("Обновить_из_GitHub.ps1", launcher.read_text(encoding="utf-8"), "ярлык не запускает скрипт обновления")
+
     def test_T0_graphics_settings_do_not_depend_on_developer_pc(self):
         """Замечание владельца 20.09.2026: на другом ПК SolidWorks не запускался после настройки. Аппаратный конвейер
         графики включается только на дискретной видеокарте (ключ -Graphics: Auto/Safe/Hardware), программный OpenGL
