@@ -139,7 +139,7 @@ $releaseFile = Join-Path $Target "toolkit_release.json"
 $published = ""
 if (Test-Path -LiteralPath $releaseFile) {
     try {
-        $release = Get-Content -LiteralPath $releaseFile -Raw | ConvertFrom-Json
+        $release = [System.IO.File]::ReadAllText($releaseFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
         $published = "$($release.commit)"
         Info "Сейчас опубликован выпуск $($release.version) (коммит $published, $($release.date))"
     } catch { Info "toolkit_release.json не разобран — сравнить не с чем." }
@@ -197,7 +197,7 @@ if ($LASTEXITCODE -ne 0) { Stop-Update "Публикация не выполне
 # 4. Итог
 Say "`n[4/4] Проверка результата..."
 if (-not (Test-Path -LiteralPath $releaseFile)) { Stop-Update "Публикация прошла, но toolkit_release.json не появился." }
-$result = Get-Content -LiteralPath $releaseFile -Raw | ConvertFrom-Json
+$result = [System.IO.File]::ReadAllText($releaseFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
 Ok "В общей папке выпуск $($result.version), коммит $($result.commit)"
 Write-Host ""
 Write-Host "Конструкторам: запустить $Target\01_Настройки_SolidWorks\Настройка_Рабочего_Места_SolidWorks.exe" -ForegroundColor White
