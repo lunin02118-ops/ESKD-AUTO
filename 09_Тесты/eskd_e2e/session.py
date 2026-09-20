@@ -142,6 +142,7 @@ class SwSession:
             # закрывает её stop() через ExitApp.
             self.sw.UserControl = True
             self._wait_startup()
+            self._silence_pdf_viewer()
             if self.pid:
                 self.watchdog = DialogWatchdog(self.pid)
                 self.watchdog.start()
@@ -154,6 +155,18 @@ class SwSession:
             self.stop()
             raise
         return self
+
+    def _silence_pdf_viewer(self):
+        """Выключить «просмотр PDF после сохранения» (swPDFViewOnSave = 617).
+
+        Прогон делает PDF десятками, и SolidWorks открывает по окну просмотрщика на каждый. 21.09.2026 так
+        набралось 152 процесса PDF-XChange на 27 ГБ: SolidWorks предупредил о нехватке памяти окном «Да/Нет»
+        (сторожевой пёс засчитал это провалом X05) и в другом прогоне упал совсем. Значение сессии, не файла
+        пользователя: SolidWorks поднимается заново в каждом прогоне."""
+        try:
+            self.sw.SetUserPreferenceToggle(617, False)
+        except Exception as exc:  # старая версия SolidWorks без этого параметра — не повод валить прогон
+            print(f"не удалось выключить просмотр PDF после сохранения: {exc}", file=sys.stderr)
 
     def _launch(self, timeout=180):
         """SolidWorks запускается как у пользователя — SLDWORKS.exe — и берётся из таблицы запущенных объектов.

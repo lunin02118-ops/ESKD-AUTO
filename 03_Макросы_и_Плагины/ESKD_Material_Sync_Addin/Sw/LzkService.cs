@@ -492,19 +492,46 @@ namespace ESKD.MaterialSync.Sw
                     if (sub.GetTypeName2() != "CutListFolder") continue;
                     CustomPropertyManager m = sub.CustomPropertyManager;
                     if (m == null) continue;
-                    string raw, resolved;
-                    m.Get4("LENGTH", false, out raw, out resolved);
-                    double v = LzkOperations.ParseNumber(resolved);
-                    if (double.IsNaN(v)) v = LzkOperations.ParseNumber(raw);
+                    // Имена свойств зависят от языка SolidWorks («ДЛИНА», а не LENGTH), поэтому нужное ищется
+                    // по ссылке внутри значения — она английская всегда (замечание владельца 21.09.2026).
+                    List<KeyValuePair<string, string>> written = Written(m);
+                    double v = Value(m, CutListProperties.Find(written, "LENGTH", CutListProperties.LengthSpellings));
                     if (double.IsNaN(v)) continue;
                     if (double.IsNaN(found) || v > found) found = v;
-                    m.Get4("QUANTITY", false, out raw, out resolved);
-                    double quantity = LzkOperations.ParseNumber(resolved);
+                    double quantity = Value(m, CutListProperties.Find(written, "QUANTITY", CutListProperties.QuantitySpellings));
                     pieces += double.IsNaN(quantity) || quantity < 1 ? 1 : (int)Math.Round(quantity);
                 }
             }
             several = pieces > 1;
             return found;
+        }
+
+        /// <summary>Пары «имя свойства → записанное значение» папки списка вырезов: по ним ищется нужная величина.</summary>
+        public static List<KeyValuePair<string, string>> Written(CustomPropertyManager m)
+        {
+            List<KeyValuePair<string, string>> pairs = new List<KeyValuePair<string, string>>();
+            if (m == null) return pairs;
+            object[] names = m.GetNames() as object[];
+            if (names == null) return pairs;
+            foreach (object o in names)
+            {
+                string name = o as string;
+                if (string.IsNullOrEmpty(name)) continue;
+                string raw, resolved;
+                m.Get4(name, false, out raw, out resolved);
+                pairs.Add(new KeyValuePair<string, string>(name, raw ?? ""));
+            }
+            return pairs;
+        }
+
+        /// <summary>Число из свойства с таким именем: сначала вычисленное значение, потом записанное.</summary>
+        public static double Value(CustomPropertyManager m, string name)
+        {
+            if (m == null || string.IsNullOrEmpty(name)) return double.NaN;
+            string raw, resolved;
+            m.Get4(name, false, out raw, out resolved);
+            double v = LzkOperations.ParseNumber(resolved);
+            return double.IsNaN(v) ? LzkOperations.ParseNumber(raw) : v;
         }
 
         /// <summary>Плотность материала детали, кг/м³; 0 — не определена.</summary>

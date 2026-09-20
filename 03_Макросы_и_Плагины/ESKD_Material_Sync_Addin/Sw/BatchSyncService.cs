@@ -249,6 +249,9 @@ namespace ESKD.MaterialSync.Sw
             int errors = 0, warnings = 0;
             try
             {
+                // Неперестроенную модель SolidWorks сохраняет с вопросом «перестроить?» — при обходе изделия это
+                // окно на каждую деталь. Перестраиваем сами (X05, 21.09.2026).
+                part.EditRebuild3();
                 if (part.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings)) return true;
                 batch.Failed++;
                 batch.Warnings.Add(Title(part) + string.Format(": не сохранена (errors={0}, warnings={1})", errors, warnings));

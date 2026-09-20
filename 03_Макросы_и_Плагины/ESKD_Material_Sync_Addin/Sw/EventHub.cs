@@ -316,9 +316,10 @@ namespace ESKD.MaterialSync.Sw
             {
                 return doc.IsOpenedReadOnly();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                return true;  // не отвечает — тем более не трогаем
+                Log.Warn("Материал по геометрии: документ не ответил, открыт ли он только для чтения (" + ex.Message + ") — задача отменена");
+                return true;
             }
         }
 
@@ -373,6 +374,10 @@ namespace ESKD.MaterialSync.Sw
                 _resaving = true;
                 try
                 {
+                    // Смена материала и обновление списка вырезов оставляют модель неперестроенной, и SolidWorks
+                    // при сохранении спрашивает «перестроить?» — окно посреди чужой работы, которого никто не ждёт
+                    // (X05 в полном прогоне 21.09.2026). Перестраиваем сами, тогда сохранение проходит молча.
+                    doc.EditRebuild3();
                     if (!doc.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
                         Log.Error(string.Format("Материал по типоразмеру: деталь не сохранена (errors={0}, warnings={1})", errors, warnings));
                 }

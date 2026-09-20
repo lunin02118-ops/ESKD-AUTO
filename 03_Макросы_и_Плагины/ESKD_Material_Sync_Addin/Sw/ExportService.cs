@@ -253,10 +253,14 @@ namespace ESKD.MaterialSync.Sw
             {
                 (int)swUserPreferenceToggle_e.swPDFExportInColor, (int)swUserPreferenceToggle_e.swPDFExportEmbedFonts,
                 (int)swUserPreferenceToggle_e.swPDFExportHighQuality, (int)swUserPreferenceToggle_e.swPDFExportPrintHeaderFooter,
-                (int)swUserPreferenceToggle_e.swPDFExportUseCurrentPrintLineWeights
+                (int)swUserPreferenceToggle_e.swPDFExportUseCurrentPrintLineWeights,
+                (int)swUserPreferenceToggle_e.swPDFViewOnSave
             };
             // Цвет, шрифты, качество — как у SaveAsPDF SWPlus (С-4); колонтитулы не печатаются.
-            bool[] wanted = { true, true, true, false, true };
+            // Просмотрщик после сохранения выключается: выгрузка делает PDF десятками, и SolidWorks открыл бы
+            // по окну на каждый. В прогоне 21.09.2026 так набралось 152 окна PDF-XChange на 27 ГБ памяти,
+            // после чего SolidWorks сам предупредил о нехватке памяти и упал. Прежнее значение возвращается.
+            bool[] wanted = { true, true, true, false, true, false };
             bool[] previous = new bool[toggles.Length];
             if (drawing == null)
             {
@@ -538,7 +542,10 @@ namespace ESKD.MaterialSync.Sw
                     {
                         if (sub.GetTypeName2() != "CutListFolder") continue;
                         CustomPropertyManager m = sub.CustomPropertyManager;
-                        if (m != null && Number(m, "LENGTH") > 0) return true;
+                        if (m == null) continue;
+                        // Имя свойства зависит от языка SolidWorks («ДЛИНА»), поэтому ищется по английской ссылке.
+                        string length = CutListProperties.Find(LzkService.Written(m), "LENGTH", CutListProperties.LengthSpellings);
+                        if (LzkService.Value(m, length) > 0) return true;
                     }
                 }
             }
