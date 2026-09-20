@@ -119,8 +119,8 @@ Git-Run @("-C", $WorkDir, "reset", "--hard", $refSpec) "сброс рабоче�
 # Служебная копия чистится целиком: собранная надстройка соберётся заново, чужого в выпуск не попадёт.
 Git-Run @("-C", $WorkDir, "clean", "-fdx") "очистка рабочей копии" | Out-Null
 
-$new = (& git -C $WorkDir rev-parse --short HEAD).Trim()
-$when = (& git -C $WorkDir log -1 --format="%ad" --date=format:"%d.%m.%Y %H:%M").Trim()
+$new = (Git-Try @("-C", $WorkDir, "rev-parse", "--short", "HEAD")).Lines[0].Trim()
+$when = (Git-Try @("-C", $WorkDir, "log", "-1", "--format=%ad", "--date=format:%d.%m.%Y %H:%M")).Lines[0].Trim()
 Ok "Получено: $Ref = $new от $when"
 
 # 2. Что нового по сравнению с опубликованным
@@ -177,7 +177,11 @@ if (-not $hasPyInstaller) { Info "PyInstaller не найден — окно н�
 $arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $publish, "-Target", $Target)
 if (-not $hasPyInstaller) { $arguments += "-SkipGuiBuild" }
 if ($SkipTests) { $arguments += "-SkipTests" }
-& powershell.exe @arguments
+# Сборка и автотесты пишут ход работы в stderr (PyInstaller, unittest). Для PowerShell это не ошибка,
+# но при ErrorActionPreference=Stop первая же такая строка обрывает обновление — поэтому режим снимается.
+$old = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try { & powershell.exe @arguments } finally { $ErrorActionPreference = $old }
 if ($LASTEXITCODE -ne 0) { Stop-Update "Публикация не выполнена (код $LASTEXITCODE)." }
 
 # 4. Итог
