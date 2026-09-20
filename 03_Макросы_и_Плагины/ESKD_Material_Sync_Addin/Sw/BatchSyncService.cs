@@ -72,12 +72,15 @@ namespace ESKD.MaterialSync.Sw
             // сначала соберём все неоднозначные типоразмеры, чтобы спросить о них один раз.
             // Ключ — путь к файлу: обёртки COM одного и того же документа не всегда равны друг другу.
             Dictionary<string, List<StockFinding>> stock = new Dictionary<string, List<StockFinding>>(StringComparer.OrdinalIgnoreCase);
+            // Сохраняются только тронутые детали. Изделие целиком — это и покупные, и уже согласованные
+            // детали: переписывать их файлы незачем, у них меняется только дата, а заказ потом не понять.
+            HashSet<string> touched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             List<StockFinding> ask = new List<StockFinding>();
             foreach (ModelDoc2 part in parts)
             {
                 SyncReport report = SyncService.SyncModel(app, part, new SyncRequest { Reason = "пакет изделия" });
                 if (report.Skipped) { batch.Skipped++; continue; }
-                if (report.Changes > 0) batch.Changed++;
+                if (report.Changes > 0) { batch.Changed++; touched.Add(SafePath(part)); }
                 batch.Failed += report.Failures;
                 foreach (string warning in report.Warnings) batch.Warnings.Add(Title(part) + ": " + warning);
                 if (report.Stock.Count == 0) continue;
@@ -133,7 +136,9 @@ namespace ESKD.MaterialSync.Sw
                         {
                             Reason = "пакет изделия (материал по типоразмеру)", Names = false, Signatures = false, Stock = false
                         });
+                        touched.Add(SafePath(part));
                     }
+                    if (!touched.Contains(SafePath(part))) continue;
                     if (Save(part, batch)) batch.Saved++;
                 }
                 catch (Exception ex)

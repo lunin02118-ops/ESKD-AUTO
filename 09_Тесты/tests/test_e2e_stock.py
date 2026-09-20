@@ -224,6 +224,42 @@ class Stock(SwTestCase):
 
         self.assertIsNone(V(self.persisted(alien), "Материал_Строка", "00"), "чужой файл не тронут")
 
+    def test_T09_product_walk_saves_only_the_parts_it_changed(self):
+        """T09: изделие целиком — это и уже согласованные детали. Обход переписывает только те файлы,
+        в которых что-то изменил: иначе у всего заказа меняется дата, и потом не понять, что правили."""
+        folder = self.s.ws(self._case_name())
+        folder.mkdir(parents=True, exist_ok=True)
+        ready = folder / "ПРТИ.301111.031 Готовая.sldprt"
+        empty = folder / "ПРТИ.301111.032 Без материала.sldprt"
+
+        # «Готовая» приходит с материалом и заполненными свойствами — обходу в ней делать нечего.
+        doc = build.structural_tube(self.s, 400, FLAT_OVAL, TUBE_MATERIAL)
+        self.s.save_as(doc, ready)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.s.set_settings(AutoStockMaterial=0)
+        try:
+            doc = build.structural_tube(self.s, 250, FLAT_OVAL, None)
+            self.s.save_as(doc, empty)
+            asm, _ = build.assembly(self.s, [(ready, 0, 0, 0), (empty, 0, 0.2, 0)])
+            asm_path = folder / "ПРТИ.301111.030 СБ Ферма.sldasm"
+            self.s.save_as(asm, asm_path)
+            self.s.close_all()
+        finally:
+            self.s.set_settings(AutoStockMaterial=1)
+
+        before = ready.stat().st_mtime_ns
+
+        asm = self.s.open(asm_path)
+        self.s.activate(asm)
+        status = str(com.call(self.s.eskd(), "SyncProductSilent") or "")
+        self.s.close_all()
+
+        self.assertIn("деталей 2", status, status)
+        self.assertIn("сохранено 1", status, f"сохранена только изменённая деталь: {status}")
+        self.assertEqual(before, ready.stat().st_mtime_ns, "готовая деталь не переписана")
+        self.assertEqual(TUBE_LINE, V(self.persisted(empty), "Материал_Строка", "00"),
+                         "деталь без материала обходом заполнена")
+
 
 if __name__ == "__main__":
     unittest.main()
