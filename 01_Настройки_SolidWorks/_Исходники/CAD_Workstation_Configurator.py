@@ -59,14 +59,37 @@ def find_source_root(start):
     return None
 
 
-def find_engine(source_root, start):
-    near = os.path.join(start, ENGINE)
+def _engine_in(folder):
+    """Движок в самой папке или в любой её подпапке одним уровнем ниже (_Служебное)."""
+    near = os.path.join(folder, ENGINE)
     if os.path.isfile(near):
         return near
-    for name in sorted(os.listdir(source_root)):
-        candidate = os.path.join(source_root, name, ENGINE)
-        if name.startswith("01_") and os.path.isfile(candidate):
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        return None
+    for name in names:
+        candidate = os.path.join(folder, name, ENGINE)
+        if os.path.isfile(candidate):
             return candidate
+    return None
+
+
+def find_engine(source_root, start):
+    """
+    Рядом с программой или в её подпапке, затем в 01_* корня инструментария и в подпапках такой папки.
+    Служебные сценарии убраны в 01_Настройки_SolidWorks\\_Служебное, чтобы на виду у конструктора
+    осталось только окно настройки; прежняя раскладка, где движок лежал рядом, тоже работает.
+    """
+    found = _engine_in(start)
+    if found:
+        return found
+    for name in sorted(os.listdir(source_root)):
+        if not name.startswith("01_"):
+            continue
+        found = _engine_in(os.path.join(source_root, name))
+        if found:
+            return found
     return None
 
 

@@ -102,7 +102,7 @@ class StaticRepository(StaticTestCase):
         missing = [p for p in paths_in_xml if not p.startswith("%TOOLKIT%\\") or not (ROOT / p[len("%TOOLKIT%\\"):]).exists()]
         self.assertEqual([], missing, "пути профиля Drew не на существующие файлы инструментария")
         self.assertEqual(["false"], [e.text for e in root.iter("HideBendLinesFlatPatternSheet")], "линии гибов скрыты")
-        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
         self.assertIn('Replace("%TOOLKIT%", $toolkit)', setup, "установщик не подставляет папку инструментария")
         self.assertNotIn("$layout.DrwAutomation", setup, "поле раскладки, которого нет")
 
@@ -111,7 +111,7 @@ class StaticRepository(StaticTestCase):
         GitHub и раздаёт его в общую папку. В цех попадает только то, что собралось и прошло автотесты; паролей и
         токенов скрипт не хранит; имя папки назначения не затирается служебной переменной (PowerShell не различает
         регистр — из-за этого выпуск однажды уехал мимо NAS)."""
-        folder = ROOT / "01_Настройки_SolidWorks"
+        folder = ROOT / "01_Настройки_SolidWorks" / "_Служебное"
         script = folder / "Обновить_из_GitHub.ps1"
         self.assertTrue(script.is_file(), "нет скрипта обновления из GitHub")
         self.assertEqual(b"\xef\xbb\xbf", script.read_bytes()[:3],
@@ -137,7 +137,7 @@ class StaticRepository(StaticTestCase):
         распаковал куда угодно, запустил окно настройки. Архив собирается тем же публикатором, что и общая папка,
         поэтому разойтись они не могут; версию архив берёт из toolkit_release.json, а не ставит свою — иначе имя
         архива врёт о том, что внутри. Без автотестов на Releases ничего не уходит."""
-        script = ROOT / "01_Настройки_SolidWorks" / "Собрать_архив_выпуска.ps1"
+        script = ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Собрать_архив_выпуска.ps1"
         self.assertTrue(script.is_file(), "нет сборщика архива выпуска")
         self.assertEqual(b"\xef\xbb\xbf", script.read_bytes()[:3],
                          "скрипт без BOM: Windows PowerShell 5.1 прочитает кириллицу как мусор")
@@ -167,7 +167,7 @@ class StaticRepository(StaticTestCase):
         """Замечание владельца 20.09.2026: на другом ПК SolidWorks не запускался после настройки. Аппаратный конвейер
         графики включается только на дискретной видеокарте (ключ -Graphics: Auto/Safe/Hardware), программный OpenGL
         остаётся запасным путём, а профиль реестра не несёт слепок видеокарты разработчика."""
-        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
         self.assertIn('[ValidateSet("Auto", "Safe", "Hardware")][string]$Graphics', setup, "нет выбора режима графики")
         self.assertIn("$hardwareGraphics", setup, "конвейер включается без проверки видеокарты")
         pipeline = setup.index('"Use Performance Pipeline 2020" 1')
@@ -177,7 +177,7 @@ class StaticRepository(StaticTestCase):
         self.assertIn('Remove-Item -LiteralPath $stale', setup, "маска AllowList от прежней настройки не снимается")
         gui = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
         self.assertIn('"-Graphics", "Safe"', gui, "в окне настройки нет безопасной графики")
-        self.assertTrue((ROOT / "01_Настройки_SolidWorks" / "Безопасная_графика_SolidWorks.ps1").is_file(),
+        self.assertTrue((ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Безопасная_графика_SolidWorks.ps1").is_file(),
                         "нет скорой помощи для ПК, где SolidWorks не стартует")
         reg = (ROOT / "01_Настройки_SolidWorks" / "Реестровые_Профили" / "01_SW2025_Корпоративный_Стандарт_ЕСКД.reg").read_bytes().decode("utf-16")
         for name in ("Saved OGL Settings", "OGL Display Shaders", "Use Performance Pipeline 2020", "Use GPU Silhouette Edges",
@@ -218,7 +218,11 @@ class StaticRepository(StaticTestCase):
         self.assertTrue(all(b < 128 for b in data), "в батнике есть не-ASCII символы")
         self.assertIn(b"01_*", data)
         self.assertNotRegex(data.decode("ascii"), r"(?i)runas|net session", "батник повышает права")
-        self.assertTrue(list(ROOT.glob("01_*/Setup_Workstation_SolidWorks.ps1")), "Setup не найден по маске 01_*")
+        # Движок лежит в подпапке 01_*\_Служебное — батник ищет его и там: в 01_* у конструктора на виду
+        # остаётся только окно настройки, а имя подпапки кириллическое и в ASCII-батник его не вписать.
+        self.assertTrue(list(ROOT.glob("01_*/Setup_Workstation_SolidWorks.ps1")) +
+                        list(ROOT.glob("01_*/*/Setup_Workstation_SolidWorks.ps1")), "Setup не найден по маске 01_*")
+        self.assertIn(b'for /d %%S in ("%%~fD\\*")', data, "батник не ищет движок в подпапке 01_*")
 
     def test_T0_deploy_from_readonly_toolkit_folder(self):
         """T0 (сетевая схема, решение владельца 14.09.2026): установка из папки инструментария «только чтение» с
@@ -240,7 +244,7 @@ class StaticRepository(StaticTestCase):
         """T0: установщик не пишет в папку инструментария и не собирает надстройку; окно настройки — только окно над
         установщиком (реестр и файлы не пишет, личных умолчаний и зашитых путей нет); публикация исключает папки
         разработки и не зеркалит в чужую папку."""
-        setup_dir = ROOT / "01_Настройки_SolidWorks"
+        setup_dir = ROOT / "01_Настройки_SolidWorks" / "_Служебное"
         setup = (setup_dir / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
         module = (setup_dir / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
         self.assertNotIn("build.ps1", setup, "установщик собирает надстройку — сборку кладёт в источник публикация")
@@ -250,7 +254,7 @@ class StaticRepository(StaticTestCase):
         self.assertIn("GetTempPath()", setup, "временный .reg — во временной папке пользователя")
 
         import ast
-        configurator_path = setup_dir / "_Исходники" / "CAD_Workstation_Configurator.py"
+        configurator_path = setup_dir.parent / "_Исходники" / "CAD_Workstation_Configurator.py"
         text = configurator_path.read_text(encoding="utf-8")
         tree = ast.parse(text)
         calls = {node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
@@ -291,7 +295,7 @@ class StaticRepository(StaticTestCase):
             self.assertIn(excluded, publish, f"публикация копирует {excluded}")
         self.assertIn("build.ps1", publish, "надстройку собирает публикация")
         self.assertIn("Test-EskdSourceRoot -Path $Target", publish, "зеркало в чужую папку")
-        spec_text = (setup_dir / "_Исходники" / "Настройка_Рабочего_Места_SolidWorks.spec").read_text(encoding="utf-8")
+        spec_text = (setup_dir.parent / "_Исходники" / "Настройка_Рабочего_Места_SolidWorks.spec").read_text(encoding="utf-8")
         self.assertNotIn("uac_admin", spec_text, "окно запрашивает права администратора")
 
     def test_T0_drew_installed_with_builtin_license(self):
@@ -305,7 +309,7 @@ class StaticRepository(StaticTestCase):
         for absent in ("Drew_4.3.0.0.msi", "install-all.ps1", "2_комплект_издания", "3_активация", "УСТАНОВИТЬ_DREW.cmd"):
             self.assertFalse((drew / absent).exists(), f"артефакт классического издания не должен входить: {absent}")
         self.assertTrue((drew / "1_УСТАНОВКА.txt").exists(), "нет инструкции 1_УСТАНОВКА.txt")
-        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
         self.assertIn("645654CF9055FDA11EF16CF131952F9BF235CBD3841AFDE6B5663DCC16C18F15", setup,
                       "движок сверяет сборку Drew по контрольному хэшу")
         self.assertIn("AddMinutes(6)", setup, "движок ждёт завершения установщика Drew с таймаутом")
@@ -427,7 +431,7 @@ class StaticRepository(StaticTestCase):
             ADDIN / "register_eskd.ps1": "Register-EskdAddin.ps1",
             ADDIN / "unregister.ps1": "Register-EskdAddin.ps1",
             ADDIN / "build_and_register.ps1": "register_eskd.ps1",
-            ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1": "Register-EskdAddin.ps1",
+            ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1": "Register-EskdAddin.ps1",
             ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py": "Setup_Workstation_SolidWorks.ps1",
         }
         for path, reference in wrappers.items():
@@ -436,7 +440,7 @@ class StaticRepository(StaticTestCase):
                 self.assertIn(reference, text)
                 if path.parent == ADDIN:
                     self.assertNotRegex(text, r"(?i)[a-z]:\\+work\\+", "жёсткий путь к репозиторию")
-        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
         self.assertNotIn("build_and_register.ps1", setup, "Setup должен собирать build.ps1")
         cmd = (ADDIN / "Регистрация_ЕСКД_на_этом_компьютере.cmd").read_bytes()
         self.assertTrue(all(b < 128 for b in cmd), "в .cmd не-ASCII символы")
@@ -458,14 +462,14 @@ class StaticRepository(StaticTestCase):
     def test_T0_setup_writes_swplus_files_only_when_changed(self):
         """T0: установщик переписывает файлы SWPlus только при отличии, свою фамилию и организацию ставит первыми — MProp берёт первую строку (WP-3.4, З-3);
         функции — в модуле EskdDeploy.psm1, запись идёт в локальную копию."""
-        module = ROOT / "01_Настройки_SolidWorks" / "EskdDeploy.psm1"
+        module = ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "EskdDeploy.psm1"
         out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                               str(paths.TESTS / "tools" / "check_setup_swplus_files.ps1"),
                               "-SetupPath", str(module), "-SwPlusRoot", str(paths.SWPLUS)], capture_output=True, timeout=120)
         lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
         self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
         self.assertEqual([], json.loads(lines[-1])["problems"])
-        for script in (module, ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1"):
+        for script in (module, ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1"):
             self.assertNotIn("WriteAllLines", script.read_text(encoding="utf-8-sig"), "файлы SWPlus пишутся только через Write-SwPlusLines")
 
     def test_T0_mprop_ini_cleanup_flag_untouched(self):
@@ -675,7 +679,7 @@ class StaticRepository(StaticTestCase):
         ready = (ADDIN / "Sw" / "ReadyService.cs").read_text(encoding="utf-8")
         self.assertLess(ready.index("ExcelPdf.Export(workbook, staged"), ready.index("File.Move(target, archive)"),
                         "PDF листов участков сделаны до того, как прежние уехали в архив")
-        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
         self.assertIn("GetSaveFlag()", setup, "установщик видит несохранённые документы")
         self.assertRegex(setup, r'\$release\.Version -eq "рабочая копия" -and -not \$sandbox -and -not \$AllowUnpublished',
                          "без опубликованного выпуска установка из общей папки не идёт")
@@ -702,7 +706,7 @@ class StaticRepository(StaticTestCase):
                          "проверка, выгрузка и ЛЗК решают «покупное» одним правилом")
         etalon = (ADDIN / "Sw" / "EtalonService.cs").read_text(encoding="utf-8")
         self.assertIn("ReadManifest(snapshot) ?? State(snapshot)", etalon, "прежние снимки сравниваются по манифесту")
-        setup = (ROOT / "01_Настройки_SolidWorks" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
         self.assertIn("ESKD_Drew_", setup, "установщик Drew — из копии в %TEMP%")
         self.assertIn("ESKD_SwInternetBlock_", setup, "SwInternetBlock — из копии в %TEMP%")
         self.assertNotIn("$cnt -ge 300", setup, "порог правил — по файлам этого ПК, а не 300")
@@ -793,7 +797,7 @@ class StaticRepository(StaticTestCase):
                 problems.append(f"избранный материал не из библиотеки ГОСТ: {favorite}")
         if favorites_declared != len(favorites):
             problems.append(f"__NumOfFavs = {favorites_declared}, записей {len(favorites)}")
-        setup = (ROOT / "01_Настройки_SolidWorks" / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
         if "%USERPROFILE%" in text and "'%USERPROFILE%'" not in setup:
             problems.append("Setup не подставляет %USERPROFILE%")
         self.assertEqual([], problems[:30])
@@ -862,7 +866,7 @@ class StaticRepository(StaticTestCase):
         leftovers = [f for f in files if f.endswith("_old") or "Legacy_Builds/" in f or "/TEST_REPORT_2" in f
                      or f.startswith("99_Архив/") or f in built]
         self.assertEqual([], leftovers)
-        publish = (ROOT / "01_Настройки_SolidWorks" / "Publish-EskdToolkit.ps1").read_text(encoding="utf-8-sig")
+        publish = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Publish-EskdToolkit.ps1").read_text(encoding="utf-8-sig")
         self.assertIn("ESKD_Material_Sync_Addin\\build.ps1", publish, "надстройку собирает из исходников публикация")
 
     @known_defect("Д-31")

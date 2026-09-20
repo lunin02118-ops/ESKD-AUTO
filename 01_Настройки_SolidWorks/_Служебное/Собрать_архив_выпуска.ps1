@@ -41,7 +41,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$repo = Split-Path -Path $PSScriptRoot -Parent
+$repo = Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent  # сценарий в 01_Настройки_SolidWorks\_Служебное
 Import-Module (Join-Path $PSScriptRoot "EskdDeploy.psm1") -Force -DisableNameChecking
 
 function Say($text)  { Write-Host $text -ForegroundColor Gray }

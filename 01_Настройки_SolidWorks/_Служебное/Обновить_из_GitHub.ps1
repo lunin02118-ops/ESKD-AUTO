@@ -173,7 +173,7 @@ if ($same) { exit 0 }
 
 # 3. Сборка, автотесты и раскладка — существующей публикацией из этой же копии
 Say "`n[3/4] Сборка, автотесты и публикация..."
-$publish = Join-Path $WorkDir "01_Настройки_SolidWorks\Publish-EskdToolkit.ps1"
+$publish = Join-Path $WorkDir "01_Настройки_SolidWorks\_Служебное\Publish-EskdToolkit.ps1"
 if (-not (Test-Path -LiteralPath $publish)) { Stop-Update "В полученной копии нет Publish-EskdToolkit.ps1: $publish" }
 
 # PyInstaller нужен, только если правили исходники окна настройки; собранное окно лежит в репозитории.

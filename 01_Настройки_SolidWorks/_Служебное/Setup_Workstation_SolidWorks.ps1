@@ -948,7 +948,7 @@ if ($sandbox -or $SkipSwTools) {
 # 8. Отучение SolidWorks от сети (опция, галочка в окне)
 Write-Step "[8/9] Отучение SolidWorks от сети..."
 if ($SwInternetBlock) {
-    $sbDir = Join-Path $PSScriptRoot "SwInternetBlock"
+    $sbDir = Join-Path (Split-Path -Path $PSScriptRoot -Parent) "SwInternetBlock"  # пакет лежит в 01_Настройки_SolidWorks, сценарий — в _Служебное
     $sb = Join-Path $sbDir "Set-SwInternetBlock.ps1"
     # Сколько правил должно быть: записи манифеста, чьи программы есть на этом ПК (SLDWORKS.exe наружу не блокируется —
     # иначе ломается «Поделиться настройками» Drew). Прежний порог 300 был недостижим (аудит 19.09, У-В2).

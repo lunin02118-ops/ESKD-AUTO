@@ -33,7 +33,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$repo = Split-Path -Path $PSScriptRoot -Parent
+# Сценарий лежит в 01_Настройки_SolidWorks\_Служебное: у конструктора на виду остаётся только окно настройки.
+$setup = Split-Path -Path $PSScriptRoot -Parent
+$repo = Split-Path -Path $setup -Parent
 $Target = $Target.TrimEnd('\')
 Import-Module (Join-Path $PSScriptRoot "EskdDeploy.psm1") -Force -DisableNameChecking
 
@@ -74,17 +76,17 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE -ne 0) { Stop-Publish "Надстройка не собрана." }
     # Окно настройки лежит в репозитории собранным, PyInstaller нужен только когда правили его исходники.
     # На машине без Python (обновление из GitHub у администратора) сборка пропускается — берётся файл из репозитория.
-    $gui = Join-Path $PSScriptRoot "Настройка_Рабочего_Места_SolidWorks.exe"
+    $gui = Join-Path $setup "Настройка_Рабочего_Места_SolidWorks.exe"
     if ($SkipGuiBuild) {
         if (-not (Test-Path -LiteralPath $gui)) { Stop-Publish "Окно настройки не собрано и его нет в репозитории: $gui" }
         Write-Host "`nОкно настройки: из репозитория (-SkipGuiBuild)." -ForegroundColor Gray
     } else {
         Write-Host "`nСборка окна настройки..." -ForegroundColor Gray
-        $sources = Join-Path $PSScriptRoot "_Исходники"
-        Invoke-Native { & python -m PyInstaller --noconfirm --distpath $PSScriptRoot --workpath (Join-Path $PSScriptRoot "build_temp") `
+        $sources = Join-Path $setup "_Исходники"
+        Invoke-Native { & python -m PyInstaller --noconfirm --distpath $setup --workpath (Join-Path $setup "build_temp") `
             (Join-Path $sources "Настройка_Рабочего_Места_SolidWorks.spec") }
         $code = $LASTEXITCODE
-        Remove-Item -LiteralPath (Join-Path $PSScriptRoot "build_temp") -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath (Join-Path $setup "build_temp") -Recurse -Force -ErrorAction SilentlyContinue
         if ($code -ne 0) { Stop-Publish "Окно настройки не собрано (PyInstaller)." }
     }
 }

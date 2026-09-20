@@ -61,8 +61,11 @@ try {
     # Соседняя папка библиотеки проектирования, как «_Библиотека проектирования\_ крепеж и фурнитура» на NAS
     $fasteners = Join-Path (Split-Path -Path $source -Parent) "_ крепеж и фурнитура"
     New-Item -ItemType Directory -Path $fasteners -Force | Out-Null
+    # Движок и модуль лежат в 01_Настройки_SolidWorks\_Служебное: у конструктора на виду только окно настройки
+    $serviceDst = Join-Path $source "01_Настройки_SolidWorks\_Служебное"
+    New-Item -ItemType Directory -Path $serviceDst -Force | Out-Null
     foreach ($name in @("Setup_Workstation_SolidWorks.ps1", "EskdDeploy.psm1")) {
-        Copy-Item -LiteralPath (Join-Path $RepoRoot "01_Настройки_SolidWorks\$name") -Destination (Join-Path $source "01_Настройки_SolidWorks\$name")
+        Copy-Item -LiteralPath (Join-Path $RepoRoot "01_Настройки_SolidWorks\_Служебное\$name") -Destination (Join-Path $serviceDst $name)
     }
     $addinDst = Join-Path $source $addinRel
     New-Item -ItemType Directory -Path $addinDst -Force | Out-Null
@@ -76,7 +79,7 @@ try {
     $before = Snapshot $source
 
     # Разбор профиля отдельно: при тестовом корне нет HKLM и все разделы — в тестовом корне
-    Import-Module (Join-Path $source "01_Настройки_SolidWorks\EskdDeploy.psm1") -Force -DisableNameChecking
+    Import-Module (Join-Path $source "01_Настройки_SolidWorks\_Служебное\EskdDeploy.psm1") -Force -DisableNameChecking
     $regText = [System.IO.File]::ReadAllText((Join-Path $source "01_Настройки_SolidWorks\Реестровые_Профили\01_SW2025_Корпоративный_Стандарт_ЕСКД.reg"), [System.Text.Encoding]::Unicode)
     $adapted = Convert-EskdRegProfile -Text $regText -SourceRoot $source -LocalRoot $local -RegistryRoot $sandbox
     Expect "профиль: разделы HKLM" ([regex]::Matches($adapted, '(?m)^\[-?HKEY_LOCAL_MACHINE').Count) 0
@@ -91,7 +94,7 @@ try {
     Expect "класс: шаблоны" (Resolve-EskdProfilePath -Relative "02_Шаблоны_и_Форматки\Шаблоны документов" -SourceRoot "S" -LocalRoot "L") "S\02_Шаблоны_и_Форматки\Шаблоны документов"
     Expect "класс: папка «SWPlusMacro_v_2018_SP0.0 2» не путается с папкой SWPlus" (Resolve-EskdProfilePath -Relative "${swplusRel} 2\x.swp" -SourceRoot "S" -LocalRoot "L") "S\${swplusRel} 2\x.swp"
 
-    $setup = Join-Path $source "01_Настройки_SolidWorks\Setup_Workstation_SolidWorks.ps1"
+    $setup = Join-Path $source "01_Настройки_SolidWorks\_Служебное\Setup_Workstation_SolidWorks.ps1"
     $setupArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $setup, "-Author", "Тестов Т.Т.", "-Firm", "ООО «Проверка»",
               "-CloseMode", "Skip", "-NonInteractive", "-LocalRoot", $local, "-RegistryRoot", $sandbox, "-SwVersion", "SOLIDWORKS 2025", "-Utf8Output")
     $run = {
@@ -285,7 +288,7 @@ try {
 # Выпуск SWTools: публикация установщика по манифесту сборки, описание выпуска, решение об установке (без запуска установщика)
 $swtTemp = Join-Path ([System.IO.Path]::GetTempPath()) "eskd_swt_$id"
 try {
-    Import-Module (Join-Path $RepoRoot "01_Настройки_SolidWorks\EskdDeploy.psm1") -Force -DisableNameChecking
+    Import-Module (Join-Path $RepoRoot "01_Настройки_SolidWorks\_Служебное\EskdDeploy.psm1") -Force -DisableNameChecking
     $build = Join-Path $swtTemp "сборка"
     $share = Join-Path $swtTemp "общая папка"
     New-Item -ItemType Directory -Path $build, $share -Force | Out-Null
