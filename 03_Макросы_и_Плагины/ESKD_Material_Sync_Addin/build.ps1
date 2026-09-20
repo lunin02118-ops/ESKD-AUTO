@@ -23,10 +23,14 @@ if (-not (Test-Path $csc)) { throw "Не найден компилятор C#: $
 
 if (Get-Process -Name SLDWORKS -ErrorAction SilentlyContinue) {
     $dll = Join-Path $ScriptDir "ESKD_Material_Sync_v5.dll"
-    try {
-        $fs = [System.IO.File]::Open($dll, 'Open', 'ReadWrite', 'None'); $fs.Close()
-    } catch {
-        throw "SolidWorks держит ESKD_Material_Sync_v5.dll открытой. Закройте SolidWorks и повторите сборку."
+    # Нет файла — держать нечего: так выглядит первая сборка в свежей копии репозитория (обновление из GitHub).
+    # Раньше отсутствие файла тоже попадало в catch, и сборка отказывала с чужой причиной (20.09.2026).
+    if (Test-Path -LiteralPath $dll) {
+        try {
+            $fs = [System.IO.File]::Open($dll, 'Open', 'ReadWrite', 'None'); $fs.Close()
+        } catch {
+            throw "SolidWorks держит ESKD_Material_Sync_v5.dll открытой. Закройте SolidWorks и повторите сборку."
+        }
     }
 }
 
