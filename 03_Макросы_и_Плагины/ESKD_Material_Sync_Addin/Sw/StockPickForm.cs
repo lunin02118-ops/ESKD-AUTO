@@ -110,12 +110,29 @@ namespace ESKD.MaterialSync.Sw
             FormClosing += delegate
             {
                 if (DialogResult != DialogResult.OK) return;
-                foreach (Row row in _rows)
-                {
-                    int at = row.Box.SelectedIndex;
-                    if (at >= 0 && at < row.Candidates.Count) Chosen[StockCatalog.NormalizeSize(row.Size)] = row.Candidates[at];
-                }
+                ReadChoices();
             };
+        }
+
+        /// <summary>
+        /// Снять выбранное из списков. Вызывается при закрытии окна кнопкой «Назначить»; отдельным методом —
+        /// чтобы выбор конструктора проверялся юнит-тестом, а не только руками на живом SolidWorks.
+        /// </summary>
+        public void ReadChoices()
+        {
+            foreach (Row row in _rows)
+            {
+                int at = row.Box.SelectedIndex;
+                if (at >= 0 && at < row.Candidates.Count) Chosen[StockCatalog.NormalizeSize(row.Size)] = row.Candidates[at];
+            }
+        }
+
+        /// <summary>Списки окна — по одному на типоразмер, в порядке строк. Для проверки состава без показа окна.</summary>
+        public ComboBox[] Lists()
+        {
+            List<ComboBox> boxes = new List<ComboBox>();
+            foreach (Row row in _rows) boxes.Add(row.Box);
+            return boxes.ToArray();
         }
 
         /// <summary>Один типоразмер — одна строка окна, даже если позиций с ним в детали несколько.</summary>

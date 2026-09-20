@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Windows.Forms;
 using ESKD.MaterialSync.Core;
 using ESKD.MaterialSync.Sw;
 
@@ -145,6 +146,60 @@ namespace ESKD.Tests
             Assert.IsTrue(m.First.Name.IndexOf("16523-97", StringComparison.Ordinal) >= 0,
                           "имя должно совпадать со своим ГОСТом, а не остаться от прежней редакции: " + m.First.Name);
             Assert.IsTrue(StockCatalog.NameAgreesWithGost(m.First), "имя не спорит со свойствами");
+        }
+
+        // ----------------------------------------------------------------- окно выбора
+        /// <summary>
+        /// Окно выбора: один типоразмер — одна строка, даже если позиций с ним в детали несколько, а в списке
+        /// стоят обозначения материала, а не имена файлов библиотеки. Показывать окно тесту нельзя (прогон
+        /// остановился бы на модальном окне), поэтому проверяется его состав и то, что выбрано.
+        /// </summary>
+        public static void Test_Pick_form_asks_once_per_size_and_keeps_the_choice()
+        {
+            List<MaterialInfo> library = Library();
+            StockFinding first = Finding("Элемент списка вырезов1", Sheet(library, "6,0"), "6,0");
+            StockFinding same = Finding("Элемент списка вырезов2", Sheet(library, "6,0"), "6,0");
+            StockFinding other = Finding("листовой металл", Sheet(library, "10,0"), "10,0");
+
+            using (StockPickForm form = new StockPickForm("ПРТИ.301111.001 Пластина",
+                                                          new List<StockFinding> { first, same, other }))
+            {
+                ComboBox[] lists = form.Lists();
+                Assert.AreEqual(2, lists.Length, "две строки: 6,0 спрашивается один раз на обе позиции");
+                Assert.AreEqual(first.Match.Candidates.Count, lists[0].Items.Count, "варианты листа 6 мм");
+                Assert.AreEqual(StockPickForm.Describe(first.Match.First), (string)lists[0].Items[0],
+                                "в списке обозначение материала, а не имя файла библиотеки");
+
+                lists[0].SelectedIndex = 1;   // конструктор выбрал вторую марку
+                form.ReadChoices();
+
+                MaterialInfo picked;
+                Assert.IsTrue(form.Chosen.TryGetValue("6", out picked), "выбор по листу 6 мм запомнен");
+                Assert.AreEqual(first.Match.Candidates[1].Name, picked.Name, "запомнено именно выбранное");
+            }
+        }
+
+        /// <summary>Кнопка «Позже» ничего не выбирает: молча подставить материал за конструктора нельзя.</summary>
+        public static void Test_Pick_form_keeps_nothing_until_the_choice_is_read()
+        {
+            List<MaterialInfo> library = Library();
+            StockFinding finding = Finding("листовой металл", Sheet(library, "6,0"), "6,0");
+            using (StockPickForm form = new StockPickForm("", new List<StockFinding> { finding }))
+            {
+                Assert.AreEqual(0, form.Chosen.Count, "пока выбор не подтверждён, назначать нечего");
+            }
+        }
+
+        private static StockFinding Finding(string folder, StockMatch match, string size)
+        {
+            StockFinding finding = new StockFinding
+            {
+                Folder = folder,
+                Request = new StockRequest { Kind = StockKind.Sheet, Size = size, Source = folder },
+                Verdict = StockVerdict.Choose
+            };
+            finding.Match.Candidates.AddRange(match.Candidates);
+            return finding;
         }
 
         /// <summary>Толщины, которой нет в библиотеке, подобрать нельзя — об этом надо сказать, а не молчать.</summary>

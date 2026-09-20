@@ -20,8 +20,11 @@ def build():
         shutil.copy2(paths.ADDIN_DIR / name, BIN / name)
     sources = sorted(str(p) for p in UNIT_DIR.glob("*.cs"))
     cmd = [str(paths.CSC), "/nologo", "/target:exe", "/platform:anycpu", "/codepage:65001", f"/out:{EXE}"]
+    # System.Windows.Forms и System.Drawing — ради окна выбора материала: его состав и запомненный выбор
+    # проверяются без показа окна, иначе прогон встал бы на модальном диалоге.
     cmd += [f"/r:{BIN / name}" for name in REFS] + ["/r:System.dll", "/r:System.Xml.dll", "/r:System.Core.dll",
-                                                    "/r:System.IO.Compression.dll", "/r:System.IO.Compression.FileSystem.dll"] + sources
+                                                    "/r:System.IO.Compression.dll", "/r:System.IO.Compression.FileSystem.dll",
+                                                    "/r:System.Windows.Forms.dll", "/r:System.Drawing.dll"] + sources
     proc = subprocess.run(cmd, capture_output=True)
     if proc.returncode != 0:
         raise RuntimeError("Сборка ESKD.Tests.exe не удалась:\n" +
