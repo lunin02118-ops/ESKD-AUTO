@@ -18,6 +18,10 @@ namespace ESKD.MaterialSync.Sw
         public bool Signatures = true;
         public bool Materials = true;
         public bool Mass = true;
+
+        /// <summary>Сверять материал с геометрией детали — типоразмером профиля и толщиной листа (Р-8).</summary>
+        public bool Stock = true;
+
         public bool DryRun;
     }
 
@@ -29,6 +33,23 @@ namespace ESKD.MaterialSync.Sw
         public string SkipReason = "";
         public readonly List<string> Operations = new List<string>();
         public readonly List<string> Warnings = new List<string>();
+
+        /// <summary>
+        /// Что деталь сказала про свой прокат (Р-8). Назначение материала здесь не делается: обработчик сохранения
+        /// не место для правки документа — этим занимается очередь простоя, читая этот список.
+        /// </summary>
+        public readonly List<StockFinding> Stock = new List<StockFinding>();
+
+        /// <summary>Есть ли что назначать или о чём спрашивать конструктора.</summary>
+        public bool StockNeedsWork
+        {
+            get
+            {
+                foreach (StockFinding f in Stock)
+                    if (f.NeedsAssign || f.NeedsChoice) return true;
+                return false;
+            }
+        }
 
         public override string ToString()
         {
@@ -118,6 +139,8 @@ namespace ESKD.MaterialSync.Sw
                     SyncSignatures(w, dict, settings);
                 if (req.Materials && !isAssembly && settings.AutoSyncMaterials)
                     SyncMaterials(w, app, (PartDoc)doc, dict, report);
+                if (req.Stock && !isAssembly && settings.AutoStockMaterial && !req.DryRun && !settings.DryRun)
+                    InspectStock(app, doc, report);
                 if (!isAssembly)
                     BchService.UpdateOnSave(w, app, doc, dict);
                 if (req.Mass && settings.AutoMass)
@@ -542,6 +565,30 @@ namespace ESKD.MaterialSync.Sw
                 name.IndexOf("$PRP", StringComparison.OrdinalIgnoreCase) >= 0)
                 return null;
             return name;
+        }
+
+        // ------------------------------------------------------------------ материал по геометрии
+        /// <summary>
+        /// Сверка материала с тем, из чего деталь сделана (Р-8, решение владельца 20.09.2026). Здесь только чтение
+        /// и замечания: правка документа в обработчике сохранения запрещена, назначением занимается очередь простоя,
+        /// читая отсюда SyncReport.Stock.
+        /// </summary>
+        private static void InspectStock(ISldWorks app, ModelDoc2 doc, SyncReport report)
+        {
+            try
+            {
+                List<StockFinding> findings = StockService.Inspect(app, doc);
+                report.Stock.AddRange(findings);
+                foreach (StockFinding finding in findings)
+                {
+                    string message = StockService.Message(finding);
+                    if (message.Length > 0) report.Warnings.Add(message);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Материал по геометрии", ex);
+            }
         }
 
         // ------------------------------------------------------------------ уровни, как у MProp

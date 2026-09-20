@@ -62,6 +62,13 @@ namespace ESKD.MaterialSync.Core
         public const string RevisionName = "Ревизия";
         public static readonly string[] ExtraNames = new string[] { OperationsName, RevisionName };
 
+        /// <summary>
+        /// Свойства папки списка вырезов, которые приходят в деталь из файла профиля сварной конструкции.
+        /// Надстройка их только читает — по ним подбирается материал проката (Р-8). В документ они не пишутся
+        /// и к словарю SWPlus отношения не имеют: это свойства папки, а не модели.
+        /// </summary>
+        public static readonly string[] CutListNames = new string[] { "Типоразмер", "ГОСТ", "Сортамент" };
+
         /// <summary>Общие свойства шаблона детали с живыми выражениями «"SW-Mass"» и «"SW-Material"»: надстройка их не пишет, очистка v5 возвращает выражения.</summary>
         public static readonly string[] TemplateNames = new string[] { "Масса", "Материал" };
 

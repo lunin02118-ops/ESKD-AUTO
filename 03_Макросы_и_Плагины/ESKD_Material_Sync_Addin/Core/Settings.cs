@@ -13,6 +13,17 @@ namespace ESKD.MaterialSync.Core
 
         public bool ServiceEnabled = true;
         public bool AutoSyncMaterials = true;
+
+        /// <summary>Подбор материала по геометрии (Р-8): типоразмер профиля и толщина листа против библиотеки ЕСКД.</summary>
+        public bool AutoStockMaterial = true;
+
+        /// <summary>
+        /// Спрашивать материал окном прямо при сохранении детали, когда типоразмеру отвечает несколько записей.
+        /// Выключено — однозначные подставляются молча, про остальные говорится в строке состояния, а выбрать
+        /// их можно кнопкой «Синхронизировать» на сборке. Автотесты выключают: модальное окно остановило бы прогон.
+        /// </summary>
+        public bool StockAskOnSave = true;
+
         public bool AutoMass = true;
         public bool AutoSplitName = true;
         public string Author = "";
@@ -71,6 +82,8 @@ namespace ESKD.MaterialSync.Core
                     if (key == null) return s;
                     s.ServiceEnabled = Int(key, "ServiceEnabled", 1) == 1;
                     s.AutoSyncMaterials = Int(key, "AutoSyncMaterials", 1) == 1;
+                    s.AutoStockMaterial = Int(key, "AutoStockMaterial", 1) == 1;
+                    s.StockAskOnSave = Int(key, "StockAskOnSave", 1) == 1;
                     s.AutoMass = Int(key, "AutoMass", 1) == 1;
                     s.AutoSplitName = Int(key, "AutoSplitName", 1) == 1;
                     s.Author = Str(key, "Author");

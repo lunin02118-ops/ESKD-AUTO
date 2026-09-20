@@ -32,7 +32,7 @@ SUITES = {
     "static": ["tests.test_static", "tests.test_order_folders"],
     "unit": ["tests.test_unit"],
     "contract": ["tests.test_contract"],
-    "e2e": ["tests.test_e2e_persistence", "tests.test_e2e_model", "tests.test_e2e_bch",
+    "e2e": ["tests.test_e2e_stock", "tests.test_e2e_persistence", "tests.test_e2e_model", "tests.test_e2e_bch",
             "tests.test_e2e_drawing", "tests.test_e2e_spec", "tests.test_e2e_real", "tests.test_e2e_install", "tests.test_e2e_mprop",
             "tests.test_e2e_stamp", "tests.test_e2e_order_structure", "tests.test_e2e_lzk",
             "tests.test_e2e_check", "tests.test_e2e_export", "tests.test_e2e_independent", "tests.test_e2e_revision", "tests.test_e2e_etalon", "tests.test_e2e_issue"],

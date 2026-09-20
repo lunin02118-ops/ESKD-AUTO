@@ -16,6 +16,10 @@ namespace ESKD.MaterialSync.Core
         public string GostMaterial = "";
         public string GostDesignation = "";
         public string LineDesignation = "";
+
+        /// <summary>Свойство «Типоразмер» библиотеки: «30х15х1,5» у профиля, «8,0» у листа — ключ подбора по геометрии (Р-8).</summary>
+        public string StandardSize = "";
+
         public double Density;
     }
 
@@ -88,6 +92,23 @@ namespace ESKD.MaterialSync.Core
         public static void ClearCache()
         {
             lock (Sync) { Cache.Clear(); }
+        }
+
+        /// <summary>
+        /// Все материалы подключённых библиотек — для подбора по типоразмеру (Р-8). Порядок здесь произвольный:
+        /// подбор сам упорядочивает кандидатов, чтобы диалог выбора у всех конструкторов был одинаковым.
+        /// </summary>
+        public static List<MaterialInfo> All(IEnumerable<string> databasePaths)
+        {
+            List<MaterialInfo> result = new List<MaterialInfo>();
+            if (databasePaths == null) return result;
+            foreach (string path in databasePaths)
+            {
+                Dictionary<string, MaterialInfo> one = Load(path);
+                if (one == null) continue;
+                foreach (MaterialInfo info in one.Values) result.Add(info);
+            }
+            return result;
         }
 
         /// <summary>
@@ -198,6 +219,7 @@ namespace ESKD.MaterialSync.Core
                                     case "ГОСТ_Материал": info.GostMaterial = pv; break;
                                     case "Обозначение_ГОСТ": info.GostDesignation = pv; break;
                                     case "Обозначение_Строка": info.LineDesignation = pv; break;
+                                    case "Типоразмер": info.StandardSize = pv; break;
                                 }
                             }
                         }

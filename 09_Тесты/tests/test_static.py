@@ -556,7 +556,8 @@ class StaticRepository(StaticTestCase):
             body = m.group(1)
             return set(re.findall(r'"([^"]+)"', body)) | {consts[ref.split(".")[-1]] for ref in re.findall(r"\b[A-Z]\w*\.\w+", body)}
 
-        groups = {a: declared(a) for a in ("DefaultNames", "SwPlusServiceNames", "LegacyExtraNames", "AddinNames", "TemplateNames", "ExtraNames")}
+        groups = {a: declared(a) for a in ("DefaultNames", "SwPlusServiceNames", "LegacyExtraNames", "AddinNames",
+                                           "TemplateNames", "ExtraNames", "CutListNames")}
         self.assertEqual({"Материал_Строка", "Формат_до_БЧ", "Примечание_до_БЧ", "Запись_БЧ"}, groups["AddinNames"])
         known = set().union(*groups.values())
 
@@ -614,6 +615,38 @@ class StaticRepository(StaticTestCase):
             if problems:
                 wrong[name] = problems
         self.assertEqual({}, wrong)
+
+    def test_T0_stock_material_follows_owner_rule(self):
+        """T0 (Р-8, решение владельца 20.09.2026): материал по геометрии подставляется молча только тогда, когда
+        подходящий один; выбор конструктора при расхождении не переписывается; назначение идёт из очереди простоя,
+        а не из обработчика сохранения; модель не откатывается — в откаченном состоянии материал телу не назначить."""
+        core = (ROOT / "03_Макросы_и_Плагины" / "ESKD_Material_Sync_Addin" / "Core" / "StockCatalog.cs").read_text(encoding="utf-8")
+        service = (ROOT / "03_Макросы_и_Плагины" / "ESKD_Material_Sync_Addin" / "Sw" / "StockService.cs").read_text(encoding="utf-8")
+        sync = (ROOT / "03_Макросы_и_Плагины" / "ESKD_Material_Sync_Addin" / "Sw" / "SyncService.cs").read_text(encoding="utf-8")
+        hub = (ROOT / "03_Макросы_и_Плагины" / "ESKD_Material_Sync_Addin" / "Sw" / "EventHub.cs").read_text(encoding="utf-8")
+
+        self.assertNotIn("SolidWorks.Interop", core, "подбор материала должен быть чистой логикой — иначе его не проверить юнит-тестом")
+        # Упоминание в комментарии — это объяснение запрета; ищем именно вызов.
+        code = "\n".join(ln.split("//")[0] for ln in service.splitlines() if not ln.strip().startswith(("///", "//", "*", "/*")))
+        self.assertNotIn(".AccessSelections(", code, "откат модели запрещён: в откаченном состоянии материал телу не назначить")
+
+        # Молча — только при единственном подходящем: Chosen заполняется в ветке Single и больше нигде.
+        self.assertEqual(1, service.count("finding.Chosen = "), "материал выбирается за конструктора не в одном месте")
+        single = re.search(r"if \(finding\.Match\.Single\)\s*\{(.*?)\}", service, flags=re.S)
+        self.assertIsNotNone(single, "ветка «подходящий один» не найдена")
+        self.assertIn("finding.Chosen = finding.Match.First", single.group(1), "молча подставляется не единственный подходящий")
+
+        # Расхождение — только уведомление: к назначению идут лишь Assign и Choose.
+        needs = re.search(r"public bool NeedsAssign\s*\{[^}]*?return ([^;]+);", service, flags=re.S)
+        self.assertIsNotNone(needs, "NeedsAssign не найден")
+        self.assertNotIn("Mismatch", needs.group(1), "материал конструктора переписывается при расхождении")
+        self.assertIn("не изменено", service, "при расхождении конструктору не сказано, что значение оставлено")
+
+        # Запись документа — из очереди простоя, а не из обработчика сохранения.
+        inspect = re.search(r"private static void InspectStock\(.*?\n        \}", sync, flags=re.S)
+        self.assertIsNotNone(inspect, "InspectStock не найден")
+        self.assertNotIn("StockService.Apply", inspect.group(0), "материал назначается прямо при сохранении")
+        self.assertIn('Kind = "stock"', hub, "задача подбора не ставится в очередь простоя")
 
     def test_T0_fixture_materials_follow_library(self):
         """T0: по манифесту фикстур у деталей из проката корпуса А и у копий корпуса Б — сортамент из корпоративной библиотеки,

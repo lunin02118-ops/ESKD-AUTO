@@ -133,6 +133,7 @@ namespace ESKD.MaterialSync
         private CheckBox chkServiceEnabled;
         private Label lblServiceStatus;
         private CheckBox chkAutoSyncMaterials;
+        private CheckBox chkAutoStockMaterial;
         private CheckBox chkAutoMass;
         private CheckBox chkAutoSplitName;
         private Button btnSave;
@@ -739,13 +740,24 @@ namespace ESKD.MaterialSync
                 Margin = new Padding(0, 6, 0, 8)
             };
 
-            tblMat.RowCount = 6;
+            chkAutoStockMaterial = new CheckBox()
+            {
+                Text = "Подбирать материал по геометрии: типоразмеру профиля и толщине листа",
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Regular),
+                ForeColor = Color.FromArgb(15, 23, 42),
+                AutoSize = true,
+                Checked = true,
+                Margin = new Padding(0, 0, 0, 8)
+            };
+
+            tblMat.RowCount = 7;
             tblMat.Controls.Add(lblMatTitle, 0, 0);
             tblMat.Controls.Add(lblMatSub, 0, 1);
             tblMat.Controls.Add(chkAutoSyncMaterials, 0, 2);
-            tblMat.Controls.Add(lblMatRule1, 0, 3);
-            tblMat.Controls.Add(lblMatRule2, 0, 4);
-            tblMat.Controls.Add(lblMatRule3, 0, 5);
+            tblMat.Controls.Add(chkAutoStockMaterial, 0, 3);
+            tblMat.Controls.Add(lblMatRule1, 0, 4);
+            tblMat.Controls.Add(lblMatRule2, 0, 5);
+            tblMat.Controls.Add(lblMatRule3, 0, 6);
             cardMat.Controls.Add(tblMat);
 
             // Add all cards to table layout
@@ -835,6 +847,7 @@ namespace ESKD.MaterialSync
                 string currentOrg = "";
                 int serviceEnabled = 1;
                 int autoSyncMat = 1;
+                int autoStock = 1;
                 int autoMass = 1;
                 int autoSplit = 1;
 
@@ -847,6 +860,7 @@ namespace ESKD.MaterialSync
                         currentOrg = (key.GetValue("Organization") as string) ?? currentOrg;
                         serviceEnabled = Core.Settings.Int(key, "ServiceEnabled", 1);
                         autoSyncMat = Core.Settings.Int(key, "AutoSyncMaterials", 1);
+                        autoStock = Core.Settings.Int(key, "AutoStockMaterial", 1);
                         autoMass = Core.Settings.Int(key, "AutoMass", 1);
                         autoSplit = Core.Settings.Int(key, "AutoSplitName", 1);
 
@@ -894,6 +908,7 @@ namespace ESKD.MaterialSync
                 // Set Options (DEFAULTS ARE ALWAYS CHECKED)
                 chkServiceEnabled.Checked = (serviceEnabled == 1);
                 chkAutoSyncMaterials.Checked = (autoSyncMat == 1);
+                chkAutoStockMaterial.Checked = (autoStock == 1);
                 chkAutoMass.Checked = (autoMass == 1);
                 chkAutoSplitName.Checked = (autoSplit == 1);
             }
@@ -917,6 +932,7 @@ namespace ESKD.MaterialSync
                     {
                         key.SetValue("ServiceEnabled", chkServiceEnabled.Checked ? 1 : 0, RegistryValueKind.DWord);
                         key.SetValue("AutoSyncMaterials", chkAutoSyncMaterials.Checked ? 1 : 0, RegistryValueKind.DWord);
+                        key.SetValue("AutoStockMaterial", chkAutoStockMaterial.Checked ? 1 : 0, RegistryValueKind.DWord);
                         key.SetValue("Author", author, RegistryValueKind.String);
                         key.SetValue("Checker", checker, RegistryValueKind.String);
                         key.SetValue("Organization", org, RegistryValueKind.String);

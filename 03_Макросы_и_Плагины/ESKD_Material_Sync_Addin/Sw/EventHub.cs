@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Windows.Forms;
 using ESKD.MaterialSync.Core;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
@@ -253,6 +254,11 @@ namespace ESKD.MaterialSync.Sw
                 }));
                 return;
             }
+            if (task.Kind == "stock")
+            {
+                ApplyStock(task.Doc);
+                return;
+            }
             if (task.Kind == "status")
             {
                 Frame frame = _app.Frame() as Frame;
@@ -279,6 +285,91 @@ namespace ESKD.MaterialSync.Sw
             {
                 DrawingFormatService.Apply(_app, (DrawingDoc)task.Doc);
             }
+        }
+
+        /// <summary>
+        /// Материал по геометрии (Р-8, решение владельца 20.09.2026) — в простое, когда SolidWorks отпустил документ.
+        /// Деталь осматривается заново: указатели на тела, снятые во время сохранения, к этому моменту могут быть
+        /// недействительны. Если типоразмеру отвечает несколько материалов — спрашиваем конструктора; отложил выбор
+        /// («Позже») — ничего не назначаем, замечание уже сказано в строке состояния.
+        /// </summary>
+        private void ApplyStock(ModelDoc2 doc)
+        {
+            if (doc == null) return;
+            try
+            {
+                string path = SafePath(doc);
+                List<StockFinding> findings = StockService.Inspect(_app, doc);
+                bool ask = false;
+                foreach (StockFinding f in findings) if (f.NeedsChoice) ask = true;
+                if (ask && !StockService.IsPostponed(path) && Settings.Read().StockAskOnSave)
+                {
+                    using (StockPickForm form = new StockPickForm(DocInfo.TitleOf(doc), findings))
+                    {
+                        if (form.ShowDialog(Owner()) == DialogResult.OK)
+                        {
+                            StockService.Resume(path);
+                            foreach (StockFinding f in findings)
+                            {
+                                if (!f.NeedsChoice) continue;
+                                MaterialInfo picked;
+                                if (form.Chosen.TryGetValue(StockCatalog.NormalizeSize(f.Request.Size), out picked))
+                                    f.Chosen = picked;
+                            }
+                        }
+                        else
+                        {
+                            // «Позже»: больше не спрашиваем до конца сеанса — иначе окно всплывало бы
+                            // после каждого сохранения этой детали.
+                            StockService.Postpone(path);
+                        }
+                    }
+                }
+
+                SyncReport applied = new SyncReport();
+                int changed = StockService.Apply(_app, doc, findings, applied);
+                foreach (string warning in applied.Warnings) Log.Warn(warning);
+                foreach (string operation in applied.Operations) Log.Info(operation);
+                if (changed == 0) return;
+
+                // Материал сменился — свойства и массу переписываем и сохраняем, иначе новый материал останется
+                // только в теле, а в графе 3 и в книге ЛЗК будет прежнее.
+                SyncReport report = SyncService.SyncModel(_app, doc, new SyncRequest
+                {
+                    Reason = "материал по типоразмеру", Names = false, Signatures = false, Stock = false
+                });
+                _lastWarnings.Clear();
+                _lastWarnings.AddRange(report.Warnings);
+                int errors = 0, warnings = 0;
+                _resaving = true;
+                try
+                {
+                    if (!doc.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
+                        Log.Error(string.Format("Материал по типоразмеру: деталь не сохранена (errors={0}, warnings={1})", errors, warnings));
+                }
+                finally
+                {
+                    _resaving = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Материал по геометрии (простой)", ex);
+            }
+        }
+
+        private IWin32Window Owner()
+        {
+            try
+            {
+                Frame frame = _app.Frame() as Frame;
+                if (frame != null) return new WindowWrapper(new IntPtr(frame.GetHWnd()));
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Материал по геометрии: окно SolidWorks", ex);
+            }
+            return null;
         }
 
         private void SyncAndResave(ModelDoc2 doc, string reason, string targetPath, string previousPath)
@@ -360,6 +451,8 @@ namespace ESKD.MaterialSync.Sw
                 Settings settings = Settings.Read();
                 if (!settings.ServiceEnabled || !settings.SyncOnSave) return 0;
                 if (s.Type == (int)swDocumentTypes_e.swDocDRAWING) return 0;
+                // Пакетный обход изделия сохраняет детали сам и уже всё записал — второй круг не нужен.
+                if (BatchSyncService.Running) return 0;
                 Remember(s.Doc, SyncService.SyncModel(_app, s.Doc, new SyncRequest
                 {
                     Reason = _resaving ? "пересохранение" : "сохранение",
@@ -386,6 +479,7 @@ namespace ESKD.MaterialSync.Sw
                     s.LastPath = fileName ?? s.LastPath;
                 }
                 if (!settings.ServiceEnabled || !settings.SyncOnSave) return 0;
+                if (BatchSyncService.Running) return 0;
                 if (s.Type == (int)swDocumentTypes_e.swDocDRAWING)
                 {
                     // З-1: формат листов — в «Формат» модели; в простое, после того как SolidWorks закончил запись чертежа
@@ -457,6 +551,9 @@ namespace ESKD.MaterialSync.Sw
             if (report == null || report.Skipped) return;
             _lastWarnings.Clear();
             _lastWarnings.AddRange(report.Warnings);
+            // Материал по геометрии (Р-8): назначать и спрашивать — только в простое, документ сейчас занят SolidWorks.
+            if (report.StockNeedsWork && doc != null)
+                _idle.Enqueue(new IdleTask { Doc = doc, Kind = "stock" });
             if (report.Warnings.Count > 0 && doc != null)
                 _idle.Enqueue(new IdleTask { Doc = doc, Kind = "status", Text = report.StatusLine() });
         }

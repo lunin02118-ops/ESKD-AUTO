@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -345,9 +346,18 @@ namespace ESKD.MaterialSync
             }
         }
 
-        /// <summary>Кнопка «Синхронизировать»: итог в строке состояния, предупреждения — окном (только по нажатию, Д-38).</summary>
+        /// <summary>
+        /// Кнопка «Синхронизировать»: итог в строке состояния, предупреждения — окном (только по нажатию, Д-38).
+        /// Стоя в сборке — обход всего изделия: материал конструктор назначает в дереве сборки, детали при этом
+        /// отдельно не сохраняются, и без обхода их свойства остаются пустыми (замечание владельца 20.09.2026).
+        /// </summary>
         public void SyncCurrentDoc()
         {
+            if (ActiveDocType() == (int)swDocumentTypes_e.swDocASSEMBLY)
+            {
+                SyncProductBatch();
+                return;
+            }
             SyncReport report = RunExplicitSync();
             if (report == null || report.Skipped) return;
             try
@@ -368,6 +378,114 @@ namespace ESKD.MaterialSync
         {
             SyncReport report = RunExplicitSync();
             return report == null || report.Skipped ? -1 : report.Changes;
+        }
+
+        /// <summary>
+        /// Обход изделия без окон — для автотестов и работы без интерфейса. Неоднозначные типоразмеры пропускаются.
+        /// Возвращает строку итога, как в строке состояния.
+        /// </summary>
+        public string SyncProductSilent()
+        {
+            try
+            {
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY) return "";
+                return BatchSyncService.SyncProduct(_app, doc, null).StatusLine();
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("SyncProductSilent", ex);
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// Что надстройка видит в прокате активной детали — для автотестов и разбора жалоб. Строка на позицию:
+        /// «папка|вердикт|типоразмер|ГОСТ|материал сейчас|кандидаты через ;». Документ не меняется.
+        /// </summary>
+        public string StockReport()
+        {
+            try
+            {
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                if (doc == null) return "";
+                List<StockFinding> findings = StockService.Inspect(_app, doc);
+                List<string> lines = new List<string>();
+                foreach (StockFinding f in findings)
+                {
+                    List<string> names = new List<string>();
+                    foreach (Core.MaterialInfo info in f.Match.Candidates) names.Add(info.Name);
+                    lines.Add(string.Join("|", new[]
+                    {
+                        f.Folder, f.Verdict.ToString(), f.Request.Size, f.Request.Gost,
+                        f.CurrentMaterial, string.Join(";", names.ToArray())
+                    }));
+                }
+                return string.Join("\n", lines.ToArray());
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("StockReport", ex);
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// Назначить материал активной детали там, где он определяется однозначно, без окна выбора — для автотестов
+        /// и работы без интерфейса. Неоднозначные типоразмеры пропускаются: молча выбирать за конструктора нельзя.
+        /// Возвращает число позиций, получивших материал, или -1.
+        /// </summary>
+        public int ApplyStockMaterialSilent()
+        {
+            try
+            {
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                if (doc == null) return -1;
+                List<StockFinding> findings = StockService.Inspect(_app, doc);
+                SyncReport applied = new SyncReport();
+                int changed = StockService.Apply(_app, doc, findings, applied);
+                if (changed > 0)
+                    SyncService.SyncModel(_app, doc, new SyncRequest
+                    {
+                        Reason = "материал по типоразмеру (без окна)", Names = false, Signatures = false, Stock = false
+                    });
+                return changed;
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("ApplyStockMaterialSilent", ex);
+                return -1;
+            }
+        }
+
+        /// <summary>
+        /// Обход изделия из сборки: каждой детали — то же, что при сохранении, плюс подбор материала по
+        /// типоразмеру, и сохранение. Неоднозначные типоразмеры спрашиваются один раз на всё изделие.
+        /// </summary>
+        private void SyncProductBatch()
+        {
+            try
+            {
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                if (doc == null) return;
+                IntPtr hwnd = IntPtr.Zero;
+                Frame frame = _app.Frame() as Frame;
+                if (frame != null) hwnd = new IntPtr(frame.GetHWnd());
+                IWin32Window owner = hwnd != IntPtr.Zero ? new WindowWrapper(hwnd) : null;
+
+                BatchReport batch = BatchSyncService.SyncProduct(_app, doc, owner);
+                StatusText(batch.StatusLine());
+                if (batch.Warnings.Count > 0)
+                    MessageBox.Show(string.Join("\n", batch.Warnings.ToArray()), "ЕСКД: обход изделия",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                else if (batch.Parts == 0)
+                    MessageBox.Show("В сборке нет деталей из папки изделия — обходить нечего.", "ЕСКД: обход изделия",
+                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("Обход изделия", ex);
+            }
         }
 
         private SyncReport RunExplicitSync()

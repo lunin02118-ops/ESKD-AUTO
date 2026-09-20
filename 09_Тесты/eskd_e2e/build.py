@@ -76,6 +76,9 @@ def sketch_rectangles(doc, rects, plane="front"):
 
 
 def set_material(doc, material, config=""):
+    """material=None — материал не назначается: так деталь приходит от конструктора, пока он его не выбрал (Р-8)."""
+    if material is None:
+        return
     if material not in material_library():
         raise KeyError(f"Материала нет в корпоративной библиотеке: {material}")
     doc.SetMaterialPropertyName2(config, str(paths.MATERIAL_DB), material)

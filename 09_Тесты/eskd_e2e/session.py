@@ -35,6 +35,10 @@ TEST_SETTINGS = {
     "AutoMass": 1,
     "MassDecimals": 2,
     "AutoSplitName": 1,
+    "AutoStockMaterial": 1,
+    # Окно выбора материала модально и остановило бы прогон: однозначные типоразмеры подставляются молча,
+    # неоднозначные проверяются через StockReport надстройки (Р-8).
+    "StockAskOnSave": 0,
     "Author": "Тестов Т.Т.",
     "Checker": "Проверкин П.П.",
     "Organization": "ООО «Испытание»",
