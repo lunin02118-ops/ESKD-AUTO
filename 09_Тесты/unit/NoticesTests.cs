@@ -44,7 +44,7 @@ namespace ESKD.Tests
         {
             LzkResult r = new LzkResult();
             r.Issues.Add("Строка 3 (А.101): не заполнено «Масса»");
-            r.Notes.Add("Строка 4 (А.102): профиль без длины заготовки — указан габарит (*)");
+            r.Notes.Add("Строка 4 (А.102): длины заготовки в списке вырезов нет — измерена по модели (*)");
             r.Errors.Add("нет листа ведомости");
             List<Notice> list = Notices.FromLzk(r);
             Notice mass = list.Single(n => n.Level == NoticeLevel.Warning);

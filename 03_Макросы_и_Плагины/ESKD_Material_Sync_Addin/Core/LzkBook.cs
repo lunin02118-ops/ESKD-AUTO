@@ -878,10 +878,10 @@ namespace ESKD.MaterialSync.Core
                     if (double.IsNaN(g.KgPerMeter)) s.SetText(C(11, row), Mark, st.Center);
                     else s.SetNumber(C(11, row), Math.Round(g.KgPerMeter, 3), st.Dec3);
                     s.SetFormula(C(12, row), "IF(ISNUMBER(K" + r + "),H" + r + "*K" + r + ",\"\")", st.Dec1);
-                    s.SetText(C(13, row), g.Estimate ? "L по габариту — уточните длину заготовки" : "", st.Text);
+                    s.SetText(C(13, row), g.Estimate ? "L измерена по модели — уточните длину заготовки" : "", st.Text);
                     if (g.Estimate)
                         result.Notes.Add("Расход: " + g.Sortament + ", L=" + LzkOperations.Number(g.LengthMm) +
-                            " — длина заготовки по габариту (" + string.Join(", ", g.Designations.ToArray()) + ")");
+                            " — длина заготовки измерена по модели, не из списка вырезов (" + string.Join(", ", g.Designations.ToArray()) + ")");
                     row++;
                 }
                 s.SetText(C(1, row), "Итого по сортаменту", st.TotalLeft);

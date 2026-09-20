@@ -325,6 +325,44 @@ class Lzk(SwTestCase):
         sheet, cell = next(iter(wb.defined_names["Захват"].destinations))
         self.assertEqual(600, wb[sheet][cell.replace("$", "")].value, "норма сохранена")
 
+    def test_L09_bar_without_cut_list_length_is_measured_along_its_body(self):
+        """L09 (решение владельца 21.09.2026): труба 500 мм под 53° к осям детали, длины в списке вырезов нет —
+        так SolidWorks ведёт себя, когда тело элемента конструкции дорабатывали. Габарит по осям дал бы 424 мм,
+        и в закуп ушёл бы короткий хлыст. Книга меряет тело вдоль его самого длинного прямого ребра — 500 —
+        и честно помечает длину «*»."""
+        import openpyxl
+        from eskd_e2e import build
+
+        product = self.case_dir / PRODUCT
+        (product / "01_3D").mkdir(parents=True, exist_ok=True)
+        for name in ("Нормативы_производства.xlsx", "ЛЗК_бланки.xlsx"):
+            ref = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / name
+            (self.case_dir / ref.name).write_bytes(ref.read_bytes())
+        tube = product / "01_3D" / "ПРТИ.468211.171 Раскос.sldprt"
+        doc = build.structural_tube(self.s, 500, build.tube_profile(),
+                                    "Труба 40х40х2,0 ГОСТ 8639-82 / Ст3сп ГОСТ 13663-86", angle_deg=53.13)
+        self.s.save_as(doc, tube)
+        self.s.wait_addin_idle(timeout=60.0)
+        box = com.call(doc, "GetPartBox", True)
+        self.assertLess(max((box[3] - box[0]), (box[4] - box[1]), (box[5] - box[2])) * 1000, 450,
+                        "наклонная труба: ни один габарит по осям не дотягивает до 500")
+        asm, opened = build.assembly(self.s, [(tube, 0, 0, 0)])
+        self.s.save_as(asm, product / "01_3D" / ASM)
+        for d in opened:
+            self.s.close(d)
+        self.s.activate(asm)
+        status = self._build()
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.assertTrue(status.startswith("ok|"), f"{status}\n{notices}")
+
+        main = openpyxl.load_workbook(product / DOCS / BOOK)["Ведомость"]
+        sizes = {main.cell(r, 3).value: str(main.cell(r, 6).value or "") for r in range(7, main.max_row + 1)}
+        size = sizes.get("ПРТИ.468211.171")
+        self.assertIsNotNone(size, f"раскос в ведомости: {sizes}")
+        self.assertRegex(size, r"^L=\d+(?:[.,]\d+)?\*$", f"длина, а не габарит «Д×Ш×В», и со звёздочкой: {size}")
+        self.assertEqual("L=500*", size, "вдоль собственной оси — 500, а не 424 по осям детали")
+        self.assertIn("измерена по модели", notices, f"пометка объясняет, откуда длина: {notices}")
+
     def test_L03_refuses_non_assembly(self):
         """L03: у детали кнопка отказывает без изменений файлов."""
         path, doc = self.open_copy(SHEET_PART)

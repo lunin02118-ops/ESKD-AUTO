@@ -470,8 +470,24 @@ namespace ESKD.MaterialSync.Sw
                 double[] box = assembly
                     ? ((AssemblyDoc)model).GetBox(0) as double[]
                     : ((PartDoc)model).GetPartBox(true) as double[];
-                if (box != null && box.Length >= 6)
-                    item.Size = LzkOperations.FormatSize((box[3] - box[0]) * 1000, (box[4] - box[1]) * 1000, (box[5] - box[2]) * 1000);
+                double[] sides = box != null && box.Length >= 6
+                    ? new[] { (box[3] - box[0]) * 1000, (box[4] - box[1]) * 1000, (box[5] - box[2]) * 1000 }
+                    : null;
+                if (t.IsStructuralMember && !assembly)
+                {
+                    // SolidWorks длину не дал (тело дорабатывали после элемента конструкции) — меряем тело вдоль
+                    // его собственной оси; габарит по осям для наклонной детали занижает (решение владельца 21.09.2026).
+                    double measured = MeasuredLength((PartDoc)model);
+                    double boxMax = sides == null ? 0 : Math.Max(sides[0], Math.Max(sides[1], sides[2]));
+                    double chosen = BodyLength.Choose(measured, boxMax);
+                    if (chosen > 0)
+                    {
+                        item.Size = LzkOperations.FormatLength(chosen);
+                        return;
+                    }
+                }
+                if (sides != null)
+                    item.Size = LzkOperations.FormatSize(sides[0], sides[1], sides[2]);
             }
             catch (Exception ex)
             {
@@ -504,6 +520,65 @@ namespace ESKD.MaterialSync.Sw
             }
             several = pieces > 1;
             return found;
+        }
+
+        /// <summary>
+        /// Длина заготовки по телу, мм: протяжённость вдоль самого длинного прямого ребра. У детали из нескольких
+        /// тел — наибольшая. NaN — мерить не по чему. Рёбра сначала сравниваются по хордам, и только победитель
+        /// спрашивается, прямой ли он: вопрос о форме — отдельный вызов SolidWorks на каждое ребро.
+        /// </summary>
+        public static double MeasuredLength(PartDoc part)
+        {
+            double best = double.NaN;
+            if (part == null) return best;
+            try
+            {
+                object[] bodies = part.GetBodies2((int)swBodyType_e.swSolidBody, true) as object[];
+                if (bodies == null) return best;
+                foreach (object o in bodies)
+                {
+                    Body2 body = o as Body2;
+                    if (body == null) continue;
+                    double v = MeasuredLength(body);
+                    if (!double.IsNaN(v) && (double.IsNaN(best) || v > best)) best = v;
+                }
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Ведомость ЛЗК: длина по телу", ex);
+            }
+            return best;
+        }
+
+        private static double MeasuredLength(Body2 body)
+        {
+            object[] edges = body.GetEdges() as object[];
+            if (edges == null || edges.Length == 0) return double.NaN;
+            List<double[]> curves = new List<double[]>(edges.Length);
+            List<double> chords = new List<double>(edges.Length);
+            foreach (object o in edges)
+            {
+                Edge edge = o as Edge;
+                double[] p = edge != null ? edge.GetCurveParams2() as double[] : null;
+                curves.Add(p);
+                chords.Add(BodyLength.Chord(p));
+            }
+            foreach (int i in BodyLength.ByChordDescending(chords))
+            {
+                if (chords[i] <= 0) break;
+                Curve curve = ((Edge)edges[i]).GetCurve() as Curve;
+                if (curve == null || !curve.IsLine()) continue;   // дуга длиннее прямых — спросим следующее
+                double[] dir = BodyLength.Direction(curves[i]);
+                if (dir == null) continue;
+                double fx, fy, fz, bx, by, bz;
+                bool forward = body.GetExtremePoint(dir[0], dir[1], dir[2], out fx, out fy, out fz);
+                bool backward = body.GetExtremePoint(-dir[0], -dir[1], -dir[2], out bx, out by, out bz);
+                double metres = forward && backward
+                    ? BodyLength.Along(new[] { fx, fy, fz }, new[] { bx, by, bz }, dir)
+                    : chords[i];
+                return Math.Max(metres, chords[i]) * 1000.0;
+            }
+            return double.NaN;
         }
 
         /// <summary>Пары «имя свойства → записанное значение» папки списка вырезов: по ним ищется нужная величина.</summary>

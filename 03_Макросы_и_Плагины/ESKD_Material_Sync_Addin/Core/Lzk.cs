@@ -556,7 +556,7 @@ namespace ESKD.MaterialSync.Core
                 else if (item != null && item.IsProfile && item.SizeIsEstimate)
                 {
                     // «*» — к сведению, а не пометка «?»: длина правдоподобна, её только уточнить (решение владельца 18.09.2026).
-                    result.Notes.Add(label + ": профиль без длины заготовки — указан габарит (*)");
+                    result.Notes.Add(label + ": длины заготовки в списке вырезов нет — измерена по модели (*)");
                 }
             }
 
