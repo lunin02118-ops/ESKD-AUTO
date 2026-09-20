@@ -261,5 +261,44 @@ class Stock(SwTestCase):
                          "деталь без материала обходом заполнена")
 
 
+    def test_T10_product_walk_reaches_parts_three_levels_deep(self):
+        """T10: изделие — это сборка сборок. Деталь лежит на третьем уровне дерева, а нажимают кнопку
+        в корневой сборке: обход обязан дойти и до неё."""
+        folder = self.s.ws(self._case_name())
+        folder.mkdir(parents=True, exist_ok=True)
+        deep = folder / "ПРТИ.301111.043 Глубокая.sldprt"
+
+        self.s.set_settings(AutoStockMaterial=0)
+        try:
+            doc = build.structural_tube(self.s, 300, FLAT_OVAL, None)
+            self.s.save_as(doc, deep)
+
+            level3, _ = build.assembly(self.s, [(deep, 0, 0, 0)])
+            path3 = folder / "ПРТИ.301111.042 СБ Узел.sldasm"
+            self.s.save_as(level3, path3)
+
+            level2, _ = build.assembly(self.s, [(path3, 0, 0, 0)])
+            path2 = folder / "ПРТИ.301111.041 СБ Секция.sldasm"
+            self.s.save_as(level2, path2)
+
+            top, _ = build.assembly(self.s, [(path2, 0, 0, 0)])
+            path1 = folder / "ПРТИ.301111.040 СБ Изделие.sldasm"
+            self.s.save_as(top, path1)
+            self.s.close_all()
+            self.assertIsNone(V(self.persisted(deep), "Материал_Строка", "00"), "материала ещё нет")
+        finally:
+            self.s.set_settings(AutoStockMaterial=1)
+
+        asm = self.s.open(path1)
+        self.s.activate(asm)
+        status = str(com.call(self.s.eskd(), "SyncProductSilent") or "")
+        self.s.close_all()
+
+        self.assertIn("деталей 1", status, status)
+        self.assertIn("материалов назначено 1", status, f"деталь третьего уровня обойдена: {status}")
+        self.assertEqual(TUBE_LINE, V(self.persisted(deep), "Материал_Строка", "00"),
+                         "материал записан детали на третьем уровне дерева")
+
+
 if __name__ == "__main__":
     unittest.main()
