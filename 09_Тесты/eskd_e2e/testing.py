@@ -91,6 +91,12 @@ def tags(*names):
     return decorate
 
 
+def with_doc_events(fn):
+    """Тесту нужны события документа из зонда (сохранение, свойства): подписки включаются на время теста."""
+    fn.__eskd_doc_events__ = True
+    return fn
+
+
 # --------------------------------------------------------------------------- базовые классы
 class StaticTestCase(unittest.TestCase):
     """Тесты без SolidWorks."""
@@ -101,6 +107,9 @@ class SwTestCase(unittest.TestCase):
     """Тест с общей сессией SolidWorks и зондом событий."""
     maxDiff = None
     load_eskd = True
+    #: Подписки зонда на события документа (сохранение, свойства, разрушение) — только тестам, которые их читают:
+    #: внешний подписчик на документе роняет SolidWorks при закрытии детали после сохранения (21.09.2026).
+    doc_events = False
 
     @classmethod
     def setUpClass(cls):
@@ -117,14 +126,28 @@ class SwTestCase(unittest.TestCase):
         if self.case_dir.exists():
             shutil.rmtree(self.case_dir, ignore_errors=True)
         self.case_dir.mkdir(parents=True, exist_ok=True)
+        self._baselines = {}
+        self.s.on_open = self._baseline
         self.mark(self.id())
+        if self._doc_events_needed() and self.s.probe is not None:
+            self.s.probe.call("doc_events", "1")
+
+    def _doc_events_needed(self):
+        method = getattr(self, self._testMethodName, None)
+        return bool(self.doc_events or getattr(method, "__eskd_doc_events__", False))
 
     def tearDown(self):
         problems = []
+        self.s.on_open = None
         try:
             self.s.close_all()
         except Exception as exc:
             problems.append(f"закрытие документов: {exc}")
+        if self._doc_events_needed() and self.s.probe is not None:
+            try:
+                self.s.probe.call("doc_events", "0")
+            except Exception as exc:
+                problems.append(f"события документа в зонде не выключены: {exc}")
         dialogs = self.s.watchdog.pop_unexpected() if self.s.watchdog else []
         if dialogs:
             problems.append(f"неожиданные диалоги SolidWorks: {dialogs}")
@@ -142,7 +165,16 @@ class SwTestCase(unittest.TestCase):
 
     def mark(self, label):
         self._mark = self.s.mark(label)
+        for doc in list(self.s._opened):
+            self._baseline(doc)
         return self._mark
+
+    def _baseline(self, doc):
+        """Сырые значения свойств документа на момент метки или открытия — точка отсчёта для assertNoPropertyWrites."""
+        try:
+            self._baselines[id(doc)] = (doc, oracles.raw_properties(doc))
+        except Exception:
+            pass
 
     def copy_fixture(self, name, fixture_dir=None):
         src = Path(fixture_dir or paths.FIXTURES_A) / name
@@ -161,9 +193,24 @@ class SwTestCase(unittest.TestCase):
         return self.s.journal.property_writes(mark or self._mark)
 
     def assertNoPropertyWrites(self, mark=None, msg=""):
-        writes = self.property_writes(mark)
-        self.assertEqual([], [(w["event"], w.get("name"), w.get("cfg")) for w in writes],
-                         msg or "документ изменён без действия пользователя")
+        """Свойства открытых документов не изменились с последней метки (или с открытия документа после неё).
+
+        Проверка по снимкам, а не по событиям зонда: подписка внешнего процесса на события документа роняет
+        SolidWorks при закрытии детали (21.09.2026), поэтому зонд слушает документы только в контрактных тестах.
+        Сравниваются общие свойства и активная конфигурация (см. oracles.raw_properties).
+        """
+        changes = []
+        open_ids = {id(d) for d in self.s._opened}
+        for key, (doc, before) in self._baselines.items():
+            if key not in open_ids:
+                continue
+            after = oracles.raw_properties(doc)
+            for level in sorted(set(before) | set(after)):
+                b, a = before.get(level, {}), after.get(level, {})
+                for name in sorted(set(b) | set(a)):
+                    if b.get(name) != a.get(name):
+                        changes.append((level, name, b.get(name), a.get(name)))
+        self.assertEqual([], changes, msg or "документ изменён без действия пользователя")
 
     def wait_idle(self, seconds=2.5):
         """Даёт SolidWorks простоять: надстройка выполняет отложенные задачи в OnIdleNotify."""

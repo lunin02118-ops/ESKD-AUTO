@@ -6,7 +6,8 @@
     не бывают открыты в тестовой сессии;
   * надстройка ЕСКД грузится явно (LoadAddIn), зонд событий — отдельный процесс;
   * все сохранения должны оказаться внутри каталога прогона: запись вне его запрещена
-    харнессом до вызова API, а зонд фиксирует любое фактическое сохранение за пределами;
+    харнессом до вызова API, а в контрактных тестах (события документа включены) зонд фиксирует
+    и фактическое сохранение за пределами;
   * ESKD_Settings пользователя сохраняются до прогона (и в файл %LOCALAPPDATA%\\ESKD_Tests, один для всех рабочих
     копий) и восстанавливаются после; прерванный прогон восстанавливается при старте следующего, а если настройки
     после прерывания меняли вручную — прогон отказывается стартовать;
@@ -104,6 +105,9 @@ class SwSession:
                           if prefix == "HKCU" or ctypes.windll.shell32.IsUserAnAdmin()]
         self.eskd_loaded = False
         self._opened = []
+        #: Вызывается для каждого открытого или созданного документа (SwTestCase снимает базовый дамп свойств).
+        self.on_open = None
+        self.last_idle_state = ""
         self._com_initialized = False
 
     # ------------------------------------------------------------------ жизненный цикл
@@ -147,7 +151,13 @@ class SwSession:
                 self.watchdog = DialogWatchdog(self.pid)
                 self.watchdog.start()
             if self.use_probe:
-                self.probe = ProbeClient(self.run_dir, self.probe_flags).start()
+                # Подписки внешнего процесса на события документа роняют SolidWorks при закрытии детали после
+                # сохранения (21.09.2026: цикл «открыть → сохранить → закрыть» падал за 1–4 повтора при любой
+                # одной такой подписке, даже снятой до закрытия; без них — 30 повторов чисто). Поэтому зонд слушает
+                # только события приложения, а события документа включают лишь тесты, которым они нужны
+                # (SwTestCase.doc_events = True), на время теста.
+                flags = {"doc-events": "0"} if self.probe_flags is None else self.probe_flags
+                self.probe = ProbeClient(self.run_dir, flags).start()
                 self.journal = Journal(self.probe.journal_path)
             if self.load_eskd_on_start:
                 self.load_eskd()
@@ -325,6 +335,8 @@ class SwSession:
             raise RuntimeError(f"NewDocument не создал документ из {template}")
         doc = com.dyn(doc)
         self._opened.append(doc)
+        if self.on_open:
+            self.on_open(doc)
         return doc
 
     def open(self, path, readonly=False):
@@ -338,6 +350,8 @@ class SwSession:
             raise RuntimeError(f"OpenDoc6 не открыл {path}: errors={err.value} warnings={warn.value}")
         doc = com.dyn(doc)
         self._opened.append(doc)
+        if self.on_open:
+            self.on_open(doc)
         return doc
 
     def activate(self, doc):
@@ -350,16 +364,20 @@ class SwSession:
         посреди Save3 и падает (R01, 19.09.2026). Каждый опрос отдаёт SolidWorks простой."""
         deadline = time.time() + timeout
         refused = 0
+        self.last_idle_state = ""
         while time.time() < deadline:
             try:
                 addin = self.eskd() if self.eskd_loaded else None
-                if addin is None or int(com.call(addin, "PendingIdleTasks")) == 0:
+                pending = 0 if addin is None else int(com.call(addin, "PendingIdleTasks"))
+                if pending == 0:
                     return True
+                self.last_idle_state = f"отложенных задач: {pending}"
                 refused = 0
-            except Exception:
+            except Exception as exc:
                 # Занятый SolidWorks отклоняет вызов — это «ещё не простаивает», а не «ждать больше не надо».
                 # Прежний мгновенный выход и давал закрытие документа посреди Save3 (R01, аудит 20.09.2026).
                 refused += 1
+                self.last_idle_state = f"вызов отклонён {refused} раз: {exc!r}"[:200]
                 if refused >= 5:
                     return False
             time.sleep(0.2)
@@ -369,7 +387,8 @@ class SwSession:
         if not self.wait_addin_idle():
             # Закрывать документ, пока надстройка не отработала отложенные задачи, нельзя: SolidWorks падает
             # на внешнем COM-вызове посреди Save3. Даём ему ещё простоя и пишем это в вывод теста.
-            print("ВНИМАНИЕ: надстройка не отчиталась о простое перед закрытием документа — дополнительная пауза")
+            print("ВНИМАНИЕ: надстройка не отчиталась о простое перед закрытием документа — дополнительная пауза"
+                  f" ({self.last_idle_state})")
             time.sleep(2.0)
             self.wait_addin_idle(timeout=30.0)
         try:
@@ -420,7 +439,8 @@ class SwSession:
         return bool(ok), int(err.value), int(warn.value)
 
     def ui_save_as(self, doc, path, command=620):
-        """«Сохранить как» через команду интерфейса; зонд подставляет путь, диалог не показывается."""
+        """«Сохранить как» через команду интерфейса; зонд подставляет путь из FileSaveAsNotify2, диалог не
+        показывается. Нужны события документа у зонда (@with_doc_events / doc_events = True в тесте)."""
         path = Path(path)
         self._assert_inside(path)
         path.parent.mkdir(parents=True, exist_ok=True)

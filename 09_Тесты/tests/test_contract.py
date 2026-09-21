@@ -20,6 +20,7 @@ def events_of(journal, mark, names):
 
 
 class ContractSaveEvents(SwTestCase):
+    doc_events = True
     load_eskd = False
 
     def _new_part(self):
@@ -101,6 +102,7 @@ class ContractSaveEvents(SwTestCase):
 
 
 class ContractPropertyEvents(SwTestCase):
+    doc_events = True
     load_eskd = False
 
     def test_C03_property_notifications_follow_api_writes(self):

@@ -34,6 +34,36 @@ def dump_properties(doc):
     return data
 
 
+def raw_properties(doc):
+    """{уровень: {имя: сырое значение}} — общие свойства под ключом «» и активная конфигурация под своим именем.
+
+    Снимок для assertNoPropertyWrites снимается при каждом открытии и метке, поэтому он не должен трогать документ:
+    чтение свойств НЕактивной конфигурации (даже Get4 с UseCached) у детали с таблицей параметров (B-01, 79
+    конфигураций) помечает её изменённой — P09 на реальной детали ложно падал (21.09.2026). Полный дамп по всем
+    конфигурациям — dump_properties, его вызывают после проверки GetSaveFlag."""
+    def level(cpm):
+        out = {}
+        for name in com.prop_names(cpm):
+            raw, resolved = com.ref_str(""), com.ref_str("")
+            try:
+                cpm.Get4(name, True, raw, resolved)
+            except Exception:
+                pass
+            out[name] = str(raw.value or "")
+        return out
+
+    ext = doc.Extension
+    data = {"": level(ext.CustomPropertyManager(""))}
+    if int(doc.GetType) in (com.SW_DOC_PART, com.SW_DOC_ASSEMBLY):
+        try:
+            active = str(doc.GetActiveConfiguration.Name)
+        except Exception:
+            active = ""
+        if active:
+            data[active] = level(ext.CustomPropertyManager(active))
+    return data
+
+
 def read_persisted(session, path):
     """Состояние файла на диске: служба надстройки выключена, документ открыт только для чтения."""
     with session.eskd_muted():

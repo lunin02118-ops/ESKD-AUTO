@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from eskd_e2e import build, com, oracles, paths, testing
-from eskd_e2e.testing import SwTestCase, known_defect, tags
+from eskd_e2e.testing import SwTestCase, known_defect, tags, with_doc_events
 
 SHEET4 = "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
 SHEET6 = "Лист 6,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
@@ -50,6 +50,7 @@ class PersistenceNewDocuments(SwTestCase):
 
     @tags("smoke")
     @known_defect("Д-01")
+    @with_doc_events
     def test_P01_new_part_api_save_as_writes_names_to_disk(self):
         """P01: новая деталь → API «Сохранить как» → на диске обозначение и наименование из имени файла."""
         doc, _ = build.plate(self.s, 200, 100, 4, SHEET4)
@@ -62,8 +63,10 @@ class PersistenceNewDocuments(SwTestCase):
         self._assert_named_plate(self.persisted(target), "ПРТИ.468211.121", "Пластина новая")
 
     @known_defect("Д-01")
+    @with_doc_events
     def test_P02_new_part_ui_save_writes_names_to_disk(self):
-        """P02: новая деталь → команда «Сохранить» (путь команды интерфейса) → реквизиты на диске."""
+        """P02: новая деталь → команда «Сохранить» (путь команды интерфейса) → реквизиты на диске.
+        Путь в диалог подставляет зонд из FileSaveAsNotify2 — событие документа, поэтому они включены."""
         doc, _ = build.plate(self.s, 200, 100, 4, SHEET4)
         target = self.path("ПРТИ.468211.123 Пластина через команду.sldprt")
         self.s.ui_save_as(doc, target, command=2)
@@ -117,8 +120,9 @@ class PersistenceSave(SwTestCase):
         self.assertEqual("ПРТИ.468211.101", V(self.persisted(path), "Обозначение"), "исходный файл")
 
     @known_defect("Д-02")
+    @with_doc_events
     def test_P05_ui_save_as_renames_part(self):
-        """P05: «Сохранить как» командой интерфейса — то же для пути UI."""
+        """P05: «Сохранить как» командой интерфейса — то же для пути UI (путь подставляет зонд, см. P02)."""
         path, doc = self.open_copy(A01)
         self.s.save(doc)
         target = self.path("ПРТИ.468211.133 Пластина из диалога.sldprt")
@@ -173,14 +177,12 @@ class PersistenceSave(SwTestCase):
         self.s.save(doc)
         copy = self.path("ПРТИ.468211.152 Копия исправленная.sldprt")
         self.s.set_settings(FixCopies=1)
-        # Надстройка сама откроет и закроет копию: зонд не должен держать на ней подписку (закрытие чужой подписки роняет SolidWorks).
-        self.s.probe.call("doc_events", "0")
+        # Надстройка сама откроет и закроет копию; подписок зонда на документах нет (SwTestCase.doc_events).
         try:
             ok, err, _ = self.s.save_as(doc, copy, options=com.SAVE_SILENT | com.SAVE_COPY)
             self.assertTrue(ok, f"копия не сохранена: {err}")
             self.wait_idle(4.0)
         finally:
-            self.s.probe.call("doc_events", "1")
             self.s.set_settings(FixCopies=0)
         self.assertEqual(str(path).lower(), str(doc.GetPathName).lower(), "документ в памяти сменил путь")
         self.assertEqual("ПРТИ.468211.101", V(oracles.dump_properties(doc), "Обозначение"), "реквизиты документа в памяти изменены")

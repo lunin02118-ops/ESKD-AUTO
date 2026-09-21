@@ -175,10 +175,12 @@ class Bch(SwTestCase):
         """B06: «Деталь БЧ» у исполнения без материала (A-03, активна «02») не берёт материал другой конфигурации."""
         path = self.copy_fixture(A03)
         doc = self.s.open(path)
-        doc.SetMaterialPropertyName2("02", "", "")  # материал фикстуры задан на все конфигурации — снимается со всех
+        # Материал фикстуры задан на все конфигурации — снимается со всех; снимать только в активной конфигурации:
+        # для неактивной SolidWorks портит документ и падает при его закрытии (M13 в полных прогонах 20–21.09.2026).
+        build.show_configuration(doc, "02")
+        doc.SetMaterialPropertyName2("02", "", "")
         for cfg in ("00", "01"):
             build.set_material(doc, SHEET4, cfg)
-        build.show_configuration(doc, "02")
         self.assertEqual(1, self._toggle(doc))
         self.s.save(doc)
         self.s.close(doc)

@@ -37,28 +37,32 @@ class Stock(SwTestCase):
     def _verdicts(self):
         return [row[1] for row in self._report()]
 
-    def _tube(self, name, profile=FLAT_OVAL, material=None):
+    def _tube(self, name, profile=FLAT_OVAL, material=None, verdicts=None):
         doc = build.structural_tube(self.s, 400, profile, material)
-        path = self.s.ws(self._case_name(), name)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        self.s.save_as(doc, path)
-        return path, doc
+        return self._save(doc, name, verdicts), doc
 
-    def _sheet(self, name, thickness_mm, material=None):
+    def _sheet(self, name, thickness_mm, material=None, verdicts=None):
         doc = build.sheet_metal_plate(self.s, 200, 100, thickness_mm, material)
+        return self._save(doc, name, verdicts), doc
+
+    def _save(self, doc, name, verdicts):
+        """Сохраняет новую деталь под именем; вердикт проверяется ДО сохранения: после него надстройка в простое
+        уже назначает материал, и «Assign» превращается в «Ok» (гонка T02, 21.09.2026)."""
+        if verdicts == ["Assign"]:
+            self.assertEqual(("", ""), build.material_of(doc, ""), "исходно материала нет")
+        if verdicts is not None:
+            self.assertEqual(verdicts, self._verdicts(), "вердикт до сохранения")
         path = self.s.ws(self._case_name(), name)
         path.parent.mkdir(parents=True, exist_ok=True)
         self.s.save_as(doc, path)
-        return path, doc
+        return path
 
     # ------------------------------------------------------------------ подстановка молча
     @tags("smoke")
     def test_T01_flat_oval_tube_without_material_gets_it_from_library(self):
         """T01: случай владельца — плоскоовальная труба 30х15х1,5 без материала. В библиотеке она одна,
         значит спрашивать нечего: материал подставляется сам и доходит до свойств."""
-        path, doc = self._tube("ПРТИ.301111.001 Распорка.sldprt")
-        self.assertEqual(("", ""), build.material_of(doc, ""), "исходно материала нет")
-        self.assertEqual(["Assign"], self._verdicts(), "надстройка берётся назначить материал")
+        path, doc = self._tube("ПРТИ.301111.001 Распорка.sldprt", verdicts=["Assign"])
 
         self.s.save(doc)
         self.s.wait_addin_idle(timeout=60.0)
@@ -75,8 +79,7 @@ class Stock(SwTestCase):
     def test_T02_sheet_8mm_without_material_gets_it_silently(self):
         """T02: лист 8 мм. В библиотеке две записи, но свойства у них одинаковые — для конструктора это
         один материал, поэтому окна выбора быть не должно."""
-        path, doc = self._sheet("ПРТИ.301111.002 Косынка.sldprt", 8)
-        self.assertEqual(["Assign"], self._verdicts(), "однозначный выбор: редакции ГОСТа схлопнуты")
+        path, doc = self._sheet("ПРТИ.301111.002 Косынка.sldprt", 8, verdicts=["Assign"])
 
         self.s.save(doc)
         self.s.wait_addin_idle(timeout=60.0)

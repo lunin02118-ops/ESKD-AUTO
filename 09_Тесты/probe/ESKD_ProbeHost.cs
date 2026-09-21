@@ -1,4 +1,4 @@
-// ESKD_ProbeHost — внешний зонд событий SolidWorks для харнесса 09_Тесты.
+﻿// ESKD_ProbeHost — внешний зонд событий SolidWorks для харнесса 09_Тесты.
 //
 // Зонд — отдельный процесс: надстройки, зарегистрированные только в HKCU, SolidWorks по
 // LoadAddIn не активирует, а регистрация в HKLM требует прав администратора.
@@ -37,6 +37,8 @@ namespace ESKD.TestProbe
             ProbeCore core = new ProbeCore(journal, workspace);
             core.DocEvents = Arg(args, "--doc-events", "1") == "1";
             core.PropEvents = Arg(args, "--prop-events", "1") == "1";
+            core.SaveEvents = Arg(args, "--save-events", "1") == "1";
+            core.DestroyEvents = Arg(args, "--destroy-events", "1") == "1";
             core.CommandEvents = Arg(args, "--command-events", "1") == "1";
             ISldWorks app = null;
             Stopwatch sw = Stopwatch.StartNew();
@@ -209,8 +211,15 @@ namespace ESKD.TestProbe
         private ISldWorks _app;
         private SldWorks _events;
         private string _mark = "";
+        // Подписки внешнего процесса на события документа роняют SolidWorks при закрытии детали после
+        // сохранения (21.09.2026: любая одна подписка — сохранение, свойства или DestroyNotify — даёт нарушение
+        // доступа в sldsessionu за 1–4 повтора цикла «открыть → сохранить → закрыть», даже снятая до закрытия).
+        // Поэтому сессия автотестов запускает зонд с --doc-events 0 и включает их командой doc_events только
+        // контрактным тестам; события приложения безопасны.
         public bool DocEvents = true;
         public bool PropEvents = true;
+        public bool SaveEvents = true;
+        public bool DestroyEvents = true;
         public bool CommandEvents = true;
         private long _seq;
         private int _violations;
@@ -344,35 +353,45 @@ namespace ESKD.TestProbe
         }
 
         // ------------------------------------------------------------ события документа
-        private int OnSave(ModelDoc2 d, string fileName)
+        // Внутри событий документа зонд не обращается к SolidWorks: GetTitle/GetPathName/GetSaveFlag из внешнего
+        // процесса посреди сохранения или записи свойств портят документ, и SolidWorks падает при его закрытии
+        // (нарушение доступа в sldsessionu при DestroyNotify; цикл «открыть → сохранить → закрыть» падал за 1–2
+        // повтора, 21.09.2026). Имя и путь берутся из кэша DocHooks, флаг изменённости не читается.
+        private void WriteDoc(string evt, DocHooks h, string extra)
         {
-            Write("FileSaveNotify", d, "\"fileName\":" + Json.Str(fileName));
+            WriteRaw(evt, h.Title, h.Path, "null", extra);
+        }
+
+        private int OnSave(DocHooks h, string fileName)
+        {
+            WriteDoc("FileSaveNotify", h, "\"fileName\":" + Json.Str(fileName));
             return 0;
         }
 
-        private int OnSaveAs2(ModelDoc2 d, string fileName)
+        private int OnSaveAs2(DocHooks h, string fileName)
         {
             string queued = null;
             lock (_sync) { if (_saveAsQueue.Count > 0) queued = _saveAsQueue.Dequeue(); }
             if (queued == null)
             {
-                Write("FileSaveAsNotify2", d, "\"fileName\":" + Json.Str(fileName));
+                WriteDoc("FileSaveAsNotify2", h, "\"fileName\":" + Json.Str(fileName));
                 return 0;
             }
+            // Единственный намеренный вызов в SolidWorks из события: подмена имени файла вместо диалога (C02).
             string error = null;
-            try { d.SetSaveAsFileName(queued); }
+            try { h.Doc.SetSaveAsFileName(queued); }
             catch (Exception ex) { error = ex.Message; }
-            Write("FileSaveAsNotify2", d, "\"fileName\":" + Json.Str(fileName) + ",\"substituted\":" + Json.Str(queued) + ",\"error\":" + Json.Str(error));
+            WriteDoc("FileSaveAsNotify2", h, "\"fileName\":" + Json.Str(fileName) + ",\"substituted\":" + Json.Str(queued) + ",\"error\":" + Json.Str(error));
             return error == null ? 1 : 0; // 1 = S_FALSE: диалог не показывается, используется SetSaveAsFileName
         }
 
         private int OnSavePost(DocHooks h, int saveType, string fileName)
         {
-            ModelDoc2 d = h.Doc;
-            if (saveType != 3)
+            // После «Сохранить как» документ живёт под новым именем; копия (saveType 3) имени не меняет.
+            if (saveType != 3 && !string.IsNullOrEmpty(fileName))
             {
-                try { h.Title = d.GetTitle() ?? h.Title; } catch { }
-                try { h.Path = d.GetPathName() ?? h.Path; } catch { }
+                h.Path = fileName;
+                h.Title = Path.GetFileName(fileName);
             }
             bool outside = false;
             if (!string.IsNullOrEmpty(_workspaceRoot) && !string.IsNullOrEmpty(fileName))
@@ -382,31 +401,31 @@ namespace ESKD.TestProbe
                 outside = !full.StartsWith(root, StringComparison.OrdinalIgnoreCase);
                 if (outside) lock (_sync) { _violations++; }
             }
-            Write("FileSavePostNotify", d, "\"saveType\":" + saveType + ",\"fileName\":" + Json.Str(fileName) + ",\"outsideWorkspace\":" + (outside ? "true" : "false"));
+            WriteDoc("FileSavePostNotify", h, "\"saveType\":" + saveType + ",\"fileName\":" + Json.Str(fileName) + ",\"outsideWorkspace\":" + (outside ? "true" : "false"));
             return 0;
         }
 
-        private int OnSavePostCancel(ModelDoc2 d)
+        private int OnSavePostCancel(DocHooks h)
         {
-            Write("FileSavePostCancelNotify", d, null);
+            WriteDoc("FileSavePostCancelNotify", h, null);
             return 0;
         }
 
-        private int OnAddProp(ModelDoc2 d, string name, string cfg, string value, int type)
+        private int OnAddProp(DocHooks h, string name, string cfg, string value, int type)
         {
-            Write("AddCustomPropertyNotify", d, "\"name\":" + Json.Str(name) + ",\"cfg\":" + Json.Str(cfg) + ",\"value\":" + Json.Str(value) + ",\"type\":" + type);
+            WriteDoc("AddCustomPropertyNotify", h, "\"name\":" + Json.Str(name) + ",\"cfg\":" + Json.Str(cfg) + ",\"value\":" + Json.Str(value) + ",\"type\":" + type);
             return 0;
         }
 
-        private int OnChangeProp(ModelDoc2 d, string name, string cfg, string oldValue, string newValue, int type)
+        private int OnChangeProp(DocHooks h, string name, string cfg, string oldValue, string newValue, int type)
         {
-            Write("ChangeCustomPropertyNotify", d, "\"name\":" + Json.Str(name) + ",\"cfg\":" + Json.Str(cfg) + ",\"old\":" + Json.Str(oldValue) + ",\"new\":" + Json.Str(newValue) + ",\"type\":" + type);
+            WriteDoc("ChangeCustomPropertyNotify", h, "\"name\":" + Json.Str(name) + ",\"cfg\":" + Json.Str(cfg) + ",\"old\":" + Json.Str(oldValue) + ",\"new\":" + Json.Str(newValue) + ",\"type\":" + type);
             return 0;
         }
 
-        private int OnDeleteProp(ModelDoc2 d, string name, string cfg, string value, int type)
+        private int OnDeleteProp(DocHooks h, string name, string cfg, string value, int type)
         {
-            Write("DeleteCustomPropertyNotify", d, "\"name\":" + Json.Str(name) + ",\"cfg\":" + Json.Str(cfg) + ",\"value\":" + Json.Str(value) + ",\"type\":" + type);
+            WriteDoc("DeleteCustomPropertyNotify", h, "\"name\":" + Json.Str(name) + ",\"cfg\":" + Json.Str(cfg) + ",\"value\":" + Json.Str(value) + ",\"type\":" + type);
             return 0;
         }
 
@@ -452,21 +471,21 @@ namespace ESKD.TestProbe
             {
                 if (h.Part != null)
                 {
-                    h.Part.FileSaveNotify -= h.PSave; h.Part.FileSaveAsNotify2 -= h.PSaveAs; h.Part.FileSavePostNotify -= h.PPost; h.Part.FileSavePostCancelNotify -= h.PCancel;
+                    if (h.PSave != null) { h.Part.FileSaveNotify -= h.PSave; h.Part.FileSaveAsNotify2 -= h.PSaveAs; h.Part.FileSavePostNotify -= h.PPost; h.Part.FileSavePostCancelNotify -= h.PCancel; }
                     if (h.PAdd != null) { h.Part.AddCustomPropertyNotify -= h.PAdd; h.Part.ChangeCustomPropertyNotify -= h.PChange; h.Part.DeleteCustomPropertyNotify -= h.PDelete; }
-                    h.Part.DestroyNotify -= h.PDestroy;
+                    if (h.PDestroy != null) h.Part.DestroyNotify -= h.PDestroy;
                 }
                 else if (h.Asm != null)
                 {
-                    h.Asm.FileSaveNotify -= h.ASave; h.Asm.FileSaveAsNotify2 -= h.ASaveAs; h.Asm.FileSavePostNotify -= h.APost; h.Asm.FileSavePostCancelNotify -= h.ACancel;
+                    if (h.ASave != null) { h.Asm.FileSaveNotify -= h.ASave; h.Asm.FileSaveAsNotify2 -= h.ASaveAs; h.Asm.FileSavePostNotify -= h.APost; h.Asm.FileSavePostCancelNotify -= h.ACancel; }
                     if (h.AAdd != null) { h.Asm.AddCustomPropertyNotify -= h.AAdd; h.Asm.ChangeCustomPropertyNotify -= h.AChange; h.Asm.DeleteCustomPropertyNotify -= h.ADelete; }
-                    h.Asm.DestroyNotify -= h.ADestroy;
+                    if (h.ADestroy != null) h.Asm.DestroyNotify -= h.ADestroy;
                 }
                 else if (h.Drw != null)
                 {
-                    h.Drw.FileSaveNotify -= h.DSave; h.Drw.FileSaveAsNotify2 -= h.DSaveAs; h.Drw.FileSavePostNotify -= h.DPost; h.Drw.FileSavePostCancelNotify -= h.DCancel;
+                    if (h.DSave != null) { h.Drw.FileSaveNotify -= h.DSave; h.Drw.FileSaveAsNotify2 -= h.DSaveAs; h.Drw.FileSavePostNotify -= h.DPost; h.Drw.FileSavePostCancelNotify -= h.DCancel; }
                     if (h.DAdd != null) { h.Drw.AddCustomPropertyNotify -= h.DAdd; h.Drw.ChangeCustomPropertyNotify -= h.DChange; h.Drw.DeleteCustomPropertyNotify -= h.DDelete; }
-                    h.Drw.DestroyNotify -= h.DDestroy;
+                    if (h.DDestroy != null) h.Drw.DestroyNotify -= h.DDestroy;
                 }
             }
             catch { }
@@ -520,47 +539,56 @@ namespace ESKD.TestProbe
                     if (type == (int)swDocumentTypes_e.swDocPART)
                     {
                         h.Part = (PartDoc)d;
-                        h.PSave = delegate(string fn) { return OnSave(h.Doc, fn); }; h.Part.FileSaveNotify += h.PSave;
-                        h.PSaveAs = delegate(string fn) { return OnSaveAs2(h.Doc, fn); }; h.Part.FileSaveAsNotify2 += h.PSaveAs;
-                        h.PPost = delegate(int t, string fn) { return OnSavePost(h, t, fn); }; h.Part.FileSavePostNotify += h.PPost;
-                        h.PCancel = delegate() { return OnSavePostCancel(h.Doc); }; h.Part.FileSavePostCancelNotify += h.PCancel;
+                        if (SaveEvents)
+                        {
+                            h.PSave = delegate(string fn) { return OnSave(h, fn); }; h.Part.FileSaveNotify += h.PSave;
+                            h.PSaveAs = delegate(string fn) { return OnSaveAs2(h, fn); }; h.Part.FileSaveAsNotify2 += h.PSaveAs;
+                            h.PPost = delegate(int t, string fn) { return OnSavePost(h, t, fn); }; h.Part.FileSavePostNotify += h.PPost;
+                            h.PCancel = delegate() { return OnSavePostCancel(h); }; h.Part.FileSavePostCancelNotify += h.PCancel;
+                        }
                         if (PropEvents)
                         {
-                            h.PAdd = delegate(string n, string c, string v, int t) { return OnAddProp(h.Doc, n, c, v, t); }; h.Part.AddCustomPropertyNotify += h.PAdd;
-                            h.PChange = delegate(string n, string c, string o, string v, int t) { return OnChangeProp(h.Doc, n, c, o, v, t); }; h.Part.ChangeCustomPropertyNotify += h.PChange;
-                            h.PDelete = delegate(string n, string c, string v, int t) { return OnDeleteProp(h.Doc, n, c, v, t); }; h.Part.DeleteCustomPropertyNotify += h.PDelete;
+                            h.PAdd = delegate(string n, string c, string v, int t) { return OnAddProp(h, n, c, v, t); }; h.Part.AddCustomPropertyNotify += h.PAdd;
+                            h.PChange = delegate(string n, string c, string o, string v, int t) { return OnChangeProp(h, n, c, o, v, t); }; h.Part.ChangeCustomPropertyNotify += h.PChange;
+                            h.PDelete = delegate(string n, string c, string v, int t) { return OnDeleteProp(h, n, c, v, t); }; h.Part.DeleteCustomPropertyNotify += h.PDelete;
                         }
-                        h.PDestroy = delegate() { return OnDestroy(h); }; h.Part.DestroyNotify += h.PDestroy;
+                        if (DestroyEvents) { h.PDestroy = delegate() { return OnDestroy(h); }; h.Part.DestroyNotify += h.PDestroy; }
                     }
                     else if (type == (int)swDocumentTypes_e.swDocASSEMBLY)
                     {
                         h.Asm = (AssemblyDoc)d;
-                        h.ASave = delegate(string fn) { return OnSave(h.Doc, fn); }; h.Asm.FileSaveNotify += h.ASave;
-                        h.ASaveAs = delegate(string fn) { return OnSaveAs2(h.Doc, fn); }; h.Asm.FileSaveAsNotify2 += h.ASaveAs;
-                        h.APost = delegate(int t, string fn) { return OnSavePost(h, t, fn); }; h.Asm.FileSavePostNotify += h.APost;
-                        h.ACancel = delegate() { return OnSavePostCancel(h.Doc); }; h.Asm.FileSavePostCancelNotify += h.ACancel;
+                        if (SaveEvents)
+                        {
+                            h.ASave = delegate(string fn) { return OnSave(h, fn); }; h.Asm.FileSaveNotify += h.ASave;
+                            h.ASaveAs = delegate(string fn) { return OnSaveAs2(h, fn); }; h.Asm.FileSaveAsNotify2 += h.ASaveAs;
+                            h.APost = delegate(int t, string fn) { return OnSavePost(h, t, fn); }; h.Asm.FileSavePostNotify += h.APost;
+                            h.ACancel = delegate() { return OnSavePostCancel(h); }; h.Asm.FileSavePostCancelNotify += h.ACancel;
+                        }
                         if (PropEvents)
                         {
-                            h.AAdd = delegate(string n, string c, string v, int t) { return OnAddProp(h.Doc, n, c, v, t); }; h.Asm.AddCustomPropertyNotify += h.AAdd;
-                            h.AChange = delegate(string n, string c, string o, string v, int t) { return OnChangeProp(h.Doc, n, c, o, v, t); }; h.Asm.ChangeCustomPropertyNotify += h.AChange;
-                            h.ADelete = delegate(string n, string c, string v, int t) { return OnDeleteProp(h.Doc, n, c, v, t); }; h.Asm.DeleteCustomPropertyNotify += h.ADelete;
+                            h.AAdd = delegate(string n, string c, string v, int t) { return OnAddProp(h, n, c, v, t); }; h.Asm.AddCustomPropertyNotify += h.AAdd;
+                            h.AChange = delegate(string n, string c, string o, string v, int t) { return OnChangeProp(h, n, c, o, v, t); }; h.Asm.ChangeCustomPropertyNotify += h.AChange;
+                            h.ADelete = delegate(string n, string c, string v, int t) { return OnDeleteProp(h, n, c, v, t); }; h.Asm.DeleteCustomPropertyNotify += h.ADelete;
                         }
-                        h.ADestroy = delegate() { return OnDestroy(h); }; h.Asm.DestroyNotify += h.ADestroy;
+                        if (DestroyEvents) { h.ADestroy = delegate() { return OnDestroy(h); }; h.Asm.DestroyNotify += h.ADestroy; }
                     }
                     else if (type == (int)swDocumentTypes_e.swDocDRAWING)
                     {
                         h.Drw = (DrawingDoc)d;
-                        h.DSave = delegate(string fn) { return OnSave(h.Doc, fn); }; h.Drw.FileSaveNotify += h.DSave;
-                        h.DSaveAs = delegate(string fn) { return OnSaveAs2(h.Doc, fn); }; h.Drw.FileSaveAsNotify2 += h.DSaveAs;
-                        h.DPost = delegate(int t, string fn) { return OnSavePost(h, t, fn); }; h.Drw.FileSavePostNotify += h.DPost;
-                        h.DCancel = delegate() { return OnSavePostCancel(h.Doc); }; h.Drw.FileSavePostCancelNotify += h.DCancel;
+                        if (SaveEvents)
+                        {
+                            h.DSave = delegate(string fn) { return OnSave(h, fn); }; h.Drw.FileSaveNotify += h.DSave;
+                            h.DSaveAs = delegate(string fn) { return OnSaveAs2(h, fn); }; h.Drw.FileSaveAsNotify2 += h.DSaveAs;
+                            h.DPost = delegate(int t, string fn) { return OnSavePost(h, t, fn); }; h.Drw.FileSavePostNotify += h.DPost;
+                            h.DCancel = delegate() { return OnSavePostCancel(h); }; h.Drw.FileSavePostCancelNotify += h.DCancel;
+                        }
                         if (PropEvents)
                         {
-                            h.DAdd = delegate(string n, string c, string v, int t) { return OnAddProp(h.Doc, n, c, v, t); }; h.Drw.AddCustomPropertyNotify += h.DAdd;
-                            h.DChange = delegate(string n, string c, string o, string v, int t) { return OnChangeProp(h.Doc, n, c, o, v, t); }; h.Drw.ChangeCustomPropertyNotify += h.DChange;
-                            h.DDelete = delegate(string n, string c, string v, int t) { return OnDeleteProp(h.Doc, n, c, v, t); }; h.Drw.DeleteCustomPropertyNotify += h.DDelete;
+                            h.DAdd = delegate(string n, string c, string v, int t) { return OnAddProp(h, n, c, v, t); }; h.Drw.AddCustomPropertyNotify += h.DAdd;
+                            h.DChange = delegate(string n, string c, string o, string v, int t) { return OnChangeProp(h, n, c, o, v, t); }; h.Drw.ChangeCustomPropertyNotify += h.DChange;
+                            h.DDelete = delegate(string n, string c, string v, int t) { return OnDeleteProp(h, n, c, v, t); }; h.Drw.DeleteCustomPropertyNotify += h.DDelete;
                         }
-                        h.DDestroy = delegate() { return OnDestroy(h); }; h.Drw.DestroyNotify += h.DDestroy;
+                        if (DestroyEvents) { h.DDestroy = delegate() { return OnDestroy(h); }; h.Drw.DestroyNotify += h.DDestroy; }
                     }
                     else
                     {
