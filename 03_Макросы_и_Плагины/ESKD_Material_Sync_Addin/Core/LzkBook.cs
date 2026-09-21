@@ -884,7 +884,8 @@ namespace ESKD.MaterialSync.Core
             int row = 5;
             // «Масса закупки» — целые хлысты; «Масса в чистоте» — по чистой длине заготовок: столько списывается
             // на заказ, когда в дело идут деловые остатки со склада (замечание владельца 21.09.2026).
-            s.SetText(C(1, row), "Трубы, профиль и сортовой прокат — раскрой «пакетом» одинаковых длин из хлыста; " +
+            s.SetText(C(1, row), "Трубы, профиль и сортовой прокат: строки — раскрой «пакетом» (каждая длина из своих хлыстов, справочно); " +
+                "итог сортамента — смешанный раскрой (см. ниже), это и есть закупка; " +
                 "«в чистоте» — масса по чистой длине, для списания при использовании деловых остатков", st.Group);
             s.Merge("A" + row + ":" + L(columns) + row);
             row++;
@@ -924,12 +925,30 @@ namespace ESKD.MaterialSync.Core
                     row++;
                 }
                 // Итог назван по сортаменту: это позиция закупки, и в «Сводной» она одна строка (замечание владельца 21.09.2026).
+                // Хлыстов в итоге — не сумма «пакетом» по строкам (на один стул три длины давали три хлыста — косяк,
+                // владелец 21.09.2026), а смешанный раскрой на тираж построения; при другом тираже в книге — оценка
+                // по суммарной длине заготовок с резами, формулой.
+                List<BarGroup> list = sortament.ToList();
+                int planQuantity;
+                CutResult plan = MixedPlan(list, inputs, norms, out planQuantity);
+                double[] known = list.Where(g => !double.IsNaN(g.KgPerMeter) && g.KgPerMeter > 0).Select(g => g.KgPerMeter).ToArray();
+                string rr = row.ToString(CultureInfo.InvariantCulture);
+                string estimate = "ROUNDUP(SUMPRODUCT(D" + first + ":D" + (row - 1) + ",B" + first + ":B" + (row - 1) + "+Рез)/(Хлыст-Захват-Торцовка),0)";
                 s.SetText(C(1, row), "Итого: " + sortament.Key, st.TotalLeft);
                 for (int c = 2; c <= columns; c++) s.SetText(C(c, row), "", st.Total);
-                foreach (int c in new[] { 6, 7, 8, 13, 14 })
-                    s.SetFormula(C(c, row), "SUM(" + L(c) + first + ":" + L(c) + (row - 1) + ")", c == 6 ? st.TotalInt : st.TotalDec1);
-                s.SetFormula(C(9, row), "IF(H" + row + ">0,G" + row + "/H" + row + ",\"\")", st.TotalPercent);
-                layout.Bars.Add(new CostRows.Bar { Sortament = sortament.Key, Row = row, Groups = sortament.ToList() });
+                s.SetFormula(C(6, row), plan == null ? estimate
+                    : "IF(" + NameQuantity + "=" + planQuantity + "," + plan.BarCount + "," + estimate + ")", st.TotalInt);
+                s.SetFormula(C(7, row), "SUM(G" + first + ":G" + (row - 1) + ")", st.TotalDec1);
+                s.SetFormula(C(8, row), "F" + rr + "*Хлыст/1000", st.TotalDec1);
+                s.SetFormula(C(9, row), "IF(H" + rr + ">0,G" + rr + "/H" + rr + ",\"\")", st.TotalPercent);
+                if (known.Length > 0)
+                {
+                    s.SetFormula(C(13, row), "H" + rr + "*" + known.Average().ToString("0.###", CultureInfo.InvariantCulture), st.TotalDec1);
+                    s.SetFormula(C(14, row), "SUM(N" + first + ":N" + (row - 1) + ")", st.TotalDec1);
+                }
+                s.SetText(C(15, row), plan == null ? "" : "хлыстов — смешанный раскрой на тираж " + planQuantity +
+                    "; при другом тираже — оценка по суммарной длине, перестройте ЛЗК", st.Text);
+                layout.Bars.Add(new CostRows.Bar { Sortament = sortament.Key, Row = row, Groups = list });
                 subtotals.Add(row);
                 row++;
             }
@@ -1140,7 +1159,8 @@ namespace ESKD.MaterialSync.Core
             double[] known = sortament.Where(g => !double.IsNaN(g.KgPerMeter) && g.KgPerMeter > 0).Select(g => g.KgPerMeter).ToArray();
             double kgPerMeter = known.Length > 0 ? known.Average() : double.NaN;
             StringBuilder text = new StringBuilder();
-            text.Append("оптимально " + plan.BarCount + " хл. на тираж " + quantity + (plan.TooLong.Count > 0 ? ", есть длиннее хлыста" : ""));
+            text.Append("смешанный раскрой на тираж " + quantity + ": " + plan.BarCount + " хл. (пакетом " + PackedBars(sortament, inputs, norms) + ")" +
+                (plan.TooLong.Count > 0 ? ", есть длиннее хлыста" : ""));
             if (plan.BusinessRests.Count > 0)
             {
                 double meters = plan.BusinessRests.Sum() / 1000.0;

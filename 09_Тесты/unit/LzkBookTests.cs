@@ -291,7 +291,11 @@ namespace ESKD.Tests
                 Assert.AreEqual("IF(B7>0,MAX(0,TRUNC((Хлыст-Захват-Торцовка)/(B7+Рез))),0)", cost.Formula("E7"), "из хлыста");
                 Assert.AreEqual("IF(E7>0,ROUNDUP(D7/E7,0),\"?\")", cost.Formula("F7"), "хлыстов");
                 Assert.AreEqual("300", cost.Get("B8"), "вторая длина");
-                Assert.AreEqual("SUM(F7:F8)", cost.Formula("F9"), "итого хлыстов по сортаменту");
+                // Итог сортамента — не сумма «пакетом» (три длины — три хлыста на один стул, косяк 21.09.2026), а смешанный
+                // раскрой на тираж построения; при другом тираже в книге — оценка по суммарной длине с резами.
+                Assert.IsTrue(cost.Formula("F9").StartsWith("IF(Тираж=41,") && cost.Formula("F9").EndsWith(
+                    ",ROUNDUP(SUMPRODUCT(D7:D8,B7:B8+Рез)/(Хлыст-Захват-Торцовка),0))"), "итого хлыстов по сортаменту: " + cost.Formula("F9"));
+                Assert.AreEqual("F9*Хлыст/1000", cost.Formula("H9"), "закупка итога — по хлыстам итога");
                 // Масса закупки — целые хлысты; масса в чистоте — по чистой длине: столько списывать, когда в дело идут
                 // деловые остатки со склада (замечание владельца 21.09.2026).
                 Assert.AreEqual("Масса закупки, кг", cost.Get("M6"), "закупка по хлыстам");
@@ -349,7 +353,7 @@ namespace ESKD.Tests
                 Assert.AreEqual("'Расход'!N9", summary.Formula("H8"), "масса в чистоте");
                 Assert.AreEqual("'Расход'!I9", summary.Formula("I8"), "КИМ");
                 string plan = summary.Get("J8");
-                Assert.IsTrue(plan.StartsWith("оптимально ") && plan.Contains("на тираж 41"), "раскладка CutPlan на тираж: " + plan);
+                Assert.IsTrue(plan.StartsWith("смешанный раскрой на тираж 41: ") && plan.Contains("(пакетом "), "раскладка CutPlan на тираж: " + plan);
                 // торцовка и пропилы есть всегда — отход раскладки назван
                 Assert.IsTrue(plan.Contains("; отход "), "отход раскладки: " + plan);
                 Assert.AreEqual("м²", summary.Get("C9"), "строка листа в сводной");
