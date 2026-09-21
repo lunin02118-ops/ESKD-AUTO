@@ -875,10 +875,10 @@ namespace ESKD.MaterialSync.Core
             string[] titles =
             {
                 "Сортамент", "L заготовки, мм", "На 1 изд., шт.", "Всего, шт.", "Из хлыста, шт.", "Хлыстов, шт.",
-                "Чистая длина, м", "Закупка, м", "КИМ", "Остаток с хлыста, мм", "Масса 1 м, кг", "Масса закупки, кг",
-                "Масса в чистоте, кг", "Примечание"
+                "Чистая длина, м", "Закупка, м", "КИМ", "Остаток с полного хлыста, мм", "Остаток с последнего хлыста, мм",
+                "Масса 1 м, кг", "Масса закупки, кг", "Масса в чистоте, кг", "Примечание"
             };
-            double[] widths = { 34, 10, 9, 9, 9, 9, 10, 10, 8, 10, 9, 10, 10, 20 };
+            double[] widths = { 34, 10, 9, 9, 9, 9, 10, 10, 8, 11, 11, 9, 10, 10, 24 };
             int columns = titles.Length;
             SheetHead(s, st, "Расход материалов на заказ", header, columns, false);
             int row = 5;
@@ -909,11 +909,15 @@ namespace ESKD.MaterialSync.Core
                     s.SetFormula(C(8, row), "IF(ISNUMBER(F" + r + "),F" + r + "*Хлыст/1000,0)", st.Dec1);
                     s.SetFormula(C(9, row), "IF(H" + r + ">0,G" + r + "/H" + r + ",\"\")", st.Percent);
                     s.SetFormula(C(10, row), "IF(E" + r + ">0,Хлыст-Захват-Торцовка-E" + r + "*(B" + r + "+Рез),\"\")", st.Int);
-                    if (double.IsNaN(g.KgPerMeter)) s.SetText(C(11, row), Mark, st.Center);
-                    else s.SetNumber(C(11, row), Math.Round(g.KgPerMeter, 3), st.Dec3);
-                    s.SetFormula(C(12, row), "IF(ISNUMBER(K" + r + "),H" + r + "*K" + r + ",\"\")", st.Dec1);
-                    s.SetFormula(C(13, row), "IF(ISNUMBER(K" + r + "),G" + r + "*K" + r + ",\"\")", st.Dec1);
-                    s.SetText(C(14, row), g.Estimate ? "L измерена по модели — уточните длину заготовки" : "", st.Text);
+                    // Последний хлыст режется не целиком: его хвост и есть то, куда уходит КИМ (вопрос владельца 21.09.2026).
+                    s.SetFormula(C(11, row), "IF(AND(E" + r + ">0,ISNUMBER(F" + r + ")),Хлыст-Захват-Торцовка-(D" + r + "-(F" + r + "-1)*E" + r + ")*(B" + r + "+Рез),\"\")", st.Int);
+                    if (double.IsNaN(g.KgPerMeter)) s.SetText(C(12, row), Mark, st.Center);
+                    else s.SetNumber(C(12, row), Math.Round(g.KgPerMeter, 3), st.Dec3);
+                    s.SetFormula(C(13, row), "IF(ISNUMBER(L" + r + "),H" + r + "*L" + r + ",\"\")", st.Dec1);
+                    s.SetFormula(C(14, row), "IF(ISNUMBER(L" + r + "),G" + r + "*L" + r + ",\"\")", st.Dec1);
+                    string partial = "IF(AND(E" + r + ">0,ISNUMBER(F" + r + "),F" + r + ">1,MOD(D" + r + ",E" + r + ")>0)," +
+                        "\"последний хлыст занят на \"&MOD(D" + r + ",E" + r + ")&\" из \"&E" + r + "&\" шт.\",\"\")";
+                    s.SetFormula(C(15, row), g.Estimate ? "\"L измерена по модели — уточните длину заготовки; \"&" + partial : partial, st.Text);
                     if (g.Estimate)
                         result.Notes.Add("Расход: " + g.Sortament + ", L=" + LzkOperations.Number(g.LengthMm) +
                             " — длина заготовки измерена по модели, не из списка вырезов (" + string.Join(", ", g.Designations.ToArray()) + ")");
@@ -922,7 +926,7 @@ namespace ESKD.MaterialSync.Core
                 // Итог назван по сортаменту: это позиция закупки, и в «Сводной» она одна строка (замечание владельца 21.09.2026).
                 s.SetText(C(1, row), "Итого: " + sortament.Key, st.TotalLeft);
                 for (int c = 2; c <= columns; c++) s.SetText(C(c, row), "", st.Total);
-                foreach (int c in new[] { 6, 7, 8, 12, 13 })
+                foreach (int c in new[] { 6, 7, 8, 13, 14 })
                     s.SetFormula(C(c, row), "SUM(" + L(c) + first + ":" + L(c) + (row - 1) + ")", c == 6 ? st.TotalInt : st.TotalDec1);
                 s.SetFormula(C(9, row), "IF(H" + row + ">0,G" + row + "/H" + row + ",\"\")", st.TotalPercent);
                 layout.Bars.Add(new CostRows.Bar { Sortament = sortament.Key, Row = row, Groups = sortament.ToList() });
@@ -939,11 +943,12 @@ namespace ESKD.MaterialSync.Core
             {
                 s.SetText(C(1, row), "Всего по трубам и профилю", st.TotalLeft);
                 for (int c = 2; c <= columns; c++) s.SetText(C(c, row), "", st.Total);
-                foreach (int c in new[] { 6, 7, 8, 12, 13 })
+                foreach (int c in new[] { 6, 7, 8, 13, 14 })
                     s.SetFormula(C(c, row), string.Join("+", subtotals.Select(t => L(c) + t).ToArray()), c == 6 ? st.TotalInt : st.TotalDec1);
                 s.SetFormula(C(9, row), "IF(H" + row + ">0,G" + row + "/H" + row + ",\"\")", st.TotalPercent);
                 row++;
             }
+            if (groups.Count > 0) row = MixedCutPlan(s, st, row, columns, groups, inputs, norms);
             int barEnd = row - 1;
 
             // Лист
@@ -1023,6 +1028,98 @@ namespace ESKD.MaterialSync.Core
             s.FitToWidth(true);
             book.SetPrintNames(CostSheet, "$A$1:$" + L(columns) + "$" + Math.Max(row, barEnd), head);
             return layout;
+        }
+
+        /// <summary>Раскладка сортамента по хлыстам на тираж книги: сначала длинные, хвосты добиваются короткими (CutPlan).</summary>
+        public static CutResult MixedPlan(IList<BarGroup> sortament, LzkInputs inputs, Norms norms, out int quantity)
+        {
+            quantity = inputs != null && inputs.Quantity > 0 ? inputs.Quantity : 1;
+            List<double> pieces = new List<double>();
+            foreach (BarGroup g in sortament)
+                for (int i = 0; i < g.PerProduct * quantity; i++) pieces.Add(g.LengthMm);
+            double bar = NormValue("Труба.Хлыст", inputs, norms);
+            if (pieces.Count == 0 || bar <= 0) return null;
+            return CutPlan.Plan(sortament[0].Sortament, pieces, bar, NormValue("Труба.Захват", inputs, norms),
+                NormValue("Труба.Торцовка", inputs, norms), NormValue("Труба.Рез", inputs, norms), NormValue("Труба.Деловой", inputs, norms));
+        }
+
+        /// <summary>Хлыстов «пакетом» (каждая длина из своих хлыстов) — то же, что формулы строк «Расхода».</summary>
+        public static int PackedBars(IList<BarGroup> sortament, LzkInputs inputs, Norms norms)
+        {
+            int quantity = inputs != null && inputs.Quantity > 0 ? inputs.Quantity : 1;
+            double zone = NormValue("Труба.Хлыст", inputs, norms) - NormValue("Труба.Захват", inputs, norms) - NormValue("Труба.Торцовка", inputs, norms);
+            double kerf = NormValue("Труба.Рез", inputs, norms);
+            int bars = 0;
+            foreach (BarGroup g in sortament)
+            {
+                int perBar = g.LengthMm > 0 ? (int)Math.Floor(zone / (g.LengthMm + kerf)) : 0;
+                if (perBar > 0) bars += (int)Math.Ceiling(g.PerProduct * quantity / (double)perBar);
+            }
+            return bars;
+        }
+
+        /// <summary>«9×631,5 + 1×369» — заготовки одного хлыста по убыванию длины.</summary>
+        public static string PiecesText(IEnumerable<double> pieces)
+        {
+            return string.Join(" + ", pieces.GroupBy(p => p).OrderByDescending(g => g.Key)
+                .Select(g => g.Count() + "×" + LzkOperations.Number(g.Key)).ToArray());
+        }
+
+        /// <summary>
+        /// Вторая норма (владелец 21.09.2026): смешанный раскрой внутри сортамента — сначала длинные заготовки, хвосты
+        /// хлыстов добиваются короткими. Таблица по хлыстам, чтобы цех резал по ней, и итог рядом с «пакетом».
+        /// Считается при построении книги на тираж из окна кнопки — тираж поменяли, перестройте ЛЗК.
+        /// </summary>
+        private static int MixedCutPlan(XlsxSheet s, Styles st, int row, int columns, List<BarGroup> groups, LzkInputs inputs, Norms norms)
+        {
+            int quantity = inputs != null && inputs.Quantity > 0 ? inputs.Quantity : 1;
+            row++;
+            s.SetText(C(1, row), "Смешанный раскрой по хлыстам — сначала длинные, хвосты добиваются короткими; на тираж " + quantity +
+                " (посчитано при построении книги: тираж изменили — перестройте ЛЗК)", st.Group);
+            s.Merge("A" + row + ":" + L(columns) + row);
+            row++;
+            string[] titles = { "Сортамент", "Хлыст №", "Заготовки, шт.×мм", "", "", "", "Использовано, мм", "Остаток, мм", "Деловой" };
+            for (int c = 0; c < titles.Length; c++) s.SetText(C(c + 1, row), titles[c], st.Head);
+            s.Merge("C" + row + ":F" + row);
+            s.SetRowHeight(row, 30);
+            row++;
+            foreach (IGrouping<string, BarGroup> sortament in groups.GroupBy(g => g.Sortament, StringComparer.CurrentCultureIgnoreCase))
+            {
+                int q;
+                List<BarGroup> list = sortament.ToList();
+                CutResult plan = MixedPlan(list, inputs, norms, out q);
+                if (plan == null) continue;
+                int n = 0;
+                foreach (CutBar bar in plan.Bars)
+                {
+                    s.SetText(C(1, row), sortament.Key, st.Text);
+                    s.SetNumber(C(2, row), ++n, st.Int);
+                    s.SetText(C(3, row), PiecesText(bar.Pieces), st.Text);
+                    s.Merge("C" + row + ":F" + row);
+                    for (int c = 4; c <= 6; c++) s.SetText(C(c, row), "", st.Text);
+                    s.SetNumber(C(7, row), Math.Round(bar.Used), st.Int);
+                    s.SetNumber(C(8, row), Math.Round(bar.Rest), st.Int);
+                    s.SetText(C(9, row), bar.Business ? "да" : "", st.Center);
+                    row++;
+                }
+                double[] known = list.Where(g => !double.IsNaN(g.KgPerMeter) && g.KgPerMeter > 0).Select(g => g.KgPerMeter).ToArray();
+                double kg = known.Length > 0 ? known.Average() : double.NaN;
+                int packed = PackedBars(list, inputs, norms);
+                StringBuilder text = new StringBuilder();
+                text.Append("Итого: " + sortament.Key + " — хлыстов " + plan.BarCount + " (пакетом " + packed + "), закупка " +
+                    LzkOperations.Number(plan.BoughtMm / 1000) + " м" + (double.IsNaN(kg) ? "" : " / " + LzkOperations.Number(plan.BoughtMm / 1000 * kg) + " кг") +
+                    ", в чистоте " + LzkOperations.Number(plan.CleanMm / 1000) + " м" + (double.IsNaN(kg) ? "" : " / " + LzkOperations.Number(plan.CleanMm / 1000 * kg) + " кг") +
+                    ", КИМ " + plan.KimText);
+                if (plan.BusinessRests.Count > 0)
+                    text.Append("; деловые остатки " + plan.BusinessRests.Count + " шт.: " +
+                        string.Join(", ", plan.BusinessRests.OrderByDescending(r => r).Select(r => LzkOperations.Number(Math.Floor(r))).ToArray()) + " мм");
+                text.Append("; отход " + LzkOperations.Number(plan.WasteMm / 1000) + " м" + (double.IsNaN(kg) ? "" : " (" + LzkOperations.Number(plan.WasteMm / 1000 * kg) + " кг)"));
+                if (plan.TooLong.Count > 0) text.Append("; " + plan.TooLong.Count + " заготовок длиннее хлыста");
+                s.SetText(C(1, row), text.ToString(), st.TotalLeft);
+                s.Merge("A" + row + ":" + L(columns) + row);
+                row++;
+            }
+            return row;
         }
 
         /// <summary>
@@ -1106,8 +1203,8 @@ namespace ESKD.MaterialSync.Core
                 s.SetFormula(C(4, row), Ref(CostSheet, 7, bar.Row), st.Dec1);
                 s.SetFormula(C(5, row), Ref(CostSheet, 6, bar.Row), st.Int);
                 s.SetFormula(C(6, row), Ref(CostSheet, 8, bar.Row), st.Dec1);
-                s.SetFormula(C(7, row), Ref(CostSheet, 12, bar.Row), st.Dec1);
-                s.SetFormula(C(8, row), Ref(CostSheet, 13, bar.Row), st.Dec1);
+                s.SetFormula(C(7, row), Ref(CostSheet, 13, bar.Row), st.Dec1);
+                s.SetFormula(C(8, row), Ref(CostSheet, 14, bar.Row), st.Dec1);
                 s.SetFormula(C(9, row), Ref(CostSheet, 9, bar.Row), st.Percent);
                 s.SetText(C(10, row), OptimalBars(bar.Groups, inputs, norms), st.Text);
                 row++;
