@@ -313,6 +313,8 @@ namespace ESKD.MaterialSync.Core
             public string Unit;
             public string Title;
             public string Format;
+            /// <summary>Значение, когда норматива нет ни в справочнике, ни в прежней книге; NaN — нет умолчания (будет 0).</summary>
+            public double Default = double.NaN;
 
             public NormRow(string key, string name, string unit, string title, string format)
             {
@@ -321,6 +323,12 @@ namespace ESKD.MaterialSync.Core
                 Unit = unit;
                 Title = title;
                 Format = format;
+            }
+
+            public NormRow(string key, string name, string unit, string title, string format, double defaultValue)
+                : this(key, name, unit, title, format)
+            {
+                Default = defaultValue;
             }
         }
 
@@ -336,7 +344,10 @@ namespace ESKD.MaterialSync.Core
             new NormRow("Лист.Отход", "ЛистОтход", "коэф.", "Коэффициент отхода листа (площадь заготовок × коэф.)", "0.00"),
             new NormRow("Краска.Норма", "КраскаНорма", "г/м²", "Расход порошковой краски", "0"),
             new NormRow("Краска.Потери", "КраскаПотери", "%", "Потери краски", "0"),
-            new NormRow("Краска.Тара", "КраскаТара", "кг", "Масса краски в таре", "0.0")
+            new NormRow("Краска.Тара", "КраскаТара", "кг", "Масса краски в таре", "0.0"),
+            // Запас к норме в чистоте («Сводная»): владелец 21.09.2026 — свой на трубу и на лист, правится под заказ
+            new NormRow("Запас.Труба", "ЗапасТруба", "%", "Запас к норме в чистоте на трубу и профиль (резы, брак) — лист «Сводная»", "0", 10),
+            new NormRow("Запас.Лист", "ЗапасЛист", "%", "Запас к норме в чистоте на листовой прокат — лист «Сводная»", "0", 10)
         };
 
         /// <summary>Всё, что нужно для книги, кроме самой выгрузки SWTools.</summary>
@@ -359,7 +370,12 @@ namespace ESKD.MaterialSync.Core
         {
             double value;
             if (inputs != null && inputs.Norms.TryGetValue(key, out value)) return value;
-            if (norms == null) return 0;
+            if (norms == null || norms.Text(key).Length == 0)
+            {
+                NormRow row = NormRows.FirstOrDefault(n => n.Key == key);
+                if (row != null && !double.IsNaN(row.Default)) return row.Default;
+                if (norms == null) return 0;
+            }
             if (key == "Лист.Ширина" || key == "Лист.Длина")
             {
                 double width, length;
@@ -1055,10 +1071,8 @@ namespace ESKD.MaterialSync.Core
         /// Одна строка на позицию (замечание владельца 21.09.2026): металлопрокат по сортаментам, краска, покупные и крепёж.
         /// Раскрой по каждой детали остаётся на «Расходе»; здесь числа берутся оттуда и с «Комплектовочного» формулами,
         /// поэтому при смене тиража в «Паспорте» листы не расходятся. Норма в чистоте на изделие и она же с запасом
-        /// 10 % — для списания на деталь (владелец 21.09.2026).
+        /// (ЗапасТруба / ЗапасЛист с листа «Нормы», по умолчанию 10 %) — для списания на деталь (владелец 21.09.2026).
         /// </summary>
-        public const double SummaryAllowance = 0.10;
-
         private static void Summary(XlsxBook book, Styles st, LzkHeader header, LzkInputs inputs, Norms norms,
             CostRows cost, List<KittingRow> kitting)
         {
@@ -1066,8 +1080,8 @@ namespace ESKD.MaterialSync.Core
             string[] titles =
             {
                 "№", "Сортамент, материал, изделие", "Ед.", "Чистый расход", "Хлыстов / листов, шт.", "Закупка, м",
-                "Масса закупки, кг", "Масса в чистоте, кг", "В чистоте на 1 изд., кг", "Норма +10 % на 1 изд., кг",
-                "Норма +10 % на заказ, кг", "КИМ", "Примечание"
+                "Масса закупки, кг", "Масса в чистоте, кг", "В чистоте на 1 изд., кг", "Норма с запасом на 1 изд., кг",
+                "Норма с запасом на заказ, кг", "КИМ", "Примечание"
             };
             double[] widths = { 5, 44, 7, 11, 11, 10, 11, 11, 11, 11, 11, 8, 40 };
             int columns = titles.Length;
@@ -1075,7 +1089,7 @@ namespace ESKD.MaterialSync.Core
             int row = 5;
             s.SetText(C(1, row), "Числа — с листов «Расход» и «Комплектовочный», при смене тиража в «Паспорте» пересчитываются. " +
                 "«Закупка» — целые хлысты и листы; «в чистоте» — по чистой длине и массе заготовок, для списания при деловых остатках; " +
-                "«норма +10 %» — в чистоте с запасом 10 % на резы и брак.", st.NoteWrap);
+                "«норма с запасом» — в чистоте плюс запас на резы и брак с листа «Нормы»: свой для трубы (ЗапасТруба) и листа (ЗапасЛист).", st.NoteWrap);
             s.Merge("A" + row + ":" + L(columns) + row);
             s.SetRowHeight(row, 40);
             row++;
@@ -1099,7 +1113,7 @@ namespace ESKD.MaterialSync.Core
                 s.SetFormula(C(6, row), Ref(CostSheet, 8, bar.Row), st.Dec1);
                 s.SetFormula(C(7, row), Ref(CostSheet, 13, bar.Row), st.Dec1);
                 s.SetFormula(C(8, row), Ref(CostSheet, 14, bar.Row), st.Dec1);
-                Allowance(s, st, row);
+                Allowance(s, st, row, "ЗапасТруба");
                 s.SetFormula(C(12, row), Ref(CostSheet, 9, bar.Row), st.Percent);
                 s.SetText(C(13, row), "", st.Text);
                 row++;
@@ -1114,7 +1128,7 @@ namespace ESKD.MaterialSync.Core
                 s.SetText(C(6, row), "", st.Center);
                 s.SetFormula(C(7, row), Ref(CostSheet, 9, sheet.Value), st.Dec1);
                 s.SetFormula(C(8, row), Ref(CostSheet, 7, sheet.Value), st.Dec1);
-                Allowance(s, st, row);
+                Allowance(s, st, row, "ЗапасЛист");
                 s.SetFormula(C(12, row), Ref(CostSheet, 5, sheet.Value), st.Percent);
                 s.SetText(C(13, row), "листов формата «Нормы» по площади заготовок с коэффициентом отхода; " +
                     "закупка — целые листы по массе 1 м², в чистоте — масса деталей", st.Text);
@@ -1194,11 +1208,11 @@ namespace ESKD.MaterialSync.Core
             book.SetPrintNames(SummarySheet, "$A$1:$" + L(columns) + "$" + (row - 1), head);
         }
 
-        /// <summary>Норма в чистоте на 1 изделие (масса в чистоте / тираж), она же с запасом 10 % и запас на заказ.</summary>
-        private static void Allowance(XlsxSheet s, Styles st, int row)
+        /// <summary>Норма в чистоте на 1 изделие (масса в чистоте / тираж), она же с запасом (имя норматива в %) и на заказ.</summary>
+        private static void Allowance(XlsxSheet s, Styles st, int row, string allowanceName)
         {
             string r = row.ToString(CultureInfo.InvariantCulture);
-            string k = (1 + SummaryAllowance).ToString("0.##", CultureInfo.InvariantCulture);
+            string k = "(1+" + allowanceName + "/100)";
             s.SetFormula(C(9, row), "IF(ISNUMBER(H" + r + "),H" + r + "/" + NameQuantity + ",\"\")", st.Dec3);
             s.SetFormula(C(10, row), "IF(ISNUMBER(I" + r + "),I" + r + "*" + k + ",\"\")", st.Dec3);
             s.SetFormula(C(11, row), "IF(ISNUMBER(H" + r + "),H" + r + "*" + k + ",\"\")", st.Dec1);
@@ -1234,7 +1248,7 @@ namespace ESKD.MaterialSync.Core
                 row++;
             }
             row++;
-            s.SetText(C(1, row), "Жёлтые значения можно править под этот заказ: «Расход» и «Покрасочный» пересчитаются.", st.Note);
+            s.SetText(C(1, row), "Жёлтые значения можно править под этот заказ: «Расход», «Покрасочный» и «Сводная» пересчитаются.", st.Note);
             s.FitToWidth(false);
             book.SetPrintNames(NormsSheet, "$A$1:$D$" + row, 4);
         }

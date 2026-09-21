@@ -344,11 +344,18 @@ namespace ESKD.Tests
                 Assert.AreEqual("'Расход'!N9", summary.Formula("H8"), "масса в чистоте");
                 // Норма в чистоте на 1 изделие и с запасом 10 % (владелец 21.09.2026)
                 Assert.AreEqual("В чистоте на 1 изд., кг", summary.Get("I6"), "шапка нормы на изделие");
-                Assert.AreEqual("Норма +10 % на 1 изд., кг", summary.Get("J6"), "шапка нормы с запасом");
-                Assert.AreEqual("Норма +10 % на заказ, кг", summary.Get("K6"), "шапка запаса на заказ");
+                Assert.AreEqual("Норма с запасом на 1 изд., кг", summary.Get("J6"), "шапка нормы с запасом");
+                Assert.AreEqual("Норма с запасом на заказ, кг", summary.Get("K6"), "шапка запаса на заказ");
                 Assert.AreEqual("IF(ISNUMBER(H8),H8/Тираж,\"\")", summary.Formula("I8"), "в чистоте на 1 изд. = масса в чистоте / тираж");
-                Assert.AreEqual("IF(ISNUMBER(I8),I8*1.1,\"\")", summary.Formula("J8"), "норма +10 % на 1 изд.");
-                Assert.AreEqual("IF(ISNUMBER(H8),H8*1.1,\"\")", summary.Formula("K8"), "норма +10 % на заказ");
+                // Запас — норматив с листа «Нормы», свой на трубу и на лист (владелец 21.09.2026); в справочнике его нет — по умолчанию 10 %
+                Assert.AreEqual("IF(ISNUMBER(I8),I8*(1+ЗапасТруба/100),\"\")", summary.Formula("J8"), "норма с запасом на 1 изд. — труба");
+                Assert.AreEqual("IF(ISNUMBER(H8),H8*(1+ЗапасТруба/100),\"\")", summary.Formula("K8"), "норма с запасом на заказ");
+                Assert.AreEqual("IF(ISNUMBER(I9),I9*(1+ЗапасЛист/100),\"\")", summary.Formula("J9"), "норма с запасом — лист по своему запасу");
+                string allowanceSheet, allowanceCell;
+                Assert.IsTrue(book.TryResolveName("ЗапасТруба", out allowanceSheet, out allowanceCell), "имя «ЗапасТруба»");
+                Assert.AreEqual("10", book.Sheet(allowanceSheet).Get(allowanceCell), "запас по умолчанию 10 %");
+                Assert.IsTrue(book.TryResolveName("ЗапасЛист", out allowanceSheet, out allowanceCell), "имя «ЗапасЛист»");
+                Assert.AreEqual("10", book.Sheet(allowanceSheet).Get(allowanceCell), "запас листа по умолчанию 10 %");
                 Assert.AreEqual("'Расход'!I9", summary.Formula("L8"), "КИМ");
                 Assert.AreEqual("м²", summary.Get("C9"), "строка листа в сводной");
                 Assert.AreEqual("'Расход'!C" + sr, summary.Formula("D9"), "площадь листа на заказ");
