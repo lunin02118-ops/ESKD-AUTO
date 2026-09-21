@@ -51,6 +51,8 @@ namespace ESKD.MaterialSync.Sw
             public string TargetPath;
             public string PreviousPath;
             public string Text;
+            /// <summary>Форматы листов чертежа, снятые при его сохранении (задача «drawingformat»).</summary>
+            public List<string> Formats;
         }
 
         private readonly ISldWorks _app;
@@ -147,6 +149,8 @@ namespace ESKD.MaterialSync.Sw
                 if (state != null) state.LastPath = SafePath(doc);
                 Settings settings = Settings.Read();
                 if (doc == null || !settings.ServiceEnabled || doc.GetType() == (int)swDocumentTypes_e.swDocDRAWING) return 0;
+                // Модель или чертёж, которые надстройка открыла скрыто ради формата, сразу закроются.
+                if (DrawingFormatService.Busy) return 0;
                 if (settings.SyncOnOpen)
                 {
                     SyncService.SyncModel(_app, doc, new SyncRequest { Reason = "открытие (SyncOnOpen)" });
@@ -245,6 +249,13 @@ namespace ESKD.MaterialSync.Sw
 
         private void RunIdleTask(IdleTask task)
         {
+            if (task.Kind == "drawingformat")
+            {
+                // Задача не привязана к документу чертежа: его обычно закрывают сразу после сохранения (21.09.2026).
+                if (!Settings.Read().ServiceEnabled) return;
+                DrawingFormatService.ApplyToModel(_app, task.TargetPath, task.Formats);
+                return;
+            }
             if (task.Doc == null) return;
             if (task.Kind == "material")
             {
@@ -287,10 +298,6 @@ namespace ESKD.MaterialSync.Sw
             {
                 FixCopy(task.TargetPath, task.PreviousPath);
                 return;
-            }
-            if (task.Kind == "drawingformat")
-            {
-                DrawingFormatService.Apply(_app, (DrawingDoc)task.Doc);
             }
         }
 
@@ -486,7 +493,7 @@ namespace ESKD.MaterialSync.Sw
                 if (!settings.ServiceEnabled || !settings.SyncOnSave) return 0;
                 if (s.Type == (int)swDocumentTypes_e.swDocDRAWING) return 0;
                 // Пакетный обход изделия сохраняет детали сам и уже всё записал — второй круг не нужен.
-                if (BatchSyncService.Running) return 0;
+                if (BatchSyncService.Running || DrawingFormatService.Busy) return 0;
                 Remember(s.Doc, SyncService.SyncModel(_app, s.Doc, new SyncRequest
                 {
                     Reason = _resaving ? "пересохранение" : "сохранение",
@@ -513,12 +520,16 @@ namespace ESKD.MaterialSync.Sw
                     s.LastPath = fileName ?? s.LastPath;
                 }
                 if (!settings.ServiceEnabled || !settings.SyncOnSave) return 0;
-                if (BatchSyncService.Running) return 0;
+                if (BatchSyncService.Running || DrawingFormatService.Busy) return 0;
                 if (s.Type == (int)swDocumentTypes_e.swDocDRAWING)
                 {
-                    // З-1: формат листов — в «Формат» модели; в простое, после того как SolidWorks закончил запись чертежа
-                    if (saveType == SaveTypeSave || saveType == SaveTypeSaveAs)
-                        _idle.Enqueue(new IdleTask { Doc = s.Doc, Kind = "drawingformat", TargetPath = fileName });
+                    // З-1: формат листов — в «Формат» модели. Листы читаются сейчас, пока чертёж открыт; запись в модель —
+                    // в простое по её пути, даже если чертёж к тому времени закрыт (замечание владельца 21.09.2026).
+                    string modelPath;
+                    List<string> sheets;
+                    if ((saveType == SaveTypeSave || saveType == SaveTypeSaveAs) &&
+                        DrawingFormatService.Capture((DrawingDoc)s.Doc, out modelPath, out sheets))
+                        _idle.Enqueue(new IdleTask { Kind = "drawingformat", TargetPath = modelPath, PreviousPath = fileName, Formats = sheets });
                     return 0;
                 }
                 if (saveType == SaveTypeSaveAs && settings.ResaveAfterSaveAs && !_resaving)

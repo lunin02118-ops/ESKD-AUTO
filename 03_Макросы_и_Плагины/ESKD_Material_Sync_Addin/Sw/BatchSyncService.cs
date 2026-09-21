@@ -18,12 +18,15 @@ namespace ESKD.MaterialSync.Sw
         public int Failed;
         public int Skipped;
         public int MaterialsAssigned;
+        /// <summary>Моделей, которым «Формат» дозаполнен по их чертежу (21.09.2026).</summary>
+        public int Formats;
         public readonly List<string> Warnings = new List<string>();
 
         public string StatusLine()
         {
-            return string.Format("ЕСКД: деталей {0}, обновлено {1}, сохранено {2}, материалов назначено {3}{4}",
-                Parts, Changed, Saved, MaterialsAssigned, Failed > 0 ? ", с ошибками " + Failed : "");
+            return string.Format("ЕСКД: деталей {0}, обновлено {1}, сохранено {2}, материалов назначено {3}{4}{5}",
+                Parts, Changed, Saved, MaterialsAssigned, Formats > 0 ? ", формат из чертежа " + Formats : "",
+                Failed > 0 ? ", с ошибками " + Failed : "");
         }
     }
 
@@ -64,9 +67,13 @@ namespace ESKD.MaterialSync.Sw
             if (asm == null) return batch;
 
             string root = RootFolder(assembly);
-            List<ModelDoc2> parts = Parts(app, asm, root, batch);
+            List<ModelDoc2> parts = Components(app, asm, root, batch, ".sldprt");
             batch.Parts = parts.Count;
-            if (parts.Count == 0) return batch;
+            if (parts.Count == 0)
+            {
+                Formats(app, asm, assembly, root, batch);
+                return batch;
+            }
 
             // Проход 1: реквизиты, материал в свойства, осмотр проката. Документы пока не сохраняем —
             // сначала соберём все неоднозначные типоразмеры, чтобы спросить о них один раз.
@@ -81,6 +88,8 @@ namespace ESKD.MaterialSync.Sw
                 SyncReport report = SyncService.SyncModel(app, part, new SyncRequest { Reason = "пакет изделия" });
                 if (report.Skipped) { batch.Skipped++; continue; }
                 if (report.Changes > 0) { batch.Changed++; touched.Add(SafePath(part)); }
+                // «Формат» из чертежа, сохранённого до исправления 21.09.2026: иначе графа спецификации пуста.
+                if (DrawingFormatService.Backfill(app, part) > 0) { batch.Formats++; touched.Add(SafePath(part)); }
                 batch.Failed += report.Failures;
                 foreach (string warning in report.Warnings) batch.Warnings.Add(Title(part) + ": " + warning);
                 if (report.Stock.Count == 0) continue;
@@ -151,11 +160,47 @@ namespace ESKD.MaterialSync.Sw
                     batch.Failed++;
                 }
             }
+            Formats(app, asm, assembly, root, batch);
             return batch;
         }
 
-        /// <summary>Детали изделия: каждая по одному разу, только из папки изделия, разрешённые и не только для чтения.</summary>
-        private static List<ModelDoc2> Parts(ISldWorks app, AssemblyDoc asm, string root, BatchReport batch)
+        /// <summary>
+        /// «Формат» сборочных единиц — по их чертежам СБ (21.09.2026). Подсборки из папки изделия сохраняются, если формат
+        /// дозаполнен; главная сборка — документ конструктора, её сохраняет он сам.
+        /// </summary>
+        private static void Formats(ISldWorks app, AssemblyDoc asm, ModelDoc2 assembly, string root, BatchReport batch)
+        {
+            List<ModelDoc2> assemblies = Components(app, asm, root, new BatchReport(), ".sldasm");
+            foreach (ModelDoc2 sub in assemblies)
+            {
+                try
+                {
+                    if (DrawingFormatService.Backfill(app, sub) == 0) continue;
+                    batch.Formats++;
+                    if (Save(sub, batch)) batch.Saved++;
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("Пакет изделия: формат " + Title(sub), ex);
+                    batch.Failed++;
+                }
+            }
+            try
+            {
+                if (DrawingFormatService.Backfill(app, assembly) > 0) batch.Formats++;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Пакет изделия: формат " + Title(assembly), ex);
+                batch.Failed++;
+            }
+        }
+
+        /// <summary>
+        /// Детали (.sldprt) или подсборки (.sldasm) изделия: каждая по одному разу, только из папки изделия, разрешённые
+        /// и не только для чтения.
+        /// </summary>
+        private static List<ModelDoc2> Components(ISldWorks app, AssemblyDoc asm, string root, BatchReport batch, string extension)
         {
             List<ModelDoc2> parts = new List<ModelDoc2>();
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -180,7 +225,7 @@ namespace ESKD.MaterialSync.Sw
                     if (component.IsSuppressed()) continue;
                     string path = component.GetPathName();
                     if (string.IsNullOrEmpty(path)) continue;
-                    if (!path.EndsWith(".sldprt", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!path.EndsWith(extension, StringComparison.OrdinalIgnoreCase)) continue;
                     if (!seen.Add(path)) continue;
                     if (!Inside(root, path)) { batch.Skipped++; continue; }
 

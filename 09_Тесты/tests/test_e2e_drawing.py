@@ -191,6 +191,70 @@ class Drawing(SwTestCase):
         self.assertEqual({c: ("*)", "*) А4, А3") for c in levels},
                          {c: (oracles.value(props, "Формат", c), oracles.value(props, "Примечание", c)) for c in levels})
 
+    def _close_now(self, doc):
+        """Закрыть документ сразу, не дожидаясь простоя надстройки, — так закрывает чертёж конструктор после Ctrl+S."""
+        title = doc.GetTitle
+        if self.s.probe is not None:
+            try:
+                self.s.probe.call("detach", title)
+            except Exception:
+                pass
+        self.s.sw.CloseDoc(title)
+        self.s._opened[:] = [d for d in self.s._opened if d is not doc]
+
+    def _formats(self, path):
+        props = self.persisted(path)
+        levels = list(props["configs"]) + ([None] if len(props["configs"]) <= 1 else [])
+        return {c: oracles.value(props, "Формат", c) for c in levels}
+
+    def test_D14_drawing_saved_and_closed_at_once_still_fills_model_format(self):
+        """D14 (замечание владельца 21.09.2026 «формат не попадает в спецификацию»): чертёж сохранили и сразу закрыли.
+        Раньше запись формата ждала простоя вместе с чертежом и отменялась его закрытием; теперь листы читаются при
+        сохранении, а модель — выгруженная вместе с чертежом — открывается скрыто, записывается и закрывается."""
+        model = self._prepare_model()
+        doc = self.s.open(model)
+        for cfg in ("",) + tuple(com.as_list(doc.GetConfigurationNames)):
+            build.props(doc, {"Формат": "A3"}, cfg)
+        self.s.save(doc)
+        self.s.close(doc)
+        drw = self.s.open(self.copy_fixture(A10))
+        # «Сохранить?» → «Да» при закрытии: сохранение и закрытие идут подряд, SolidWorks между ними не простаивает.
+        # Пока «идёт команда», простоя (OnIdleNotify) нет — так это и воспроизводится извне.
+        self.s.sw.CommandInProgress = True
+        try:
+            self.s.save(drw)
+            self._close_now(drw)
+        finally:
+            self.s.sw.CommandInProgress = False
+        self.assertTrue(self.s.wait_addin_idle(timeout=60.0), "надстройка записала формат в простое")
+        self.s.close_all()
+        formats = self._formats(model)
+        self.assertEqual({c: "*)" for c in formats}, formats, "«Формат» модели — из листов А3 и А4 закрытого чертежа")
+
+    def test_D15_product_sync_backfills_empty_format_from_drawings(self):
+        """D15: чертежи, сохранённые до исправления, формат в модель не записали. «Синхронизировать» на сборке
+        дозаполняет пустой «Формат» деталей и сборки по чертежу рядом (тот же путь, .slddrw)."""
+        for name in (A09,) + A09_COMPONENTS + (A10, A11):
+            self.copy_fixture(name)
+        plate, asm_path = self.path(A01), self.path(A09)
+        with self.s.eskd_muted():
+            for path in (plate, asm_path):
+                doc = self.s.open(path)
+                for cfg in ("",) + tuple(com.as_list(doc.GetConfigurationNames)):
+                    build.props(doc, {"Формат": ""}, cfg)
+                self.s.save(doc)
+                self.s.close(doc)
+        asm = self.s.open(asm_path)
+        self.s.activate(asm)
+        status = str(com.call(self.s.eskd(), "SyncProductSilent") or "")
+        self.assertIn("формат из чертежа 2", status, status)
+        self.s.save(asm)
+        self.s.close_all()
+        formats = self._formats(plate)
+        self.assertEqual({c: "*)" for c in formats}, formats, "деталь: формат из её чертежа (А3 + А4)")
+        formats = self._formats(asm_path)
+        self.assertEqual({c: "А2" for c in formats}, formats, "сборка: формат чертежа СБ")
+
 
 def without_format(dump):
     """Дамп свойств без «Формата» и «Примечания» — их сохранение чертежа пишет по З-1."""

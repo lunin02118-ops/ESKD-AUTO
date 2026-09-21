@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using ESKD.MaterialSync.Core;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
@@ -12,9 +13,21 @@ namespace ESKD.MaterialSync.Sw
     /// формат его листов — модель знает формат своего чертежа, спецификация читает его без правки ячеек.
     /// Уровни — как у MProp (FrmMProp:3042): каждая конфигурация модели (у файла один чертёж на все исполнения),
     /// общие — при одной конфигурации. Деталь БЧ не трогается. Листы спецификации и ведомости (SP…, VP…) не считаются.
+    ///
+    /// Замечание владельца 21.09.2026: «формат в спецификацию не попадает». Чертёж обычно сохраняют и сразу закрывают,
+    /// а запись формата ждала простоя вместе с документом чертежа — закрытие её отменяло («Документ закрыт до выполнения
+    /// отложенной задачи „drawingformat“»). Теперь форматы листов читаются в момент сохранения, пока чертёж открыт, а
+    /// модель находится в простое по пути: выгружена вместе с чертежом — открывается скрыто, записывается, сохраняется
+    /// и закрывается. Для чертежей, сохранённых до исправления, формат дозаполняет «Синхронизировать» на сборке (Backfill).
     /// </summary>
     public static class DrawingFormatService
     {
+        /// <summary>
+        /// Надстройка сама открывает, сохраняет и закрывает модель ради формата. Её сохранение не должно поднимать обычную
+        /// синхронизацию и задачи простоя: документ закроется сразу после Save3 (урок R01).
+        /// </summary>
+        public static bool Busy { get; private set; }
+
         /// <summary>Форматы листов чертежа по порядку; лист не формата ГОСТ — пустая строка.</summary>
         public static List<string> SheetFormats(DrawingDoc drw)
         {
@@ -34,32 +47,156 @@ namespace ESKD.MaterialSync.Sw
             return formats;
         }
 
-        /// <summary>Записать формат чертежа в его модель; модель без других несохранённых правок сохраняется молча.</summary>
-        public static void Apply(ISldWorks app, DrawingDoc drw)
+        /// <summary>
+        /// Снять форматы листов и путь модели, пока чертёж открыт (событие сохранения). Только чтение.
+        /// false — модели нет или лист не формата ГОСТ 2.301.
+        /// </summary>
+        public static bool Capture(DrawingDoc drw, out string modelPath, out List<string> sheets)
         {
+            modelPath = "";
+            sheets = new List<string>();
             ModelDoc2 model = SyncService.ReferencedModel(drw);
-            if (model == null) return;
-            string title = DocInfo.TitleOf(model);
-            List<string> sheets = SheetFormats(drw);
+            if (model == null) return false;
+            modelPath = model.GetPathName() ?? "";
+            if (modelPath.Length == 0) return false;
+            sheets = SheetFormats(drw);
+            if (sheets.Count == 0) return false;
             if (sheets.Contains(""))
             {
-                Log.Warn("Формат чертежа не определён (лист не формата ГОСТ 2.301): «Формат» модели " + title + " не меняется");
-                return;
+                Log.Warn("Формат чертежа не определён (лист не формата ГОСТ 2.301): «Формат» модели " +
+                    Path.GetFileName(modelPath) + " не меняется");
+                return false;
             }
+            return true;
+        }
+
+        /// <summary>
+        /// Записать формат в модель по пути (в простое). Модель открыта — пишется в неё и сохраняется, если в ней нет других
+        /// несохранённых правок; выгружена — открывается скрыто, записывается, сохраняется и закрывается.
+        /// </summary>
+        public static void ApplyToModel(ISldWorks app, string modelPath, List<string> sheets)
+        {
+            if (string.IsNullOrEmpty(modelPath) || sheets == null || sheets.Count == 0) return;
+            ModelDoc2 model = app.GetOpenDocumentByName(modelPath) as ModelDoc2;
+            bool opened = false;
+            Busy = true;
+            try
+            {
+                if (model == null)
+                {
+                    model = OpenHidden(app, modelPath);
+                    opened = model != null;
+                    if (opened) Log.Info("Формат чертежа: модель " + Path.GetFileName(modelPath) + " выгружена вместе с чертежом — открыта скрыто");
+                    if (model == null)
+                    {
+                        Log.Warn("Формат чертежа: модель " + modelPath + " не открылась — «Формат» не записан");
+                        return;
+                    }
+                }
+                string title = DocInfo.TitleOf(model);
+                if (model.IsOpenedReadOnly())
+                {
+                    Log.Warn("Модель " + title + " открыта только для чтения: «Формат» не записан");
+                    return;
+                }
+                bool wasDirty = !opened && model.GetSaveFlag();
+                int changes = Write(model, sheets);
+                if (changes == 0) return;
+                if (wasDirty)
+                {
+                    Log.Info("Модель " + title + " не сохранена: в ней есть и другие несохранённые правки — формат запишется с ними");
+                    return;
+                }
+                int errors = 0, warnings = 0;
+                if (!model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
+                    Log.Error(string.Format("Модель {0} не сохранена после записи формата (errors={1}, warnings={2})", title, errors, warnings));
+            }
+            finally
+            {
+                if (opened) Close(app, model);
+                Busy = false;
+            }
+        }
+
+        /// <summary>
+        /// Дозаполнить пустой «Формат» модели по её чертежу рядом (тот же путь, .slddrw) — для чертежей, сохранённых до
+        /// исправления 21.09.2026. Чертёж открывается скрыто только для чтения и закрывается. Модель не сохраняется —
+        /// это делает вызывающий. Возвращает число изменений.
+        /// </summary>
+        public static int Backfill(ISldWorks app, ModelDoc2 model)
+        {
+            string modelPath = model.GetPathName() ?? "";
+            if (modelPath.Length == 0) return 0;
+            string drawingPath = Path.ChangeExtension(modelPath, ".slddrw");
+            if (!File.Exists(drawingPath)) return 0;
+            Settings settings = Settings.Read();
+            PropertyDictionary dict = SyncService.Dictionary(settings);
+            PropertyWriter probe = new PropertyWriter(model, true);
+            if (BchService.IsBch(probe, dict)) return 0;
+            if (!FormatMissing(probe, dict)) return 0;
+
+            List<string> sheets;
+            bool opened = false;
+            ModelDoc2 drawing = app.GetOpenDocumentByName(drawingPath) as ModelDoc2;
+            Busy = true;
+            try
+            {
+                if (drawing == null)
+                {
+                    int errors = 0, warnings = 0;
+                    app.DocumentVisible(false, (int)swDocumentTypes_e.swDocDRAWING);
+                    try
+                    {
+                        drawing = app.OpenDoc6(drawingPath, (int)swDocumentTypes_e.swDocDRAWING,
+                            (int)(swOpenDocOptions_e.swOpenDocOptions_Silent | swOpenDocOptions_e.swOpenDocOptions_ReadOnly),
+                            "", ref errors, ref warnings) as ModelDoc2;
+                    }
+                    finally
+                    {
+                        app.DocumentVisible(true, (int)swDocumentTypes_e.swDocDRAWING);
+                    }
+                    opened = drawing != null;
+                }
+                if (drawing == null)
+                {
+                    Log.Warn("Формат: чертёж " + Path.GetFileName(drawingPath) + " не открылся — «Формат» не дозаполнен");
+                    return 0;
+                }
+                sheets = SheetFormats((DrawingDoc)drawing);
+            }
+            finally
+            {
+                if (opened) Close(app, drawing);
+                Busy = false;
+            }
+            if (sheets.Count == 0 || sheets.Contains("")) return 0;
+            return Write(model, sheets);
+        }
+
+        /// <summary>«Формат» пуст (или шаблонный) и в общих свойствах, и во всех конфигурациях.</summary>
+        private static bool FormatMissing(PropertyWriter w, PropertyDictionary dict)
+        {
+            string name = dict[Role.Format];
+            List<string> levels = new List<string>(w.ConfigurationNames()) { "" };
+            foreach (string level in levels)
+            {
+                if (!PropertyWriter.IsEmptyOrTemplate((w.Raw(level, name) ?? "").Trim())) return false;
+            }
+            return true;
+        }
+
+        /// <summary>Записать «Формат» (и перечень форматов в «Примечание») на уровни модели. Возвращает число изменений.</summary>
+        private static int Write(ModelDoc2 model, List<string> sheets)
+        {
+            string title = DocInfo.TitleOf(model);
             string remark;
             string column = DrawingFormat.Column(sheets, out remark);
-            if (column.Length == 0) return;
-            if (model.IsOpenedReadOnly())
-            {
-                Log.Warn("Модель " + title + " открыта только для чтения: «Формат» = " + column + " не записан");
-                return;
-            }
+            if (column.Length == 0) return 0;
 
             Settings settings = Settings.Read();
             PropertyDictionary dict = SyncService.Dictionary(settings);
             PropertyWriter w = new PropertyWriter(model, settings.DryRun);
-            if (BchService.IsBch(w, dict)) return;
-            bool wasDirty = model.GetSaveFlag();
+            if (BchService.IsBch(w, dict)) return 0;
 
             string[] configs = w.ConfigurationNames();
             List<string> levels = new List<string>(configs);
@@ -79,17 +216,44 @@ namespace ESKD.MaterialSync.Sw
                     w.Set(level, dict[Role.Remark], "");
                 }
             }
-            if (w.Operations.Count == 0) return;
-            Log.Info(string.Format("Формат чертежа → модель {0}: {1}; операций {2}\r\n    {3}", title, column, w.Operations.Count,
-                string.Join("\r\n    ", w.Operations.ToArray())));
-            if (w.Changes == 0 || wasDirty)
-            {
-                if (wasDirty) Log.Info("Модель " + title + " не сохранена: в ней есть и другие несохранённые правки");
-                return;
-            }
+            if (w.Operations.Count > 0)
+                Log.Info(string.Format("Формат чертежа → модель {0}: {1}; операций {2}\r\n    {3}", title, column, w.Operations.Count,
+                    string.Join("\r\n    ", w.Operations.ToArray())));
+            return w.Changes;
+        }
+
+        private static ModelDoc2 OpenHidden(ISldWorks app, string path)
+        {
+            int type = path.EndsWith(".sldasm", StringComparison.OrdinalIgnoreCase)
+                ? (int)swDocumentTypes_e.swDocASSEMBLY
+                : (int)swDocumentTypes_e.swDocPART;
             int errors = 0, warnings = 0;
-            if (!model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
-                Log.Error(string.Format("Модель {0} не сохранена после записи формата (errors={1}, warnings={2})", title, errors, warnings));
+            app.DocumentVisible(false, type);
+            try
+            {
+                return app.OpenDoc6(path, type, (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref errors, ref warnings) as ModelDoc2;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Формат чертежа: открытие " + path, ex);
+                return null;
+            }
+            finally
+            {
+                app.DocumentVisible(true, type);
+            }
+        }
+
+        private static void Close(ISldWorks app, ModelDoc2 doc)
+        {
+            try
+            {
+                if (doc != null) app.CloseDoc(doc.GetTitle());
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Формат чертежа: закрытие документа", ex);
+            }
         }
     }
 }
