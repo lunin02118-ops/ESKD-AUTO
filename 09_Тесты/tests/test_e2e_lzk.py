@@ -363,6 +363,48 @@ class Lzk(SwTestCase):
         self.assertEqual("L=500*", size, "вдоль собственной оси — 500, а не 424 по осям детали")
         self.assertIn("измерена по модели", notices, f"пометка объясняет, откуда длина: {notices}")
 
+    def test_L10_bent_sheet_part_gets_flat_pattern_size(self):
+        """L10 (замечание владельца 21.09.2026): у гнутой листовой детали заготовка — развёртка, а не габарит готовой
+        детали. Уголок 100×25 с отгибом 20 из листа 3 мм (радиус гиба 3): согнутый — 103×25×23, развёртка —
+        121,07×25×3 (полки 97 и 17 плюс дуга по нейтральному слою 7,07)."""
+        import openpyxl
+        from eskd_e2e import build
+
+        product = self.case_dir / PRODUCT
+        (product / "01_3D").mkdir(parents=True, exist_ok=True)
+        for name in ("Нормативы_производства.xlsx", "ЛЗК_бланки.xlsx"):
+            ref = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / name
+            (self.case_dir / ref.name).write_bytes(ref.read_bytes())
+        angle = product / "01_3D" / "ПРТИ.468211.172 Закладная.sldprt"
+        doc = build.sheet_metal_angle(self.s, 100, 20, 25, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89")
+        self.s.save_as(doc, angle)
+        self.s.wait_addin_idle(timeout=60.0)
+        box = com.call(doc, "GetPartBox", True)
+        folded = sorted(((box[i + 3] - box[i]) * 1000 for i in range(3)), reverse=True)
+        self.assertAlmostEqual(103, folded[0], delta=0.5, msg=f"согнутая деталь по осям: {folded}")
+        self.assertAlmostEqual(25, folded[1], delta=0.5, msg=f"согнутая деталь по осям: {folded}")
+        self.assertAlmostEqual(23, folded[2], delta=0.5, msg=f"согнутая деталь по осям: {folded}")
+        asm, opened = build.assembly(self.s, [(angle, 0, 0, 0)])
+        self.s.save_as(asm, product / "01_3D" / ASM)
+        for d in opened:
+            self.s.close(d)
+        self.s.activate(asm)
+        status = self._build()
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.assertTrue(status.startswith("ok|"), f"{status} {notices}")
+
+        main = openpyxl.load_workbook(product / DOCS / BOOK)["Ведомость"]
+        sizes = {main.cell(r, 3).value: str(main.cell(r, 6).value or "") for r in range(7, main.max_row + 1)}
+        size = sizes.get("ПРТИ.468211.172")
+        self.assertIsNotNone(size, f"закладная в ведомости: {sizes}")
+        self.assertRegex(size, r"^\d+(?:[.,]\d+)?×\d+(?:[.,]\d+)?×\d+(?:[.,]\d+)?$", f"развёртка Д×Ш×S без «*»: {size}")
+        length, width, thickness = (float(x.replace(",", ".")) for x in size.split("×"))
+        self.assertAlmostEqual(121.07, length, delta=0.1, msg=f"длина развёртки — полки и дуга, а не габарит 103: {size}")
+        self.assertAlmostEqual(25, width, delta=0.5, msg=f"ширина развёртки — глубина уголка: {size}")
+        self.assertAlmostEqual(3, thickness, delta=0.05, msg=f"третий размер — толщина листа: {size}")
+        self.s.close_all()
+        self.assertEqual(size, V(self.persisted(angle), "Габарит"), "«Габарит» в детали — тоже развёртка")
+
     def test_L03_refuses_non_assembly(self):
         """L03: у детали кнопка отказывает без изменений файлов."""
         path, doc = self.open_copy(SHEET_PART)

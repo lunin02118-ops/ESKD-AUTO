@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -435,11 +435,26 @@ namespace ESKD.MaterialSync.Sw
             return t;
         }
 
-        /// <summary>Габарит: прокат — длина заготовки (LENGTH списка вырезов, иначе RD1@Примечания, иначе габарит с «*»); прочее — Д×Ш×В.</summary>
+        /// <summary>
+        /// Габарит: прокат — длина заготовки (LENGTH списка вырезов, иначе RD1@Примечания, иначе габарит с «*»);
+        /// листовая деталь — развёртка Д×Ш×S (замечание владельца 21.09.2026: у гнутых деталей в ведомость уходил
+        /// габарит готовой детали, а заготовка — это развёртка); прочее — Д×Ш×В.
+        /// </summary>
         private static void Size(ModelDoc2 model, bool assembly, ModelTraits t, LzkItem item)
         {
             try
             {
+                if (t.IsSheetMetal && !assembly)
+                {
+                    double[] flat = FlatPatternSides((PartDoc)model, model);
+                    if (flat != null)
+                    {
+                        item.Size = LzkOperations.FormatSize(flat[0], flat[1], flat[2]);
+                        return;
+                    }
+                    // Развёртку не измерить — габарит согнутой детали с пометкой «оценка».
+                    item.SizeIsEstimate = true;
+                }
                 if (t.IsStructuralMember)
                 {
                     bool several;
@@ -493,6 +508,67 @@ namespace ESKD.MaterialSync.Sw
             {
                 Log.Error("Ведомость ЛЗК: габарит " + item.Path, ex);
             }
+        }
+
+        /// <summary>
+        /// Развёртка листовой детали {длина, ширина, толщина} в мм: из свойств «граничной рамки» списка вырезов; их нет
+        /// (список не обновляли — так в боевом заказе NC3-7R) — включается элемент «Развёртка» (FlatPattern), деталь
+        /// меряется по габаритному ящику, элемент гасится обратно (SetBendState в SolidWorks 2025 ничего не делает,
+        /// проверено 21.09.2026). null — измерить не удалось.
+        /// </summary>
+        private static double[] FlatPatternSides(PartDoc part, ModelDoc2 model)
+        {
+            double thickness = StockService.SheetThicknessMm(model);
+            double length = double.NaN, width = double.NaN;
+            for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+            {
+                if (f.GetTypeName2() != "SolidBodyFolder") continue;
+                for (Feature sub = f.GetFirstSubFeature() as Feature; sub != null; sub = sub.GetNextSubFeature() as Feature)
+                {
+                    if (sub.GetTypeName2() != "CutListFolder") continue;
+                    CustomPropertyManager m = sub.CustomPropertyManager;
+                    if (m == null) continue;
+                    List<KeyValuePair<string, string>> written = Written(m);
+                    double l = Value(m, CutListProperties.Find(written, "Bounding Box Length", CutListProperties.BoundingBoxLengthSpellings));
+                    double w = Value(m, CutListProperties.Find(written, "Bounding Box Width", CutListProperties.BoundingBoxWidthSpellings));
+                    if (double.IsNaN(thickness))
+                        thickness = Value(m, CutListProperties.Find(written, "Sheet Metal Thickness", CutListProperties.SheetThicknessSpellings));
+                    if (double.IsNaN(l) || double.IsNaN(w) || l <= 0 || w <= 0) continue;
+                    if (double.IsNaN(length) || l * w > length * width) { length = l; width = w; }
+                }
+            }
+            if (double.IsNaN(length))
+            {
+                Feature flat = null;
+                for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+                    if (f.GetTypeName2() == "FlatPattern") { flat = f; break; }
+                if (flat != null && flat.SetSuppression2((int)swFeatureSuppressionAction_e.swUnSuppressFeature,
+                        (int)swInConfigurationOpts_e.swThisConfiguration, null))
+                {
+                    try
+                    {
+                        model.ForceRebuild3(false);
+                        double[] box = part.GetPartBox(true) as double[];
+                        if (box != null && box.Length >= 6)
+                        {
+                            double[] sides = { (box[3] - box[0]) * 1000, (box[4] - box[1]) * 1000, (box[5] - box[2]) * 1000 };
+                            Array.Sort(sides);
+                            length = sides[2];
+                            width = sides[1];
+                            if (double.IsNaN(thickness)) thickness = sides[0];
+                        }
+                    }
+                    finally
+                    {
+                        flat.SetSuppression2((int)swFeatureSuppressionAction_e.swSuppressFeature,
+                            (int)swInConfigurationOpts_e.swThisConfiguration, null);
+                        model.ForceRebuild3(false);
+                    }
+                }
+            }
+            if (double.IsNaN(length) || double.IsNaN(width) || length <= 0 || width <= 0) return null;
+            if (double.IsNaN(thickness) || thickness <= 0) thickness = 0;
+            return new[] { length, width, thickness };
         }
 
         /// <summary>Наибольшая длина LENGTH по папкам списка вырезов; several — заготовок больше одной (папок или QUANTITY).</summary>

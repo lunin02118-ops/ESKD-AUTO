@@ -845,13 +845,17 @@ namespace ESKD.MaterialSync.Core
             string[] titles =
             {
                 "Сортамент", "L заготовки, мм", "На 1 изд., шт.", "Всего, шт.", "Из хлыста, шт.", "Хлыстов, шт.",
-                "Чистая длина, м", "Закупка, м", "КИМ", "Остаток с хлыста, мм", "Масса 1 м, кг", "Масса закупки, кг", "Примечание"
+                "Чистая длина, м", "Закупка, м", "КИМ", "Остаток с хлыста, мм", "Масса 1 м, кг", "Масса закупки, кг",
+                "Масса в чистоте, кг", "Примечание"
             };
-            double[] widths = { 34, 10, 9, 9, 9, 9, 10, 10, 8, 10, 9, 10, 20 };
+            double[] widths = { 34, 10, 9, 9, 9, 9, 10, 10, 8, 10, 9, 10, 10, 20 };
             int columns = titles.Length;
             SheetHead(s, st, "Расход материалов на заказ", header, columns, false);
             int row = 5;
-            s.SetText(C(1, row), "Трубы, профиль и сортовой прокат — раскрой «пакетом» одинаковых длин из хлыста", st.Group);
+            // «Масса закупки» — целые хлысты; «Масса в чистоте» — по чистой длине заготовок: столько списывается
+            // на заказ, когда в дело идут деловые остатки со склада (замечание владельца 21.09.2026).
+            s.SetText(C(1, row), "Трубы, профиль и сортовой прокат — раскрой «пакетом» одинаковых длин из хлыста; " +
+                "«в чистоте» — масса по чистой длине, для списания при использовании деловых остатков", st.Group);
             s.Merge("A" + row + ":" + L(columns) + row);
             row++;
             Heads(s, st, row, titles, widths);
@@ -878,7 +882,8 @@ namespace ESKD.MaterialSync.Core
                     if (double.IsNaN(g.KgPerMeter)) s.SetText(C(11, row), Mark, st.Center);
                     else s.SetNumber(C(11, row), Math.Round(g.KgPerMeter, 3), st.Dec3);
                     s.SetFormula(C(12, row), "IF(ISNUMBER(K" + r + "),H" + r + "*K" + r + ",\"\")", st.Dec1);
-                    s.SetText(C(13, row), g.Estimate ? "L измерена по модели — уточните длину заготовки" : "", st.Text);
+                    s.SetFormula(C(13, row), "IF(ISNUMBER(K" + r + "),G" + r + "*K" + r + ",\"\")", st.Dec1);
+                    s.SetText(C(14, row), g.Estimate ? "L измерена по модели — уточните длину заготовки" : "", st.Text);
                     if (g.Estimate)
                         result.Notes.Add("Расход: " + g.Sortament + ", L=" + LzkOperations.Number(g.LengthMm) +
                             " — длина заготовки измерена по модели, не из списка вырезов (" + string.Join(", ", g.Designations.ToArray()) + ")");
@@ -886,10 +891,10 @@ namespace ESKD.MaterialSync.Core
                 }
                 s.SetText(C(1, row), "Итого по сортаменту", st.TotalLeft);
                 for (int c = 2; c <= columns; c++) s.SetText(C(c, row), "", st.Total);
-                foreach (int c in new[] { 6, 7, 8, 12 })
+                foreach (int c in new[] { 6, 7, 8, 12, 13 })
                     s.SetFormula(C(c, row), "SUM(" + L(c) + first + ":" + L(c) + (row - 1) + ")", c == 6 ? st.TotalInt : st.TotalDec1);
                 s.SetFormula(C(9, row), "IF(H" + row + ">0,G" + row + "/H" + row + ",\"\")", st.TotalPercent);
-                s.SetText(C(13, row), OptimalBars(sortament.ToList(), inputs, norms), st.Text);
+                s.SetText(C(14, row), OptimalBars(sortament.ToList(), inputs, norms), st.Text);
                 subtotals.Add(row);
                 row++;
             }
@@ -903,7 +908,7 @@ namespace ESKD.MaterialSync.Core
             {
                 s.SetText(C(1, row), "Всего по трубам и профилю", st.TotalLeft);
                 for (int c = 2; c <= columns; c++) s.SetText(C(c, row), "", st.Total);
-                foreach (int c in new[] { 6, 7, 8, 12 })
+                foreach (int c in new[] { 6, 7, 8, 12, 13 })
                     s.SetFormula(C(c, row), string.Join("+", subtotals.Select(t => L(c) + t).ToArray()), c == 6 ? st.TotalInt : st.TotalDec1);
                 s.SetFormula(C(9, row), "IF(H" + row + ">0,G" + row + "/H" + row + ",\"\")", st.TotalPercent);
                 row++;

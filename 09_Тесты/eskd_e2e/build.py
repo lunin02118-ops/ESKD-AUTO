@@ -174,6 +174,33 @@ def sheet_metal_plate(session, length_mm, width_mm, thickness_mm, material):
     return doc
 
 
+def sheet_metal_angle(session, leg_mm, flange_mm, depth_mm, thickness_mm, material):
+    """Гнутая листовая деталь — уголок: базовая кромка из открытого L-эскиза (полка leg_mm, отгиб flange_mm)
+    глубиной depth_mm. Развёртка длиннее полки, но короче суммы полки и отгиба; габарит согнутой детали —
+    leg×depth×flange."""
+    doc = session.new_doc(paths.PART_TEMPLATE)
+    doc.ClearSelection2(True)
+    select_plane(doc, "front")
+    sk = doc.SketchManager
+    sk.InsertSketch(True)
+    # Без AddToDB: концы отрезков должны слиться в одну цепочку, иначе SolidWorks строит из открытого
+    # контура плоский «тонкий» элемент, а не гнутую кромку.
+    sk.CreateLine(0.0, 0.0, 0.0, leg_mm / 1000.0, 0.0, 0.0)
+    sk.CreateLine(leg_mm / 1000.0, 0.0, 0.0, leg_mm / 1000.0, flange_mm / 1000.0, 0.0)
+    sk.InsertSketch(True)
+    t = thickness_mm / 1000.0
+    # InsertSheetMetalBaseFlange2(Thickness, ThickenDir, Radius, ExtrudeDist1, ExtrudeDist2, FlipExtruDir, EndCondition1,
+    # EndCondition2, DirToUse, PCBA, UseDefaultRelief, ReliefType, ReliefWidth, ReliefDepth, ReliefRatio, UseReliefRatio, …):
+    # для открытого контура толщина — первый параметр, глубина вытяжки — четвёртый (по библиотеке типов SolidWorks).
+    feat = doc.FeatureManager.InsertSheetMetalBaseFlange2(t, False, t, depth_mm / 1000.0, 0.0, False, 0, 0, 1,
+                                                           com.null_dispatch(), True, 0, 0.0001, 0.0001, 0.5, True, False, True, True)
+    if feat is None:
+        raise RuntimeError("Базовая кромка уголка не построена")
+    set_material(doc, material)
+    doc.ForceRebuild3(False)
+    return doc
+
+
 def structural_tube(session, length_mm, profile, material, angle_deg=0.0):
     """Деталь сварной конструкции: элемент конструкции (WeldMemberFeat) по отрезку вдоль X из профиля .sldlfp
     (выгрузка IGS, Т-29).

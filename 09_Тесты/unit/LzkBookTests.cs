@@ -285,8 +285,15 @@ namespace ESKD.Tests
                 Assert.AreEqual("IF(E7>0,ROUNDUP(D7/E7,0),\"?\")", cost.Formula("F7"), "хлыстов");
                 Assert.AreEqual("300", cost.Get("B8"), "вторая длина");
                 Assert.AreEqual("SUM(F7:F8)", cost.Formula("F9"), "итого хлыстов по сортаменту");
-                Assert.IsTrue(cost.Get("M9").StartsWith("оптимально ") && cost.Get("M9").EndsWith("на тираж 41"),
-                    "справочная раскладка CutPlan на тираж: " + cost.Get("M9"));
+                // Масса закупки — целые хлысты; масса в чистоте — по чистой длине: столько списывать, когда в дело идут
+                // деловые остатки со склада (замечание владельца 21.09.2026).
+                Assert.AreEqual("Масса закупки, кг", cost.Get("L6"), "закупка по хлыстам");
+                Assert.AreEqual("Масса в чистоте, кг", cost.Get("M6"), "списание по чистой длине");
+                Assert.AreEqual("IF(ISNUMBER(K7),H7*K7,\"\")", cost.Formula("L7"), "масса закупки = закупка, м × масса 1 м");
+                Assert.AreEqual("IF(ISNUMBER(K7),G7*K7,\"\")", cost.Formula("M7"), "масса в чистоте = чистая длина × масса 1 м");
+                Assert.AreEqual("SUM(M7:M8)", cost.Formula("M9"), "итого массы в чистоте по сортаменту");
+                Assert.IsTrue(cost.Get("N9").StartsWith("оптимально ") && cost.Get("N9").EndsWith("на тираж 41"),
+                    "справочная раскладка CutPlan на тираж: " + cost.Get("N9"));
 
                 XlsxSheet passport = book.Sheet("Паспорт");
                 string sheet, cell;
