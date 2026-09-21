@@ -292,22 +292,11 @@ namespace ESKD.Tests
                 Assert.AreEqual("IF(B7>0,MAX(0,TRUNC((Хлыст-Захват-Торцовка)/(B7+Рез))),0)", cost.Formula("E7"), "из хлыста");
                 Assert.AreEqual("IF(E7>0,ROUNDUP(D7/E7,0),\"?\")", cost.Formula("F7"), "хлыстов");
                 Assert.AreEqual("300", cost.Get("B8"), "вторая длина");
-                // Итог сортамента — не сумма «пакетом» (три длины — три хлыста на один стул, косяк 21.09.2026), а смешанный
-                // раскрой на тираж построения; при другом тираже в книге — оценка по суммарной длине с резами.
-                Assert.AreEqual("IFERROR(VLOOKUP(Тираж,'Раскрой'!$A$3:$E$1002,2,FALSE),ROUNDUP(SUMPRODUCT(D7:D8,B7:B8+Рез)/(Хлыст-Захват-Торцовка),0))",
-                    cost.Formula("F9"), "итого хлыстов по сортаменту — строка «Раскроя» по тиражу, дальше 1000 — оценка");
-                // Скрытый «Раскрой»: смешанный раскрой на тиражи 1…1000, пересчёт при смене тиража без перестройки книги
-                XlsxSheet cut = book.Sheet("Раскрой");
-                Assert.IsTrue(cut != null, "лист «Раскрой»");
-                Assert.AreEqual("Тираж", cut.Get("A2"), "шапка раскроя");
-                Assert.AreEqual(tube, cut.Get("B1"), "сортамент над своими колонками");
-                Assert.AreEqual("1", cut.Get("A3"), "первый тираж");
-                Assert.AreEqual("1000", cut.Get("A1002"), "последний тираж");
-                Assert.AreEqual("1", cut.Get("B3"), "на 1 изделие 4×556 + 2×300 — один хлыст");
-                Assert.AreEqual("41", cut.Get("A43"), "строка тиража 41");
-                double bars41 = double.Parse(cut.Get("B43"), CultureInfo.InvariantCulture);
-                Assert.IsTrue(bars41 >= 20 && bars41 <= 23, "на 41 изделие ≈ 205 м заготовок при зоне 5,4 м: " + bars41);
-                Assert.IsTrue(Part(path, "xl/workbook.xml").Contains("state=\"hidden\""), "«Раскрой» скрыт");
+                // Итог сортамента — не сумма «пакетом» (три длины — три хлыста на один стул, косяк 21.09.2026), а по
+                // суммарной длине заготовок с резами, но не меньше, чем нужно одной длине. Жадный раскрой убран (владелец 21.09.2026).
+                Assert.AreEqual("MAX(ROUNDUP(SUMPRODUCT(D7:D8,B7:B8+Рез)/(Хлыст-Захват-Торцовка),0),MAX(F7:F8))",
+                    cost.Formula("F9"), "итого хлыстов по сортаменту");
+                Assert.IsTrue(book.Sheet("Раскрой") == null, "скрытого листа раскроя больше нет");
                 Assert.AreEqual("F9*Хлыст/1000", cost.Formula("H9"), "закупка итога — по хлыстам итога");
                 // Масса закупки — целые хлысты; масса в чистоте — по чистой длине: столько списывать, когда в дело идут
                 // деловые остатки со склада (замечание владельца 21.09.2026).
@@ -323,28 +312,16 @@ namespace ESKD.Tests
                 Assert.AreEqual("IF(AND(E7>0,ISNUMBER(F7)),Хлыст-Захват-Торцовка-(D7-(F7-1)*E7)*(B7+Рез),\"\")", cost.Formula("K7"), "хвост последнего хлыста");
                 Assert.IsTrue(cost.Formula("O7").StartsWith("IF(AND(E7>0,ISNUMBER(F7),F7>1,MOD(D7,E7)>0),\"последний хлыст занят на \""),
                     "пометка о неполном последнем хлысте: " + cost.Formula("O7"));
-                // Вторая норма: смешанный раскрой по хлыстам — сначала длинные, хвосты добиваются короткими
-                int mixed = 0, sheetHead = 0;
-                for (int line = 10; line < 60; line++)
+                int sheetHead = 0;
+                for (int line = 10; line < 30; line++)
                 {
                     string a = cost.Get("A" + line);
-                    if (a.StartsWith("Смешанный раскрой по хлыстам") && mixed == 0) mixed = line;
+                    Assert.IsFalse(a.StartsWith("Смешанный раскрой"), "раздела смешанного раскроя больше нет");
                     if (a.StartsWith("Листовой прокат")) sheetHead = line + 1;
                 }
-                Assert.IsTrue(mixed > 9, "раздел смешанного раскроя");
-                Assert.IsTrue(cost.Get("A" + mixed).Contains("на тираж 41"), "тираж раскладки назван: " + cost.Get("A" + mixed));
-                Assert.AreEqual("Хлыст №", cost.Get("B" + (mixed + 1)), "шапка раскладки");
-                Assert.AreEqual(tube, cost.Get("A" + (mixed + 2)), "первый хлыст сортамента");
-                Assert.AreEqual("1", cost.Get("B" + (mixed + 2)), "номер хлыста");
-                Assert.IsTrue(cost.Get("C" + (mixed + 2)).StartsWith("9×556"), "длинные первыми, 9 штук в зону 5400 без торцовки: " + cost.Get("C" + (mixed + 2)));
-                string mixedTotal = "";
-                for (int line = mixed + 2; line < sheetHead; line++)
-                    if (cost.Formula("A" + line).StartsWith("\"Итого: " + tube)) mixedTotal = cost.Formula("A" + line);
-                Assert.IsTrue(mixedTotal.Contains("&\"хлыстов \"&F9&") && mixedTotal.Contains("(пакетом ") && mixedTotal.Contains("КИМ "),
-                    "итог раскладки — формулой на тираж книги: " + mixedTotal);
                 // Лист: закупка — целые листы формата по массе 1 м² заготовки, иначе итог «Сводной» складывал бы
                 // закупку труб с чистой массой листа (вопрос владельца 21.09.2026)
-                Assert.IsTrue(sheetHead > mixed, "таблица листа после раскладки");
+                Assert.IsTrue(sheetHead > 9, "таблица листа после труб");
                 string sr = (sheetHead + 1).ToString();
                 Assert.AreEqual("Масса в чистоте, кг", cost.Get("G" + sheetHead), "шапка листа: чистая масса");
                 Assert.AreEqual("Масса закупки, кг", cost.Get("I" + sheetHead), "шапка листа: закупка");
@@ -365,12 +342,14 @@ namespace ESKD.Tests
                 Assert.AreEqual("'Расход'!H9", summary.Formula("F8"), "закупка, м");
                 Assert.AreEqual("'Расход'!M9", summary.Formula("G8"), "масса закупки");
                 Assert.AreEqual("'Расход'!N9", summary.Formula("H8"), "масса в чистоте");
-                Assert.AreEqual("'Расход'!I9", summary.Formula("I8"), "КИМ");
-                string plan = summary.Formula("J8");
-                Assert.IsTrue(plan.StartsWith("\"смешанный раскрой: \"&\"хлыстов \"&F9&\" (пакетом \"&SUM(F7:F8)&\")") &&
-                    plan.Contains("VLOOKUP(Тираж,'Раскрой'!"), "живая раскладка на тираж книги: " + plan);
-                // торцовка и пропилы есть всегда — отход раскладки назван
-                Assert.IsTrue(plan.Contains("; отход "), "отход раскладки: " + plan);
+                // Норма в чистоте на 1 изделие и с запасом 10 % (владелец 21.09.2026)
+                Assert.AreEqual("В чистоте на 1 изд., кг", summary.Get("I6"), "шапка нормы на изделие");
+                Assert.AreEqual("Норма +10 % на 1 изд., кг", summary.Get("J6"), "шапка нормы с запасом");
+                Assert.AreEqual("Норма +10 % на заказ, кг", summary.Get("K6"), "шапка запаса на заказ");
+                Assert.AreEqual("IF(ISNUMBER(H8),H8/Тираж,\"\")", summary.Formula("I8"), "в чистоте на 1 изд. = масса в чистоте / тираж");
+                Assert.AreEqual("IF(ISNUMBER(I8),I8*1.1,\"\")", summary.Formula("J8"), "норма +10 % на 1 изд.");
+                Assert.AreEqual("IF(ISNUMBER(H8),H8*1.1,\"\")", summary.Formula("K8"), "норма +10 % на заказ");
+                Assert.AreEqual("'Расход'!I9", summary.Formula("L8"), "КИМ");
                 Assert.AreEqual("м²", summary.Get("C9"), "строка листа в сводной");
                 Assert.AreEqual("'Расход'!C" + sr, summary.Formula("D9"), "площадь листа на заказ");
                 Assert.AreEqual("'Расход'!D" + sr, summary.Formula("E9"), "листов");
@@ -379,7 +358,8 @@ namespace ESKD.Tests
                 Assert.AreEqual("Итого металлопрокат, кг", summary.Get("A10"), "итог по металлу");
                 Assert.AreEqual("SUM(G8:G9)", summary.Formula("G10"), "итого масса закупки — трубы и лист");
                 Assert.AreEqual("SUM(H8:H9)", summary.Formula("H10"), "итого масса в чистоте");
-                Assert.AreEqual("IF(G10>0,H10/G10,\"\")", summary.Formula("I10"), "КИМ итога — по массе");
+                Assert.AreEqual("SUM(K8:K9)", summary.Formula("K10"), "итого норма +10 % на заказ");
+                Assert.AreEqual("IF(G10>0,H10/G10,\"\")", summary.Formula("L10"), "КИМ итога — по массе");
                 int paintRow = 0, kitRow = 0;
                 for (int line = 10; line < 30; line++)
                 {
