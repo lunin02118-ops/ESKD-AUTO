@@ -289,84 +289,82 @@ namespace ESKD.Tests
                 Assert.AreEqual("556", cost.Get("B7"), "длинная заготовка первой");
                 Assert.AreEqual("4", cost.Get("C7"), "на изделие");
                 Assert.AreEqual("C7*Тираж", cost.Formula("D7"), "всего");
-                Assert.AreEqual("IF(B7>0,MAX(0,TRUNC((Хлыст-Захват-Торцовка)/(B7+Рез))),0)", cost.Formula("E7"), "из хлыста");
-                Assert.AreEqual("IF(E7>0,ROUNDUP(D7/E7,0),\"?\")", cost.Formula("F7"), "хлыстов");
                 Assert.AreEqual("300", cost.Get("B8"), "вторая длина");
-                // Итог сортамента — не сумма «пакетом» (три длины — три хлыста на один стул, косяк 21.09.2026), а по
-                // суммарной длине заготовок с резами, но не меньше, чем нужно одной длине. Жадный раскрой убран (владелец 21.09.2026).
-                Assert.AreEqual("MAX(ROUNDUP(SUMPRODUCT(D7:D8,B7:B8+Рез)/(Хлыст-Захват-Торцовка),0),MAX(F7:F8))",
-                    cost.Formula("F9"), "итого хлыстов по сортаменту");
+                // Только сколько идёт на заготовки и то же с запасом: хлысты, закупка и списание — отдельный документ
+                // (владелец 21.09.2026).
+                Assert.AreEqual("Чистая длина на 1 изд., м", cost.Get("E6"), "шапка: чистая длина на изделие");
+                Assert.AreEqual("C7*B7/1000", cost.Formula("E7"), "чистая длина на изделие");
+                Assert.AreEqual("D7*B7/1000", cost.Formula("F7"), "чистая длина на заказ");
+                Assert.AreEqual("Запас, %", cost.Get("G6"), "шапка запаса");
+                Assert.AreEqual("ЗапасТруба", cost.Formula("G7"), "запас трубы — норматив «Нормы»");
+                Assert.AreEqual("F7*(1+G7/100)", cost.Formula("H7"), "с запасом на заказ");
+                Assert.AreEqual("IF(ISNUMBER(I7),F7*I7,\"\")", cost.Formula("J7"), "масса в чистоте = чистая длина × масса 1 м");
+                Assert.AreEqual("IF(ISNUMBER(I7),H7*I7,\"\")", cost.Formula("K7"), "масса с запасом");
+                Assert.AreEqual("Итого: " + tube, cost.Get("A9"), "итог назван по сортаменту — одна строка «Сводной»");
+                Assert.AreEqual("SUM(F7:F8)", cost.Formula("F9"), "итого чистая длина на заказ");
+                Assert.AreEqual("SUM(H7:H8)", cost.Formula("H9"), "итого с запасом");
+                Assert.AreEqual("SUM(J7:J8)", cost.Formula("J9"), "итого масса в чистоте");
                 Assert.IsTrue(book.Sheet("Раскрой") == null, "скрытого листа раскроя больше нет");
-                Assert.AreEqual("F9*Хлыст/1000", cost.Formula("H9"), "закупка итога — по хлыстам итога");
-                // Масса закупки — целые хлысты; масса в чистоте — по чистой длине: столько списывать, когда в дело идут
-                // деловые остатки со склада (замечание владельца 21.09.2026).
-                Assert.AreEqual("Масса закупки, кг", cost.Get("M6"), "закупка по хлыстам");
-                Assert.AreEqual("Масса в чистоте, кг", cost.Get("N6"), "списание по чистой длине");
-                Assert.AreEqual("IF(ISNUMBER(L7),H7*L7,\"\")", cost.Formula("M7"), "масса закупки = закупка, м × масса 1 м");
-                Assert.AreEqual("IF(ISNUMBER(L7),G7*L7,\"\")", cost.Formula("N7"), "масса в чистоте = чистая длина × масса 1 м");
-                Assert.AreEqual("SUM(N7:N8)", cost.Formula("N9"), "итого массы в чистоте по сортаменту");
-                Assert.AreEqual("Итого: " + tube, cost.Get("A9"), "итог назван по сортаменту — это позиция закупки");
-                // Остаток последнего хлыста и пометка о недорезанном хлысте — куда уходит КИМ (вопрос владельца 21.09.2026)
-                Assert.AreEqual("Остаток с полного хлыста, мм", cost.Get("J6"), "остаток полного хлыста");
-                Assert.AreEqual("Остаток с последнего хлыста, мм", cost.Get("K6"), "остаток последнего хлыста");
-                Assert.AreEqual("IF(AND(E7>0,ISNUMBER(F7)),Хлыст-Захват-Торцовка-(D7-(F7-1)*E7)*(B7+Рез),\"\")", cost.Formula("K7"), "хвост последнего хлыста");
-                Assert.IsTrue(cost.Formula("O7").StartsWith("IF(AND(E7>0,ISNUMBER(F7),F7>1,MOD(D7,E7)>0),\"последний хлыст занят на \""),
-                    "пометка о неполном последнем хлысте: " + cost.Formula("O7"));
                 int sheetHead = 0;
-                for (int line = 10; line < 30; line++)
+                for (int line = 5; line < 30; line++)
                 {
-                    string a = cost.Get("A" + line);
-                    Assert.IsFalse(a.StartsWith("Смешанный раскрой"), "раздела смешанного раскроя больше нет");
-                    if (a.StartsWith("Листовой прокат")) sheetHead = line + 1;
+                    foreach (string col in new[] { "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L" })
+                    {
+                        string v = cost.Get(col + line) + " " + cost.Formula(col + line);
+                        Assert.IsFalse(v.Contains("Хлыст") || v.Contains("хлыст") || v.Contains("акупк") || v.Contains("КИМ"),
+                            "на «Расходе» нет хлыстов, закупки и КИМ: " + col + line + " = " + v);
+                    }
+                    if (cost.Get("A" + line).StartsWith("Листовой прокат")) sheetHead = line + 1;
                 }
-                // Лист: закупка — целые листы формата по массе 1 м² заготовки, иначе итог «Сводной» складывал бы
-                // закупку труб с чистой массой листа (вопрос владельца 21.09.2026)
                 Assert.IsTrue(sheetHead > 9, "таблица листа после труб");
                 string sr = (sheetHead + 1).ToString();
-                Assert.AreEqual("Масса в чистоте, кг", cost.Get("G" + sheetHead), "шапка листа: чистая масса");
-                Assert.AreEqual("Масса закупки, кг", cost.Get("I" + sheetHead), "шапка листа: закупка");
+                Assert.AreEqual("Площадь на заказ, м²", cost.Get("C" + sheetHead), "шапка листа: площадь на заказ");
                 Assert.AreEqual("Лист Б-ПН-НО-3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97", cost.Get("A" + sr), "строка листа");
-                Assert.AreEqual("23.55", cost.Get("H" + sr), "масса 1 м² заготовки = масса деталей / площадь");
-                Assert.AreEqual("IF(ISNUMBER(H" + sr + "),D" + sr + "*ЛистШирина*ЛистДлина/1000000*H" + sr + ",\"\")", cost.Formula("I" + sr), "закупка листа, кг");
+                Assert.AreEqual("B" + sr + "*Тираж", cost.Formula("C" + sr), "площадь на заказ");
+                Assert.AreEqual("ЗапасЛист", cost.Formula("D" + sr), "запас листа — свой норматив");
+                Assert.AreEqual("C" + sr + "*(1+D" + sr + "/100)", cost.Formula("E" + sr), "площадь с запасом");
+                Assert.AreEqual("0.471", cost.Get("F" + sr), "масса листа на изделие");
+                Assert.AreEqual("F" + sr + "*Тираж", cost.Formula("G" + sr), "масса в чистоте на заказ");
+                Assert.AreEqual("G" + sr + "*(1+D" + sr + "/100)", cost.Formula("H" + sr), "масса с запасом");
 
                 // «Сводная» (замечание владельца 21.09.2026): одна строка на позицию — металл, краска, покупные; числа —
-                // формулами с «Расхода» и «Комплектовочного», раскладка CutPlan — текстом на тираж построения.
+                // формулами с «Расхода» и «Комплектовочного»; в чистоте и с запасом, без хлыстов, закупки и списания.
                 XlsxSheet summary = book.Sheet("Сводная");
                 Assert.IsTrue(summary != null, "лист «Сводная»");
-                Assert.AreEqual("Сводная ведомость расхода и списания материалов", summary.Get("A1"), "название");
+                Assert.AreEqual("Сводная ведомость расхода материалов", summary.Get("A1"), "название без списания");
                 Assert.AreEqual("Сортамент, материал, изделие", summary.Get("B6"), "шапка");
+                Assert.AreEqual("В чистоте на 1 изд.", summary.Get("D6"), "шапка: в чистоте на изделие");
+                Assert.AreEqual("Запас, %", summary.Get("F6"), "шапка: запас");
+                Assert.AreEqual("С запасом на заказ", summary.Get("G6"), "шапка: с запасом");
+                for (int c = 1; c <= 12; c++)
+                {
+                    string h = summary.Get(((char)('A' + c - 1)).ToString() + "6");
+                    Assert.IsFalse(h.Contains("лыст") || h.Contains("акупк") || h == "КИМ", "в шапке «Сводной» нет хлыстов и закупки: " + h);
+                }
                 Assert.AreEqual(tube, summary.Get("B8"), "строка сортамента");
                 Assert.AreEqual("м", summary.Get("C8"), "единица");
-                Assert.AreEqual("'Расход'!G9", summary.Formula("D8"), "чистая длина — итог сортамента с «Расхода»");
-                Assert.AreEqual("'Расход'!F9", summary.Formula("E8"), "хлыстов");
-                Assert.AreEqual("'Расход'!H9", summary.Formula("F8"), "закупка, м");
-                Assert.AreEqual("'Расход'!M9", summary.Formula("G8"), "масса закупки");
-                Assert.AreEqual("'Расход'!N9", summary.Formula("H8"), "масса в чистоте");
-                // Норма в чистоте на 1 изделие и с запасом 10 % (владелец 21.09.2026)
-                Assert.AreEqual("В чистоте на 1 изд., кг", summary.Get("I6"), "шапка нормы на изделие");
-                Assert.AreEqual("Норма с запасом на 1 изд., кг", summary.Get("J6"), "шапка нормы с запасом");
-                Assert.AreEqual("Норма с запасом на заказ, кг", summary.Get("K6"), "шапка запаса на заказ");
-                Assert.AreEqual("IF(ISNUMBER(H8),H8/Тираж,\"\")", summary.Formula("I8"), "в чистоте на 1 изд. = масса в чистоте / тираж");
+                Assert.AreEqual("'Расход'!E9", summary.Formula("D8"), "в чистоте на изделие, м");
+                Assert.AreEqual("'Расход'!F9", summary.Formula("E8"), "в чистоте на заказ, м");
+                Assert.AreEqual("'Расход'!G9", summary.Formula("F8"), "запас, %");
+                Assert.AreEqual("'Расход'!H9", summary.Formula("G8"), "с запасом на заказ, м");
+                Assert.AreEqual("'Расход'!J9", summary.Formula("H8"), "масса в чистоте");
+                Assert.AreEqual("'Расход'!K9", summary.Formula("I8"), "масса с запасом");
                 // Запас — норматив с листа «Нормы», свой на трубу и на лист (владелец 21.09.2026); в справочнике его нет — по умолчанию 10 %
-                Assert.AreEqual("IF(ISNUMBER(I8),I8*(1+ЗапасТруба/100),\"\")", summary.Formula("J8"), "норма с запасом на 1 изд. — труба");
-                Assert.AreEqual("IF(ISNUMBER(H8),H8*(1+ЗапасТруба/100),\"\")", summary.Formula("K8"), "норма с запасом на заказ");
-                Assert.AreEqual("IF(ISNUMBER(I9),I9*(1+ЗапасЛист/100),\"\")", summary.Formula("J9"), "норма с запасом — лист по своему запасу");
                 string allowanceSheet, allowanceCell;
                 Assert.IsTrue(book.TryResolveName("ЗапасТруба", out allowanceSheet, out allowanceCell), "имя «ЗапасТруба»");
                 Assert.AreEqual("10", book.Sheet(allowanceSheet).Get(allowanceCell), "запас по умолчанию 10 %");
                 Assert.IsTrue(book.TryResolveName("ЗапасЛист", out allowanceSheet, out allowanceCell), "имя «ЗапасЛист»");
                 Assert.AreEqual("10", book.Sheet(allowanceSheet).Get(allowanceCell), "запас листа по умолчанию 10 %");
-                Assert.AreEqual("'Расход'!I9", summary.Formula("L8"), "КИМ");
                 Assert.AreEqual("м²", summary.Get("C9"), "строка листа в сводной");
-                Assert.AreEqual("'Расход'!C" + sr, summary.Formula("D9"), "площадь листа на заказ");
-                Assert.AreEqual("'Расход'!D" + sr, summary.Formula("E9"), "листов");
-                Assert.AreEqual("'Расход'!I" + sr, summary.Formula("G9"), "масса закупки листа");
+                Assert.AreEqual("'Расход'!B" + sr, summary.Formula("D9"), "площадь листа на изделие");
+                Assert.AreEqual("'Расход'!C" + sr, summary.Formula("E9"), "площадь листа на заказ");
+                Assert.AreEqual("'Расход'!D" + sr, summary.Formula("F9"), "запас листа");
+                Assert.AreEqual("'Расход'!E" + sr, summary.Formula("G9"), "площадь с запасом");
                 Assert.AreEqual("'Расход'!G" + sr, summary.Formula("H9"), "масса листа в чистоте");
+                Assert.AreEqual("'Расход'!H" + sr, summary.Formula("I9"), "масса листа с запасом");
                 Assert.AreEqual("Итого металлопрокат, кг", summary.Get("A10"), "итог по металлу");
-                Assert.AreEqual("SUM(G8:G9)", summary.Formula("G10"), "итого масса закупки — трубы и лист");
                 Assert.AreEqual("SUM(H8:H9)", summary.Formula("H10"), "итого масса в чистоте");
-                Assert.AreEqual("SUM(K8:K9)", summary.Formula("K10"), "итого норма +10 % на заказ");
-                Assert.AreEqual("IF(G10>0,H10/G10,\"\")", summary.Formula("L10"), "КИМ итога — по массе");
+                Assert.AreEqual("SUM(I8:I9)", summary.Formula("I10"), "итого масса с запасом");
                 int paintRow = 0, kitRow = 0;
                 for (int line = 10; line < 30; line++)
                 {
@@ -375,7 +373,7 @@ namespace ESKD.Tests
                 }
                 Assert.IsTrue(paintRow > 0, "строка краски");
                 Assert.IsTrue(summary.Formula("B" + paintRow).StartsWith("\"Краска порошковая, \"&IF(Цвет="), "краска с цветом из паспорта");
-                Assert.IsTrue(summary.Formula("D" + paintRow).StartsWith("'Расход'!B"), "кг краски — с «Расхода»: " + summary.Formula("D" + paintRow));
+                Assert.IsTrue(summary.Formula("E" + paintRow).StartsWith("'Расход'!B"), "кг краски на заказ — с «Расхода»: " + summary.Formula("E" + paintRow));
                 Assert.AreEqual("шт", summary.Get("C" + (paintRow + 1)), "тара");
                 Assert.IsTrue(kitRow > paintRow, "покупных в этой книге нет — сказано словами");
 

@@ -298,6 +298,9 @@ namespace ESKD.MaterialSync.Core
         public const string NameQuantity = "Тираж";
         public const string NameDeadline = "Срок";
         public const string NameColor = "Цвет";
+        /// <summary>Запас к норме в чистоте, % — нормативы листа «Нормы» (владелец 21.09.2026).</summary>
+        private const string AllowanceBar = "ЗапасТруба";
+        private const string AllowanceSheet = "ЗапасЛист";
         public const string NameIssued = "Выдано";
         public const string NameOrder = "Паспорт_Заказ";
         public const string NameRequest = "Паспорт_Заявка";
@@ -514,7 +517,7 @@ namespace ESKD.MaterialSync.Core
             MainColumns(book, mainSheet, col, headerRow, rows, blanks);
 
             book.MoveSheet(PassportSheet, 0);
-            // «Сводная» — сразу за «Ведомостью»: снабжению и на списание нужна она, а не раскрой по деталям
+            // «Сводная» — сразу за «Ведомостью»: сколько материала идёт на заказ, а не раскрой по деталям
             book.MoveSheet(SummarySheet, 2);
             book.SetActiveSheet(PassportSheet);
             book.RecalculateOnOpen();
@@ -888,21 +891,19 @@ namespace ESKD.MaterialSync.Core
         {
             CostRows layout = new CostRows();
             XlsxSheet s = book.AddSheet(CostSheet);
+            // Расход — только сколько идёт на заготовки: чистая длина и она же с запасом по норме. Хлысты, КИМ и закупка
+            // убраны — закупка и списание будут отдельным документом (владелец 21.09.2026).
             string[] titles =
             {
-                "Сортамент", "L заготовки, мм", "На 1 изд., шт.", "Всего, шт.", "Из хлыста, шт.", "Хлыстов, шт.",
-                "Чистая длина, м", "Закупка, м", "КИМ", "Остаток с полного хлыста, мм", "Остаток с последнего хлыста, мм",
-                "Масса 1 м, кг", "Масса закупки, кг", "Масса в чистоте, кг", "Примечание"
+                "Сортамент", "L заготовки, мм", "На 1 изд., шт.", "Всего, шт.", "Чистая длина на 1 изд., м",
+                "Чистая длина на заказ, м", "Запас, %", "С запасом на заказ, м", "Масса 1 м, кг", "Масса в чистоте, кг",
+                "Масса с запасом, кг", "Примечание"
             };
-            double[] widths = { 34, 10, 9, 9, 9, 9, 10, 10, 8, 11, 11, 9, 10, 10, 24 };
+            double[] widths = { 36, 10, 9, 9, 11, 11, 8, 11, 9, 10, 10, 26 };
             int columns = titles.Length;
             SheetHead(s, st, "Расход материалов на заказ", header, columns, false);
             int row = 5;
-            // «Масса закупки» — целые хлысты; «Масса в чистоте» — по чистой длине заготовок: столько списывается
-            // на заказ, когда в дело идут деловые остатки со склада (замечание владельца 21.09.2026).
-            s.SetText(C(1, row), "Трубы, профиль и сортовой прокат: строки — раскрой «пакетом» (каждая длина из своих хлыстов, справочно); " +
-                "хлыстов в итоге сортамента — по суммарной длине заготовок с резами, это и есть закупка; " +
-                "«в чистоте» — масса по чистой длине, для списания при использовании деловых остатков", st.Group);
+            s.SetText(C(1, row), "Трубы, профиль и сортовой прокат — чистая длина заготовок и она же с запасом (запас — лист «Нормы»)", st.Group);
             s.Merge("A" + row + ":" + L(columns) + row);
             row++;
             Heads(s, st, row, titles, widths);
@@ -910,6 +911,7 @@ namespace ESKD.MaterialSync.Core
             row++;
             List<BarGroup> groups = BarGroups(items);
             List<int> subtotals = new List<int>();
+            int[] barSums = { 5, 6, 8, 10, 11 };
             foreach (IGrouping<string, BarGroup> sortament in groups.GroupBy(g => g.Sortament, StringComparer.CurrentCultureIgnoreCase))
             {
                 int first = row;
@@ -920,54 +922,33 @@ namespace ESKD.MaterialSync.Core
                     s.SetNumber(C(2, row), g.LengthMm, st.Dec1);
                     s.SetNumber(C(3, row), g.PerProduct, st.Int);
                     s.SetFormula(C(4, row), "C" + r + "*" + NameQuantity, st.Int);
-                    s.SetFormula(C(5, row), "IF(B" + r + ">0,MAX(0,TRUNC((Хлыст-Захват-Торцовка)/(B" + r + "+Рез))),0)", st.Int);
-                    s.SetFormula(C(6, row), "IF(E" + r + ">0,ROUNDUP(D" + r + "/E" + r + ",0),\"" + Mark + "\")", st.Int);
-                    s.SetFormula(C(7, row), "D" + r + "*B" + r + "/1000", st.Dec1);
-                    s.SetFormula(C(8, row), "IF(ISNUMBER(F" + r + "),F" + r + "*Хлыст/1000,0)", st.Dec1);
-                    s.SetFormula(C(9, row), "IF(H" + r + ">0,G" + r + "/H" + r + ",\"\")", st.Percent);
-                    s.SetFormula(C(10, row), "IF(E" + r + ">0,Хлыст-Захват-Торцовка-E" + r + "*(B" + r + "+Рез),\"\")", st.Int);
-                    // Последний хлыст режется не целиком: его хвост и есть то, куда уходит КИМ (вопрос владельца 21.09.2026).
-                    s.SetFormula(C(11, row), "IF(AND(E" + r + ">0,ISNUMBER(F" + r + ")),Хлыст-Захват-Торцовка-(D" + r + "-(F" + r + "-1)*E" + r + ")*(B" + r + "+Рез),\"\")", st.Int);
-                    if (double.IsNaN(g.KgPerMeter)) s.SetText(C(12, row), Mark, st.Center);
-                    else s.SetNumber(C(12, row), Math.Round(g.KgPerMeter, 3), st.Dec3);
-                    s.SetFormula(C(13, row), "IF(ISNUMBER(L" + r + "),H" + r + "*L" + r + ",\"\")", st.Dec1);
-                    s.SetFormula(C(14, row), "IF(ISNUMBER(L" + r + "),G" + r + "*L" + r + ",\"\")", st.Dec1);
-                    string partial = "IF(AND(E" + r + ">0,ISNUMBER(F" + r + "),F" + r + ">1,MOD(D" + r + ",E" + r + ")>0)," +
-                        "\"последний хлыст занят на \"&MOD(D" + r + ",E" + r + ")&\" из \"&E" + r + "&\" шт.\",\"\")";
-                    s.SetFormula(C(15, row), g.Estimate ? "\"L измерена по модели — уточните длину заготовки; \"&" + partial : partial, st.Text);
+                    s.SetFormula(C(5, row), "C" + r + "*B" + r + "/1000", st.Dec3);
+                    s.SetFormula(C(6, row), "D" + r + "*B" + r + "/1000", st.Dec1);
+                    s.SetFormula(C(7, row), AllowanceBar, st.Int);
+                    s.SetFormula(C(8, row), "F" + r + "*(1+G" + r + "/100)", st.Dec1);
+                    if (double.IsNaN(g.KgPerMeter)) s.SetText(C(9, row), Mark, st.Center);
+                    else s.SetNumber(C(9, row), Math.Round(g.KgPerMeter, 3), st.Dec3);
+                    s.SetFormula(C(10, row), "IF(ISNUMBER(I" + r + "),F" + r + "*I" + r + ",\"\")", st.Dec1);
+                    s.SetFormula(C(11, row), "IF(ISNUMBER(I" + r + "),H" + r + "*I" + r + ",\"\")", st.Dec1);
+                    s.SetText(C(12, row), g.Estimate ? "L измерена по модели — уточните длину заготовки" : "", st.Text);
                     if (g.Estimate)
                         result.Notes.Add("Расход: " + g.Sortament + ", L=" + LzkOperations.Number(g.LengthMm) +
                             " — длина заготовки измерена по модели, не из списка вырезов (" + string.Join(", ", g.Designations.ToArray()) + ")");
                     row++;
                 }
-                // Итог назван по сортаменту: это позиция закупки, и в «Сводной» она одна строка (замечание владельца 21.09.2026).
-                // Хлыстов в итоге — не сумма «пакетом» по строкам (на один стул три длины давали три хлыста — косяк,
-                // владелец 21.09.2026), а по суммарной длине заготовок с резами, но не меньше, чем нужно любой одной длине.
-                // Жадная раскладка по хлыстам убрана 21.09.2026 по решению владельца: документ становился слишком сложным.
-                List<BarGroup> list = sortament.ToList();
-                double[] known = list.Where(g => !double.IsNaN(g.KgPerMeter) && g.KgPerMeter > 0).Select(g => g.KgPerMeter).ToArray();
-                string rr = row.ToString(CultureInfo.InvariantCulture);
-                string rows = first + ":" + (row - 1);
-                string estimate = "MAX(ROUNDUP(SUMPRODUCT(D" + first + ":D" + (row - 1) + ",B" + first + ":B" + (row - 1) + "+Рез)/(Хлыст-Захват-Торцовка),0),MAX(F" + first + ":F" + (row - 1) + "))";
+                // Итог назван по сортаменту: в «Сводной» он одна строка (замечание владельца 21.09.2026).
                 s.SetText(C(1, row), "Итого: " + sortament.Key, st.TotalLeft);
                 for (int c = 2; c <= columns; c++) s.SetText(C(c, row), "", st.Total);
-                s.SetFormula(C(6, row), estimate, st.TotalInt);
-                s.SetFormula(C(7, row), "SUM(G" + first + ":G" + (row - 1) + ")", st.TotalDec1);
-                s.SetFormula(C(8, row), "F" + rr + "*Хлыст/1000", st.TotalDec1);
-                s.SetFormula(C(9, row), "IF(H" + rr + ">0,G" + rr + "/H" + rr + ",\"\")", st.TotalPercent);
-                if (known.Length > 0)
-                {
-                    s.SetFormula(C(13, row), "H" + rr + "*" + known.Average().ToString("0.###", CultureInfo.InvariantCulture), st.TotalDec1);
-                    s.SetFormula(C(14, row), "SUM(N" + first + ":N" + (row - 1) + ")", st.TotalDec1);
-                }
-                s.SetText(C(15, row), "хлыстов — по суммарной длине заготовок с резами, не меньше, чем нужно одной длине", st.Text);
-                layout.Bars.Add(new CostRows.Bar { Sortament = sortament.Key, Row = row, Groups = list });
+                foreach (int c in barSums)
+                    s.SetFormula(C(c, row), "SUM(" + L(c) + first + ":" + L(c) + (row - 1) + ")", c == 5 ? st.TotalArea : st.TotalDec1);
+                s.SetFormula(C(7, row), AllowanceBar, st.TotalInt);
+                layout.Bars.Add(new CostRows.Bar { Sortament = sortament.Key, Row = row, Groups = sortament.ToList() });
                 subtotals.Add(row);
                 row++;
             }
             if (groups.Count == 0)
             {
-                s.SetText(C(1, row), "Заготовок из хлыста в изделии нет", st.Note);
+                s.SetText(C(1, row), "Заготовок из проката в изделии нет", st.Note);
                 s.Merge("A" + row + ":" + L(columns) + row);
                 row++;
             }
@@ -975,24 +956,21 @@ namespace ESKD.MaterialSync.Core
             {
                 s.SetText(C(1, row), "Всего по трубам и профилю", st.TotalLeft);
                 for (int c = 2; c <= columns; c++) s.SetText(C(c, row), "", st.Total);
-                foreach (int c in new[] { 6, 7, 8, 13, 14 })
-                    s.SetFormula(C(c, row), string.Join("+", subtotals.Select(t => L(c) + t).ToArray()), c == 6 ? st.TotalInt : st.TotalDec1);
-                s.SetFormula(C(9, row), "IF(H" + row + ">0,G" + row + "/H" + row + ",\"\")", st.TotalPercent);
+                foreach (int c in new[] { 10, 11 })
+                    s.SetFormula(C(c, row), string.Join("+", subtotals.Select(t => L(c) + t).ToArray()), st.TotalDec1);
                 row++;
             }
             int barEnd = row - 1;
 
             // Лист
             row++;
-            s.SetText(C(1, row), "Листовой прокат — по площади заготовок с коэффициентом отхода", st.Group);
+            s.SetText(C(1, row), "Листовой прокат — площадь и масса заготовок и они же с запасом (запас — лист «Нормы»)", st.Group);
             s.Merge("A" + row + ":" + L(columns) + row);
             row++;
-            // «Масса в чистоте» — масса деталей; «Масса закупки» — целые листы формата по массе 1 м² заготовки
-            // (масса деталей к их площади): иначе итог «Сводной» складывал бы закупку труб с чистой массой листа.
             string[] sheetTitles =
             {
-                "Сортамент", "Площадь на 1 изд., м²", "Всего, м²", "Листов, шт.", "КИМ", "Масса на 1 изд., кг",
-                "Масса в чистоте, кг", "Масса 1 м², кг", "Масса закупки, кг"
+                "Сортамент", "Площадь на 1 изд., м²", "Площадь на заказ, м²", "Запас, %", "С запасом на заказ, м²",
+                "Масса на 1 изд., кг", "Масса в чистоте, кг", "Масса с запасом, кг"
             };
             for (int c = 0; c < sheetTitles.Length; c++) s.SetText(C(c + 1, row), sheetTitles[c], st.Head);
             s.SetRowHeight(row, 30);
@@ -1004,13 +982,11 @@ namespace ESKD.MaterialSync.Core
                 s.SetText(C(1, row), g.Key, st.Text);
                 s.SetNumber(C(2, row), Math.Round(g.Value[0], 4), st.Area);
                 s.SetFormula(C(3, row), "B" + r + "*" + NameQuantity, st.Area);
-                s.SetFormula(C(4, row), "IF(C" + r + ">0,ROUNDUP(C" + r + "*ЛистОтход/(ЛистШирина*ЛистДлина/1000000),0),0)", st.Int);
-                s.SetFormula(C(5, row), "IF(D" + r + ">0,C" + r + "/(D" + r + "*ЛистШирина*ЛистДлина/1000000),\"\")", st.Percent);
+                s.SetFormula(C(4, row), AllowanceSheet, st.Int);
+                s.SetFormula(C(5, row), "C" + r + "*(1+D" + r + "/100)", st.Area);
                 s.SetNumber(C(6, row), Math.Round(g.Value[1], 3), st.Dec3);
                 s.SetFormula(C(7, row), "F" + r + "*" + NameQuantity, st.Dec1);
-                if (g.Value[0] > 0 && g.Value[1] > 0) s.SetNumber(C(8, row), Math.Round(g.Value[1] / g.Value[0], 2), st.Dec1);
-                else s.SetText(C(8, row), Mark, st.Center);
-                s.SetFormula(C(9, row), "IF(ISNUMBER(H" + r + "),D" + r + "*ЛистШирина*ЛистДлина/1000000*H" + r + ",\"\")", st.Dec1);
+                s.SetFormula(C(8, row), "G" + r + "*(1+D" + r + "/100)", st.Dec1);
                 layout.Sheets.Add(new KeyValuePair<string, int>(g.Key, row));
                 row++;
             }
@@ -1053,8 +1029,6 @@ namespace ESKD.MaterialSync.Core
             s.SetFormula(C(2, row), "IF(" + NameColor + "=\"\",\"не указан\"," + NameColor + ")", st.Center);
             row += 2;
             s.SetText(C(1, row), "Покупные и стандартные изделия — лист «Комплектовочный». Нормы расчёта — лист «Нормы».", st.Note);
-            row++;
-            s.SetText(C(1, row), "Из хлыста = ОТБР((Хлыст − Захват − Торцовка) / (L + Рез)); хлыстов = ОКРУГЛВВЕРХ(всего / из хлыста).", st.Note);
             s.FreezeRowsAbove("A" + (head + 1));
             s.FitToWidth(true);
             book.SetPrintNames(CostSheet, "$A$1:$" + L(columns) + "$" + Math.Max(row, barEnd), head);
@@ -1069,9 +1043,9 @@ namespace ESKD.MaterialSync.Core
 
         /// <summary>
         /// Одна строка на позицию (замечание владельца 21.09.2026): металлопрокат по сортаментам, краска, покупные и крепёж.
-        /// Раскрой по каждой детали остаётся на «Расходе»; здесь числа берутся оттуда и с «Комплектовочного» формулами,
-        /// поэтому при смене тиража в «Паспорте» листы не расходятся. Норма в чистоте на изделие и она же с запасом
-        /// (ЗапасТруба / ЗапасЛист с листа «Нормы», по умолчанию 10 %) — для списания на деталь (владелец 21.09.2026).
+        /// Только сколько идёт на заготовки: в чистоте на изделие и на заказ, запас в % с листа «Нормы» (ЗапасТруба /
+        /// ЗапасЛист) и то же с запасом. Хлысты, закупка и списание сюда не входят — это отдельный документ (владелец 21.09.2026).
+        /// Числа берутся формулами с «Расхода» и «Комплектовочного», поэтому при смене тиража листы не расходятся.
         /// </summary>
         private static void Summary(XlsxBook book, Styles st, LzkHeader header, LzkInputs inputs, Norms norms,
             CostRows cost, List<KittingRow> kitting)
@@ -1079,19 +1053,18 @@ namespace ESKD.MaterialSync.Core
             XlsxSheet s = book.AddSheet(SummarySheet);
             string[] titles =
             {
-                "№", "Сортамент, материал, изделие", "Ед.", "Чистый расход", "Хлыстов / листов, шт.", "Закупка, м",
-                "Масса закупки, кг", "Масса в чистоте, кг", "В чистоте на 1 изд., кг", "Норма с запасом на 1 изд., кг",
-                "Норма с запасом на заказ, кг", "КИМ", "Примечание"
+                "№", "Сортамент, материал, изделие", "Ед.", "В чистоте на 1 изд.", "В чистоте на заказ", "Запас, %",
+                "С запасом на заказ", "Масса в чистоте, кг", "Масса с запасом, кг", "Примечание"
             };
-            double[] widths = { 5, 44, 7, 11, 11, 10, 11, 11, 11, 11, 11, 8, 40 };
+            double[] widths = { 5, 44, 7, 11, 11, 8, 11, 11, 11, 40 };
             int columns = titles.Length;
-            SheetHead(s, st, "Сводная ведомость расхода и списания материалов", header, columns, true);
+            SheetHead(s, st, "Сводная ведомость расхода материалов", header, columns, true);
             int row = 5;
             s.SetText(C(1, row), "Числа — с листов «Расход» и «Комплектовочный», при смене тиража в «Паспорте» пересчитываются. " +
-                "«Закупка» — целые хлысты и листы; «в чистоте» — по чистой длине и массе заготовок, для списания при деловых остатках; " +
-                "«норма с запасом» — в чистоте плюс запас на резы и брак с листа «Нормы»: свой для трубы (ЗапасТруба) и листа (ЗапасЛист).", st.NoteWrap);
+                "«В чистоте» — длина, площадь и масса заготовок; «с запасом» — плюс запас с листа «Нормы»: " +
+                "свой для трубы (ЗапасТруба) и листа (ЗапасЛист).", st.NoteWrap);
             s.Merge("A" + row + ":" + L(columns) + row);
-            s.SetRowHeight(row, 40);
+            s.SetRowHeight(row, 30);
             row++;
             Heads(s, st, row, titles, widths);
             int head = row;
@@ -1108,14 +1081,13 @@ namespace ESKD.MaterialSync.Core
                 s.SetNumber(C(1, row), ++number, st.Center);
                 s.SetText(C(2, row), bar.Sortament, st.Text);
                 s.SetText(C(3, row), "м", st.Center);
-                s.SetFormula(C(4, row), Ref(CostSheet, 7, bar.Row), st.Dec1);
-                s.SetFormula(C(5, row), Ref(CostSheet, 6, bar.Row), st.Int);
-                s.SetFormula(C(6, row), Ref(CostSheet, 8, bar.Row), st.Dec1);
-                s.SetFormula(C(7, row), Ref(CostSheet, 13, bar.Row), st.Dec1);
-                s.SetFormula(C(8, row), Ref(CostSheet, 14, bar.Row), st.Dec1);
-                Allowance(s, st, row, "ЗапасТруба");
-                s.SetFormula(C(12, row), Ref(CostSheet, 9, bar.Row), st.Percent);
-                s.SetText(C(13, row), "", st.Text);
+                s.SetFormula(C(4, row), Ref(CostSheet, 5, bar.Row), st.Dec3);
+                s.SetFormula(C(5, row), Ref(CostSheet, 6, bar.Row), st.Dec1);
+                s.SetFormula(C(6, row), Ref(CostSheet, 7, bar.Row), st.Int);
+                s.SetFormula(C(7, row), Ref(CostSheet, 8, bar.Row), st.Dec1);
+                s.SetFormula(C(8, row), Ref(CostSheet, 10, bar.Row), st.Dec1);
+                s.SetFormula(C(9, row), Ref(CostSheet, 11, bar.Row), st.Dec1);
+                s.SetText(C(10, row), "", st.Text);
                 row++;
             }
             foreach (KeyValuePair<string, int> sheet in cost.Sheets)
@@ -1123,15 +1095,13 @@ namespace ESKD.MaterialSync.Core
                 s.SetNumber(C(1, row), ++number, st.Center);
                 s.SetText(C(2, row), sheet.Key, st.Text);
                 s.SetText(C(3, row), "м²", st.Center);
-                s.SetFormula(C(4, row), Ref(CostSheet, 3, sheet.Value), st.Area);
-                s.SetFormula(C(5, row), Ref(CostSheet, 4, sheet.Value), st.Int);
-                s.SetText(C(6, row), "", st.Center);
-                s.SetFormula(C(7, row), Ref(CostSheet, 9, sheet.Value), st.Dec1);
+                s.SetFormula(C(4, row), Ref(CostSheet, 2, sheet.Value), st.Area);
+                s.SetFormula(C(5, row), Ref(CostSheet, 3, sheet.Value), st.Area);
+                s.SetFormula(C(6, row), Ref(CostSheet, 4, sheet.Value), st.Int);
+                s.SetFormula(C(7, row), Ref(CostSheet, 5, sheet.Value), st.Area);
                 s.SetFormula(C(8, row), Ref(CostSheet, 7, sheet.Value), st.Dec1);
-                Allowance(s, st, row, "ЗапасЛист");
-                s.SetFormula(C(12, row), Ref(CostSheet, 5, sheet.Value), st.Percent);
-                s.SetText(C(13, row), "листов формата «Нормы» по площади заготовок с коэффициентом отхода; " +
-                    "закупка — целые листы по массе 1 м², в чистоте — масса деталей", st.Text);
+                s.SetFormula(C(9, row), Ref(CostSheet, 8, sheet.Value), st.Dec1);
+                s.SetText(C(10, row), "площадь и масса заготовок", st.Text);
                 row++;
             }
             if (row == metalFirst)
@@ -1144,11 +1114,8 @@ namespace ESKD.MaterialSync.Core
             {
                 s.SetText(C(1, row), "Итого металлопрокат, кг", st.TotalLeft);
                 for (int c = 2; c <= columns; c++) s.SetText(C(c, row), "", st.Total);
-                foreach (int c in new[] { 7, 8, 9, 10, 11 })
+                foreach (int c in new[] { 8, 9 })
                     s.SetFormula(C(c, row), "SUM(" + L(c) + metalFirst + ":" + L(c) + (row - 1) + ")", st.TotalDec1);
-                // КИМ итога — по массе: чистая масса к закупленной, трубы и лист вместе
-                s.SetFormula(C(12, row), "IF(G" + row + ">0,H" + row + "/G" + row + ",\"\")", st.TotalPercent);
-                s.SetText(C(13, row), "КИМ итога — по массе: в чистоте к закупке", st.Text);
                 row++;
             }
 
@@ -1160,21 +1127,21 @@ namespace ESKD.MaterialSync.Core
             s.SetNumber(C(1, row), ++number, st.Center);
             s.SetText(C(2, row), "Площадь покраски на заказ", st.Text);
             s.SetText(C(3, row), "м²", st.Center);
-            s.SetFormula(C(4, row), Ref(CostSheet, 2, cost.PaintAreaRow), st.Area);
-            for (int c = 5; c <= columns; c++) s.SetText(C(c, row), "", st.Text);
+            for (int c = 4; c <= columns; c++) s.SetText(C(c, row), "", st.Text);
+            s.SetFormula(C(5, row), Ref(CostSheet, 2, cost.PaintAreaRow), st.Area);
             row++;
             s.SetNumber(C(1, row), ++number, st.Center);
             s.SetFormula(C(2, row), "\"Краска порошковая, \"&IF(" + NameColor + "=\"\",\"цвет не указан\",\"цвет \"&" + NameColor + ")", st.Text);
             s.SetText(C(3, row), "кг", st.Center);
-            s.SetFormula(C(4, row), Ref(CostSheet, 2, cost.PaintKgRow), st.Dec1);
-            for (int c = 5; c <= columns; c++) s.SetText(C(c, row), "", st.Text);
-            s.SetText(C(13, row), "норма и потери — лист «Нормы»", st.Text);
+            for (int c = 4; c <= columns; c++) s.SetText(C(c, row), "", st.Text);
+            s.SetFormula(C(5, row), Ref(CostSheet, 2, cost.PaintKgRow), st.Dec1);
+            s.SetText(C(10, row), "норма и потери — лист «Нормы»", st.Text);
             row++;
             s.SetNumber(C(1, row), ++number, st.Center);
             s.SetText(C(2, row), "Тара с краской", st.Text);
             s.SetText(C(3, row), "шт", st.Center);
-            s.SetFormula(C(4, row), Ref(CostSheet, 2, cost.PaintTaraRow), st.Int);
-            for (int c = 5; c <= columns; c++) s.SetText(C(c, row), "", st.Text);
+            for (int c = 4; c <= columns; c++) s.SetText(C(c, row), "", st.Text);
+            s.SetFormula(C(5, row), Ref(CostSheet, 2, cost.PaintTaraRow), st.Int);
             row++;
 
             // Покупные и крепёж
@@ -1196,26 +1163,16 @@ namespace ESKD.MaterialSync.Core
                 s.SetNumber(C(1, row), ++number, st.Center);
                 s.SetText(C(2, row), (k.Group.First.Designation + " " + name).Trim(), st.Text);
                 s.SetText(C(3, row), unit, st.Center);
-                s.SetFormula(C(4, row), Ref(LzkBlanks.Kitting, 7, k.Row), st.Int);
-                for (int c = 5; c <= columns; c++) s.SetText(C(c, row), "", st.Text);
-                s.SetFormula(C(9, row), Ref(LzkBlanks.Kitting, 6, k.Row), st.Int);
-                s.SetText(C(13, row), k.Group.First.Code.Trim().Length > 0 ? "код 1С: " + k.Group.First.Code.Trim() : "", st.Text);
+                for (int c = 4; c <= columns; c++) s.SetText(C(c, row), "", st.Text);
+                s.SetFormula(C(4, row), Ref(LzkBlanks.Kitting, 6, k.Row), st.Int);
+                s.SetFormula(C(5, row), Ref(LzkBlanks.Kitting, 7, k.Row), st.Int);
+                s.SetText(C(10, row), k.Group.First.Code.Trim().Length > 0 ? "код 1С: " + k.Group.First.Code.Trim() : "", st.Text);
                 row++;
             }
 
             s.FreezeRowsAbove("A" + (head + 1));
             s.FitToWidth(true);
             book.SetPrintNames(SummarySheet, "$A$1:$" + L(columns) + "$" + (row - 1), head);
-        }
-
-        /// <summary>Норма в чистоте на 1 изделие (масса в чистоте / тираж), она же с запасом (имя норматива в %) и на заказ.</summary>
-        private static void Allowance(XlsxSheet s, Styles st, int row, string allowanceName)
-        {
-            string r = row.ToString(CultureInfo.InvariantCulture);
-            string k = "(1+" + allowanceName + "/100)";
-            s.SetFormula(C(9, row), "IF(ISNUMBER(H" + r + "),H" + r + "/" + NameQuantity + ",\"\")", st.Dec3);
-            s.SetFormula(C(10, row), "IF(ISNUMBER(I" + r + "),I" + r + "*" + k + ",\"\")", st.Dec3);
-            s.SetFormula(C(11, row), "IF(ISNUMBER(H" + r + "),H" + r + "*" + k + ",\"\")", st.Dec1);
         }
 
         // ------------------------------------------------------------------ Нормы
