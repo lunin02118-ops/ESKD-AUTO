@@ -292,8 +292,41 @@ namespace ESKD.Tests
                 Assert.AreEqual("IF(ISNUMBER(K7),H7*K7,\"\")", cost.Formula("L7"), "масса закупки = закупка, м × масса 1 м");
                 Assert.AreEqual("IF(ISNUMBER(K7),G7*K7,\"\")", cost.Formula("M7"), "масса в чистоте = чистая длина × масса 1 м");
                 Assert.AreEqual("SUM(M7:M8)", cost.Formula("M9"), "итого массы в чистоте по сортаменту");
-                Assert.IsTrue(cost.Get("N9").StartsWith("оптимально ") && cost.Get("N9").EndsWith("на тираж 41"),
-                    "справочная раскладка CutPlan на тираж: " + cost.Get("N9"));
+                Assert.AreEqual("Итого: " + tube, cost.Get("A9"), "итог назван по сортаменту — это позиция закупки");
+                Assert.AreEqual("", cost.Get("N9"), "раскладка по хлыстам ушла в «Сводную»");
+
+                // «Сводная» (замечание владельца 21.09.2026): одна строка на позицию — металл, краска, покупные; числа —
+                // формулами с «Расхода» и «Комплектовочного», раскладка CutPlan — текстом на тираж построения.
+                XlsxSheet summary = book.Sheet("Сводная");
+                Assert.IsTrue(summary != null, "лист «Сводная»");
+                Assert.AreEqual("Сводная ведомость расхода и списания материалов", summary.Get("A1"), "название");
+                Assert.AreEqual("Сортамент, материал, изделие", summary.Get("B6"), "шапка");
+                Assert.AreEqual(tube, summary.Get("B8"), "строка сортамента");
+                Assert.AreEqual("м", summary.Get("C8"), "единица");
+                Assert.AreEqual("'Расход'!G9", summary.Formula("D8"), "чистая длина — итог сортамента с «Расхода»");
+                Assert.AreEqual("'Расход'!F9", summary.Formula("E8"), "хлыстов");
+                Assert.AreEqual("'Расход'!H9", summary.Formula("F8"), "закупка, м");
+                Assert.AreEqual("'Расход'!L9", summary.Formula("G8"), "масса закупки");
+                Assert.AreEqual("'Расход'!M9", summary.Formula("H8"), "масса в чистоте");
+                Assert.AreEqual("'Расход'!I9", summary.Formula("I8"), "КИМ");
+                string plan = summary.Get("J8");
+                Assert.IsTrue(plan.StartsWith("оптимально ") && plan.Contains("на тираж 41"), "раскладка CutPlan на тираж: " + plan);
+                // торцовка и пропилы есть всегда — отход раскладки назван
+                Assert.IsTrue(plan.Contains("; отход "), "отход раскладки: " + plan);
+                Assert.AreEqual("Итого металлопрокат, кг", summary.Get("A9"), "итог по металлу");
+                Assert.AreEqual("SUM(G8:G8)", summary.Formula("G9"), "итого масса закупки");
+                Assert.AreEqual("SUM(H8:H8)", summary.Formula("H9"), "итого масса в чистоте");
+                int paintRow = 0, kitRow = 0;
+                for (int line = 10; line < 30; line++)
+                {
+                    if (summary.Get("C" + line) == "кг" && paintRow == 0) paintRow = line;
+                    if (summary.Get("A" + line) == "Покупных в изделии нет") kitRow = line;
+                }
+                Assert.IsTrue(paintRow > 0, "строка краски");
+                Assert.IsTrue(summary.Formula("B" + paintRow).StartsWith("\"Краска порошковая, \"&IF(Цвет="), "краска с цветом из паспорта");
+                Assert.IsTrue(summary.Formula("D" + paintRow).StartsWith("'Расход'!B"), "кг краски — с «Расхода»: " + summary.Formula("D" + paintRow));
+                Assert.AreEqual("шт", summary.Get("C" + (paintRow + 1)), "тара");
+                Assert.IsTrue(kitRow > paintRow, "покупных в этой книге нет — сказано словами");
 
                 XlsxSheet passport = book.Sheet("Паспорт");
                 string sheet, cell;

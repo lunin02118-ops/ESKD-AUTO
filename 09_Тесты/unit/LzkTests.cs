@@ -422,7 +422,7 @@ namespace ESKD.Tests
                 Assert.IsTrue(workbook.Contains("fullCalcOnLoad=\"1\""), "пересчёт при открытии");
 
                 XlsxBook book = XlsxBook.Open(path);
-                Assert.AreEqual("Паспорт|Ведомость|Заготовительный|Сварочный|Покрасочный|Комплектовочный|Расход|Нормы",
+                Assert.AreEqual("Паспорт|Ведомость|Сводная|Заготовительный|Сварочный|Покрасочный|Комплектовочный|Расход|Нормы",
                     string.Join("|", book.SheetNames), "листы книги");
                 XlsxSheet paint = book.Sheet("Покрасочный");
                 Assert.AreEqual("Покрасочный участок", paint.Get("A1"), "название листа");
