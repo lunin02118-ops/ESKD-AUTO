@@ -404,6 +404,12 @@ namespace ESKD.MaterialSync.Core
         public bool IsProfile;
         /// <summary>Компонент входит в узел, который красится целиком: на лист «Покраска» не выводится.</summary>
         public bool InsidePaintedUnit;
+        /// <summary>
+        /// Экземпляров вне окрашиваемых узлов — столько красится отдельно (кронштейн: 4 в окрашиваемой раме и 2 отдельно —
+        /// 2; аудит 21.09.2026, Л-3). −1 — не считали (книга без обхода сборки): отдельно красятся все, если не
+        /// <see cref="InsidePaintedUnit"/>.
+        /// </summary>
+        public int PaintQuantity = -1;
         /// <summary>Материал_Строка модели (для деталей).</summary>
         public string Material = "";
         /// <summary>Главная сборка: в таблице её нет (SWTools выводит только состав).</summary>
@@ -500,7 +506,6 @@ namespace ESKD.MaterialSync.Core
                 if (!byPath.TryGetValue(item.Path, out list)) byPath[item.Path] = list = new List<LzkItem>();
                 list.Add(item);
             }
-            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             HashSet<LzkItem> used = new HashSet<LzkItem>();
             List<LzkBook.MainRow> mainRows = new List<LzkBook.MainRow>();
 
@@ -513,7 +518,8 @@ namespace ESKD.MaterialSync.Core
                 string label = "Строка " + main.Get(col["Номер"], row).Trim() + " (" +
                     (designation.Length > 0 ? designation : main.Get(col["Наименование"], row).Trim()) + ")";
                 LzkItem item = Match(byPath, path, designation, LzkOperations.ParseNumber(main.Get(col["Количество"], row)), used);
-                if (path.Length > 0) seen.Add(path);
+                if (path.Length > 0 && item == null && byPath.ContainsKey(path))
+                    result.Issues.Add(label + ": строк этой модели больше, чем её исполнений в изделии — проверьте обозначения исполнений");
                 mainRows.Add(new LzkBook.MainRow { Row = row, Item = item });
                 if (item != null)
                 {
@@ -527,7 +533,7 @@ namespace ESKD.MaterialSync.Core
                         (designation.Length > 0 ? designation : main.Get(col["Наименование"], row).Trim()) + ")";
                 }
                 bool assembly = item != null ? item.IsAssembly : path.EndsWith(".sldasm", StringComparison.OrdinalIgnoreCase);
-                if (item == null)
+                if (item == null && !byPath.ContainsKey(path))
                     result.Issues.Add(label + ": модели нет в составе изделия");
                 else if (item.IsPurchased)
                     result.Issues.Add(label + ": покупное или стандартное изделие в основной таблице — проверьте свойство «Раздел»");
@@ -560,7 +566,8 @@ namespace ESKD.MaterialSync.Core
                 }
             }
 
-            List<string> missing = items.Where(i => !i.IsPurchased && !i.IsTop && !seen.Contains(i.Path))
+            // Сверка по сопоставленным строкам, а не по пути: пропущенное исполнение -01 при найденном 00 тоже видно (Л-6).
+            List<string> missing = items.Where(i => !i.IsPurchased && !i.IsTop && !used.Contains(i))
                 .Select(i => i.Designation.Length > 0 ? i.Designation : System.IO.Path.GetFileNameWithoutExtension(i.Path))
                 .Distinct().ToList();
             if (missing.Count > 0)
@@ -617,8 +624,9 @@ namespace ESKD.MaterialSync.Core
             LzkItem found = list.FirstOrDefault(i => !used.Contains(i) && designation.Length > 0 &&
                     string.Equals(i.Designation, designation, StringComparison.OrdinalIgnoreCase))
                 ?? list.FirstOrDefault(i => !used.Contains(i) && !double.IsNaN(quantity) && i.Quantity == (int)Math.Round(quantity))
-                ?? list.FirstOrDefault(i => !used.Contains(i))
-                ?? list[0];
+                ?? list.FirstOrDefault(i => !used.Contains(i));
+            // Свободного исполнения нет — строка лишняя: чужие реквизиты и масса ей не достаются (Л-6).
+            if (found == null) return null;
             used.Add(found);
             return found;
         }

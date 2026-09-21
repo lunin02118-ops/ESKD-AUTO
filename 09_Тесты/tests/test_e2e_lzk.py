@@ -405,6 +405,55 @@ class Lzk(SwTestCase):
         self.s.close_all()
         self.assertEqual(size, V(self.persisted(angle), "Габарит"), "«Габарит» в детали — тоже развёртка")
 
+    def test_L11_variants_get_own_size_and_top_is_not_kitted(self):
+        """L11 (аудит и замечание владельца 21.09.2026): у двух исполнений одного файла разная толщина — в книге у каждого
+        свой размер, а не размер активной конфигурации. Главная сборка с «Механической сборкой» не попадает на
+        «Комплектовочный»: комплектуют то, из чего её собирают, а не её саму."""
+        import openpyxl
+        from eskd_e2e import build
+
+        product = self.case_dir / PRODUCT
+        (product / "01_3D").mkdir(parents=True, exist_ok=True)
+        for name in ("Нормативы_производства.xlsx", "ЛЗК_бланки.xlsx"):
+            ref = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / name
+            (self.case_dir / ref.name).write_bytes(ref.read_bytes())
+        plate = product / "01_3D" / "ПРТИ.468211.173 Прокладка.sldprt"
+        doc, feat = build.plate(self.s, 150, 80, 4, "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89")
+        active = str(doc.GetActiveConfiguration.Name)
+        build.add_configuration(doc, "01")
+        build.show_configuration(doc, "01")  # толщина меняется только в «01»
+        rc = com.dyn(doc.Parameter("D1@" + str(feat.Name))).SetSystemValue3(0.010, 1, None)  # 1 — только в этой конфигурации
+        self.assertEqual(0, rc, "толщина исполнения 01 задана")
+        doc.ForceRebuild3(False)
+        box = com.call(doc, "GetPartBox", True)
+        self.assertAlmostEqual(10, min(abs(box[i + 3] - box[i]) for i in range(3)) * 1000, delta=0.1, msg="в «01» толщина 10")
+        build.show_configuration(doc, active)
+        doc.ForceRebuild3(False)
+        self.s.save_as(doc, plate)
+        self.s.wait_addin_idle(timeout=60.0)
+        asm, opened = build.assembly(self.s, [(plate, 0, 0, 0), (plate, 0, 0.2, 0)])
+        comps = com.as_list(asm.GetComponents(True))
+        com.dyn(comps[1]).ReferencedConfiguration = "01"
+        asm.ForceRebuild3(False)
+        build.props(asm, {"Операции": "Механическая сборка"}, "")
+        self.s.save_as(asm, product / "01_3D" / ASM)
+        for d in opened:
+            self.s.close(d)
+        self.s.activate(asm)
+        status = self._build()
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.assertTrue(status.startswith("ok|"), f"{status}\n{notices}")
+
+        wb = openpyxl.load_workbook(product / DOCS / BOOK)
+        main = wb["Ведомость"]
+        sizes = {str(main.cell(r, 3).value): str(main.cell(r, 6).value or "") for r in range(7, main.max_row + 1)}
+        self.assertEqual("150×80×4", sizes.get("ПРТИ.468211.173"), f"исполнение 00: {sizes}")
+        self.assertEqual("150×80×10", sizes.get("ПРТИ.468211.173-01"), f"исполнение 01 — своя толщина: {sizes}")
+        kit = wb["Комплектовочный"]
+        kitted = [str(kit.cell(r, 2).value or "") for r in range(6, kit.max_row + 1)]
+        self.assertFalse(any(v.startswith("ПРТИ.468211.100") for v in kitted), f"главная сборка не комплектуется: {kitted}")
+        self.s.close_all()
+
     def test_L03_refuses_non_assembly(self):
         """L03: у детали кнопка отказывает без изменений файлов."""
         path, doc = self.open_copy(SHEET_PART)

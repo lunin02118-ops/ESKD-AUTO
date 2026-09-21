@@ -189,7 +189,7 @@ namespace ESKD.MaterialSync.Sw
             Dictionary<string, ModelDoc2> models = new Dictionary<string, ModelDoc2>(StringComparer.OrdinalIgnoreCase);
             List<Instance> instances = new List<Instance>();
 
-            LzkItem top = Describe(_doc, _assemblyPath, "", true, traits);
+            LzkItem top = Describe(_doc, _assemblyPath, "", true, traits, null);
             top.Quantity = 1;
             top.IsTop = true;
             byKey[_assemblyPath] = top;
@@ -216,15 +216,14 @@ namespace ESKD.MaterialSync.Sw
                 LzkItem item;
                 if (!byKey.TryGetValue(key, out item))
                 {
-                    item = Describe(model, path, cfg, model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, traits);
-                    // Деталь — наружная поверхность (у трубы без внутренней стенки); сборка — ниже, по её деталям (З-7).
-                    item.AreaM2 = item.IsAssembly ? double.NaN : PaintArea.Outer(Area(model, comp), item.Material);
+                    item = Describe(model, path, cfg, model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, traits, comp);
                     byKey[key] = item;
                     models[path] = model;
                 }
                 item.Quantity++;
                 instances.Add(new Instance { Component = comp, Item = item });
             }
+            ExcludePurchasedContents(instances, byKey);
             _items.AddRange(byKey.Values);
 
             // Операции отмечаются и пишутся в свои модели изделия, где бы они ни лежали: детали сборки бывают и в другой
@@ -364,7 +363,8 @@ namespace ESKD.MaterialSync.Sw
             return true;
         }
 
-        private LzkItem Describe(ModelDoc2 model, string path, string cfg, bool assembly, Dictionary<string, ModelTraits> traits)
+        private LzkItem Describe(ModelDoc2 model, string path, string cfg, bool assembly, Dictionary<string, ModelTraits> traits,
+            Component2 comp)
         {
             PropertyWriter w = new PropertyWriter(model, true);
             // Свойства — той конфигурации, что стоит в изделии, а не активной в модели: у исполнения своё обозначение.
@@ -397,11 +397,117 @@ namespace ESKD.MaterialSync.Sw
             ModelTraits t = Traits(model, assembly);
             t.Material = item.Material;
             t.IsPurchased = item.IsPurchased;
-            if (!assembly) t.DensityKgM3 = Density(model);
             traits[path] = t;
             item.IsProfile = t.IsStructuralMember;
-            Size(model, assembly, t, item);
+            if (item.IsPurchased) return item;
+            // Размер, развёртка, плотность и площадь — той конфигурации, что стоит в изделии: у «Укосины» 00 и 01 разные
+            // длины, а SolidWorks меряет активную (аудит 21.09.2026, Л-1). Модель базы и библиотеки не переключаем —
+            // её файл не правится и не сохраняется; её исполнение меряется по активной конфигурации с пометкой «оценка».
+            bool mayMeasure = !item.InBase || (_inOrder && item.InProduct);
+            bool otherConfig = cfg.Length > 0 && !string.Equals(cfg, w.ActiveConfigurationName(), StringComparison.OrdinalIgnoreCase) &&
+                w.ConfigurationNames().Contains(cfg);
+            using (ConfigScope scope = new ConfigScope(model, otherConfig && mayMeasure ? cfg : ""))
+            {
+                if (!assembly) t.DensityKgM3 = Density(model);
+                Size(model, assembly, t, item);
+                // Деталь — наружная поверхность (у трубы без внутренней стенки); сборка — ниже, по её деталям (З-7).
+                item.AreaM2 = assembly || comp == null ? double.NaN : PaintArea.Outer(Area(model, comp), item.Material);
+                scope.Restore();
+                if (scope.Dirtied) _dirtiedBySwitch.Add(path);
+            }
+            if (otherConfig && !mayMeasure)
+            {
+                item.SizeIsEstimate = true;
+                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(path),
+                    "исполнение «" + cfg + "» модели базы измерено по активной конфигурации — уточните размер заготовки"));
+            }
             return item;
+        }
+
+        /// <summary>
+        /// Модели, у которых переключение конфигурации ради замера поставило признак «изменён» (SolidWorks хранит активную
+        /// конфигурацию в файле). Они сохраняются вместе с записью свойств, чтобы при закрытии не спрашивали «Сохранить?».
+        /// </summary>
+        private readonly HashSet<string> _dirtiedBySwitch = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Состав покупной сборки (мотор-редуктор, готовый узел поставщика) — не наше: его детали не комплектуются
+        /// отдельно, не идут на участки и не получают «Операции» (аудит 21.09.2026, Л-4). Экземпляры внутри покупной
+        /// сборки убираются, количества пересчитываются по оставшимся.
+        /// </summary>
+        private static void ExcludePurchasedContents(List<Instance> instances, Dictionary<string, LzkItem> byKey)
+        {
+            List<Instance> kept = new List<Instance>();
+            foreach (Instance inst in instances)
+            {
+                bool insidePurchased = false;
+                for (Component2 p = inst.Component.GetParent() as Component2; p != null && !insidePurchased; p = p.GetParent() as Component2)
+                {
+                    LzkItem parent;
+                    if (byKey.TryGetValue((p.GetPathName() ?? "") + "|" + (p.ReferencedConfiguration ?? ""), out parent) && parent.IsPurchased)
+                        insidePurchased = true;
+                }
+                if (!insidePurchased) kept.Add(inst);
+            }
+            if (kept.Count == instances.Count) return;
+            foreach (LzkItem item in byKey.Values) if (!item.IsTop) item.Quantity = 0;
+            foreach (Instance inst in kept) inst.Item.Quantity++;
+            foreach (string key in byKey.Where(kv => !kv.Value.IsTop && kv.Value.Quantity == 0).Select(kv => kv.Key).ToList())
+                byKey.Remove(key);
+            instances.Clear();
+            instances.AddRange(kept);
+        }
+
+        /// <summary>
+        /// Временно делает активной конфигурацию исполнения; <see cref="Restore"/> (и <see cref="Dispose"/>) возвращает
+        /// прежнюю. Пустое имя — ничего не переключает. <see cref="Dirtied"/> — переключение поставило признак «изменён».
+        /// </summary>
+        private sealed class ConfigScope : IDisposable
+        {
+            private ModelDoc2 _model;
+            private readonly string _previous;
+            private readonly bool _wasDirty;
+
+            public bool Dirtied { get; private set; }
+
+            public ConfigScope(ModelDoc2 model, string cfg)
+            {
+                if (string.IsNullOrEmpty(cfg)) return;
+                try
+                {
+                    Configuration active = model.GetActiveConfiguration() as Configuration;
+                    string previous = active != null ? active.Name : "";
+                    if (previous.Length == 0) return;
+                    _wasDirty = model.GetSaveFlag();
+                    if (!model.ShowConfiguration2(cfg)) return;
+                    _model = model;
+                    _previous = previous;
+                }
+                catch (COMException ex)
+                {
+                    Log.Error("Ведомость ЛЗК: переключение конфигурации " + cfg, ex);
+                }
+            }
+
+            public void Restore()
+            {
+                if (_model == null) return;
+                try
+                {
+                    _model.ShowConfiguration2(_previous);
+                    Dirtied = !_wasDirty && _model.GetSaveFlag();
+                }
+                catch (COMException ex)
+                {
+                    Log.Error("Ведомость ЛЗК: возврат конфигурации " + _previous, ex);
+                }
+                _model = null;
+            }
+
+            public void Dispose()
+            {
+                Restore();
+            }
         }
 
 
@@ -754,10 +860,10 @@ namespace ESKD.MaterialSync.Sw
         /// не вычитаются (решение владельца: пренебречь). Раньше бралась полная площадь документа сборки —
         /// с внутренней поверхностью труб, почти вдвое больше.
         /// </summary>
-        private static void PaintedAssemblyAreas(List<Instance> instances, LzkItem top, Dictionary<string, LzkItem> byKey,
+        private void PaintedAssemblyAreas(List<Instance> instances, LzkItem top, Dictionary<string, LzkItem> byKey,
             Dictionary<string, ModelTraits> traits)
         {
-            foreach (LzkItem assembly in byKey.Values.Where(i => i.IsAssembly && LzkOperations.Contains(i.Operations, LzkOperations.Painting)))
+            foreach (LzkItem assembly in byKey.Values.Where(i => i.IsAssembly && Blanks.HasPainting(i.Operations)))
             {
                 if (assembly.IsTop)
                 {
@@ -804,30 +910,45 @@ namespace ESKD.MaterialSync.Sw
             return any ? sum : double.NaN;
         }
 
-        /// <summary>Узлы с «Покраска» красятся целиком: их детали на лист «Покраска» не выводятся (Т-14б).</summary>
+        /// <summary>
+        /// Узлы с покраской красятся целиком: их детали на лист «Покрасочный» не выводятся (Т-14б). Считается по экземплярам:
+        /// кронштейн, вваренный в окрашиваемую раму 4 раза и стоящий отдельно 2 раза, красится отдельно 2 шт
+        /// (аудит 21.09.2026, Л-3; раньше один экземпляр вне узла отправлял на покраску все 6). Покраска — по справочнику
+        /// участков, со всеми её названиями (Л-5).
+        /// </summary>
         private void MarkPaintedUnits(List<Instance> instances, LzkItem top)
         {
-            bool topPainted = LzkOperations.Contains(top.Operations, LzkOperations.Painting);
-            Dictionary<LzkItem, bool> allInside = new Dictionary<LzkItem, bool>();
-            // Путь родителя — один COM-вызов на уровень, поиск позиции — по словарю: раньше GetPathName вызывался
-            // для каждой позиции ведомости на каждого родителя каждого экземпляра.
-            Dictionary<string, LzkItem> byPath = new Dictionary<string, LzkItem>(StringComparer.OrdinalIgnoreCase);
+            bool topPainted = Blanks.HasPainting(top.Operations);
+            Dictionary<LzkItem, int> outside = new Dictionary<LzkItem, int>();
+            // Родитель — по пути и конфигурации, одним COM-вызовом на уровень и поиском по словарю.
+            Dictionary<string, LzkItem> byKey = new Dictionary<string, LzkItem>(StringComparer.OrdinalIgnoreCase);
             foreach (LzkItem item in _items)
-                if (!string.IsNullOrEmpty(item.Path) && !byPath.ContainsKey(item.Path)) byPath[item.Path] = item;
+                if (!string.IsNullOrEmpty(item.Path)) byKey[item.Path + "|" + item.Configuration] = item;
             foreach (Instance inst in instances)
             {
                 bool inside = topPainted;
                 for (Component2 p = inst.Component.GetParent() as Component2; p != null && !inside; p = p.GetParent() as Component2)
                 {
                     LzkItem parent;
-                    if (byPath.TryGetValue(p.GetPathName() ?? "", out parent) &&
-                        LzkOperations.Contains(parent.Operations, LzkOperations.Painting)) inside = true;
+                    if (byKey.TryGetValue((p.GetPathName() ?? "") + "|" + (p.ReferencedConfiguration ?? ""), out parent) &&
+                        Blanks.HasPainting(parent.Operations)) inside = true;
                 }
-                bool prev;
-                allInside[inst.Item] = allInside.TryGetValue(inst.Item, out prev) ? prev && inside : inside;
+                int n;
+                outside.TryGetValue(inst.Item, out n);
+                outside[inst.Item] = n + (inside ? 0 : 1);
             }
-            foreach (KeyValuePair<LzkItem, bool> kv in allInside) kv.Key.InsidePaintedUnit = kv.Value;
+            foreach (KeyValuePair<LzkItem, int> kv in outside)
+            {
+                kv.Key.PaintQuantity = kv.Value;
+                kv.Key.InsidePaintedUnit = kv.Value == 0;
+            }
         }
+
+        private LzkBlanks Blanks
+        {
+            get { return _options.Blanks ?? LzkBlanks.Defaults(); }
+        }
+
 
         /// <summary>
         /// «Операции» и «Габарит» — в модели (изменённые сохраняются молча, Т-3). Модель, которую не записать (только для
@@ -835,45 +956,75 @@ namespace ESKD.MaterialSync.Sw
         /// </summary>
         private void WriteProperties(List<LzkItem> editable, Dictionary<string, ModelDoc2> models)
         {
+            // Одна модель — одна запись и одно сохранение, даже если в изделии стоят два её исполнения. «Габарит» — на
+            // уровень конфигурации исполнения, когда их в файле несколько: у «Укосины» 00 и 01 разные длины, и общее
+            // свойство перезаписывалось при каждой сборке книги (аудит 21.09.2026, Л-7). «Операции» — общие: окно
+            // операций ведёт их по файлу.
+            List<string> order = new List<string>();
+            Dictionary<string, List<LzkItem>> changed = new Dictionary<string, List<LzkItem>>(StringComparer.OrdinalIgnoreCase);
             List<string> readOnly = new List<string>();
-            List<KeyValuePair<LzkItem, ModelDoc2>> changed = new List<KeyValuePair<LzkItem, ModelDoc2>>();
             foreach (LzkItem item in editable)
             {
                 ModelDoc2 model = models[item.Path];
                 PropertyWriter w = new PropertyWriter(model, true);
+                string level = SizeLevel(w, item);
                 bool differs = !string.Equals(Prop(w, "", LzkOperations.PropertyName), item.Operations ?? "", StringComparison.Ordinal)
                     || (!item.SizeIsEstimate && item.Size.Length > 0 &&
-                        !string.Equals(Prop(w, "", LzkOperations.SizePropertyName), item.Size, StringComparison.Ordinal));
-                if (!differs) continue;
-                if (model.IsOpenedReadOnly()) readOnly.Add(Path.GetFileName(item.Path));
-                else changed.Add(new KeyValuePair<LzkItem, ModelDoc2>(item, model));
+                        !string.Equals(Prop(w, level, LzkOperations.SizePropertyName), item.Size, StringComparison.Ordinal));
+                bool dirtied = _dirtiedBySwitch.Contains(item.Path);
+                if (!differs && !dirtied) continue;
+                if (model.IsOpenedReadOnly())
+                {
+                    if (differs && !readOnly.Contains(Path.GetFileName(item.Path))) readOnly.Add(Path.GetFileName(item.Path));
+                    continue;
+                }
+                List<LzkItem> list;
+                if (!changed.TryGetValue(item.Path, out list))
+                {
+                    changed[item.Path] = list = new List<LzkItem>();
+                    order.Add(item.Path);
+                }
+                if (differs) list.Add(item);
             }
             foreach (string name in readOnly)
                 NotWritten(name, "модель открыта только для чтения (занята другим пользователем или защищена)");
             int n = 0;
-            foreach (KeyValuePair<LzkItem, ModelDoc2> kv in changed)
+            foreach (string path in order)
             {
-                Status(string.Format("ЕСКД: ведомость ЛЗК — запись свойств {0}/{1}…", ++n, changed.Count));
-                PropertyWriter w = new PropertyWriter(kv.Value, false);
-                if (!string.IsNullOrEmpty(kv.Key.Operations)) w.Set("", LzkOperations.PropertyName, kv.Key.Operations);
-                else w.Delete("", LzkOperations.PropertyName);
-                if (!kv.Key.SizeIsEstimate && kv.Key.Size.Length > 0) w.Set("", LzkOperations.SizePropertyName, kv.Key.Size);
+                Status(string.Format("ЕСКД: ведомость ЛЗК — запись свойств {0}/{1}…", ++n, order.Count));
+                ModelDoc2 model = models[path];
+                PropertyWriter w = new PropertyWriter(model, false);
+                foreach (LzkItem item in changed[path])
+                {
+                    if (!string.IsNullOrEmpty(item.Operations)) w.Set("", LzkOperations.PropertyName, item.Operations);
+                    else w.Delete("", LzkOperations.PropertyName);
+                    if (!item.SizeIsEstimate && item.Size.Length > 0) w.Set(SizeLevel(w, item), LzkOperations.SizePropertyName, item.Size);
+                }
                 if (w.Failures > 0)
                 {
-                    NotWritten(Path.GetFileName(kv.Key.Path), "свойства не записались (подробности — в журнале ЕСКД)");
+                    NotWritten(Path.GetFileName(path), "свойства не записались (подробности — в журнале ЕСКД)");
                     continue;
                 }
-                if (object.ReferenceEquals(kv.Value, _doc)) continue;
-                CleanPreview(kv.Value);
+                if (object.ReferenceEquals(model, _doc)) continue;
+                CleanPreview(model);
                 int errors = 0, warnings = 0;
-                if (!kv.Value.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
+                if (!model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
                 {
-                    NotWritten(Path.GetFileName(kv.Key.Path), "модель не сохранена (код " + errors + ")");
+                    NotWritten(Path.GetFileName(path), "модель не сохранена (код " + errors + ")");
                     continue;
                 }
-                Log.Info("Ведомость ЛЗК: свойства записаны — " + kv.Key.Path);
+                Log.Info("Ведомость ЛЗК: свойства записаны — " + path);
             }
         }
+
+        /// <summary>Уровень «Габарита»: конфигурация исполнения, если их в файле несколько; иначе общие свойства.</summary>
+        private static string SizeLevel(PropertyWriter w, LzkItem item)
+        {
+            string cfg = item.Configuration ?? "";
+            string[] configs = w.ConfigurationNames();
+            return cfg.Length > 0 && configs.Length > 1 && configs.Contains(cfg) ? cfg : "";
+        }
+
 
         private void NotWritten(string model, string reason)
         {

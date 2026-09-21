@@ -142,6 +142,46 @@ namespace ESKD.Tests
             using (StreamWriter w = new StreamWriter(zip.CreateEntry(name).Open(), new UTF8Encoding(false))) w.Write(text);
         }
 
+        /// <summary>
+        /// Замечания владельца и аудит 21.09.2026: главная сборка не комплектуется, труба с «Разделом» «Материалы» не идёт
+        /// в металлопрокат, покраска считается по экземплярам вне окрашиваемых узлов и по всем названиям операции.
+        /// </summary>
+        public static void Test_Kitting_stock_and_painting_do_not_double_count()
+        {
+            LzkBlanks b = LzkBlanks.Defaults();
+            const string tube = "Труба 40х20х1,5 ГОСТ 8645-68";
+            LzkItem top = new LzkItem { Designation = "А.000", IsAssembly = true, IsTop = true, Quantity = 1,
+                Operations = LzkOperations.MechanicalAssembly + "; Покраска" };
+            LzkItem unit = new LzkItem { Designation = "А.100", IsAssembly = true, Quantity = 2, Operations = LzkOperations.MechanicalAssembly };
+            LzkItem material = new LzkItem { Designation = "А.010", Material = tube, Size = "L=500", Quantity = 3, Section = "Материалы",
+                Operations = "Покраска", AreaM2 = 0.1 };
+            LzkItem bracket = new LzkItem { Designation = "А.020", Material = tube, Size = "L=300", Quantity = 6, Operations = "Лазерная резка трубы; Окраска",
+                AreaM2 = 0.05, PaintQuantity = 2 };
+            List<LzkItem> items = new List<LzkItem> { top, unit, material, bracket };
+
+            List<LzkItem> kit = LzkBook.SectionItems(items, LzkBlanks.Kitting, b);
+            Assert.IsFalse(kit.Contains(top), "главная сборка — не комплект самой себя");
+            Assert.IsTrue(kit.Contains(unit), "сборочная единица в комплекте");
+            Assert.IsTrue(kit.Contains(material), "труба с «Разделом» «Материалы» — на комплектовку");
+
+            Assert.IsTrue(LzkBlanks.KittedWhole(material), "материал идёт на комплектовку целиком");
+            Assert.IsFalse(LzkBook.IsBarStock(material), "материал не считается в металлопрокате «Расхода»");
+            List<LzkBook.BarGroup> bars = LzkBook.BarGroups(items);
+            Assert.AreEqual(1, bars.Count, "в «Расходе» только кронштейн");
+            Assert.AreEqual(300.0, bars[0].LengthMm, "длина кронштейна");
+
+            Assert.IsTrue(b.HasPainting("Лазерная резка трубы; Окраска"), "«Окраска» — тоже покраска");
+            Assert.IsFalse(b.HasPainting("Лазерная резка трубы"), "без покраски");
+            List<LzkItem> paint = LzkBook.SectionItems(items, LzkBlanks.Painting, b);
+            Assert.IsTrue(paint.Contains(bracket), "кронштейн красится отдельно");
+            Assert.IsFalse(paint.Contains(material), "материал не красится");
+            Assert.AreEqual(2, LzkBlanks.PaintCount(bracket), "4 из 6 кронштейнов вварены в окрашиваемую раму — отдельно красятся 2");
+            Assert.AreEqual(0, LzkBlanks.PaintCount(new LzkItem { Quantity = 4, PaintQuantity = 0 }), "все внутри узла");
+            Assert.AreEqual(4, LzkBlanks.PaintCount(new LzkItem { Quantity = 4 }), "без обхода сборки — все");
+            Assert.IsFalse(LzkBook.SectionItems(new List<LzkItem> { new LzkItem { Quantity = 4, PaintQuantity = 0, Operations = "Покраска" } },
+                LzkBlanks.Painting, b).Any(), "деталь целиком внутри окрашиваемого узла на «Покрасочный» не выходит");
+        }
+
         public static void Test_Sections_follow_operations_and_categories()
         {
             LzkBlanks b = LzkBlanks.Defaults();

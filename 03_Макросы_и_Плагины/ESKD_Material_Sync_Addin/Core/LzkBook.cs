@@ -169,8 +169,7 @@ namespace ESKD.MaterialSync.Core
         public List<string> SectionsOf(LzkItem item, ICollection<string> unknown)
         {
             List<string> result = new List<string>();
-            string category = Category(item);
-            if (item.IsPurchased || category == CategoryPurchased || category == CategoryMaterial || category == CategoryOther)
+            if (KittedWhole(item))
             {
                 result.Add(Kitting);
                 return result;
@@ -186,6 +185,30 @@ namespace ESKD.MaterialSync.Core
                 if (!result.Contains(section)) result.Add(section);
             }
             return All.Where(result.Contains).ToList();
+        }
+
+        /// <summary>
+        /// Покупное, материал и прочее идут на комплектовку целиком: не режутся, не свариваются, не красятся и не входят
+        /// в металлопрокат «Расхода». Одно правило для участков, «Расхода» и «Сводной» — иначе труба с «Разделом»
+        /// «Материалы» считалась и в прокате, и в покупных (аудит 21.09.2026, Л-2).
+        /// </summary>
+        public static bool KittedWhole(LzkItem item)
+        {
+            string category = Category(item);
+            return item.IsPurchased || category == CategoryPurchased || category == CategoryMaterial || category == CategoryOther;
+        }
+
+        /// <summary>В «Операциях» есть покраска — по справочнику участков, со всеми её названиями («Окраска», «Порошковая покраска»).</summary>
+        public bool HasPainting(string operations)
+        {
+            return LzkOperations.Parse(operations).Any(op => SectionOf(op) == Painting);
+        }
+
+        /// <summary>Сколько штук на изделие красится отдельно, а не в составе окрашиваемого узла (Л-3).</summary>
+        public static int PaintCount(LzkItem item)
+        {
+            if (item.PaintQuantity >= 0) return Math.Min(item.PaintQuantity, item.Quantity);
+            return item.InsidePaintedUnit ? 0 : item.Quantity;
         }
 
         /// <summary>Категория строки по свойству «Раздел» (ТЗ-04 §2); нет свойства — по признакам модели.</summary>
@@ -410,13 +433,13 @@ namespace ESKD.MaterialSync.Core
         /// <summary>Заготовку режут из хлыста: металлопрокат не из листа, не сборка, не покупное.</summary>
         public static bool IsBarStock(LzkItem item)
         {
-            return !item.IsAssembly && !item.IsPurchased && !item.IsTop &&
+            return !item.IsAssembly && !LzkBlanks.KittedWhole(item) && !item.IsTop &&
                 LzkMaterials.Kind(item.Material) == MaterialKind.RolledMetal && !LzkMaterials.IsSheet(item.Material);
         }
 
         public static bool IsSheetStock(LzkItem item)
         {
-            return !item.IsAssembly && !item.IsPurchased && !item.IsTop &&
+            return !item.IsAssembly && !LzkBlanks.KittedWhole(item) && !item.IsTop &&
                 LzkMaterials.Kind(item.Material) == MaterialKind.RolledMetal && LzkMaterials.IsSheet(item.Material);
         }
 
@@ -481,11 +504,16 @@ namespace ESKD.MaterialSync.Core
             return groups.OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase).ToList();
         }
 
-        /// <summary>Строки листа участка: единицы (без главной сборки, если у неё нет операции этого участка).</summary>
+        /// <summary>
+        /// Строки листа участка: единицы (без главной сборки, если у неё нет операции этого участка). На «Комплектовочном»
+        /// главной сборки нет никогда: комплектуют то, из чего собирают изделие, а не само изделие (замечание владельца
+        /// 21.09.2026). На «Покрасочном» — только то, что красится отдельно от окрашиваемых узлов.
+        /// </summary>
         public static List<LzkItem> SectionItems(IEnumerable<LzkItem> items, string section, LzkBlanks blanks)
         {
             return items.Where(i => blanks.SectionsOf(i, null).Contains(section))
-                .Where(i => section != LzkBlanks.Painting || !i.InsidePaintedUnit)
+                .Where(i => section != LzkBlanks.Kitting || !i.IsTop)
+                .Where(i => section != LzkBlanks.Painting || LzkBlanks.PaintCount(i) > 0)
                 .ToList();
         }
 
@@ -511,7 +539,7 @@ namespace ESKD.MaterialSync.Core
                 result.SectionRows[section] = SectionSheet(book, st, section, made, header, inputs, blanks, kitting);
             result.PaintRows = result.SectionRows[LzkBlanks.Painting];
             result.PurchasedRows = PurchasedGroups(made).Count;
-            CostRows cost = Cost(book, st, made, header, result, inputs, norms);
+            CostRows cost = Cost(book, st, made, SectionItems(made, LzkBlanks.Painting, blanks), header, result, inputs, norms);
             Summary(book, st, header, inputs, norms, cost, kitting);
             NormsSheetWrite(book, st, inputs, norms);
             MainColumns(book, mainSheet, col, headerRow, rows, blanks);
@@ -732,7 +760,7 @@ namespace ESKD.MaterialSync.Core
                     s.SetText(C(3, row), i.Name, st.Text);
                     if (double.IsNaN(i.AreaM2)) s.SetText(C(4, row), Mark, st.Center);
                     else s.SetNumber(C(4, row), Math.Round(i.AreaM2, 3), st.Area);
-                    s.SetNumber(C(5, row), i.Quantity, st.Int);
+                    s.SetNumber(C(5, row), LzkBlanks.PaintCount(i), st.Int);
                     s.SetFormula(C(6, row), "E" + row + "*" + NameQuantity, st.Int);
                     s.SetFormula(C(7, row), "IF(ISNUMBER(D" + row + "),D" + row + "*F" + row + ",\"" + Mark + "\")", st.Area);
                     row++;
@@ -886,7 +914,7 @@ namespace ESKD.MaterialSync.Core
             public int PaintAreaRow, PaintKgRow, PaintTaraRow;
         }
 
-        private static CostRows Cost(XlsxBook book, Styles st, List<LzkItem> items, LzkHeader header, LzkResult result,
+        private static CostRows Cost(XlsxBook book, Styles st, List<LzkItem> items, List<LzkItem> painted, LzkHeader header, LzkResult result,
             LzkInputs inputs, Norms norms)
         {
             CostRows layout = new CostRows();
@@ -1003,10 +1031,11 @@ namespace ESKD.MaterialSync.Core
             row++;
             double area = 0;
             bool unknownArea = false;
-            foreach (LzkItem i in items.Where(i => !i.IsPurchased && !i.InsidePaintedUnit && LzkOperations.Contains(i.Operations, LzkOperations.Painting)))
+            // Те же строки и штуки, что на «Покрасочном»: площадь «Расхода» и «Сводной» с листом участка не расходится.
+            foreach (LzkItem i in painted)
             {
                 if (double.IsNaN(i.AreaM2)) unknownArea = true;
-                else area += i.AreaM2 * i.Quantity;
+                else area += i.AreaM2 * LzkBlanks.PaintCount(i);
             }
             int areaRow = row;
             s.SetText(C(1, row), "Площадь покраски на 1 изделие, м²", st.Label);
