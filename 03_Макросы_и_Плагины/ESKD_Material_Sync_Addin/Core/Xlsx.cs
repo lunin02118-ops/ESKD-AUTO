@@ -404,6 +404,14 @@ namespace ESKD.MaterialSync.Core
             return created;
         }
 
+        /// <summary>Скрыть лист (служебные таблицы): в Excel он есть, ссылки на него работают, вкладки нет.</summary>
+        public void HideSheet(string sheetName)
+        {
+            XElement sheet = _workbook.Root.Element(Main + "sheets").Elements(Main + "sheet")
+                .FirstOrDefault(s => string.Equals((string)s.Attribute("name"), sheetName, StringComparison.OrdinalIgnoreCase));
+            if (sheet != null) sheet.SetAttributeValue("state", "hidden");
+        }
+
         private static string Quote(string sheetName)
         {
             return "'" + (sheetName ?? "").Replace("'", "''") + "'";
