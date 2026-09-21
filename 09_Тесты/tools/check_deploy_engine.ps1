@@ -193,6 +193,8 @@ try {
     Set-ItemProperty -LiteralPath "$swKey\Recent File List" -Name "File1" -Value "C:\Проект\Деталь.sldprt"
     Set-ItemProperty -LiteralPath "$swKey\General" -Name "Toolbox Data Location" -Value "C:\Мой Toolbox"
     Set-ItemProperty -LiteralPath $qat -Name "Btn20" -Value "1,40001"
+    # Запомненный SolidWorks программный режим OpenGL (21.09.2026: переживал сброс и держал программный OpenGL серым)
+    Set-ItemProperty -LiteralPath "$swKey\Performance" -Name "Saved OGL Settings" -Value 0x02110211 -Type DWord
     $code2, $output2 = & $run
     $backups = @(Get-ChildItem -LiteralPath (Join-Path (Split-Path -Path $local -Parent) "Backups") -Recurse -Filter "*SOLIDWORKS 2025*.reg" -ErrorAction SilentlyContinue |
                  Where-Object { $_.Length -gt 0 -and [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::Unicode).Contains("Моя панель") })
@@ -206,6 +208,7 @@ try {
     Expect "сброс: кнопка пользователя в QAT сохранена" (Read-Value $qat "Btn20") "1,40001"
     Expect "сброс: QAT после повторной установки — Btn0..Btn19" (@(0..19 | Where-Object { Read-Value $qat "Btn$_" }).Count) 20
     Expect "сброс: конвейер производительности сохранён" (Read-Value "$swKey\Performance" "Use Performance Pipeline 2020") 1
+    Expect "сброс: запомненный режим OpenGL снят — SolidWorks определит видеокарту заново" (Read-Value "$swKey\Performance" "Saved OGL Settings") $null
     Expect "сброс: фамилия вне раздела версии не тронута" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
     $output += "`n--- повторная установка ---`n" + $output2
     Expect "код выхода повторной установки" $code2 0

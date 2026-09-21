@@ -175,6 +175,10 @@ class StaticRepository(StaticTestCase):
         # Готовая маска AllowList роняла SolidWorks 2025 при старте (20.09.2026, GeForce RTX 2080 Ti): её только снимают.
         self.assertNotIn('Set-Reg "$U\\SolidWorks\\AllowList', setup, "установщик снова пишет маску AllowList")
         self.assertIn('Remove-Item -LiteralPath $stale', setup, "маска AllowList от прежней настройки не снимается")
+        # 21.09.2026: запомненные возможности OpenGL переживали сброс профиля — программный OpenGL «застревал» серым.
+        forget = setup.index('-Name "Saved OGL Settings"')
+        self.assertLess(pipeline, forget, "запомненный режим OpenGL снимается до настройки конвейера, а не после")
+        self.assertNotIn('Set-Reg "$swRoot\\Performance" "Saved OGL Settings"', setup, "установщик пишет свой слепок OpenGL")
         gui = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
         self.assertIn('"-Graphics", "Safe"', gui, "в окне настройки нет безопасной графики")
         self.assertTrue((ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Безопасная_графика_SolidWorks.ps1").is_file(),

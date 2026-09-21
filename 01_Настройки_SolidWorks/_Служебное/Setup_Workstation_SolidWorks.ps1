@@ -530,6 +530,12 @@ if ($hardwareGraphics) {
     Set-Reg "$swRoot\General" "Use Software OGL" 0 "DWord"
     Write-Ok "Графика ($cardNames): аппаратный конвейер не включается — SolidWorks выберет режим сам."
 }
+# «Saved OGL Settings» — возможности OpenGL, которые SolidWorks запомнил при прошлом запуске. Раздел Performance переживает
+# сброс профиля, и если хоть один запуск прошёл без аппаратного OpenGL (0x02110211 вместо 0x021102F7 на RTX 2080 Ti),
+# SolidWorks держит «Использовать программу OpenGL» серой и отмеченной, а «Повышенную производительность» — серой
+# (замечание владельца 21.09.2026: вернулось только перезагрузкой ПК). Значение снимается: SolidWorks определит видеокарту
+# заново при следующем запуске, как на чистом профиле, — своё значение мы не пишем (история с маской AllowList).
+Remove-ItemProperty -LiteralPath "$swRoot\Performance" -Name "Saved OGL Settings" -ErrorAction SilentlyContinue
 
 # AllowList SolidWorks заполняет сам при первом запуске: он записывает туда вендора, рендерер, версию драйвера и маску
 # обхода целиком. Готовая маска от нас (одно значение «Workarounds» без остальных) роняла SolidWorks 2025 при старте —
