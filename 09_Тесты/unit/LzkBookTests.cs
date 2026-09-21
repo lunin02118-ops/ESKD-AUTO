@@ -238,13 +238,16 @@ namespace ESKD.Tests
                 XlsxSheet s = export.Sheet("Ведомость");
                 string[] row1 = { "1", "", "А.001", "Стойка", "Труба 40х20х1,5 ГОСТ 8645-68", "L=556", "0,624", "4", "Лазерная резка трубы; Покраска", @"D:\И\01_3D\А.001.sldprt" };
                 string[] row2 = { "2", "", "А.001-01", "Стойка", "Труба 40х20х1,5 ГОСТ 8645-68", "L=300", "0,337", "2", "Лазерная резка трубы; Покраска", @"D:\И\01_3D\А.001.sldprt" };
+                string[] row3 = { "3", "", "А.002", "Пластина", "Лист Б-ПН-НО-3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97", "200×100×3", "0,471", "1", "Лазерная резка; Покраска", @"D:\И\01_3D\А.002.sldprt" };
                 for (int c = 0; c < row1.Length; c++)
                 {
                     if (row1[c].Length > 0) s.SetText(XlsxBook.CellName(c + 1, 7), row1[c]);
                     if (row2[c].Length > 0) s.SetText(XlsxBook.CellName(c + 1, 8), row2[c]);
+                    if (row3[c].Length > 0) s.SetText(XlsxBook.CellName(c + 1, 9), row3[c]);
                 }
                 s.SetNumber("H7", 4);
                 s.SetNumber("H8", 2);
+                s.SetNumber("H9", 1);
                 export.Save();
                 File.Copy(path, second);
 
@@ -258,7 +261,11 @@ namespace ESKD.Tests
                         InProduct = true, Quantity = 2, Material = tube, Size = "L=300", Operations = "Лазерная резка трубы; Покраска", AreaM2 = 0.03 },
                     new LzkItem { Path = @"D:\И\01_3D\А.001.sldprt", Configuration = "00", Designation = "А.001", Name = "Стойка",
                         InProduct = true, Quantity = 4, Material = tube, Size = "L=556", Operations = "Лазерная резка трубы; Покраска", AreaM2 = 0.05,
-                        Section = "Детали" }
+                        Section = "Детали" },
+                    // Листовая деталь 200×100×3 из стали: 0,02 м² и 0,471 кг → 23,55 кг на 1 м² заготовки
+                    new LzkItem { Path = @"D:\И\01_3D\А.002.sldprt", Designation = "А.002", Name = "Пластина", InProduct = true, Quantity = 1,
+                        Material = "Лист Б-ПН-НО-3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97", Size = "200×100×3", MassKg = 0.471,
+                        Operations = "Лазерная резка; Покраска", AreaM2 = 0.04 }
                 };
                 LzkInputs inputs = new LzkInputs { Quantity = 41, Deadline = new DateTime(2026, 10, 25), Color = "RAL 9005" };
                 inputs.Notes["Сварочный"] = "Свой текст";
@@ -274,7 +281,7 @@ namespace ESKD.Tests
                 Assert.AreEqual("Деталь", main.Get("K7"), "категория");
                 Assert.AreEqual("Заготовительный, Покрасочный", main.Get("L7"), "участки");
                 Assert.AreEqual("H7*Тираж", main.Formula("M7"), "всего на заказ");
-                Assert.IsTrue(Part(path, "xl/worksheets/sheet1.xml").Contains("<autoFilter ref=\"A6:M8\""), "фильтр по таблице");
+                Assert.IsTrue(Part(path, "xl/worksheets/sheet1.xml").Contains("<autoFilter ref=\"A6:M9\""), "фильтр по таблице");
 
                 XlsxSheet cost = book.Sheet("Расход");
                 Assert.AreEqual("Труба 40х20х1,5 ГОСТ 8645-68", cost.Get("A7"), "сортамент");
@@ -294,6 +301,13 @@ namespace ESKD.Tests
                 Assert.AreEqual("SUM(M7:M8)", cost.Formula("M9"), "итого массы в чистоте по сортаменту");
                 Assert.AreEqual("Итого: " + tube, cost.Get("A9"), "итог назван по сортаменту — это позиция закупки");
                 Assert.AreEqual("", cost.Get("N9"), "раскладка по хлыстам ушла в «Сводную»");
+                // Лист: закупка — целые листы формата по массе 1 м² заготовки, иначе итог «Сводной» складывал бы
+                // закупку труб с чистой массой листа (вопрос владельца 21.09.2026)
+                Assert.AreEqual("Масса в чистоте, кг", cost.Get("G12"), "шапка листа: чистая масса");
+                Assert.AreEqual("Масса закупки, кг", cost.Get("I12"), "шапка листа: закупка");
+                Assert.AreEqual("Лист Б-ПН-НО-3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97", cost.Get("A13"), "строка листа");
+                Assert.AreEqual("23.55", cost.Get("H13"), "масса 1 м² заготовки = масса деталей / площадь");
+                Assert.AreEqual("IF(ISNUMBER(H13),D13*ЛистШирина*ЛистДлина/1000000*H13,\"\")", cost.Formula("I13"), "закупка листа, кг");
 
                 // «Сводная» (замечание владельца 21.09.2026): одна строка на позицию — металл, краска, покупные; числа —
                 // формулами с «Расхода» и «Комплектовочного», раскладка CutPlan — текстом на тираж построения.
@@ -313,9 +327,15 @@ namespace ESKD.Tests
                 Assert.IsTrue(plan.StartsWith("оптимально ") && plan.Contains("на тираж 41"), "раскладка CutPlan на тираж: " + plan);
                 // торцовка и пропилы есть всегда — отход раскладки назван
                 Assert.IsTrue(plan.Contains("; отход "), "отход раскладки: " + plan);
-                Assert.AreEqual("Итого металлопрокат, кг", summary.Get("A9"), "итог по металлу");
-                Assert.AreEqual("SUM(G8:G8)", summary.Formula("G9"), "итого масса закупки");
-                Assert.AreEqual("SUM(H8:H8)", summary.Formula("H9"), "итого масса в чистоте");
+                Assert.AreEqual("м²", summary.Get("C9"), "строка листа в сводной");
+                Assert.AreEqual("'Расход'!C13", summary.Formula("D9"), "площадь листа на заказ");
+                Assert.AreEqual("'Расход'!D13", summary.Formula("E9"), "листов");
+                Assert.AreEqual("'Расход'!I13", summary.Formula("G9"), "масса закупки листа");
+                Assert.AreEqual("'Расход'!G13", summary.Formula("H9"), "масса листа в чистоте");
+                Assert.AreEqual("Итого металлопрокат, кг", summary.Get("A10"), "итог по металлу");
+                Assert.AreEqual("SUM(G8:G9)", summary.Formula("G10"), "итого масса закупки — трубы и лист");
+                Assert.AreEqual("SUM(H8:H9)", summary.Formula("H10"), "итого масса в чистоте");
+                Assert.AreEqual("IF(G10>0,H10/G10,\"\")", summary.Formula("I10"), "КИМ итога — по массе");
                 int paintRow = 0, kitRow = 0;
                 for (int line = 10; line < 30; line++)
                 {

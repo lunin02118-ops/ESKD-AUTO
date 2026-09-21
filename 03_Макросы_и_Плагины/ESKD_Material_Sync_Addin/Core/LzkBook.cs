@@ -951,7 +951,13 @@ namespace ESKD.MaterialSync.Core
             s.SetText(C(1, row), "Листовой прокат — по площади заготовок с коэффициентом отхода", st.Group);
             s.Merge("A" + row + ":" + L(columns) + row);
             row++;
-            string[] sheetTitles = { "Сортамент", "Площадь на 1 изд., м²", "Всего, м²", "Листов, шт.", "КИМ", "Масса на 1 изд., кг", "Масса всего, кг" };
+            // «Масса в чистоте» — масса деталей; «Масса закупки» — целые листы формата по массе 1 м² заготовки
+            // (масса деталей к их площади): иначе итог «Сводной» складывал бы закупку труб с чистой массой листа.
+            string[] sheetTitles =
+            {
+                "Сортамент", "Площадь на 1 изд., м²", "Всего, м²", "Листов, шт.", "КИМ", "Масса на 1 изд., кг",
+                "Масса в чистоте, кг", "Масса 1 м², кг", "Масса закупки, кг"
+            };
             for (int c = 0; c < sheetTitles.Length; c++) s.SetText(C(c + 1, row), sheetTitles[c], st.Head);
             s.SetRowHeight(row, 30);
             row++;
@@ -966,6 +972,9 @@ namespace ESKD.MaterialSync.Core
                 s.SetFormula(C(5, row), "IF(D" + r + ">0,C" + r + "/(D" + r + "*ЛистШирина*ЛистДлина/1000000),\"\")", st.Percent);
                 s.SetNumber(C(6, row), Math.Round(g.Value[1], 3), st.Dec3);
                 s.SetFormula(C(7, row), "F" + r + "*" + NameQuantity, st.Dec1);
+                if (g.Value[0] > 0 && g.Value[1] > 0) s.SetNumber(C(8, row), Math.Round(g.Value[1] / g.Value[0], 2), st.Dec1);
+                else s.SetText(C(8, row), Mark, st.Center);
+                s.SetFormula(C(9, row), "IF(ISNUMBER(H" + r + "),D" + r + "*ЛистШирина*ЛистДлина/1000000*H" + r + ",\"\")", st.Dec1);
                 layout.Sheets.Add(new KeyValuePair<string, int>(g.Key, row));
                 row++;
             }
@@ -1111,10 +1120,11 @@ namespace ESKD.MaterialSync.Core
                 s.SetFormula(C(4, row), Ref(CostSheet, 3, sheet.Value), st.Area);
                 s.SetFormula(C(5, row), Ref(CostSheet, 4, sheet.Value), st.Int);
                 s.SetText(C(6, row), "", st.Center);
-                s.SetText(C(7, row), "", st.Center);
+                s.SetFormula(C(7, row), Ref(CostSheet, 9, sheet.Value), st.Dec1);
                 s.SetFormula(C(8, row), Ref(CostSheet, 7, sheet.Value), st.Dec1);
                 s.SetFormula(C(9, row), Ref(CostSheet, 5, sheet.Value), st.Percent);
-                s.SetText(C(10, row), "листов формата «Нормы» по площади заготовок с коэффициентом отхода; масса — по деталям", st.Text);
+                s.SetText(C(10, row), "листов формата «Нормы» по площади заготовок с коэффициентом отхода; " +
+                    "закупка — целые листы по массе 1 м², в чистоте — масса деталей", st.Text);
                 row++;
             }
             if (row == metalFirst)
@@ -1129,6 +1139,9 @@ namespace ESKD.MaterialSync.Core
                 for (int c = 2; c <= columns; c++) s.SetText(C(c, row), "", st.Total);
                 s.SetFormula(C(7, row), "SUM(G" + metalFirst + ":G" + (row - 1) + ")", st.TotalDec1);
                 s.SetFormula(C(8, row), "SUM(H" + metalFirst + ":H" + (row - 1) + ")", st.TotalDec1);
+                // КИМ итога — по массе: чистая масса к закупленной, трубы и лист вместе
+                s.SetFormula(C(9, row), "IF(G" + row + ">0,H" + row + "/G" + row + ",\"\")", st.TotalPercent);
+                s.SetText(C(10, row), "КИМ итога — по массе: в чистоте к закупке", st.Text);
                 row++;
             }
 
