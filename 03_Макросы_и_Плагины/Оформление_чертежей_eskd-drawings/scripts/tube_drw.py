@@ -463,6 +463,7 @@ def pick_main(t, dirs):
     if len(keys) == 1 or len(axes) > 1:
         return max(keys, key=lambda k: len(dirs[k]))
     # отверстия на противоположных стенках разные — главный вид сбоку, стенки — видами сверху/снизу
+    # (проекционный вид строится только вверх-вниз, вид «сзади» из главного не получить)
     ax = next(iter(axes))
     lat = [i for i in range(3) if i != t.ax and ax[i] == 0][0]
     v = [0, 0, 0]; v[lat] = 1
@@ -723,7 +724,7 @@ def run(stem, keep=False, out_dir=None, fmt="A4-P-1"):
     heights = [outline(v)[3] - outline(v)[1] for _, v in order]
     gap = 38.0
     total_h = sum(heights) + gap * (len(order) - 1)
-    lo_y, hi_y, below = 110.0, 255.0, 16.0  # над ТТ, под графой; место под размеры нижнего вида
+    lo_y, hi_y, below = 124.0, 255.0, 16.0  # над ТТ, под графой; место под размеры нижнего вида
     top = min(hi_y, lo_y + below + total_h + max(0.0, (hi_y - lo_y - below - total_h) / 2))
     # сначала главный (проекционные виды едут за ним), затем дополнительные от него
     idx = [nm for nm, _ in order].index("main")
@@ -752,6 +753,21 @@ def run(stem, keep=False, out_dir=None, fmt="A4-P-1"):
     if not t.miter:
         has_steps = dim_steps(dm, main, g, left, right, y1 + 10 * MM, t) > 0
     dm.horiz(main, left[0], right[0], (x0 + x1) / 2, y1 + (18 if has_steps else 10) * MM, what="длина")
+    if t.miter:
+        # у косого реза длины сторон разные: один размер не говорит, по какой стороне резать.
+        # вторую длину берём по внутренним концам косых рёбер
+        inner = {}
+        for sl in [l for l in g.lines if not is_h(l) and not is_v(l)]:
+            side = "L" if min(sl[1][0], sl[2][0]) < (x0 + x1) / 2 else "R"
+            pt = max(sl[1], sl[2], key=lambda p: p[0]) if side == "L" else min(sl[1], sl[2], key=lambda p: p[0])
+            if side not in inner or (pt[0] < inner[side][1][0]) == (side == "L"):
+                vx = next((v for v in g.verts if near(v[1], pt)), None)
+                if vx is not None:
+                    inner[side] = vx
+        if "L" in inner and "R" in inner and \
+           abs((right[1][0] - left[1][0]) - (inner["R"][1][0] - inner["L"][1][0])) > 0.5 * MM:
+            dm.horiz(main, inner["L"][0], inner["R"][0], (x0 + x1) / 2, y0 - 10 * MM,
+                     what="длина по короткой стороне")
     dim_angles(dm, main, g)
     dim_holes(dm, main, g, left, right, y0 - 10 * MM, step, y1 + 4 * MM, t)
     if not t.miter:
