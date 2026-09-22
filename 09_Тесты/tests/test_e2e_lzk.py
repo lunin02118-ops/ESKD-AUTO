@@ -421,12 +421,21 @@ class Lzk(SwTestCase):
         doc, feat = build.plate(self.s, 150, 80, 4, "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89")
         active = str(doc.GetActiveConfiguration.Name)
         build.add_configuration(doc, "01")
-        build.show_configuration(doc, "01")  # толщина меняется только в «01»
-        rc = com.dyn(doc.Parameter("D1@" + str(feat.Name))).SetSystemValue3(0.010, 1, None)  # 1 — только в этой конфигурации
+        # толщина меняется только в «01»: вариант 1 — «только в этой», то есть в активной. Список конфигураций
+        # (вариант 3) через позднее связывание COM не доходит — GetSystemValue3(3, [...]) возвращает None
+        self.s.activate(doc)
+        build.show_configuration(doc, "01")
+        self.assertEqual("01", str(doc.GetActiveConfiguration.Name), "размер задаётся в «01»")
+        rc = com.dyn(doc.Parameter("D1@" + str(feat.Name))).SetSystemValue3(0.010, 1, None)
         self.assertEqual(0, rc, "толщина исполнения 01 задана")
         doc.ForceRebuild3(False)
         box = com.call(doc, "GetPartBox", True)
-        self.assertAlmostEqual(10, min(abs(box[i + 3] - box[i]) for i in range(3)) * 1000, delta=0.1, msg="в «01» толщина 10")
+        dim = com.dyn(doc.Parameter("D1@" + str(feat.Name)))
+        diag = (f"feat={feat.Name} active={doc.GetActiveConfiguration.Name} "
+                f"cfgs={list(com.as_list(doc.GetConfigurationNames))} "
+                f"vals={com.as_list(dim.GetSystemValue3(2, None))} box={list(box)}")
+        self.assertAlmostEqual(10, min(abs(box[i + 3] - box[i]) for i in range(3)) * 1000, delta=0.1,
+                               msg=f"в «01» толщина 10: {diag}")
         build.show_configuration(doc, active)
         doc.ForceRebuild3(False)
         self.s.save_as(doc, plate)

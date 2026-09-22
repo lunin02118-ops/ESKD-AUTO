@@ -256,6 +256,54 @@ class Drawing(SwTestCase):
         self.assertEqual({c: "А2" for c in formats}, formats, "сборка: формат чертежа СБ")
 
 
+    def test_D16_flat_pattern_sheet_does_not_block_format(self):
+        """D16 (живая проверка NC3-7R 22.09.2026): у листовой детали в чертеже есть лист развёртки Drew «DXF1»
+        произвольного размера. Он служебный, как SP/VP, — в «Формат» не входит и не мешает записать формат остальных
+        листов. Раньше из-за него формат не писался ни при сохранении чертежа, ни при «Синхронизировать»."""
+        for name in (A09,) + A09_COMPONENTS + (A11,):
+            self.copy_fixture(name)
+        asm_path = self.path(A09)
+        with self.s.eskd_muted():
+            drw = self.s.open(self.path(A11))
+            first = str(com.dyn(drw.GetCurrentSheet).GetName)
+            # лист развёртки Drew — пользовательского размера и без форматки (12 — свой размер, 13 — без шаблона)
+            self.assertTrue(drw.NewSheet3("DXF1", 12, 13, 1.0, 1.0, True, "", 0.0814, 0.0495, ""), "лист DXF1 добавлен")
+            drw.ActivateSheet(first)
+            self.s.save(drw)
+            self.s.close(drw)
+            doc = self.s.open(asm_path)
+            for cfg in ("",) + tuple(com.as_list(doc.GetConfigurationNames)):
+                build.props(doc, {"Формат": ""}, cfg)
+            self.s.save(doc)
+            self.s.close(doc)
+        asm = self.s.open(asm_path)
+        self.s.activate(asm)
+        status = str(com.call(self.s.eskd(), "SyncProductSilent") or "")
+        self.assertIn("формат из чертежа", status, status)
+        self.s.save(asm)
+        self.s.close_all()
+        formats = self._formats(asm_path)
+        self.assertEqual({c: "А2" for c in formats}, formats, "«Синхронизировать»: формат листа СБ, лист DXF1 не считается")
+
+        doc = self.s.open(asm_path)
+        for cfg in ("",) + tuple(com.as_list(doc.GetConfigurationNames)):
+            build.props(doc, {"Формат": "A3"}, cfg)
+        self.s.save(doc)
+        self.s.close(doc)
+        drw = self.s.open(self.path(A11))
+        self.s.sw.CommandInProgress = True
+        try:
+            drw.SetSaveFlag()
+            self.s.save(drw)
+            self._close_now(drw)
+        finally:
+            self.s.sw.CommandInProgress = False
+        self.assertTrue(self.s.wait_addin_idle(timeout=60.0), "надстройка записала формат в простое")
+        self.s.close_all()
+        formats = self._formats(asm_path)
+        self.assertEqual({c: "А2" for c in formats}, formats, "сохранение чертежа: лист DXF1 не мешает записать А2")
+
+
 def without_format(dump):
     """Дамп свойств без «Формата» и «Примечания» — их сохранение чертежа пишет по З-1."""
     strip = lambda level: {k: v for k, v in level.items() if k not in ("Формат", "Примечание")}

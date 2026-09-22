@@ -12,7 +12,8 @@ namespace ESKD.MaterialSync.Sw
     /// FrmSpecEditor:1803), а в SWPlus его вписывают руками в MProp. Надстройка при сохранении чертежа пишет в модель
     /// формат его листов — модель знает формат своего чертежа, спецификация читает его без правки ячеек.
     /// Уровни — как у MProp (FrmMProp:3042): каждая конфигурация модели (у файла один чертёж на все исполнения),
-    /// общие — при одной конфигурации. Деталь БЧ не трогается. Листы спецификации и ведомости (SP…, VP…) не считаются.
+    /// общие — при одной конфигурации. Деталь БЧ не трогается. Служебные листы — спецификация, ведомость и развёртка
+    /// Drew (SP…, VP…, DXF…) — не считаются.
     ///
     /// Замечание владельца 21.09.2026: «формат в спецификацию не попадает». Чертёж обычно сохраняют и сразу закрывают,
     /// а запись формата ждала простоя вместе с документом чертежа — закрытие её отменяло («Документ закрыт до выполнения
@@ -37,7 +38,7 @@ namespace ESKD.MaterialSync.Sw
             foreach (object o in names)
             {
                 string name = o as string ?? "";
-                if (name.StartsWith("SP", StringComparison.OrdinalIgnoreCase) || name.StartsWith("VP", StringComparison.OrdinalIgnoreCase)) continue;
+                if (IsServiceSheet(name)) continue;
                 Sheet sheet = drw.get_Sheet(name) as Sheet;
                 if (sheet == null) continue;
                 double w = 0, h = 0;
@@ -45,6 +46,18 @@ namespace ESKD.MaterialSync.Sw
                 formats.Add(DrawingFormat.FromSize(w * 1000, h * 1000));
             }
             return formats;
+        }
+
+        /// <summary>
+        /// Служебный лист — не лист чертежа: спецификация и ведомость (SP…, VP…) и развёртка Drew для лазера (DXF…,
+        /// произвольного размера; в PDF её тоже не выводят). Раньше лист DXF давал «формат не ГОСТ», и «Формат» листовых
+        /// деталей не писался совсем (живая проверка NC3-7R 22.09.2026).
+        /// </summary>
+        public static bool IsServiceSheet(string name)
+        {
+            foreach (string prefix in new[] { "SP", "VP", "DXF" })
+                if ((name ?? "").StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
         }
 
         /// <summary>
