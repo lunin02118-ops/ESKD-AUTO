@@ -537,14 +537,36 @@ if ($hardwareGraphics) {
 # заново при следующем запуске, как на чистом профиле, — своё значение мы не пишем (история с маской AllowList).
 Remove-ItemProperty -LiteralPath "$swRoot\Performance" -Name "Saved OGL Settings" -ErrorAction SilentlyContinue
 
-# AllowList SolidWorks заполняет сам при первом запуске: он записывает туда вендора, рендерер, версию драйвера и маску
-# обхода целиком. Готовая маска от нас (одно значение «Workarounds» без остальных) роняла SolidWorks 2025 при старте —
-# 0xC0000005 сразу, окно не появлялось (проверено 20.09.2026 на GeForce RTX 2080 Ti). Поэтому маски только снимаем:
-# свою прежнюю и оставшуюся от настройки другой машины. RealView SolidWorks включит сам на сертифицированной карте.
-foreach ($stale in @("$U\SolidWorks\AllowList\Gl2Shaders", "$U\SolidWorks\AllowList\NVIDIA Corporation")) {
-    if (Test-Path -LiteralPath $stale) { Remove-Item -LiteralPath $stale -Recurse -Force -ErrorAction SilentlyContinue }
+# AllowList. GeForce для SolidWorks не сертифицирована: без своей записи он берёт встроенную маску (Current\Workarounds = 16)
+# и держит «Использовать программу OpenGL» отмеченной и серой, а «Повышенную производительность» — серой. Лечит запись
+# маски 0x00030408 под ТОЧНОЙ строкой рендерера, которую SolidWorks сам записал в AllowList\Current\Renderer
+# («NVIDIA GeForce RTX 2080 Ti/PCIe/SSE2»), — в Gl2Shaders\NV40 и в разделе вендора (замечание владельца 22.09.2026:
+# установка 21.09 эти разделы снимала, и ускорение снова стало серым). Прежняя маска (с лишним битом 0x2000) под общими именами
+# («GeForce», имя карты без «/PCIe/SSE2») и перезапись Current роняли SolidWorks 2025 при старте (0xC0000005, 20.09.2026) —
+# такие разделы снимаются, Current не трогается. Имя рендерера содержит «/», поэтому запись — через .NET: провайдер
+# реестра PowerShell считает «/» разделителем и создал бы вложенные разделы.
+$allowRoot = $U.Substring("HKCU:\".Length) + "\SolidWorks\AllowList"  # в песочнице автотеста — её раздел
+$renderer = [string](Get-RegValue "$U\SolidWorks\AllowList\Current" "Renderer")
+$nvidiaRenderer = $hardwareGraphics -and $nvidia.Count -and ([string](Get-RegValue "$U\SolidWorks\AllowList\Current" "Vendor")) -like "*NVIDIA*" -and $renderer.Contains("/")
+$cu = [Microsoft.Win32.Registry]::CurrentUser
+foreach ($branch in @("$allowRoot\Gl2Shaders\NV40", "$allowRoot\NVIDIA Corporation")) {
+    $key = $cu.OpenSubKey($branch, $true)
+    if ($key -eq $null) { continue }
+    foreach ($name in $key.GetSubKeyNames()) {
+        if (-not $nvidiaRenderer -or $name -ne $renderer) { $key.DeleteSubKeyTree($name, $false) }
+    }
+    $key.Close()
 }
-Write-Info "AllowList не настраивается вручную: RealView и конвейер SolidWorks определяет по драйверу сам."
+if ($nvidiaRenderer) {
+    foreach ($branch in @("$allowRoot\Gl2Shaders\NV40", "$allowRoot\NVIDIA Corporation")) {
+        $key = $cu.CreateSubKey("$branch\$renderer")
+        $key.SetValue("Workarounds", 0x00030408, [Microsoft.Win32.RegistryValueKind]::DWord)
+        $key.Close()
+    }
+    Write-Ok "AllowList: аппаратный OpenGL и RealView разрешены для «$renderer»."
+} elseif ($hardwareGraphics -and $nvidia.Count) {
+    Write-Info "AllowList: SolidWorks ещё не записал рендерер видеокарты — запустите SolidWorks один раз и повторите установку."
+}
 
 # 4. Очистка устаревших надстроек и вкладок
 Write-Step "[4/9] Очистка устаревших надстроек и вкладок..."
