@@ -1083,9 +1083,10 @@ namespace ESKD.MaterialSync.Core
             string[] titles =
             {
                 "№", "Сортамент, материал, изделие", "Ед.", "В чистоте на 1 изд.", "В чистоте на заказ", "Запас, %",
-                "С запасом на заказ", "Масса в чистоте, кг", "Масса с запасом, кг", "Примечание"
+                "С запасом на заказ", "Масса в чистоте на 1 изд., кг", "Масса в чистоте на заказ, кг", "Масса с запасом, кг", "Примечание"
             };
-            double[] widths = { 5, 44, 7, 11, 11, 8, 11, 11, 11, 40 };
+            double[] widths = { 5, 44, 7, 11, 11, 8, 11, 11, 11, 11, 40 };
+            const int note = 11;
             int columns = titles.Length;
             SheetHead(s, st, "Сводная ведомость расхода материалов", header, columns, true);
             int row = 5;
@@ -1114,9 +1115,13 @@ namespace ESKD.MaterialSync.Core
                 s.SetFormula(C(5, row), Ref(CostSheet, 6, bar.Row), st.Dec1);
                 s.SetFormula(C(6, row), Ref(CostSheet, 7, bar.Row), st.Int);
                 s.SetFormula(C(7, row), Ref(CostSheet, 8, bar.Row), st.Dec1);
-                s.SetFormula(C(8, row), Ref(CostSheet, 10, bar.Row), st.Dec1);
-                s.SetFormula(C(9, row), Ref(CostSheet, 11, bar.Row), st.Dec1);
-                s.SetText(C(10, row), "", st.Text);
+                // Масса на изделие: длина на изделие × масса 1 м по строкам сортамента на «Расходе» (без «?» в массе 1 м).
+                int barFirst = bar.Row - bar.Groups.Count;
+                s.SetFormula(C(8, row), "SUMPRODUCT(" + Ref(CostSheet, 5, barFirst) + ":" + C(5, bar.Row - 1) + "," +
+                    Ref(CostSheet, 9, barFirst) + ":" + C(9, bar.Row - 1) + ")", st.Dec3);
+                s.SetFormula(C(9, row), Ref(CostSheet, 10, bar.Row), st.Dec1);
+                s.SetFormula(C(10, row), Ref(CostSheet, 11, bar.Row), st.Dec1);
+                s.SetText(C(note, row), "", st.Text);
                 row++;
             }
             foreach (KeyValuePair<string, int> sheet in cost.Sheets)
@@ -1128,9 +1133,10 @@ namespace ESKD.MaterialSync.Core
                 s.SetFormula(C(5, row), Ref(CostSheet, 3, sheet.Value), st.Area);
                 s.SetFormula(C(6, row), Ref(CostSheet, 4, sheet.Value), st.Int);
                 s.SetFormula(C(7, row), Ref(CostSheet, 5, sheet.Value), st.Area);
-                s.SetFormula(C(8, row), Ref(CostSheet, 7, sheet.Value), st.Dec1);
-                s.SetFormula(C(9, row), Ref(CostSheet, 8, sheet.Value), st.Dec1);
-                s.SetText(C(10, row), "площадь и масса заготовок", st.Text);
+                s.SetFormula(C(8, row), Ref(CostSheet, 6, sheet.Value), st.Dec3);
+                s.SetFormula(C(9, row), Ref(CostSheet, 7, sheet.Value), st.Dec1);
+                s.SetFormula(C(10, row), Ref(CostSheet, 8, sheet.Value), st.Dec1);
+                s.SetText(C(note, row), "площадь и масса заготовок", st.Text);
                 row++;
             }
             if (row == metalFirst)
@@ -1143,8 +1149,8 @@ namespace ESKD.MaterialSync.Core
             {
                 s.SetText(C(1, row), "Итого металлопрокат, кг", st.TotalLeft);
                 for (int c = 2; c <= columns; c++) s.SetText(C(c, row), "", st.Total);
-                foreach (int c in new[] { 8, 9 })
-                    s.SetFormula(C(c, row), "SUM(" + L(c) + metalFirst + ":" + L(c) + (row - 1) + ")", st.TotalDec1);
+                foreach (int c in new[] { 8, 9, 10 })
+                    s.SetFormula(C(c, row), "SUM(" + L(c) + metalFirst + ":" + L(c) + (row - 1) + ")", c == 8 ? st.TotalArea : st.TotalDec1);
                 row++;
             }
 
@@ -1164,7 +1170,7 @@ namespace ESKD.MaterialSync.Core
             s.SetText(C(3, row), "кг", st.Center);
             for (int c = 4; c <= columns; c++) s.SetText(C(c, row), "", st.Text);
             s.SetFormula(C(5, row), Ref(CostSheet, 2, cost.PaintKgRow), st.Dec1);
-            s.SetText(C(10, row), "норма и потери — лист «Нормы»", st.Text);
+            s.SetText(C(note, row), "норма и потери — лист «Нормы»", st.Text);
             row++;
             s.SetNumber(C(1, row), ++number, st.Center);
             s.SetText(C(2, row), "Тара с краской", st.Text);
@@ -1195,7 +1201,7 @@ namespace ESKD.MaterialSync.Core
                 for (int c = 4; c <= columns; c++) s.SetText(C(c, row), "", st.Text);
                 s.SetFormula(C(4, row), Ref(LzkBlanks.Kitting, 6, k.Row), st.Int);
                 s.SetFormula(C(5, row), Ref(LzkBlanks.Kitting, 7, k.Row), st.Int);
-                s.SetText(C(10, row), k.Group.First.Code.Trim().Length > 0 ? "код 1С: " + k.Group.First.Code.Trim() : "", st.Text);
+                s.SetText(C(note, row), k.Group.First.Code.Trim().Length > 0 ? "код 1С: " + k.Group.First.Code.Trim() : "", st.Text);
                 row++;
             }
 

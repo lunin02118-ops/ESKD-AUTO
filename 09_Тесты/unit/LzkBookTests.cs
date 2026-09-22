@@ -387,8 +387,12 @@ namespace ESKD.Tests
                 Assert.AreEqual("'Расход'!F9", summary.Formula("E8"), "в чистоте на заказ, м");
                 Assert.AreEqual("'Расход'!G9", summary.Formula("F8"), "запас, %");
                 Assert.AreEqual("'Расход'!H9", summary.Formula("G8"), "с запасом на заказ, м");
-                Assert.AreEqual("'Расход'!J9", summary.Formula("H8"), "масса в чистоте");
-                Assert.AreEqual("'Расход'!K9", summary.Formula("I8"), "масса с запасом");
+                // Масса в чистоте на 1 изделие (владелец 22.09.2026): длина на изделие × масса 1 м по строкам сортамента.
+                Assert.AreEqual("Масса в чистоте на 1 изд., кг", summary.Get("H6"), "шапка: масса на изделие");
+                Assert.AreEqual("Масса в чистоте на заказ, кг", summary.Get("I6"), "шапка: масса на заказ");
+                Assert.AreEqual("SUMPRODUCT('Расход'!E7:E8,'Расход'!I7:I8)", summary.Formula("H8"), "масса в чистоте на изделие");
+                Assert.AreEqual("'Расход'!J9", summary.Formula("I8"), "масса в чистоте");
+                Assert.AreEqual("'Расход'!K9", summary.Formula("J8"), "масса с запасом");
                 // Запас — норматив с листа «Нормы», свой на трубу и на лист (владелец 21.09.2026); в справочнике его нет — по умолчанию 10 %
                 string allowanceSheet, allowanceCell;
                 Assert.IsTrue(book.TryResolveName("ЗапасТруба", out allowanceSheet, out allowanceCell), "имя «ЗапасТруба»");
@@ -400,11 +404,13 @@ namespace ESKD.Tests
                 Assert.AreEqual("'Расход'!C" + sr, summary.Formula("E9"), "площадь листа на заказ");
                 Assert.AreEqual("'Расход'!D" + sr, summary.Formula("F9"), "запас листа");
                 Assert.AreEqual("'Расход'!E" + sr, summary.Formula("G9"), "площадь с запасом");
-                Assert.AreEqual("'Расход'!G" + sr, summary.Formula("H9"), "масса листа в чистоте");
-                Assert.AreEqual("'Расход'!H" + sr, summary.Formula("I9"), "масса листа с запасом");
+                Assert.AreEqual("'Расход'!F" + sr, summary.Formula("H9"), "масса листа на изделие");
+                Assert.AreEqual("'Расход'!G" + sr, summary.Formula("I9"), "масса листа в чистоте");
+                Assert.AreEqual("'Расход'!H" + sr, summary.Formula("J9"), "масса листа с запасом");
                 Assert.AreEqual("Итого металлопрокат, кг", summary.Get("A10"), "итог по металлу");
-                Assert.AreEqual("SUM(H8:H9)", summary.Formula("H10"), "итого масса в чистоте");
-                Assert.AreEqual("SUM(I8:I9)", summary.Formula("I10"), "итого масса с запасом");
+                Assert.AreEqual("SUM(H8:H9)", summary.Formula("H10"), "итого масса на изделие");
+                Assert.AreEqual("SUM(I8:I9)", summary.Formula("I10"), "итого масса в чистоте");
+                Assert.AreEqual("SUM(J8:J9)", summary.Formula("J10"), "итого масса с запасом");
                 int paintRow = 0, kitRow = 0;
                 for (int line = 10; line < 30; line++)
                 {
