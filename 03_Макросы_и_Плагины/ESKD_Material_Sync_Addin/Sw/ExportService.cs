@@ -40,6 +40,8 @@ namespace ESKD.MaterialSync.Sw
             public string Designation = "";
             public string Name = "";
             public int Revision;
+            /// <summary>Свойство «Операции» (галочки ведомости ЛЗК); пусто — ведомость ещё не строилась.</summary>
+            public string Operations = "";
 
             /// <summary>
             /// Исполнения детали в изделии и сколько штук каждого (конфигурация → количество), в порядке появления.
@@ -209,6 +211,7 @@ namespace ESKD.MaterialSync.Sw
                 string cfg = w.ActiveConfigurationName();
                 item.Designation = Value(w, cfg, "Обозначение");
                 item.Name = Value(w, cfg, "Наименование");
+                item.Operations = Value(w, cfg, LzkOperations.PropertyName);
                 item.Revision = ExportNaming.Revision(Value(w, cfg, "Revision"));
                 item.IsPurchased = ComponentKind.IsPurchased(w, model, path, "Выгрузка", cipher);
             }
@@ -600,7 +603,8 @@ namespace ESKD.MaterialSync.Sw
         // ------------------------------------------------------------------ IGS профиля (Т-29)
         private static void Igs(ISldWorks app, Item item, string productFolder, ExportLog log)
         {
-            if (!IsStructuralMember(item.Model) && !IsTubeByMaterial(item.Model)) return;
+            // Решает галочка «Лазерная резка трубы» в операциях; без операций — признак профиля в модели.
+            if (!LzkOperations.WantsTubeFile(item.Operations, IsStructuralMember(item.Model) || IsTubeByMaterial(item.Model))) return;
             string target = ExportNaming.IgsPath(productFolder, item.Designation, item.Name, item.Path, item.Revision);
             if (ExportNaming.TooLong(target).Length > 0)
             {

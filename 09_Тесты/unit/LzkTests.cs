@@ -7,6 +7,15 @@ namespace ESKD.Tests
 {
     public static class LzkNamingTests
     {
+        /// <summary>IGS на труборез — по галочке «Лазерная резка трубы» (решение владельца 22.09.2026).</summary>
+        public static void Test_Tube_file_follows_tube_cutting_checkbox()
+        {
+            Assert.IsTrue(LzkOperations.WantsTubeFile("Лазерная резка трубы; Сварочная сборка", false), "галочка стоит — выгружаем, даже не профиль");
+            Assert.IsFalse(LzkOperations.WantsTubeFile("Лазерная резка листа", true), "галочки нет — не выгружаем, даже профиль");
+            Assert.IsTrue(LzkOperations.WantsTubeFile("", true), "операций нет — по модели: профиль");
+            Assert.IsFalse(LzkOperations.WantsTubeFile("  ", false), "операций нет — по модели: не профиль");
+        }
+
         public static void Test_ProductFolder_is_parent_of_models_folder()
         {
             Assert.AreEqual(@"D:\З\И01_ПРТИ.468211.100_Кондуктор",

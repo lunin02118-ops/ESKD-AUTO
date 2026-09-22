@@ -176,6 +176,36 @@ class Export(SwTestCase):
         self.assertIn("построена не листовым металлом", text, "причина отсутствия DXF в отчёте")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
+    def test_X08_igs_follows_tube_cutting_checkbox(self):
+        """X08 (решение владельца 22.09.2026): IGS на труборез выгружается, когда в операциях детали стоит
+        «Лазерная резка трубы». Труба, у которой галочку сняли, в «Труборез» не попадает; деталь с галочкой — попадает."""
+        from eskd_e2e import build
+        short = self._case_name().split("_")[1]
+        models = self.s.run_dir / f"{short}/_Заявки/2026-001/02_Металл/И01_ПРТИ.468211.190/01_3D"
+        if models.exists():
+            shutil.rmtree(models.parent, ignore_errors=True)
+        models.mkdir(parents=True)
+        unchecked = models / "ПРТИ.468211.191 Стойка.sldprt"
+        checked = models / "ПРТИ.468211.192 Вставка.sldprt"
+        doc, _ = build.square_tube(self.s, 30, 1.5, 600, "Труба 30х30х1,5 ГОСТ 8639-82 / 08пс ГОСТ 13663-86")
+        build.props(doc, {"Операции": "Сварочная сборка"}, "")
+        self.s.save_as(doc, unchecked)
+        doc, _ = build.plate(self.s, 200, 100, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97")
+        build.props(doc, {"Операции": "Лазерная резка трубы"}, "")
+        self.s.save_as(doc, checked)
+        asm, _ = build.assembly(self.s, [(unchecked, 0, 0, 0), (checked, 0, 0.2, 0)])
+        asm_path = models / "ПРТИ.468211.190 СБ Рама.sldasm"
+        self.s.save_as(asm, asm_path)
+        self.s.close_all()
+        doc = self.s.open(asm_path)
+        self.s.activate(doc)
+
+        status = self._export()
+        self.assertTrue(status.startswith("ok|"), status)
+        igs = sorted(p.name for p in (models.parent / "03_ЧПУ" / "Труборез").glob("*.igs"))
+        self.assertEqual(["ПРТИ.468211.192 Вставка.igs"], igs, "IGS — только у детали с галочкой")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
     def test_X07_every_sheet_execution_gets_its_dxf_with_quantity(self):
         """X07 (заказ 778, 22.09.2026): листовая деталь в двух исполнениях — «00» дважды и «01» один раз — даёт две
         развёртки, каждая со своим обозначением и количеством на изделие в имени. Деталь лежит в «Стандартные изделия

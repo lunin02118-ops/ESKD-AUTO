@@ -285,6 +285,17 @@ namespace ESKD.MaterialSync.Core
         /// <summary>Все операции в порядке маршрута.</summary>
         public static readonly string[] All = { SheetCutting, TubeCutting, Bending, WeldedAssembly, MechanicalAssembly, Painting };
 
+        /// <summary>
+        /// Нужен ли IGS на труборез (решение владельца 22.09.2026): решает галочка «Лазерная резка трубы» в операциях детали.
+        /// Операции ещё не заданы (ведомость ЛЗК не строилась) — решает признак профиля в модели (autoTube).
+        /// Операции заданы, а резки трубы в них нет — IGS не нужен, даже если деталь из трубы: конструктор снял галочку.
+        /// </summary>
+        public static bool WantsTubeFile(string operations, bool autoTube)
+        {
+            List<string> list = Parse(operations);
+            return list.Count == 0 ? autoTube : list.Contains(TubeCutting);
+        }
+
         public static List<string> Parse(string value)
         {
             List<string> result = new List<string>();
