@@ -1,7 +1,7 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
-Сборочный чертёж сварной рамы из труб по ЕСКД через SolidWorks API, по образцу чертежа Кровати заказа 778:
-лист 1 A3-A-1 — главный вид в плоскости рамы и вид сверху под ним, габаритные и присоединительные размеры, позиции колонкой (InsertBOMBalloon2),
+Сборочный чертёж подсборки 778 (сварная рама из труб) по ЕСКД через SolidWorks API, как у Кровати владельца:
+лист DRW1 A3-A-1 — главный вид в плоскости рамы и вид слева, габаритные и присоединительные размеры, позиции (AutoBalloon5),
 ТТ по сварке и покрытию над основной надписью; лист SP1 SP-1 — спецификация: BOM по шаблону SpecEditor_sp,
 разделы «Документация» и «Детали» (заголовки подчёркнуты, по центру, как пишет SpecEditor), позиции по порядку строк.
 Запуск: asm_drw.py <подстрока имени сборки> [--final] [--keep]
@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 _argv = sys.argv; sys.argv = sys.argv[:1]
 import tube_drw as T
 sys.argv = _argv
-SW, sw, MM, log, SNAP = T.SW, T.sw, T.MM, T.log, T.SNAP
+SW, sw, MM, log = T.SW, T.sw, T.MM, T.log
 SPEC_DIR = r"D:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\SpecEditor"
 SCALES = [(1, 2), (1, 2.5), (1, 4), (1, 5), (1, 10), (1, 15), (1, 20)]
 TT_WELD = ["*Размеры для справок.",
@@ -187,7 +187,7 @@ def edim(drw, view, e1, e2, x, y, kind, what, made, prefix=None):
 def mm(p): return (p[0] / MM, p[1] / MM)
 
 
-def frame_dims(drw, view, asm, made, star=False, right=False):
+def frame_dims(drw, view, asm, made, star=False, right=False, col0=25):
     """Габариты и положение внутренних элементов по точной геометрии видимых рёбер (не выбором точкой)."""
     g = AGeo(view, asm)
     V = [(l, min(mm(l[1])[1], mm(l[2])[1]), max(mm(l[1])[1], mm(l[2])[1]), mm(l[1])[0]) for l in g.lines
@@ -214,7 +214,7 @@ def frame_dims(drw, view, asm, made, star=False, right=False):
         edim(drw, view, L[0], e[0], (X0 + b[0]) / 2, row, "h", "положение " + b[4], made)
         row -= 7
     edim(drw, view, L[0], R[0], (X0 + X1) / 2, row, "h", "габарит X", made, pre)
-    col = X0 + 25
+    col = X0 + col0
     seen = set()
     for b in sorted([b for b in inner if (b[2] - b[0]) >= (b[3] - b[1]) or adj(b)], key=lambda b: b[1]):
         own = [h for h in H if h[0][3].Name2 == b[4]]
@@ -463,14 +463,14 @@ def run(stem, keep=False, final=False):
     place_balloons(drw, main, model, X0, Y0, X1, Y1, X1 + (24 if right else 12))
     drw.m.ForceRebuild3(False)
     T.add_tt(TT_WELD)
-    out_dir = os.path.dirname(path) if final else SNAP
+    out_dir = os.path.dirname(path) if final else os.path.dirname(os.path.abspath(__file__))
     out = os.path.join(out_dir, ("" if final else "proto_") + os.path.basename(stem) + ".SLDDRW")
     res = drw.m.Extension.SaveAs(out, 0, 1, None, 0, 0)
     log("   сохранён:", out, res)
     for name in drw.d.GetSheetNames():
         drw.d.ActivateSheet(name)
         drw.m.ViewZoomtofit2()
-        drw.m.Extension.SaveAs(os.path.join(SNAP, "snapA_%s_%s.jpg" % (os.path.basename(stem), name)), 0, 3, None, 0, 0)
+        drw.m.Extension.SaveAs(os.path.join(os.path.dirname(os.path.abspath(__file__)), "snapA_%s_%s.jpg" % (os.path.basename(stem), name)), 0, 3, None, 0, 0)
     drw.d.ActivateSheet(drw.d.GetSheetNames()[0])
     if not keep:
         sw.CloseDoc(drw.m.GetPathName())
