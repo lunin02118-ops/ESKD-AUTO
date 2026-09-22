@@ -158,7 +158,7 @@ namespace ESKD.MaterialSync.Sw
                     IsAssembly = model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY,
                     // Покупное — и по свойствам (SProp), и по папке заказа: в боевых заказах фурнитуру
                     // складывают в «Стандартные изделия и фурнитура», не помечая каждую модель.
-                    IsPurchased = ComponentKind.IsPurchased(null, model, path, "Проверка изделия"),
+                    IsPurchased = ComponentKind.IsPurchased(null, model, path, "Проверка изделия", LzkNaming.Cipher(productFolder, assemblyPath)),
                     InProduct = inProduct
                 });
             }

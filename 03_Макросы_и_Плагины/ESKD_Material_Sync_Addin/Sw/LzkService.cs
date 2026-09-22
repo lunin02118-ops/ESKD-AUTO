@@ -376,7 +376,7 @@ namespace ESKD.MaterialSync.Sw
                 IsAssembly = assembly,
                 InProduct = LzkNaming.IsInside(path, _productFolder),
                 InBase = ProductLocator.Locate(path).InBase,
-                IsPurchased = ComponentKind.IsPurchased(w, model, path, "Ведомость ЛЗК"),
+                IsPurchased = ComponentKind.IsPurchased(w, model, path, "Ведомость ЛЗК", _cipher),
                 Designation = Prop(w, active, "Обозначение"),
                 Name = Prop(w, active, "Наименование"),
                 Operations = Prop(w, active, LzkOperations.PropertyName),

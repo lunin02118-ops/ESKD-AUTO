@@ -202,11 +202,17 @@ namespace ESKD.MaterialSync.Core
         /// DXF развёртки (Т-28): «&lt;стем&gt;_S&lt;толщина&gt;мм_&lt;ширина&gt;х&lt;длина&gt;[_ИзмN].dxf».
         /// Толщина — без лишнего нуля («S3мм», «S2.5мм»), рамка развёртки — целые миллиметры.
         /// </summary>
+        /// <summary>
+        /// «Обозначение Наименование_S3мм_2шт_120х80.dxf»: обозначение с исполнением, наименование, толщина, количество
+        /// на изделие и рамка развёртки (заказ 778, 22.09.2026 — у каждого исполнения своя развёртка и своё количество).
+        /// quantity ≤ 0 — количество не известно (выгрузка одной детали), в имени его нет.
+        /// </summary>
         public static string DxfPath(string productFolder, string designation, string name, string modelPath,
-            double thicknessMm, double widthMm, double lengthMm, int revision)
+            double thicknessMm, int quantity, double widthMm, double lengthMm, int revision)
         {
             string file = Stem(designation, name, modelPath) +
                 "_S" + Thickness(thicknessMm) + "мм" +
+                (quantity > 0 ? "_" + quantity.ToString(CultureInfo.InvariantCulture) + "шт" : "") +
                 "_" + Round(widthMm) + "х" + Round(lengthMm) +
                 RevisionSuffix(revision) + ".dxf";
             return Path.Combine(LaserDirectory(productFolder), file);

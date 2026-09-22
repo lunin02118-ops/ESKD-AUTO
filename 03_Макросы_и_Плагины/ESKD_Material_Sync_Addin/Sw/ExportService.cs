@@ -40,6 +40,23 @@ namespace ESKD.MaterialSync.Sw
             public string Designation = "";
             public string Name = "";
             public int Revision;
+
+            /// <summary>
+            /// Исполнения детали в изделии и сколько штук каждого (конфигурация → количество), в порядке появления.
+            /// Пусто — деталь выгружается сама по себе: одна активная конфигурация, количество не известно.
+            /// </summary>
+            public readonly List<KeyValuePair<string, int>> Executions = new List<KeyValuePair<string, int>>();
+
+            public void Count(string configuration)
+            {
+                for (int i = 0; i < Executions.Count; i++)
+                {
+                    if (!string.Equals(Executions[i].Key, configuration, StringComparison.Ordinal)) continue;
+                    Executions[i] = new KeyValuePair<string, int>(configuration, Executions[i].Value + 1);
+                    return;
+                }
+                Executions.Add(new KeyValuePair<string, int>(configuration, 1));
+            }
         }
 
         public static bool Run(ISldWorks app, bool interactive)
@@ -132,7 +149,8 @@ namespace ESKD.MaterialSync.Sw
         private static List<Item> Collect(ISldWorks app, ModelDoc2 doc, string path, string productFolder)
         {
             List<Item> items = new List<Item>();
-            AddItem(items, doc, path, doc.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY);
+            string cipher = LzkNaming.Cipher(productFolder, path);
+            AddItem(items, doc, path, doc.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, cipher);
             if (doc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY) return items;
 
             AssemblyDoc asm = (AssemblyDoc)doc;
@@ -145,24 +163,44 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Выгрузка: разрешение облегчённых компонентов", ex);
             }
             object[] comps = asm.GetComponents(false) as object[] ?? new object[0];
-            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { path };
+            Dictionary<string, Item> byPath = new Dictionary<string, Item>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> rejected = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { path };
             foreach (object o in comps)
             {
                 Component2 comp = o as Component2;
                 if (comp == null) continue;
                 string componentPath = comp.GetPathName() ?? "";
-                if (componentPath.Length == 0 || !File.Exists(componentPath) || !seen.Add(componentPath)) continue;
+                if (componentPath.Length == 0 || rejected.Contains(componentPath)) continue;
                 if (comp.GetSuppression2() == (int)swComponentSuppressionState_e.swComponentSuppressed) continue;
+                // Каждый экземпляр считается: развёртке нужно количество на изделие по каждому исполнению (заказ 778).
+                Item known;
+                if (byPath.TryGetValue(componentPath, out known))
+                {
+                    if (!comp.ExcludeFromBOM) known.Count(comp.ReferencedConfiguration ?? "");
+                    continue;
+                }
                 // Выгружается только своё: эталоны базы и покупные приходят готовыми (Т-26).
-                if (!LzkNaming.IsInside(componentPath, productFolder)) continue;
+                if (!File.Exists(componentPath) || !LzkNaming.IsInside(componentPath, productFolder))
+                {
+                    rejected.Add(componentPath);
+                    continue;
+                }
                 ModelDoc2 model = comp.GetModelDoc2() as ModelDoc2;
                 if (model == null) continue;
-                AddItem(items, model, componentPath, model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY);
+                Item item = AddItem(items, model, componentPath, model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, cipher);
+                if (item == null)
+                {
+                    rejected.Add(componentPath);
+                    continue;
+                }
+                byPath[componentPath] = item;
+                if (!comp.ExcludeFromBOM) item.Count(comp.ReferencedConfiguration ?? "");
             }
             return items;
         }
 
-        private static void AddItem(List<Item> items, ModelDoc2 model, string path, bool assembly)
+        /// <summary>Добавить документ в выгрузку; null — покупное, не выгружается.</summary>
+        private static Item AddItem(List<Item> items, ModelDoc2 model, string path, bool assembly, string cipher)
         {
             Item item = new Item { Path = path, Model = model, IsAssembly = assembly };
             try
@@ -172,13 +210,15 @@ namespace ESKD.MaterialSync.Sw
                 item.Designation = Value(w, cfg, "Обозначение");
                 item.Name = Value(w, cfg, "Наименование");
                 item.Revision = ExportNaming.Revision(Value(w, cfg, "Revision"));
-                item.IsPurchased = ComponentKind.IsPurchased(w, model, path, "Выгрузка");
+                item.IsPurchased = ComponentKind.IsPurchased(w, model, path, "Выгрузка", cipher);
             }
             catch (Exception ex)
             {
                 Log.Error("Выгрузка: реквизиты " + path, ex);
             }
-            if (!item.IsPurchased) items.Add(item);
+            if (item.IsPurchased) return null;
+            items.Add(item);
+            return item;
         }
 
         private static string Value(PropertyWriter w, string cfg, string name)
@@ -312,10 +352,88 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ DXF развёрток (Т-28)
+        /// <summary>
+        /// Развёртки всех исполнений детали, стоящих в изделии (заказ 778, 22.09.2026: у кронштейна 00, 01, 02, 03 —
+        /// выгружалась бы только активная конфигурация). Развёртку SolidWorks отдаёт по активной конфигурации, поэтому
+        /// исполнения по очереди делаются активными; прежняя конфигурация возвращается.
+        /// </summary>
         private static void Dxf(ISldWorks app, Item item, string productFolder, ExportLog log)
         {
-            PartDoc part = item.Model as PartDoc;
-            if (part == null) return;
+            if (!(item.Model is PartDoc)) return;
+            if (item.Executions.Count == 0)
+            {
+                DxfOne(app, item, item.Designation, item.Name, 0, productFolder, log);
+                return;
+            }
+            string original = ActiveConfiguration(item.Model);
+            bool wasDirty = item.Model.GetSaveFlag();
+            bool switched = false;
+            try
+            {
+                foreach (KeyValuePair<string, int> execution in item.Executions)
+                {
+                    string cfg = execution.Key.Length > 0 ? execution.Key : original;
+                    if (!string.Equals(cfg, ActiveConfiguration(item.Model), StringComparison.Ordinal))
+                    {
+                        if (!Activate(app, item.Path) || !item.Model.ShowConfiguration2(cfg))
+                        {
+                            log.Skip(Path.GetFileName(item.Path) + " [" + cfg + "]", "исполнение не стало активным: DXF не сделан");
+                            continue;
+                        }
+                        switched = true;
+                    }
+                    // Обозначение и наименование — той конфигурации, что теперь активна: у исполнения своё «…-02».
+                    PropertyWriter w = new PropertyWriter(item.Model, true);
+                    string designation = Value(w, cfg, "Обозначение");
+                    string name = Value(w, cfg, "Наименование");
+                    DxfOne(app, item, designation.Length > 0 ? designation : item.Designation,
+                        name.Length > 0 ? name : item.Name, execution.Value, productFolder, log);
+                }
+            }
+            finally
+            {
+                if (switched) RestoreConfiguration(item, original, wasDirty);
+            }
+        }
+
+        /// <summary>Вернуть конфигурацию, с которой деталь пришла. Переключение исполнений — не правка: сохранённая до выгрузки
+        /// деталь остаётся сохранённой.</summary>
+        private static void RestoreConfiguration(Item item, string original, bool wasDirty)
+        {
+            try
+            {
+                if (original.Length > 0 && !string.Equals(original, ActiveConfiguration(item.Model), StringComparison.Ordinal))
+                    item.Model.ShowConfiguration2(original);
+                if (!wasDirty && item.Model.GetSaveFlag())
+                {
+                    int errors = 0, warnings = 0;
+                    item.Model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings);
+                }
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Выгрузка: возврат конфигурации " + item.Path, ex);
+            }
+        }
+
+        private static string ActiveConfiguration(ModelDoc2 model)
+        {
+            try
+            {
+                Configuration c = model.GetActiveConfiguration() as Configuration;
+                return c != null ? c.Name ?? "" : "";
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Выгрузка: активная конфигурация", ex);
+                return "";
+            }
+        }
+
+        private static void DxfOne(ISldWorks app, Item item, string designation, string name, int quantity,
+            string productFolder, ExportLog log)
+        {
+            PartDoc part = (PartDoc)item.Model;
             double thickness = SheetThicknessMm(item.Model);
             if (double.IsNaN(thickness))
             {
@@ -379,11 +497,18 @@ namespace ESKD.MaterialSync.Sw
                     log.Skip(Path.GetFileName(item.Path), "развёртка пустая: DXF не сделан");
                     return;
                 }
-                string target = ExportNaming.DxfPath(productFolder, item.Designation, item.Name, item.Path,
-                    thickness, width, length, item.Revision);
+                string target = ExportNaming.DxfPath(productFolder, designation, name, item.Path,
+                    thickness, quantity, width, length, item.Revision);
                 if (ExportNaming.TooLong(target).Length > 0)
                 {
                     log.Skip(Path.GetFileName(item.Path), "DXF не сделан: " + ExportNaming.TooLong(target));
+                    return;
+                }
+                // Два исполнения без своих обозначений дали бы одно имя — второе молча затёрло бы первое.
+                if (log.Files.Contains(target, StringComparer.OrdinalIgnoreCase))
+                {
+                    log.Skip(Path.GetFileName(item.Path), "у исполнения нет своего обозначения — его развёртка совпала бы по имени с " +
+                        Path.GetFileName(target) + ": DXF не сделан");
                     return;
                 }
                 if (File.Exists(target)) File.Delete(target);

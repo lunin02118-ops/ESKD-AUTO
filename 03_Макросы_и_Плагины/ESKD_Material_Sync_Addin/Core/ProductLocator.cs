@@ -56,6 +56,28 @@ namespace ESKD.MaterialSync.Core
         /// Вне изделия (библиотеки базы) — любой уровень пути, как раньше. Имя папки — слово целиком: «Крепёж ГОСТ» —
         /// покупное, «Крепёжная рама» (сборка вне заказа в своей папке) — нет.
         /// </summary>
+        public static bool IsPurchasedFolder(string path, string cipher)
+        {
+            return IsPurchasedFolder(path) && !IsOwnDesignation(path, cipher);
+        }
+
+        /// <summary>
+        /// Обозначение в имени файла из той же серии, что шифр изделия: это своя деталь, даже если конструктор положил её
+        /// в «Стандартные изделия и фурнитура» (заказ 778, 22.09.2026 — листовой кронштейн выпал из выгрузки DXF и из ЛЗК).
+        /// Серия — шифр без последней части: «778.» у «778.КРВ» (детали «778.КРВ.00.005»), «ПРТИ.468211.» у
+        /// «ПРТИ.468211.180» (детали нумеруются рядом — «ПРТИ.468211.181»). У покупного обозначения изделия не бывает.
+        /// </summary>
+        public static bool IsOwnDesignation(string path, string cipher)
+        {
+            string c = (cipher ?? "").Trim();
+            int dot = c.LastIndexOf('.');
+            if (dot <= 0) return false;
+            string series = c.Substring(0, dot + 1);
+            if (!Regex.IsMatch(series, @"\d")) return false;
+            ParsedName parsed = DesignationParser.Parse(path, " ");
+            return parsed.HasDesignation && parsed.Root.StartsWith(series, StringComparison.OrdinalIgnoreCase);
+        }
+
         public static bool IsPurchasedFolder(string path)
         {
             if (string.IsNullOrWhiteSpace(path)) return false;

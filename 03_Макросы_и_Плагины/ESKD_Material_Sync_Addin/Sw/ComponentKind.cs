@@ -12,9 +12,10 @@ namespace ESKD.MaterialSync.Sw
     /// </summary>
     public static class ComponentKind
     {
-        public static bool IsPurchased(PropertyWriter w, ModelDoc2 model, string path, string context)
+        /// <param name="cipher">шифр изделия: деталь с ним в имени файла — своя и в папке стандартных изделий.</param>
+        public static bool IsPurchased(PropertyWriter w, ModelDoc2 model, string path, string context, string cipher = "")
         {
-            if (ProductLocator.IsPurchasedFolder(path)) return true;
+            if (ProductLocator.IsPurchasedFolder(path, cipher)) return true;
             try
             {
                 return SyncService.IsProtected(w ?? new PropertyWriter(model, true), model);

@@ -6,6 +6,18 @@ namespace ESKD.Tests
 {
     public static class ParserTests
     {
+        public static void Test_Own_part_in_standard_folder_is_not_purchased()
+        {
+            string own = @"\\NAS\_Заявки\778\02_Металл\И01_Спинка\01_3D\Стандартные изделия и фурнитура\778.КРВ.00.005 Кронштейн угловой левый.SLDPRT";
+            string mattress = @"\\NAS\_Заявки\778\02_Металл\И01_Спинка\01_3D\Стандартные изделия и фурнитура\Матрас ортопедический 2000х900х180.SLDPRT";
+            Assert.IsFalse(ProductLocator.IsPurchasedFolder(own, "778.КРВ"), "своя деталь с шифром изделия");
+            Assert.IsTrue(ProductLocator.IsPurchasedFolder(mattress, "778.КРВ"), "покупной матрас");
+            Assert.IsTrue(ProductLocator.IsPurchasedFolder(own, ""), "шифр не известен — как раньше, по папке");
+            Assert.IsTrue(ProductLocator.IsPurchasedFolder(own, "779.КРВ"), "чужой шифр");
+            string sibling = @"\\NAS\_Заявки\1\02_Металл\И01_ПРТИ.468211.180\01_3D\Стандартные изделия\ПРТИ.468211.181 Кронштейн.sldprt";
+            Assert.IsFalse(ProductLocator.IsPurchasedFolder(sibling, "ПРТИ.468211.180"), "десятичная серия: детали нумеруются рядом");
+        }
+
         public static void Test_LooksLikeDesignation_tells_designation_from_body_names()
         {
             Assert.IsTrue(DesignationParser.LooksLikeDesignation("778.01.000"), "обозначение из цифр");

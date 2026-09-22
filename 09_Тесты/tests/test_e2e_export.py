@@ -118,7 +118,7 @@ class Export(SwTestCase):
         dxfs = sorted((product / "03_ЧПУ" / "Лазер_Лист").glob("*.dxf"))
         self.assertEqual(1, len(dxfs), f"одна развёртка: {[p.name for p in dxfs]}")
         self.assertTrue(dxfs[0].name.startswith("ПРТИ.468211.161 Лист опорный_S3мм_"), dxfs[0].name)
-        self.assertRegex(dxfs[0].name, r"_S3мм_(200х100|100х200)\.dxf$", "рамка развёртки в имени")
+        self.assertRegex(dxfs[0].name, r"_S3мм_1шт_(200х100|100х200)\.dxf$", "количество на изделие и рамка развёртки в имени")
         igs = sorted((product / "03_ЧПУ" / "Труборез").glob("*.igs"))
         self.assertEqual(["ПРТИ.468211.162 Стойка трубная.igs"], [p.name for p in igs], "IGS трубы")
         self.assertGreater(igs[0].stat().st_size, 1000, "IGS непустой")
@@ -174,6 +174,46 @@ class Export(SwTestCase):
                          "развёртки у не листовой детали нет")
         text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
         self.assertIn("построена не листовым металлом", text, "причина отсутствия DXF в отчёте")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_X07_every_sheet_execution_gets_its_dxf_with_quantity(self):
+        """X07 (заказ 778, 22.09.2026): листовая деталь в двух исполнениях — «00» дважды и «01» один раз — даёт две
+        развёртки, каждая со своим обозначением и количеством на изделие в имени. Деталь лежит в «Стандартные изделия
+        и фурнитура», но обозначение у неё из серии изделия — это своя деталь, а не покупная. Конфигурация детали
+        после выгрузки прежняя."""
+        from eskd_e2e import build
+        short = self._case_name().split("_")[1]
+        models = self.s.run_dir / f"{short}/_Заявки/2026-001/02_Металл/И01_ПРТИ.468211.180/01_3D"
+        if models.exists():
+            shutil.rmtree(models.parent, ignore_errors=True)
+        (models / "Стандартные изделия и фурнитура").mkdir(parents=True)
+        part = models / "Стандартные изделия и фурнитура" / "ПРТИ.468211.181 Кронштейн.sldprt"
+        doc = build.sheet_metal_plate(self.s, 120, 80, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97")
+        active = str(doc.GetActiveConfiguration.Name)
+        build.add_configuration(doc, "01")
+        build.show_configuration(doc, active)
+        self.s.save_as(doc, part)
+        self.s.wait_addin_idle(timeout=60.0)
+        asm, opened = build.assembly(self.s, [(part, 0, 0, 0), (part, 0, 0.2, 0), (part, 0, 0.4, 0)])
+        comps = com.as_list(asm.GetComponents(True))
+        com.dyn(comps[2]).ReferencedConfiguration = "01"
+        asm.ForceRebuild3(False)
+        asm_path = models / "ПРТИ.468211.180 СБ Опора.sldasm"
+        self.s.save_as(asm, asm_path)
+        self.s.close_all()
+        doc = self.s.open(asm_path)
+        self.s.activate(doc)
+
+        status = self._export()
+        self.assertTrue(status.startswith("ok|"), status)
+        product = models.parent
+        names = sorted(p.name for p in (product / "03_ЧПУ" / "Лазер_Лист").glob("*.dxf"))
+        self.assertEqual(2, len(names), f"по развёртке на исполнение: {names}")
+        self.assertRegex(names[0], r"^ПРТИ\.468211\.181 Кронштейн_S3мм_2шт_(120х80|80х120)\.dxf$", names)
+        self.assertRegex(names[1], r"^ПРТИ\.468211\.181-01 Кронштейн_S3мм_1шт_(120х80|80х120)\.dxf$", names)
+        self.s.close_all()
+        part_doc = self.s.open(part)
+        self.assertEqual(active, str(part_doc.GetActiveConfiguration.Name), "конфигурация детали возвращена")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_X02_reports_missing_drawings(self):
