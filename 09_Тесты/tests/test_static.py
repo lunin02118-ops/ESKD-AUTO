@@ -172,12 +172,15 @@ class StaticRepository(StaticTestCase):
         self.assertIn("$hardwareGraphics", setup, "конвейер включается без проверки видеокарты")
         pipeline = setup.index('"Use Performance Pipeline 2020" 1')
         self.assertLess(setup.index("$hardwareGraphics = switch"), pipeline, "конвейер включается до проверки видеокарты")
-        # Своя маска AllowList роняет SolidWorks 2025 при старте (0xC0000005, GeForce RTX 2080 Ti): 20.09.2026 — 0x32408 под
-        # общими именами, 22.09.2026 — 0x30408 под точным рендерером. Маски только снимаются.
+        # AllowList — база видеокарт SolidWorks (22.09.2026). Вырезанные ветки Gl2Shaders/NVIDIA Corporation оставляли GeForce
+        # на программном OpenGL, своя маска в неполной базе роняла запуск. База не правится по частям: неполная (нет
+        # Gl2Shaders) снимается целиком — SolidWorks запишет её заново; маски не пишутся.
         self.assertNotIn('Set-Reg "$U\\SolidWorks\\AllowList', setup, "установщик пишет маску AllowList")
         self.assertNotIn("CreateSubKey", setup, "установщик пишет маску AllowList через .NET")
         self.assertNotIn('"Workarounds"', setup, "установщик пишет маску обхода")
-        self.assertIn('$cu.DeleteSubKeyTree($stale, $false)', setup, "маска AllowList от прежней настройки не снимается")
+        self.assertNotIn('"$allowRoot\\Gl2Shaders"', setup, "установщик вырезает ветку базы видеокарт по частям")
+        self.assertIn('-contains "Gl2Shaders"', setup, "нет проверки целостности базы видеокарт")
+        self.assertIn('$cu.DeleteSubKeyTree($allowRoot, $false)', setup, "неполная база видеокарт не снимается целиком")
         # 21.09.2026: запомненные возможности OpenGL переживали сброс профиля — программный OpenGL «застревал» серым.
         forget = setup.index('-Name "Saved OGL Settings"')
         self.assertLess(pipeline, forget, "запомненный режим OpenGL снимается до настройки конвейера, а не после")

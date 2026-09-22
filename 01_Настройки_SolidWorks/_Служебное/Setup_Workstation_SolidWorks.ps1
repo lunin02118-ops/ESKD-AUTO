@@ -537,17 +537,28 @@ if ($hardwareGraphics) {
 # заново при следующем запуске, как на чистом профиле, — своё значение мы не пишем (история с маской AllowList).
 Remove-ItemProperty -LiteralPath "$swRoot\Performance" -Name "Saved OGL Settings" -ErrorAction SilentlyContinue
 
-# AllowList. Своя маска обхода в AllowList (Gl2Shaders\NV40\… и NVIDIA Corporation\…) роняет SolidWorks 2025 на
-# GeForce RTX 2080 Ti сразу при старте — 0xC0000005 в sldappu.dll, окно не появляется. Проверено дважды: 20.09.2026
-# (маска 0x32408 под общими именами) и 22.09.2026 (0x00030408 под точной строкой рендерера «…/PCIe/SSE2»); снятие
-# разделов запуск чинит. Поэтому маски не пишутся, а оставшиеся — от прежней настройки или ручной правки — снимаются.
-# Имена рендеров содержат «/», поэтому снятие через .NET: провайдер реестра PowerShell считает «/» разделителем.
+# AllowList — собственная база видеокарт SolidWorks: при первом запуске он пишет в HKCU около 1200 разделов
+# (Gl2Shaders\NV25…NV40\<карта>\<версия драйвера>, разделы вендоров, DATE — версия базы). По ней он решает, можно ли
+# рисовать на видеокарте. Раньше установщик вырезал ветки Gl2Shaders и NVIDIA Corporation целиком: база оставалась
+# без NVIDIA, но с DATE — SolidWorks считал её целой и не восстанавливал, а для карты без записи брал осторожную маску
+# (Current\Workarounds = 16) и включал программный OpenGL: «Использовать программу OpenGL» серая и отмеченная,
+# «Повышенная производительность» серая (замечания владельца 21–22.09.2026; кэш OpenGL NVIDIA не обновлялся с 21.09
+# 16:08 — с установки 16:40). Своя маска в неполной базе роняла SolidWorks при старте (0xC0000005, 20.09 и 22.09).
+# Правило: база не правится по частям. Нет ветки Gl2Shaders — база повреждена, раздел AllowList снимается целиком,
+# и SolidWorks при следующем запуске записывает её заново, полную и под свою версию. Целая база не трогается.
 $allowRoot = $U.Substring("HKCU:\".Length) + "\SolidWorks\AllowList"  # в песочнице автотеста — её раздел
 $cu = [Microsoft.Win32.Registry]::CurrentUser
-foreach ($stale in @("$allowRoot\Gl2Shaders", "$allowRoot\NVIDIA Corporation")) {
-    $cu.DeleteSubKeyTree($stale, $false)
+$allowKey = $cu.OpenSubKey($allowRoot)
+if ($allowKey -ne $null) {
+    $complete = @($allowKey.GetSubKeyNames()) -contains "Gl2Shaders"
+    $allowKey.Close()
+    if ($complete) {
+        Write-Info "AllowList: база видеокарт SolidWorks целая — не трогается."
+    } else {
+        $cu.DeleteSubKeyTree($allowRoot, $false)
+        Write-Ok "AllowList: база видеокарт SolidWorks была неполной — снята, SolidWorks запишет её заново при запуске."
+    }
 }
-Write-Info "AllowList не настраивается: своя маска роняет SolidWorks 2025 при старте."
 
 # 4. Очистка устаревших надстроек и вкладок
 Write-Step "[4/9] Очистка устаревших надстроек и вкладок..."
