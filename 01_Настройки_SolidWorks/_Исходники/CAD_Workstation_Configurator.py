@@ -270,7 +270,9 @@ class ConfiguratorApp:
                         variable=self.var_block).pack(anchor=tk.W)
         ttk.Checkbutton(comp, text="Русский интерфейс Drew (DREW_LANG=ru)",
                         variable=self.var_ru).pack(anchor=tk.W)
-        ttk.Checkbutton(comp, text="Безопасная графика (если SolidWorks не запускается или окно чёрное)",
+        # Замечание владельца 22.09.2026: из подписи не было понятно, что галочка выключает аппаратное ускорение.
+        ttk.Checkbutton(comp, text="Безопасная графика — выключает аппаратное ускорение "
+                                   "(только если SolidWorks не запускается или окно чёрное)",
                         variable=self.var_safe_gfx).pack(anchor=tk.W)
 
         log_frame = ttk.LabelFrame(root, text=" Ход настройки ", padding=6)
