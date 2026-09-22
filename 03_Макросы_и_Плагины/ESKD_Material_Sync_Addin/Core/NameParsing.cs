@@ -46,6 +46,16 @@ namespace ESKD.MaterialSync.Core
             return name;
         }
 
+        /// <summary>
+        /// Значение похоже на обозначение ЕСКД: есть цифры и точка, нет скобок («778.01.000», «ПРТИ.000000.001»).
+        /// «Тело5», «Вырез-Вытянуть3[1]» — имена тел и элементов, их окно обхода изделия предлагает заменить именем файла.
+        /// </summary>
+        public static bool LooksLikeDesignation(string value)
+        {
+            string v = (value ?? "").Trim();
+            return v.IndexOf('.') > 0 && Regex.IsMatch(v, @"\d") && v.IndexOfAny(new[] { '[', ']', '(', ')' }) < 0;
+        }
+
         public static bool IsTemplateName(string value)
         {
             return !string.IsNullOrWhiteSpace(value) && TemplateName.IsMatch(value.Trim());

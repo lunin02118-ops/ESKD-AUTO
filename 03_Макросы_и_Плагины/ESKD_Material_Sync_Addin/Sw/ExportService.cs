@@ -317,7 +317,14 @@ namespace ESKD.MaterialSync.Sw
             PartDoc part = item.Model as PartDoc;
             if (part == null) return;
             double thickness = SheetThicknessMm(item.Model);
-            if (double.IsNaN(thickness)) return;  // не листовая деталь — развёртки и не должно быть
+            if (double.IsNaN(thickness))
+            {
+                // Не листовая деталь — развёртки и не должно быть. Но если материал — лист, конструктор ждёт DXF:
+                // говорим, почему его нет, а не молчим (22.09.2026, заказ 778).
+                if (LzkMaterials.Cutting(MaterialName(item.Model)) == LzkOperations.SheetCutting)
+                    log.Skip(Path.GetFileName(item.Path), "материал — лист, но деталь построена не листовым металлом: DXF развёртки не сделан");
+                return;
+            }
 
             string folder = ExportNaming.LaserDirectory(productFolder);
             Directory.CreateDirectory(folder);
@@ -468,7 +475,7 @@ namespace ESKD.MaterialSync.Sw
         // ------------------------------------------------------------------ IGS профиля (Т-29)
         private static void Igs(ISldWorks app, Item item, string productFolder, ExportLog log)
         {
-            if (!IsStructuralMember(item.Model)) return;
+            if (!IsStructuralMember(item.Model) && !IsTubeByMaterial(item.Model)) return;
             string target = ExportNaming.IgsPath(productFolder, item.Designation, item.Name, item.Path, item.Revision);
             if (ExportNaming.TooLong(target).Length > 0)
             {
@@ -522,6 +529,32 @@ namespace ESKD.MaterialSync.Sw
                         Log.Error("Выгрузка: восстановление настройки IGES", ex);
                     }
                 }
+            }
+        }
+
+        /// <summary>
+        /// Деталь из трубы или профиля по материалу — то же правило, по которому ЛЗК ставит ей «Лазерная резка трубы».
+        /// Нужно для тел, выделенных из многотельной детали командой «Разделить»: у них нет ни элемента сварной
+        /// конструкции, ни списка вырезов, и выгрузка молча пропускала IGS (22.09.2026, заказ 778).
+        /// </summary>
+        private static bool IsTubeByMaterial(ModelDoc2 model)
+        {
+            return LzkMaterials.Cutting(MaterialName(model)) == LzkOperations.TubeCutting;
+        }
+
+        /// <summary>Имя материала детали в активной конфигурации: «Труба ПО 40х20х1,5 ГОСТ 8644-68 / 08пс …».</summary>
+        private static string MaterialName(ModelDoc2 model)
+        {
+            try
+            {
+                string id = model.MaterialIdName ?? "";
+                string[] parts = id.Split('|');
+                return parts.Length >= 2 ? parts[1] : "";
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Выгрузка: материал детали", ex);
+                return "";
             }
         }
 

@@ -23,6 +23,21 @@ namespace ESKD.MaterialSync.Sw
         public bool Stock = true;
 
         public bool DryRun;
+
+        /// <summary>
+        /// Обозначение — по имени файла, даже если в свойстве другое значение: конструктор сам отметил деталь в окне
+        /// обхода изделия (замечание владельца 22.09.2026: «Тело5» у тел, выделенных из многотельной детали).
+        /// </summary>
+        public bool DesignationFromFile;
+    }
+
+    /// <summary>Обозначение в свойствах расходится с именем файла — вопрос конструктору при обходе изделия.</summary>
+    public sealed class DesignationMismatch
+    {
+        public string Current = "";
+        public string Expected = "";
+        /// <summary>Текст замечания в отчёте синхронизации — окно выбора показывает его вместо общего списка.</summary>
+        public string Warning = "";
     }
 
     public sealed class SyncReport
@@ -33,6 +48,9 @@ namespace ESKD.MaterialSync.Sw
         public string SkipReason = "";
         public readonly List<string> Operations = new List<string>();
         public readonly List<string> Warnings = new List<string>();
+
+        /// <summary>Обозначение введено не по имени файла — null, если совпадает или имя файла без обозначения.</summary>
+        public DesignationMismatch Designation;
 
         /// <summary>
         /// Что деталь сказала про свой прокат (Р-8). Назначение материала здесь не делается: обработчик сохранения
@@ -219,6 +237,12 @@ namespace ESKD.MaterialSync.Sw
             }
             Provenance designation = now.HasDesignation
                 ? ProvenanceRule.Classify(current, expected, expectedBefore, manual) : Provenance.Manual;
+            if (req.DesignationFromFile && now.HasDesignation && designation == Provenance.Manual)
+            {
+                // Конструктор выбрал имя файла: пишем, как у новой детали, и снимаем отметку ручного ввода.
+                designation = Provenance.Template;
+                if (manual) { w.Set("", "RenameSWP", "0"); manual = false; }
+            }
             bool designationDerived = designation != Provenance.Manual;
             if (ProvenanceRule.ShouldWrite(designation) && expected.Length > 0)
             {
@@ -227,8 +251,10 @@ namespace ESKD.MaterialSync.Sw
             else if (designation == Provenance.Manual && now.HasDesignation && !manual &&
                      !string.Equals((current ?? "").Trim(), expected, StringComparison.Ordinal))
             {
-                report.Warnings.Add(string.Format("Обозначение «{0}» не совпадает с именем файла «{1}» и оставлено без изменений",
-                    current, now.BaseName));
+                string warning = string.Format("Обозначение «{0}» не совпадает с именем файла «{1}» и оставлено без изменений",
+                    current, now.BaseName);
+                report.Warnings.Add(warning);
+                report.Designation = new DesignationMismatch { Current = (current ?? "").Trim(), Expected = expected, Warning = warning };
             }
 
             // Имя без обозначения («Кронштейн сварной»): обозначение пустое, как у MProp после правки WP-3.6 — выражение шаблона

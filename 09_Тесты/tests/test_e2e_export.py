@@ -140,6 +140,42 @@ class Export(SwTestCase):
         self.assertEqual("", str(part.Extension.GetUserPreferenceString(16, 0) or ""), "СК вывода возвращена")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
+    def test_X06_tube_without_weldment_goes_to_igs_by_material(self):
+        """X06 (заказ 778, 22.09.2026): труба, построенная без элемента сварной конструкции и без списка вырезов
+        (так выглядят тела, выделенные из многотельной детали «Разделить»), уходит в IGS по материалу «Труба …» —
+        тем же правилом ЛЗК ставит ей «Лазерная резка трубы». Пластина с материалом «Лист …», построенная не листовым
+        металлом, развёртки не даёт, но в отчёте сказано почему — раньше выгрузка молчала."""
+        from eskd_e2e import build
+        short = self._case_name().split("_")[1]
+        models = self.s.run_dir / f"{short}/_Заявки/2026-001/02_Металл/И01_ПРТИ.468211.170/01_3D"
+        if models.exists():
+            shutil.rmtree(models.parent, ignore_errors=True)
+        models.mkdir(parents=True)
+        tube = models / "ПРТИ.468211.171 Стойка.sldprt"
+        plate = models / "ПРТИ.468211.172 Накладка.sldprt"
+        doc = build.square_tube(self.s, 40, 2, 600, "Труба 40х40х2 ГОСТ 8639-82 / 08пс ГОСТ 13663-86")
+        self.s.save_as(doc, tube)
+        doc = build.plate(self.s, 200, 100, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97")
+        self.s.save_as(doc, plate)
+        asm, _ = build.assembly(self.s, [(tube, 0, 0, 0), (plate, 0, 0.2, 0)])
+        asm_path = models / "ПРТИ.468211.170 СБ Стойка.sldasm"
+        self.s.save_as(asm, asm_path)
+        self.s.close_all()
+        doc = self.s.open(asm_path)
+        self.s.activate(doc)
+
+        status = self._export()
+        self.assertTrue(status.startswith("ok|"), status)
+        product = models.parent
+        igs = sorted((product / "03_ЧПУ" / "Труборез").glob("*.igs"))
+        self.assertEqual(["ПРТИ.468211.171 Стойка.igs"], [p.name for p in igs], "IGS трубы без сварной конструкции")
+        self.assertGreater(igs[0].stat().st_size, 1000, "IGS непустой")
+        self.assertEqual([], list((product / "03_ЧПУ" / "Лазер_Лист").glob("*.dxf")) if (product / "03_ЧПУ" / "Лазер_Лист").exists() else [],
+                         "развёртки у не листовой детали нет")
+        text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
+        self.assertIn("построена не листовым металлом", text, "причина отсутствия DXF в отчёте")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
     def test_X02_reports_missing_drawings(self):
         """X02: у детали без чертежа выгрузка не падает — пропуск с причиной в отчёте."""
         product, asm = self._product()

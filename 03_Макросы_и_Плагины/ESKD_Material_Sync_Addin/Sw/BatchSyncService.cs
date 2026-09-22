@@ -20,12 +20,15 @@ namespace ESKD.MaterialSync.Sw
         public int MaterialsAssigned;
         /// <summary>Моделей, которым «Формат» дозаполнен по их чертежу (21.09.2026).</summary>
         public int Formats;
+        /// <summary>Деталей, которым обозначение взято из имени файла по выбору конструктора.</summary>
+        public int Renamed;
         public readonly List<string> Warnings = new List<string>();
 
         public string StatusLine()
         {
-            return string.Format("ЕСКД: деталей {0}, обновлено {1}, сохранено {2}, материалов назначено {3}{4}{5}",
+            return string.Format("ЕСКД: деталей {0}, обновлено {1}, сохранено {2}, материалов назначено {3}{4}{5}{6}",
                 Parts, Changed, Saved, MaterialsAssigned, Formats > 0 ? ", формат из чертежа " + Formats : "",
+                Renamed > 0 ? ", обозначение по имени файла " + Renamed : "",
                 Failed > 0 ? ", с ошибками " + Failed : "");
         }
     }
@@ -83,6 +86,7 @@ namespace ESKD.MaterialSync.Sw
             // детали: переписывать их файлы незачем, у них меняется только дата, а заказ потом не понять.
             HashSet<string> touched = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             List<StockFinding> ask = new List<StockFinding>();
+            var mismatches = new List<KeyValuePair<string, KeyValuePair<string, DesignationMismatch>>>();
             foreach (ModelDoc2 part in parts)
             {
                 SyncReport report = SyncService.SyncModel(app, part, new SyncRequest { Reason = "пакет изделия" });
@@ -91,7 +95,13 @@ namespace ESKD.MaterialSync.Sw
                 // «Формат» из чертежа, сохранённого до исправления 21.09.2026: иначе графа спецификации пуста.
                 if (DrawingFormatService.Backfill(app, part) > 0) { batch.Formats++; touched.Add(SafePath(part)); }
                 batch.Failed += report.Failures;
-                foreach (string warning in report.Warnings) batch.Warnings.Add(Title(part) + ": " + warning);
+                // Расхождение обозначения с именем файла спрашивается в своём окне, а не повторяется в общем списке.
+                bool pick = report.Designation != null && owner != null;
+                if (pick)
+                    mismatches.Add(new KeyValuePair<string, KeyValuePair<string, DesignationMismatch>>(SafePath(part),
+                        new KeyValuePair<string, DesignationMismatch>(Title(part), report.Designation)));
+                foreach (string warning in report.Warnings)
+                    if (!pick || warning != report.Designation.Warning) batch.Warnings.Add(Title(part) + ": " + warning);
                 if (report.Stock.Count == 0) continue;
                 stock[SafePath(part)] = report.Stock;
                 foreach (StockFinding finding in report.Stock)
@@ -128,11 +138,33 @@ namespace ESKD.MaterialSync.Sw
                 }
             }
 
+            // Обозначения не по имени файла: какие исправить — решает конструктор (22.09.2026).
+            HashSet<string> rename = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (mismatches.Count > 0)
+            {
+                using (DesignationPickForm form = new DesignationPickForm(mismatches))
+                {
+                    if (form.ShowDialog(owner) == DialogResult.OK) rename = form.Chosen;
+                }
+                foreach (var row in mismatches)
+                    if (!rename.Contains(row.Key)) batch.Warnings.Add(row.Value.Key + ": " + row.Value.Value.Warning);
+            }
+
             // Проход 2: назначение материала, повторная запись свойств и сохранение.
             foreach (ModelDoc2 part in parts)
             {
                 try
                 {
+                    if (rename.Contains(SafePath(part)))
+                    {
+                        SyncReport renamed = SyncService.SyncModel(app, part, new SyncRequest
+                        {
+                            Reason = "пакет изделия (обозначение по имени файла)", DesignationFromFile = true,
+                            Signatures = false, Materials = false, Mass = false, Stock = false
+                        });
+                        if (renamed.Changes > 0) touched.Add(SafePath(part));
+                        batch.Renamed++;
+                    }
                     int assigned = 0;
                     List<StockFinding> findings;
                     if (stock.TryGetValue(SafePath(part), out findings))

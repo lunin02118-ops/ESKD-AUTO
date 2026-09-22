@@ -6,6 +6,16 @@ namespace ESKD.Tests
 {
     public static class ParserTests
     {
+        public static void Test_LooksLikeDesignation_tells_designation_from_body_names()
+        {
+            Assert.IsTrue(DesignationParser.LooksLikeDesignation("778.01.000"), "обозначение из цифр");
+            Assert.IsTrue(DesignationParser.LooksLikeDesignation("ПРТИ.468211.010"), "обозначение ЕСКД");
+            Assert.IsFalse(DesignationParser.LooksLikeDesignation("Тело5"), "имя тела");
+            Assert.IsFalse(DesignationParser.LooksLikeDesignation("Вырез-Вытянуть3[1]"), "имя элемента");
+            Assert.IsFalse(DesignationParser.LooksLikeDesignation("фыв23545566"), "случайный набор");
+            Assert.IsFalse(DesignationParser.LooksLikeDesignation(""), "пусто");
+        }
+
         public static void Test_CleanDocumentName_strips_path_extension_and_sheet()
         {
             Assert.AreEqual("ПРТИ.468211.010 Стойка", DesignationParser.CleanDocumentName(@"C:\CAD\ПРТИ.468211.010 Стойка.sldprt"), "путь и расширение");
