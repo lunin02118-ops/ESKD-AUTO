@@ -181,6 +181,21 @@ namespace ESKD.MaterialSync.Core
             return false;
         }
 
+        /// <summary>
+        /// Значение «Исполнение» конфигурации — как галочки MProp (FrmMProp:1439–1456, 2603–2613, 3262–3275):
+        /// «1» — «Исполнение» и «Из»: номер — первое слово имени конфигурации («01» → «-01»); «2» — «Исполнение» без «Из»:
+        /// номер вписан (конфигурация «Покраска» под «01» берёт номер у родителя, из её имени его не взять); «0» — без исполнения
+        /// (базовая конфигурация, или номер уже в имени файла — иначе MProp удвоит суффикс).
+        /// </summary>
+        public static string ExecutionFlag(string configName, string execution, bool fromConfiguration)
+        {
+            if (!fromConfiguration || string.IsNullOrEmpty(execution)) return "0";
+            string name = (configName ?? "").Trim();
+            int space = name.IndexOf(' ');
+            string first = space > 0 ? name.Substring(0, space) : name;
+            return string.Equals(first, execution, StringComparison.Ordinal) ? "1" : "2";
+        }
+
         public static string Build(string root, string execution, string docCode)
         {
             if (string.IsNullOrWhiteSpace(root)) return "";

@@ -6,6 +6,16 @@ namespace ESKD.Tests
 {
     public static class ParserTests
     {
+        public static void Test_ExecutionFlag_matches_mprop_checkboxes()
+        {
+            Assert.AreEqual("1", DesignationParser.ExecutionFlag("01", "01", true), "«Исполнение» + «Из»: номер из имени конфигурации");
+            Assert.AreEqual("1", DesignationParser.ExecutionFlag("02 Покраска", "02", true), "первое слово имени — номер");
+            Assert.AreEqual("2", DesignationParser.ExecutionFlag("Покраска", "01", true), "номер у родителя — вписан");
+            Assert.AreEqual("2", DesignationParser.ExecutionFlag("1", "01", true), "MProp дал бы «-1», а нужно «-01»");
+            Assert.AreEqual("0", DesignationParser.ExecutionFlag("00", "", false), "базовое");
+            Assert.AreEqual("0", DesignationParser.ExecutionFlag("01", "01", false), "номер уже в имени файла");
+        }
+
         public static void Test_Own_part_in_standard_folder_is_not_purchased()
         {
             string own = @"\\NAS\_Заявки\778\02_Металл\И01_Спинка\01_3D\Стандартные изделия и фурнитура\778.КРВ.00.005 Кронштейн угловой левый.SLDPRT";

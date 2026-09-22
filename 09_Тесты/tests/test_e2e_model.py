@@ -124,7 +124,7 @@ class ModelNames(SwTestCase):
         self.assertEqual("ПРТИ.468211.103", V(disk, "Обозначение", "00"))
         self.assertEqual("ПРТИ.468211.103-01", V(disk, "Обозначение", "01"))
         self.assertEqual("ПРТИ.468211.103-02", V(disk, "Обозначение", "02"))
-        self.assertEqual("2", V(disk, "Исполнение", "01"))
+        self.assertEqual("1", V(disk, "Исполнение", "01"), "галочки MProp «Исполнение» и «Из» — номер из имени конфигурации")
 
     def test_M06b_derived_configuration_is_an_execution(self):
         """M06b: производная конфигурация «03» от «00» — исполнение -03, а не базовое (замечание 18.09.2026, «Укосина» NC3-7R.02.000)."""
@@ -135,7 +135,19 @@ class ModelNames(SwTestCase):
         disk = self.persisted(path)
         self.assertEqual("ПРТИ.468211.103", V(disk, "Обозначение", "00"))
         self.assertEqual("ПРТИ.468211.103-03", V(disk, "Обозначение", "03"))
-        self.assertEqual("2", V(disk, "Исполнение", "03"))
+        self.assertEqual("1", V(disk, "Исполнение", "03"))
+
+    def test_M06c_unchecked_execution_is_set_from_configuration(self):
+        """M06c (замечание владельца 22.09.2026): у исполнения «01» галочки MProp сняты («Исполнение» = 0) — синхронизация
+        сама ставит «Исполнение» и «Из» (= 1), конструктору не нужно отмечать их в MProp вручную."""
+        path, doc = self.open_copy(A03)
+        build.props(doc, {"Исполнение": "0"}, "01")
+        self.s.save(doc)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual("1", V(disk, "Исполнение", "01"))
+        self.assertEqual("0", V(disk, "Исполнение", "00"), "базовое исполнение — без галочек")
+        self.assertEqual("ПРТИ.468211.103-01", V(disk, "Обозначение", "01"))
 
     def test_M06_mass_in_every_configuration(self):
         """M06: масса для графы 5 у каждого исполнения — «Масса_ФБ» в «00», «01», «02» выражением MProp (эталон A-03: 0.13; 0.19; 0.25 кг)."""

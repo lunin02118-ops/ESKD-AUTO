@@ -272,6 +272,7 @@ namespace ESKD.MaterialSync.Sw
             // Обозначения конфигураций (исполнения по ГОСТ 2.113)
             if (designationDerived && now.HasDesignation)
             {
+                bool bchPart = !isAssembly && BchService.IsBch(w, dict);
                 foreach (string cfg in w.ConfigurationNames())
                 {
                     string execution;
@@ -296,13 +297,14 @@ namespace ESKD.MaterialSync.Sw
                         cfgExpected = expected;
                     }
                     w.Set(cfg, number, cfgExpected);
-                    // «Исполнение» = 2 — номер исполнения из имени конфигурации (MProp добавляет его к обозначению документа);
-                    // номер из имени файла уже входит в обозначение документа — «Исполнение» = 0, иначе MProp удвоит суффикс
-                    // (FrmMProp:2677–2690, прогон К-1 A-20).
+                    // «Исполнение» — как галочки MProp: «1» («Исполнение» + «Из») — номер из имени конфигурации, «2» — номер
+                    // вписан, «0» — без исполнения; номер из имени файла уже в обозначении документа — «0», иначе MProp удвоит
+                    // суффикс (FrmMProp:2677–2690, прогон К-1 A-20). Ставится при каждой синхронизации, чтобы конструктору не
+                    // отмечать галочки в MProp вручную (замечание владельца 22.09.2026); у детали БЧ — только в пустое.
                     bool fromConfiguration = recognized && !isBase && !string.IsNullOrEmpty(execution);
-                    string executionFlag = w.Raw(cfg, "Исполнение");
-                    if (string.IsNullOrWhiteSpace(executionFlag)) w.Set(cfg, "Исполнение", fromConfiguration ? "2" : "0");
-                    else if (executionFlag.Trim() == "2" && !fromConfiguration) w.Set(cfg, "Исполнение", "0");
+                    string executionFlag = (w.Raw(cfg, "Исполнение") ?? "").Trim();
+                    string wantedFlag = DesignationParser.ExecutionFlag(cfg, execution, fromConfiguration);
+                    if (executionFlag.Length == 0 || (!bchPart && executionFlag != wantedFlag)) w.Set(cfg, "Исполнение", wantedFlag);
                 }
             }
 
