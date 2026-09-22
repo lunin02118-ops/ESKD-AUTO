@@ -153,9 +153,9 @@ class Export(SwTestCase):
         models.mkdir(parents=True)
         tube = models / "ПРТИ.468211.171 Стойка.sldprt"
         plate = models / "ПРТИ.468211.172 Накладка.sldprt"
-        doc = build.square_tube(self.s, 40, 2, 600, "Труба 40х40х2 ГОСТ 8639-82 / 08пс ГОСТ 13663-86")
+        doc, _ = build.square_tube(self.s, 30, 1.5, 600, "Труба 30х30х1,5 ГОСТ 8639-82 / 08пс ГОСТ 13663-86")
         self.s.save_as(doc, tube)
-        doc = build.plate(self.s, 200, 100, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97")
+        doc, _ = build.plate(self.s, 200, 100, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97")
         self.s.save_as(doc, plate)
         asm, _ = build.assembly(self.s, [(tube, 0, 0, 0), (plate, 0, 0.2, 0)])
         asm_path = models / "ПРТИ.468211.170 СБ Стойка.sldasm"
@@ -194,6 +194,12 @@ class Export(SwTestCase):
         build.show_configuration(doc, active)
         self.s.save_as(doc, part)
         self.s.wait_addin_idle(timeout=60.0)
+        # Обозначения исполнений («…-01») надстройка пишет при сохранении — второе сохранение кладёт их в файл
+        # до сборки изделия, как у настоящей детали заказа.
+        self.s.save(doc)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.assertEqual("ПРТИ.468211.181-01", com.prop_get(doc.Extension.CustomPropertyManager("01"), "Обозначение")[0],
+                         "у исполнения своё обозначение")
         asm, opened = build.assembly(self.s, [(part, 0, 0, 0), (part, 0, 0.2, 0), (part, 0, 0.4, 0)])
         comps = com.as_list(asm.GetComponents(True))
         com.dyn(comps[2]).ReferencedConfiguration = "01"
