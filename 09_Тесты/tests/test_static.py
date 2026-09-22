@@ -172,14 +172,12 @@ class StaticRepository(StaticTestCase):
         self.assertIn("$hardwareGraphics", setup, "конвейер включается без проверки видеокарты")
         pipeline = setup.index('"Use Performance Pipeline 2020" 1')
         self.assertLess(setup.index("$hardwareGraphics = switch"), pipeline, "конвейер включается до проверки видеокарты")
-        # AllowList (22.09.2026): без записи под точной строкой рендерера GeForce остаётся на программном OpenGL. Маска
-        # 0x30408 — только под Current\Renderer и через .NET («/» в имени); общие имена и Current роняли SolidWorks (20.09).
-        self.assertNotIn('Set-Reg "$U\\SolidWorks\\AllowList', setup, "маска AllowList через провайдер PowerShell или под общим именем")
-        self.assertIn('Get-RegValue "$U\\SolidWorks\\AllowList\\Current" "Renderer"', setup, "маска не по строке рендерера")
-        self.assertIn('$cu.CreateSubKey("$branch\\$renderer")', setup, "маска не под точным рендерером")
-        self.assertIn('SetValue("Workarounds", 0x00030408', setup, "маска не 0x30408")
-        self.assertNotIn("0x32408", setup, "прежняя маска, ронявшая SolidWorks")
-        self.assertIn("$key.DeleteSubKeyTree($name, $false)", setup, "прежние разделы под общими именами не снимаются")
+        # Своя маска AllowList роняет SolidWorks 2025 при старте (0xC0000005, GeForce RTX 2080 Ti): 20.09.2026 — 0x32408 под
+        # общими именами, 22.09.2026 — 0x30408 под точным рендерером. Маски только снимаются.
+        self.assertNotIn('Set-Reg "$U\\SolidWorks\\AllowList', setup, "установщик пишет маску AllowList")
+        self.assertNotIn("CreateSubKey", setup, "установщик пишет маску AllowList через .NET")
+        self.assertNotIn('"Workarounds"', setup, "установщик пишет маску обхода")
+        self.assertIn('$cu.DeleteSubKeyTree($stale, $false)', setup, "маска AllowList от прежней настройки не снимается")
         # 21.09.2026: запомненные возможности OpenGL переживали сброс профиля — программный OpenGL «застревал» серым.
         forget = setup.index('-Name "Saved OGL Settings"')
         self.assertLess(pipeline, forget, "запомненный режим OpenGL снимается до настройки конвейера, а не после")
