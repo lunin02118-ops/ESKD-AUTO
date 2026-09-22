@@ -17,12 +17,15 @@ namespace ESKD.MaterialSync.Sw
         Ok = 1,
         /// <summary>Материала нет, в библиотеке ровно один подходящий — подставляем молча.</summary>
         Assign = 2,
-        /// <summary>Материала нет, подходящих несколько — спрашиваем конструктора.</summary>
+        /// <summary>Материала нет или он не соответствует геометрии, а подходящих несколько — спрашиваем конструктора.</summary>
         Choose = 3,
         /// <summary>Типоразмера нет в библиотеке — замечание, ничего не меняем.</summary>
         NotInLibrary = 4,
-        /// <summary>Материал выбран конструктором и геометрии не соответствует — только уведомление (решение владельца 20.09.2026).</summary>
-        Mismatch = 5
+        /// <summary>
+        /// Материал стоит, но геометрии не соответствует, а подходящий в библиотеке один — заменяем (решение владельца
+        /// 22.09.2026; до этого только уведомляли). Подходящих несколько — это <see cref="Choose"/>.
+        /// </summary>
+        Replace = 5
     }
 
     /// <summary>Одна позиция проката детали: папка списка вырезов или листовая деталь целиком.</summary>
@@ -56,7 +59,10 @@ namespace ESKD.MaterialSync.Sw
         public BodyFolder FolderObject;
 
         public bool NeedsChoice { get { return Verdict == StockVerdict.Choose; } }
-        public bool NeedsAssign { get { return Chosen != null && (Verdict == StockVerdict.Assign || Verdict == StockVerdict.Choose); } }
+        public bool NeedsAssign
+        {
+            get { return Chosen != null && (Verdict == StockVerdict.Assign || Verdict == StockVerdict.Replace || Verdict == StockVerdict.Choose); }
+        }
     }
 
     /// <summary>
@@ -68,7 +74,9 @@ namespace ESKD.MaterialSync.Sw
     ///   материала нет и подходящих несколько          → спросить;
     ///   материала нет и подходящих нет                → замечание;
     ///   материал выбран и совпадает                   → ничего;
-    ///   материал выбран и не совпадает                → уведомление, выбор конструктора не переписываем.
+    ///   материал выбран и не совпадает, подходящий один → заменить молча (решение владельца 22.09.2026);
+    ///   материал выбран и не совпадает, подходящих несколько → спросить;
+    ///   материал выбран и не совпадает, подходящих нет → замечание, ничего не меняем.
     ///
     /// Чтение идёт без отката модели: свойства профиля доходят до папки списка вырезов сами (проверено на боевых
     /// деталях 20.09.2026), а AccessSelections откатывает дерево, и в откаченном состоянии материал телу не назначить.
@@ -315,26 +323,27 @@ namespace ESKD.MaterialSync.Sw
         {
             finding.Match = StockCatalog.Match(library, finding.Request);
             bool assigned = !string.IsNullOrWhiteSpace(finding.CurrentMaterial);
-
-            if (!assigned)
+            if (assigned && Fits(finding, library))
             {
-                if (finding.Match.Single)
-                {
-                    finding.Verdict = StockVerdict.Assign;
-                    finding.Chosen = finding.Match.First;
-                }
-                else if (finding.Match.Several) finding.Verdict = StockVerdict.Choose;
-                else finding.Verdict = StockVerdict.NotInLibrary;
+                finding.Verdict = StockVerdict.Ok;
                 return;
             }
+            if (finding.Match.Single)
+            {
+                finding.Verdict = assigned ? StockVerdict.Replace : StockVerdict.Assign;
+                finding.Chosen = finding.Match.First;
+            }
+            else if (finding.Match.Several) finding.Verdict = StockVerdict.Choose;
+            else finding.Verdict = StockVerdict.NotInLibrary;
+        }
 
+        /// <summary>Стоящий материал соответствует геометрии: он среди подходящих или совпадает с одним из них по свойствам.</summary>
+        private static bool Fits(StockFinding finding, List<MaterialInfo> library)
+        {
             foreach (MaterialInfo info in finding.Match.Candidates)
             {
                 if (string.Equals((info.Name ?? "").Trim(), finding.CurrentMaterial.Trim(), StringComparison.Ordinal))
-                {
-                    finding.Verdict = StockVerdict.Ok;
-                    return;
-                }
+                    return true;
             }
             // Материал мог быть схлопнут как дубль по свойствам: тогда он тоже соответствует геометрии.
             MaterialInfo current = ByName(library, finding.CurrentMaterial);
@@ -343,14 +352,16 @@ namespace ESKD.MaterialSync.Sw
                 string key = StockCatalog.RecordKey(current);
                 foreach (MaterialInfo info in finding.Match.Candidates)
                 {
-                    if (StockCatalog.RecordKey(info) == key)
-                    {
-                        finding.Verdict = StockVerdict.Ok;
-                        return;
-                    }
+                    if (StockCatalog.RecordKey(info) == key) return true;
                 }
             }
-            finding.Verdict = finding.Match.None ? StockVerdict.NotInLibrary : StockVerdict.Mismatch;
+            return false;
+        }
+
+        /// <summary>« вместо «…»» — в журнале видно, какой материал заменён.</summary>
+        private static string Instead(StockFinding finding)
+        {
+            return string.IsNullOrWhiteSpace(finding.CurrentMaterial) ? "" : " вместо «" + finding.CurrentMaterial.Trim() + "»";
         }
 
         private static MaterialInfo ByName(List<MaterialInfo> library, string name)
@@ -373,13 +384,12 @@ namespace ESKD.MaterialSync.Sw
                     return string.Format("{0}: типоразмер «{1}»{2} не найден в библиотеке материалов — проверьте материал",
                         where, finding.Request.Size,
                         finding.Request.Gost.Length > 0 ? " " + finding.Request.Gost : "");
-                case StockVerdict.Mismatch:
-                    return string.Format("{0}: материал «{1}» не соответствует геометрии — по типоразмеру «{2}» подходит «{3}»; " +
-                        "значение не изменено", where, finding.CurrentMaterial, finding.Request.Size,
-                        finding.Match.First != null ? finding.Match.First.Name : "");
                 case StockVerdict.Choose:
-                    return string.Format("{0}: типоразмеру «{1}» соответствуют {2} материала — материал не назначен, выберите его",
-                        where, finding.Request.Size, finding.Match.Candidates.Count);
+                    return string.IsNullOrWhiteSpace(finding.CurrentMaterial)
+                        ? string.Format("{0}: типоразмеру «{1}» соответствуют {2} материала — материал не назначен, выберите его",
+                            where, finding.Request.Size, finding.Match.Candidates.Count)
+                        : string.Format("{0}: материал «{1}» не соответствует геометрии, а типоразмеру «{2}» соответствуют {3} материала — " +
+                            "выберите нужный", where, finding.CurrentMaterial, finding.Request.Size, finding.Match.Candidates.Count);
                 default:
                     return "";
             }
@@ -431,8 +441,8 @@ namespace ESKD.MaterialSync.Sw
                             changed++;
                             if (finding.FolderObject != null && !refresh.Contains(finding.FolderObject)) refresh.Add(finding.FolderObject);
                             if (report != null)
-                                report.Operations.Add(string.Format("«{0}»: материал «{1}» назначен по типоразмеру «{2}»",
-                                    finding.Folder, target.Name, finding.Request.Size));
+                                report.Operations.Add(string.Format("«{0}»: материал «{1}» назначен по типоразмеру «{2}»{3}",
+                                    finding.Folder, target.Name, finding.Request.Size, Instead(finding)));
                         }
                     }
                     else
@@ -447,8 +457,8 @@ namespace ESKD.MaterialSync.Sw
                             changed++;
                             if (finding.FolderObject != null && !refresh.Contains(finding.FolderObject)) refresh.Add(finding.FolderObject);
                             if (report != null)
-                                report.Operations.Add(string.Format("Материал «{0}» назначен по типоразмеру «{1}»",
-                                    target.Name, finding.Request.Size));
+                                report.Operations.Add(string.Format("Материал «{0}» назначен по типоразмеру «{1}»{2}",
+                                    target.Name, finding.Request.Size, Instead(finding)));
                         }
                         else if (report != null)
                         {

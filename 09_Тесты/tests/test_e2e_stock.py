@@ -128,21 +128,23 @@ class Stock(SwTestCase):
         self.assertIn("не найден в библиотеке", warnings, warnings)
 
     # ------------------------------------------------------------------ расхождение
-    def test_T05_wrong_material_is_reported_and_kept(self):
-        """T05: конструктор выбрал материал, потом сменил профиль. Уведомляем, но его выбор не переписываем —
-        ошибка может быть и в модели, решать конструктору."""
-        path, doc = self._tube("ПРТИ.301111.005 Стойка.sldprt", material=SHEET8)
+    def test_T05_wrong_material_is_replaced_by_single_candidate(self):
+        """T05: конструктор выбрал материал, потом сменил профиль. Подходящий материал один — надстройка меняет
+        его сама и без предупреждения (решение владельца 22.09.2026; до этого только уведомляла)."""
+        doc = build.structural_tube(self.s, 400, FLAT_OVAL, SHEET8)
+        # Вердикт — до сохранения: после него надстройка в простое уже меняет материал (как у «Assign» в T02).
         rows = self._report()
         self.assertEqual(1, len(rows), rows)
-        self.assertEqual("Mismatch", rows[0][1], f"расхождение материала и профиля: {rows[0]}")
+        self.assertEqual("Replace", rows[0][1], f"расхождение материала и профиля: {rows[0]}")
         self.assertEqual(SHEET8, rows[0][4], "виден материал, который стоит сейчас")
-
+        self._save(doc, "ПРТИ.301111.005 Стойка.sldprt", None)
+        self.s.wait_addin_idle(timeout=60.0)
         self.s.save(doc)
         self.s.wait_addin_idle(timeout=60.0)
         name, _ = build.material_of(doc, "")
-        self.assertEqual(SHEET8, name, "материал конструктора остался нетронутым")
+        self.assertEqual(TUBE_MATERIAL, name, "материал заменён на подходящий профилю")
         warnings = str(com.call(self.s.eskd(), "LastSyncWarnings") or "")
-        self.assertIn("не соответствует геометрии", warnings, warnings)
+        self.assertNotIn("не соответствует геометрии", warnings, warnings)
 
     # ------------------------------------------------------------------ всё сходится
     def test_T06_matching_material_causes_no_changes(self):

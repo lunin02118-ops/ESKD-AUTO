@@ -288,17 +288,38 @@ namespace ESKD.Tests
         }
 
         /// <summary>
-        /// Материал выбран конструктором и геометрии не соответствует: это и есть ошибка NC3-7R.02.001 —
-        /// профиль прямоугольный по ГОСТ 8645-68, а материал от плоскоовальной трубы. Уведомляем, но не переписываем.
+        /// Материал стоит и геометрии не соответствует, подходящий один — заменяем молча (решение владельца 22.09.2026:
+        /// «он должен менять, предупреждение — только если вариантов несколько»). Случай с экрана владельца: профиль
+        /// 80х80х4, а материал от трубы 40х40х2.
         /// </summary>
-        public static void Test_Wrong_material_is_reported_but_not_overwritten()
+        public static void Test_Wrong_material_with_single_candidate_is_replaced()
         {
-            StockFinding f = Finding(new StockRequest { Kind = StockKind.Profile, Size = "40х20х1,5", Gost = "ГОСТ 8645-68" },
-                                     "Труба ПО 40х20х1,5 ГОСТ 8644-68 / 08пс ГОСТ 13663-86");
-            Assert.AreEqual(StockVerdict.Mismatch, f.Verdict, "вердикт");
-            Assert.IsFalse(f.NeedsAssign, "выбор конструктора не переписываем");
-            Assert.IsTrue(StockService.Message(f).IndexOf("не соответствует геометрии", StringComparison.Ordinal) >= 0, "текст уведомления");
-            Assert.IsTrue(StockService.Message(f).IndexOf("значение не изменено", StringComparison.Ordinal) >= 0, "сказано, что ничего не меняли");
+            StockFinding f = Finding(new StockRequest { Kind = StockKind.Profile, Size = "30х15х1,5", Gost = "ГОСТ 8644-68" },
+                                     "Лист 8,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97");
+            Assert.AreEqual(StockVerdict.Replace, f.Verdict, "вердикт");
+            Assert.NotNull(f.Chosen, "на что заменить");
+            Assert.IsTrue(f.NeedsAssign, "позиция идёт в назначение");
+            Assert.IsFalse(f.NeedsChoice, "не спрашиваем");
+            Assert.AreEqual("", StockService.Message(f), "без предупреждения");
+        }
+
+        /// <summary>Материал не соответствует, подходящих несколько — спрашиваем, сами не выбираем.</summary>
+        public static void Test_Wrong_material_with_several_candidates_asks()
+        {
+            StockFinding f = Finding(new StockRequest { Kind = StockKind.Sheet, Size = "6,0" },
+                                     "Труба ПО 30х15х1,5 ГОСТ 8644-68 / 08пс ГОСТ 13663-86");
+            Assert.AreEqual(StockVerdict.Choose, f.Verdict, "вердикт");
+            Assert.IsNull(f.Chosen, "до выбора назначать нечего");
+            Assert.IsTrue(StockService.Message(f).IndexOf("не соответствует геометрии", StringComparison.Ordinal) >= 0, "текст вопроса");
+        }
+
+        /// <summary>Материал не соответствует, а типоразмера нет в библиотеке — замечание, стоящий материал не трогаем.</summary>
+        public static void Test_Wrong_material_without_candidates_is_kept()
+        {
+            StockFinding f = Finding(new StockRequest { Kind = StockKind.Sheet, Size = "7,0" },
+                                     "Труба ПО 30х15х1,5 ГОСТ 8644-68 / 08пс ГОСТ 13663-86");
+            Assert.AreEqual(StockVerdict.NotInLibrary, f.Verdict, "вердикт");
+            Assert.IsFalse(f.NeedsAssign, "менять не на что");
         }
 
         /// <summary>

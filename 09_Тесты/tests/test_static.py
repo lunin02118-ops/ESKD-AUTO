@@ -640,17 +640,17 @@ class StaticRepository(StaticTestCase):
         code = "\n".join(ln.split("//")[0] for ln in service.splitlines() if not ln.strip().startswith(("///", "//", "*", "/*")))
         self.assertNotIn(".AccessSelections(", code, "откат модели запрещён: в откаченном состоянии материал телу не назначить")
 
-        # Молча — только при единственном подходящем: Chosen заполняется в ветке Single и больше нигде.
+        # Молча — только при единственном подходящем (и когда материала нет, и когда он не тот — решение 22.09.2026):
+        # Chosen заполняется в ветке Single и больше нигде.
         self.assertEqual(1, service.count("finding.Chosen = "), "материал выбирается за конструктора не в одном месте")
         single = re.search(r"if \(finding\.Match\.Single\)\s*\{(.*?)\}", service, flags=re.S)
         self.assertIsNotNone(single, "ветка «подходящий один» не найдена")
         self.assertIn("finding.Chosen = finding.Match.First", single.group(1), "молча подставляется не единственный подходящий")
 
-        # Расхождение — только уведомление: к назначению идут лишь Assign и Choose.
-        needs = re.search(r"public bool NeedsAssign\s*\{[^}]*?return ([^;]+);", service, flags=re.S)
-        self.assertIsNotNone(needs, "NeedsAssign не найден")
-        self.assertNotIn("Mismatch", needs.group(1), "материал конструктора переписывается при расхождении")
-        self.assertIn("не изменено", service, "при расхождении конструктору не сказано, что значение оставлено")
+        # Расхождение: один подходящий — замена, несколько — вопрос; решение на месте, а не уведомление.
+        self.assertIn("finding.Verdict = assigned ? StockVerdict.Replace : StockVerdict.Assign", service,
+                      "при расхождении с единственным подходящим материал не заменяется")
+        self.assertNotIn("Mismatch", service, "осталось уведомление без замены")
 
         # Запись документа — из очереди простоя, а не из обработчика сохранения.
         inspect = re.search(r"private static void InspectStock\(.*?\n        \}", sync, flags=re.S)
