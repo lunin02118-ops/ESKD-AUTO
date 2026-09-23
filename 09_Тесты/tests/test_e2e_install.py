@@ -190,15 +190,20 @@ class FixtureMaterials(SwTestCase):
 
     def test_I07_fixture_materials_match_manifest(self):
         """I07: материалы в файлах фикстур как в manifest.json — у деталей из проката корпуса А и у копии трубы B-01 сортамент
-        из библиотеки ЕСКД, у стандартного болта — сталь вне библиотеки, у покупного двигателя материала нет."""
+        из библиотеки ЕСКД, у стандартного болта — сталь вне библиотеки, у покупного двигателя материала нет. Детали из
+        листа построены листовым металлом толщины сортамента: иначе выгрузка не делает DXF развёртки (23.09.2026, G05)."""
         from eskd_e2e import build, testing
         manifest = testing.manifest()
         expected = {}
+        sheets = {}
         for fid, item in manifest["fixtures"].items():
-            if item.get("kind") in ("part", "weldment", "bch"):
+            if item.get("kind") in ("part", "weldment", "bch", "foreign") and item.get("material"):
                 expected[(fid, paths.FIXTURES_A / item["file"])] = {None: item["material"]}
             elif item.get("kind") in ("standard", "purchased"):
                 expected[(fid, paths.FIXTURES_A / item["file"])] = {None: item.get("material_sw") or ""}
+            sheet = re.match(r"Лист (\d+(?:,\d+)?) ", item.get("material") or "")
+            if sheet:
+                sheets[fid] = float(sheet.group(1).replace(",", "."))
         for fid, item in manifest["corpus_b"].items():
             expected[(fid, paths.FIXTURES_B / item["file"])] = dict(item["materials"])
         wrong = {}
@@ -211,6 +216,9 @@ class FixtureMaterials(SwTestCase):
                         got = build.material_of(doc, name)[0]
                         if got != material:
                             wrong[f"{fid} «{name}»"] = {"ожидался": material, "назначен": got}
+                if fid in sheets and build.sheet_thickness_mm(doc) != sheets[fid]:
+                    wrong[f"{fid} лист"] = {"ожидался листовой металл, мм": sheets[fid],
+                                            "толщина листового металла": build.sheet_thickness_mm(doc)}
             finally:
                 self.s.close(doc)
         self.assertEqual({}, wrong, "материалы фикстур расходятся с манифестом")
