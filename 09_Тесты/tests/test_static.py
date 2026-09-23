@@ -482,6 +482,74 @@ class StaticRepository(StaticTestCase):
         for script in (module, ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1"):
             self.assertNotIn("WriteAllLines", script.read_text(encoding="utf-8-sig"), "файлы SWPlus пишутся только через Write-SwPlusLines")
 
+    def test_T0_installer_survives_powershell7_environment(self):
+        """T0 (аудит 23.09.2026): установщик, запущенный из PowerShell 7, наследовал его PSModulePath — Windows PowerShell 5.1
+        терял Get-FileHash, сверка хешей молча давала пусто, и Drew переустанавливался. Теперь хэш считается средствами .NET,
+        движок сам чистит пути модулей, окно и .bat запускают 5.1 по полному пути с его собственными путями модулей."""
+        import tempfile
+        setup_dir = ROOT / "01_Настройки_SolidWorks" / "_Служебное"
+        module = setup_dir / "EskdDeploy.psm1"
+        setup = (setup_dir / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        code = setup + module.read_text(encoding="utf-8-sig")
+        self.assertNotRegex(code, r"\(Get-FileHash\s+-", "хэш через Get-FileHash: без модуля Utility он молча пуст")
+        self.assertIn("Reset-EskdPowerShellEnvironment", setup, "движок не чистит пути модулей PowerShell 7")
+        self.assertLess(setup.index("Reset-EskdPowerShellEnvironment"), setup.index("Get-EskdLayout"), "чистка — до работы")
+        bat = (ROOT / "УСТАНОВИТЬ_ЕСКД.bat").read_bytes()
+        self.assertTrue(all(b < 128 for b in bat), "в .bat не-ASCII символы")
+        self.assertIn(b"PSModulePath=", bat, ".bat передаёт 5.1 чужие пути модулей")
+        self.assertIn(b"WindowsPowerShell\\v1.0\\powershell.exe", bat, ".bat запускает powershell из PATH")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sample = Path(tmp) / "sample.bin"
+            sample.write_bytes(b"ESKD" * 1000)
+            expected = hashlib.sha256(sample.read_bytes()).hexdigest()
+            script = Path(tmp) / "probe.ps1"
+            script.write_text(
+                "param([string]$Module, [string]$File)\n"
+                "Import-Module $Module -Force -DisableNameChecking\n"
+                "$fixed = Reset-EskdPowerShellEnvironment\n"
+                "$again = Reset-EskdPowerShellEnvironment\n"
+                "[pscustomobject]@{ fixed = $fixed; again = $again; path = $env:PSModulePath;\n"
+                "  sha = (Get-EskdFileSha256 -Path $File); missing = (Get-EskdFileSha256OrNull -Path ($File + '.нет')) } |\n"
+                "  ConvertTo-Json -Compress\n", encoding="utf-8-sig")
+            env = {k: v for k, v in os.environ.items() if k.upper() != "PSMODULEPATH"}
+            env["PSModulePath"] = r"C:\Users\x\Documents\PowerShell\Modules;C:\Program Files\PowerShell\Modules;" \
+                                  r"C:\Program Files\PowerShell\7\Modules;C:\Program Files\WindowsPowerShell\Modules;D:\Other\Modules"
+            out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
+                                  "-Module", str(module), "-File", str(sample)], capture_output=True, timeout=120, env=env)
+            lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+            self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
+            result = json.loads(lines[-1])
+        self.assertTrue(result["fixed"], "пути PowerShell 7 не убраны")
+        self.assertFalse(result["again"], "повторная чистка снова что-то меняет")
+        parts = result["path"].split(";")
+        self.assertFalse([p for p in parts if "\\PowerShell\\" in p and "WindowsPowerShell" not in p], parts)
+        self.assertTrue(parts[0].endswith("WindowsPowerShell\\Modules"), parts)
+        self.assertIn("D:\\Other\\Modules", parts, "посторонние пути 5.1 не выбрасываются")
+        self.assertEqual(1, len([p for p in parts if p.rstrip("\\").lower().endswith("program files\\windowspowershell\\modules")]),
+                         "свой путь не дублируется")
+        self.assertEqual(expected, result["sha"], "SHA-256 средствами .NET")
+        self.assertIsNone(result["missing"], "нет файла — пусто, а не исключение")
+
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("configurator", setup_dir.parent / "_Исходники" / "CAD_Workstation_Configurator.py")
+        configurator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(configurator)
+        polluted = {"PSMODULEPATH": r"C:\Program Files\PowerShell\7\Modules", "SYSTEMROOT": r"C:\Windows",
+                    "PROGRAMFILES": r"C:\Program Files", "OTHER": "1"}
+        env = configurator.engine_env(polluted)
+        keys = [k for k in env if k.upper() == "PSMODULEPATH"]
+        self.assertEqual(["PSModulePath"], keys, "один ключ пути модулей")
+        self.assertNotIn("PowerShell\\7", env["PSModulePath"])
+        self.assertEqual("1", env["OTHER"], "прочее окружение сохраняется")
+        self.assertTrue(configurator.build_command("S.ps1", "И", "", "Skip")[0].lower().endswith("powershell.exe"))
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / configurator.ENGINE).write_text("old", encoding="utf-8")
+            (Path(tmp) / "_Служебное").mkdir()
+            (Path(tmp) / "_Служебное" / configurator.ENGINE).write_text("new", encoding="utf-8")
+            self.assertEqual(str(Path(tmp) / "_Служебное" / configurator.ENGINE), configurator.find_engine(tmp, tmp),
+                             "выпуск поверх старой папки: окно запускает старый движок рядом с собой")
+
     def test_T0_mprop_ini_cleanup_flag_untouched(self):
         """T0: надстройка не пишет MProp.ini — первая строка там флаг MProp «Очистка свойств», в репозитории он выключен (Д-29)."""
         uses = {}

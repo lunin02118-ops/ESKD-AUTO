@@ -131,6 +131,12 @@ namespace ESKD.Tests
                 Assert.IsTrue(ok.Found && ok.Ok, "успех");
                 Assert.AreEqual(12, ok.Rows, "строк");
                 Assert.AreEqual("1.1.109", ok.Version, "версия");
+                Assert.IsTrue(SwToolsExport.VersionWarning(ok.Version).Contains("старше 1.1.113"), "1.1.109 — замечание о версии");
+                Assert.IsTrue(SwToolsExport.VersionWarning("").Contains("не сообщил"), "версии нет — замечание");
+                Assert.AreEqual("", SwToolsExport.VersionWarning("1.1.113"), "1.1.113 подходит");
+                Assert.AreEqual("", SwToolsExport.VersionWarning("1.1.113-LOCAL-TEST"), "суффикс сборки не мешает");
+                Assert.AreEqual("", SwToolsExport.VersionWarning("1.2.0"), "новее подходит");
+                Assert.IsTrue(SwToolsExport.VersionWarning("1.1.110.0").Length > 0, "1.1.110 — замечание");
                 Assert.AreEqual("", SwToolsExport.Explain(ok, 0), "без пояснения");
 
                 File.WriteAllText(path, "schema=swtools.headless-bom-export.v1\r\nstatus=FAILED\r\nexit_code=3\r\nerror=license\r\n");
@@ -510,6 +516,38 @@ namespace ESKD.Tests
                 Assert.IsFalse(issues.Contains("нет изготавливаемых"), "главная сборка не считается пропущенной: " + issues);
                 Assert.IsFalse(issues.Contains("Материал"), issues);
                 Assert.IsTrue(issues.Contains("Строка 1 (И.201)") || r.Issues.Count == 0, "подпись строки — по обозначению из модели: " + issues);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        public static void Test_Complete_extra_row_of_model_is_reported_not_crashed()
+        {
+            // Строк одной модели в выгрузке больше, чем её исполнений в изделии: лишняя строка остаётся без реквизитов
+            // и получает замечание, а не NullReferenceException (регрессия 53769d2: Match вернул null при известном пути).
+            string path = CopyTemplate();
+            try
+            {
+                XlsxBook export = XlsxBook.Open(path);
+                XlsxSheet s = export.Sheet("Ведомость");
+                Row(s, 7, "1", "И.301", "Косынка", "Лист 3", "", "0,2", "2", "Лазерная резка листа", @"D:\И\01_3D\И.301.sldprt");
+                Row(s, 8, "2", "И.301-01", "Косынка", "Лист 3", "", "0,2", "1", "Лазерная резка листа", @"D:\И\01_3D\И.301.sldprt");
+                export.Save();
+                List<LzkItem> items = new List<LzkItem>
+                {
+                    new LzkItem { Path = @"D:\И\01_3D\И.301.sldprt", Configuration = "00", Designation = "И.301", Name = "Косынка",
+                        InProduct = true, Quantity = 2, Material = "Лист 3 ГОСТ 19903", Operations = "Лазерная резка листа", Size = "50×50×3" }
+                };
+                LzkResult r = LzkWorkbook.Complete(path, null, items);
+                Assert.AreEqual(0, r.Errors.Count, string.Join("; ", r.Errors.ToArray()));
+                string issues = string.Join("\n", r.Issues.ToArray());
+                Assert.IsTrue(issues.Contains("Строка 2 (И.301-01): строк этой модели больше"), issues);
+                Assert.IsFalse(issues.Contains("модели нет в составе изделия"), "путь известен — это лишняя строка, а не чужая модель: " + issues);
+                XlsxSheet main = XlsxBook.Open(path).Sheet("Ведомость");
+                Assert.AreEqual("И.301", main.Get("C7"), "первая строка — исполнение 00");
+                Assert.AreEqual("И.301-01", main.Get("C8"), "лишняя строка не получает реквизиты чужого исполнения");
             }
             finally
             {

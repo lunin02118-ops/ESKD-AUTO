@@ -12,7 +12,12 @@ namespace ESKD.MaterialSync.Sw
     ///  * FileSaveNotify — единственная точка до записи файла, видимая и UI, и API: запись реквизитов;
     ///  * FileSavePostNotify(2) — первое сохранение и «Сохранить как»: новое имя известно только здесь,
     ///    синхронизация и однократное пересохранение выполняются из очереди OnIdleNotify;
-    ///  * открытие и переключение окон ничего не пишут.
+    ///  * открытие и переключение окон ничего не пишут;
+    ///  * задачи простоя документ не сохраняют: сохраняет конструктор (решение владельца 23.09.2026). Исключения —
+    ///    продолжение его же команды: пересохранение после «Сохранить как» (ResaveAfterSaveAs) и копия
+    ///    (FixCopies), оба — настройки;
+    ///  * очередь простоя без зацикливаний: одна задача на документ и вид, и проход выполняет только задачи,
+    ///    стоявшие в очереди к его началу.
     /// </summary>
     public sealed class EventHub
     {
@@ -193,7 +198,7 @@ namespace ESKD.MaterialSync.Sw
                 ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
                 if (doc != null && doc.GetType() == (int)swDocumentTypes_e.swDocPART && Settings.Read().ServiceEnabled)
                 {
-                    _idle.Enqueue(new IdleTask { Doc = doc, Kind = "material" });
+                    Enqueue(new IdleTask { Doc = doc, Kind = "material" });
                 }
             }
             catch (Exception ex)
@@ -227,7 +232,11 @@ namespace ESKD.MaterialSync.Sw
             _processingIdle = true;
             try
             {
-                while (_idle.Count > 0)
+                // Только задачи, стоявшие в очереди к началу прохода. Задача, заведённая самим проходом (сохранение
+                // внутри задачи → событие сохранения → новая задача), ждёт следующего простоя: цепочка
+                // задача → событие → задача не замыкается в бесконечный цикл внутри одного OnIdleNotify.
+                int batch = _idle.Count;
+                while (batch-- > 0 && _idle.Count > 0)
                 {
                     IdleTask task = _idle.Dequeue();
                     try
@@ -253,15 +262,19 @@ namespace ESKD.MaterialSync.Sw
             {
                 // Задача не привязана к документу чертежа: его обычно закрывают сразу после сохранения (21.09.2026).
                 if (!Settings.Read().ServiceEnabled) return;
-                DrawingFormatService.ApplyToModel(_app, task.TargetPath, task.Formats);
+                string told = DrawingFormatService.ApplyToModel(_app, task.TargetPath, task.Formats);
+                if (told.Length > 0) Status(told);
                 return;
             }
             if (task.Doc == null) return;
             if (task.Kind == "material")
             {
+                if (!Alive(task.Doc)) return;
+                // Конструктор сам выбрал материал — свойства за ним, без сверки с геометрией: она будет при сохранении,
+                // с выбором «оставить / исправить». Иначе его выбор тут же оспаривался бы окном или молча заменялся.
                 Remember(task.Doc, SyncService.SyncModel(_app, task.Doc, new SyncRequest
                 {
-                    Reason = "смена материала", Names = false, Signatures = false, Mass = false
+                    Reason = "смена материала", Names = false, Signatures = false, Mass = false, Stock = false
                 }));
                 return;
             }
@@ -279,8 +292,7 @@ namespace ESKD.MaterialSync.Sw
             }
             if (task.Kind == "status")
             {
-                Frame frame = _app.Frame() as Frame;
-                if (frame != null) frame.SetStatusBarText(task.Text);
+                Status(task.Text);
                 return;
             }
             if (task.Kind == "saveas")
@@ -302,11 +314,43 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>
-        /// Материал по геометрии (Р-8, решение владельца 20.09.2026) — в простое, когда SolidWorks отпустил документ.
-        /// Деталь осматривается заново: указатели на тела, снятые во время сохранения, к этому моменту могут быть
-        /// недействительны. Если типоразмеру отвечает несколько материалов — спрашиваем конструктора; отложил выбор
-        /// («Позже») — ничего не назначаем, замечание уже сказано в строке состояния.
+        /// Задача в очередь простоя — одна на документ и вид: десять сохранений подряд дают одну сверку материала, а не
+        /// десять окон; у строки состояния остаётся последний текст, у формата — последний снимок листов.
+        /// «Сохранить как» и копия не схлопываются: у каждой свой файл.
         /// </summary>
+        private void Enqueue(IdleTask task)
+        {
+            if (task == null) return;
+            if (task.Kind != "saveas" && task.Kind != "copy")
+            {
+                foreach (IdleTask queued in _idle)
+                {
+                    if (queued.Kind != task.Kind) continue;
+                    bool same = task.Doc != null
+                        ? object.ReferenceEquals(queued.Doc, task.Doc)
+                        : queued.Doc == null && string.Equals(queued.TargetPath, task.TargetPath, StringComparison.OrdinalIgnoreCase);
+                    if (!same) continue;
+                    if (task.Text != null) queued.Text = task.Text;
+                    if (task.Formats != null) queued.Formats = task.Formats;
+                    return;
+                }
+            }
+            _idle.Enqueue(task);
+        }
+
+        private void Status(string text)
+        {
+            try
+            {
+                Frame frame = _app.Frame() as Frame;
+                if (frame != null) frame.SetStatusBarText(text ?? "");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Строка состояния", ex);
+            }
+        }
+
         /// <summary>Документ ещё жив: надстройка о нём знает и его не разрушали. Указатель закрытого документа — падение.</summary>
         private bool Alive(ModelDoc2 doc)
         {
@@ -330,6 +374,20 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
+        /// <summary>
+        /// Материал по геометрии (Р-8) — в простое, когда SolidWorks отпустил документ. Деталь осматривается заново:
+        /// указатели на тела, снятые во время сохранения, к этому моменту могут быть недействительны.
+        ///
+        /// Документ здесь НЕ сохраняется (решение владельца 23.09.2026: деталь без команды конструктора не сохраняется).
+        /// Раньше тут стоял Save3: деталь переписывалась сама после каждого сохранения и смены материала, а событие
+        /// этого сохранения снова заводило подбор. Теперь назначенный материал и свойства остаются в открытой детали —
+        /// её сохраняет конструктор.
+        ///
+        /// Кто решает: пустой материал с единственным кандидатом (Assign) подставляется молча — правило 20.09.2026;
+        /// замена стоящего материала (Replace) и выбор из нескольких (Choose) — только ответом в окне «оставить /
+        /// исправить». Окно выключено (StockAskOnSave = 0, автотесты) — однозначное применяется молча, как раньше.
+        /// «Позже» — до конца сеанса не спрашиваем и материал конструктора не заменяем.
+        /// </summary>
         private void ApplyStock(ModelDoc2 doc)
         {
             if (doc == null) return;
@@ -337,29 +395,31 @@ namespace ESKD.MaterialSync.Sw
             {
                 string path = SafePath(doc);
                 List<StockFinding> findings = StockService.Inspect(_app, doc);
-                bool ask = false;
-                foreach (StockFinding f in findings) if (f.NeedsChoice) ask = true;
-                if (ask && !StockService.IsPostponed(path) && Settings.Read().StockAskOnSave)
+                List<StockFinding> pending = StockService.PendingDecisions(path, findings);
+                if (pending.Count > 0 && Settings.Read().StockAskOnSave)
                 {
-                    using (StockPickForm form = new StockPickForm(DocInfo.TitleOf(doc), findings))
+                    if (StockService.IsPostponed(path))
                     {
-                        if (form.ShowDialog(Owner()) == DialogResult.OK)
+                        StockService.Decline(pending);
+                    }
+                    else
+                    {
+                        using (StockPickForm form = new StockPickForm(DocInfo.TitleOf(doc), pending))
                         {
-                            StockService.Resume(path);
-                            foreach (StockFinding f in findings)
+                            if (form.ShowDialog(Owner()) == DialogResult.OK)
                             {
-                                if (!f.NeedsChoice) continue;
-                                MaterialInfo picked;
-                                if (form.Chosen.TryGetValue(StockCatalog.NormalizeSize(f.Request.Size), out picked))
-                                    f.Chosen = picked;
+                                StockService.Resume(path);
+                                form.ApplyTo(pending);
+                                StockService.RememberKept(path, pending);
+                            }
+                            else
+                            {
+                                StockService.Postpone(path);
+                                StockService.Decline(pending);
                             }
                         }
-                        else
-                        {
-                            // «Позже»: больше не спрашиваем до конца сеанса — иначе окно всплывало бы
-                            // после каждого сохранения этой детали.
-                            StockService.Postpone(path);
-                        }
+                        // Пока окно было открыто, документ могли закрыть: назначать материал закрытому — падение (R01).
+                        if (!Alive(doc)) return;
                     }
                 }
 
@@ -369,29 +429,19 @@ namespace ESKD.MaterialSync.Sw
                 foreach (string operation in applied.Operations) Log.Info(operation);
                 if (changed == 0) return;
 
-                // Материал сменился — свойства и массу переписываем и сохраняем, иначе новый материал останется
-                // только в теле, а в графе 3 и в книге ЛЗК будет прежнее.
+                // Свойства и масса — сразу в открытую деталь, иначе графа 3 и книга ЛЗК разошлись бы с телом.
+                // Перестроение без сохранения: смена материала и списка вырезов оставляет модель неперестроенной, и
+                // SolidWorks спросил бы «перестроить?» при сохранении конструктором (X05, 21.09.2026).
                 SyncReport report = SyncService.SyncModel(_app, doc, new SyncRequest
                 {
                     Reason = "материал по типоразмеру", Names = false, Signatures = false, Stock = false
                 });
+                doc.EditRebuild3();
                 _lastWarnings.Clear();
                 _lastWarnings.AddRange(report.Warnings);
-                int errors = 0, warnings = 0;
-                _resaving = true;
-                try
-                {
-                    // Смена материала и обновление списка вырезов оставляют модель неперестроенной, и SolidWorks
-                    // при сохранении спрашивает «перестроить?» — окно посреди чужой работы, которого никто не ждёт
-                    // (X05 в полном прогоне 21.09.2026). Перестраиваем сами, тогда сохранение проходит молча.
-                    doc.EditRebuild3();
-                    if (!doc.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
-                        Log.Error(string.Format("Материал по типоразмеру: деталь не сохранена (errors={0}, warnings={1})", errors, warnings));
-                }
-                finally
-                {
-                    _resaving = false;
-                }
+                string text = "ЕСКД: материал назначен по типоразмеру (" + changed + ") — деталь изменена, сохраните её";
+                Log.Info(text + ": " + path);
+                Status(text);
             }
             catch (Exception ex)
             {
@@ -529,16 +579,16 @@ namespace ESKD.MaterialSync.Sw
                     List<string> sheets;
                     if ((saveType == SaveTypeSave || saveType == SaveTypeSaveAs) &&
                         DrawingFormatService.Capture((DrawingDoc)s.Doc, out modelPath, out sheets))
-                        _idle.Enqueue(new IdleTask { Kind = "drawingformat", TargetPath = modelPath, PreviousPath = fileName, Formats = sheets });
+                        Enqueue(new IdleTask { Kind = "drawingformat", TargetPath = modelPath, PreviousPath = fileName, Formats = sheets });
                     return 0;
                 }
                 if (saveType == SaveTypeSaveAs && settings.ResaveAfterSaveAs && !_resaving)
                 {
-                    _idle.Enqueue(new IdleTask { Doc = s.Doc, Kind = "saveas", TargetPath = fileName, PreviousPath = previous });
+                    Enqueue(new IdleTask { Doc = s.Doc, Kind = "saveas", TargetPath = fileName, PreviousPath = previous });
                 }
                 else if (saveType == SaveTypeCopy && settings.FixCopies)
                 {
-                    _idle.Enqueue(new IdleTask { Doc = s.Doc, Kind = "copy", TargetPath = fileName, PreviousPath = SafePath(s.Doc) });
+                    Enqueue(new IdleTask { Doc = s.Doc, Kind = "copy", TargetPath = fileName, PreviousPath = SafePath(s.Doc) });
                 }
                 else if (saveType == SaveTypeCopy)
                 {
@@ -550,7 +600,7 @@ namespace ESKD.MaterialSync.Sw
                     if (copy != null)
                     {
                         Track(copy);
-                        _idle.Enqueue(new IdleTask { Doc = copy, Kind = "saveas", TargetPath = SafePath(copy), PreviousPath = previous });
+                        Enqueue(new IdleTask { Doc = copy, Kind = "saveas", TargetPath = SafePath(copy), PreviousPath = previous });
                     }
                 }
             }
@@ -598,9 +648,9 @@ namespace ESKD.MaterialSync.Sw
             _lastWarnings.AddRange(report.Warnings);
             // Материал по геометрии (Р-8): назначать и спрашивать — только в простое, документ сейчас занят SolidWorks.
             if (report.StockNeedsWork && doc != null)
-                _idle.Enqueue(new IdleTask { Doc = doc, Kind = "stock" });
+                Enqueue(new IdleTask { Doc = doc, Kind = "stock" });
             if (report.Warnings.Count > 0 && doc != null)
-                _idle.Enqueue(new IdleTask { Doc = doc, Kind = "status", Text = report.StatusLine() });
+                Enqueue(new IdleTask { Doc = doc, Kind = "status", Text = report.StatusLine() });
         }
 
         // ------------------------------------------------------------------ учёт документов

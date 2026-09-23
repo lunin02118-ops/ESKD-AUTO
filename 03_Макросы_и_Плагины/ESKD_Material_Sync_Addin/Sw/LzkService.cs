@@ -1120,8 +1120,8 @@ namespace ESKD.MaterialSync.Sw
             catch (Exception ex)
             {
                 Log.Error("Ведомость ЛЗК: StartBomExport", ex);
-                Info("Установленная версия SWTools не умеет выгружать ведомость без окна. Обновите SWTools до 1.1.109 или новее " +
-                     "(запустите настройку рабочего места).", MessageBoxIcon.Warning);
+                Info("Установленная версия SWTools не умеет выгружать ведомость без окна. " + SwToolsExport.UpdateAdvice + ".",
+                    MessageBoxIcon.Warning);
                 return false;
             }
             if (pid == 0)
@@ -1264,6 +1264,12 @@ namespace ESKD.MaterialSync.Sw
                     }
                 }
                 if (outcome != null && outcome.Version.Length > 0) Log.Info("Ведомость ЛЗК: SWTools " + outcome.Version);
+                if (problem.Length == 0 && outcome != null)
+                {
+                    string old = SwToolsExport.VersionWarning(outcome.Version);
+                    if (old.Length > 0)
+                        _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_workbookPath), old, SwToolsExport.UpdateAdvice));
+                }
             }
             catch (Exception ex)
             {

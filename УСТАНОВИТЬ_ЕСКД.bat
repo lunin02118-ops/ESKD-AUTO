@@ -22,7 +22,12 @@ if not defined SETUP_PS1 (
     pause
     exit /b 2
 )
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SETUP_PS1%" -CloseMode Ask
+rem Windows PowerShell 5.1 by full path and with its own module paths: started from PowerShell 7 (pwsh),
+rem cmd would pass pwsh module paths on, 5.1 would pick up version-7 modules and lose Get-FileHash.
+set "PSModulePath=%ProgramFiles%\WindowsPowerShell\Modules;%SystemRoot%\system32\WindowsPowerShell\v1.0\Modules"
+set "WINPS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%WINPS%" set "WINPS=powershell"
+"%WINPS%" -NoProfile -ExecutionPolicy Bypass -File "%SETUP_PS1%" -CloseMode Ask
 set RC=%errorlevel%
 popd
 echo.

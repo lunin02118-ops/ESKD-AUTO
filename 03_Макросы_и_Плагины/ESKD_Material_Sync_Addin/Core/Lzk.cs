@@ -544,9 +544,10 @@ namespace ESKD.MaterialSync.Core
                         (designation.Length > 0 ? designation : main.Get(col["Наименование"], row).Trim()) + ")";
                 }
                 bool assembly = item != null ? item.IsAssembly : path.EndsWith(".sldasm", StringComparison.OrdinalIgnoreCase);
+                // Лишняя строка модели (item == null, путь известен) уже отмечена выше: у неё нет реквизитов для проверки.
                 if (item == null && !byPath.ContainsKey(path))
                     result.Issues.Add(label + ": модели нет в составе изделия");
-                else if (item.IsPurchased)
+                else if (item != null && item.IsPurchased)
                     result.Issues.Add(label + ": покупное или стандартное изделие в основной таблице — проверьте свойство «Раздел»");
 
                 if (!assembly) Require(main, col["Материал_Строка"], row, label, "Материал", result);
@@ -661,6 +662,43 @@ namespace ESKD.MaterialSync.Core
         /// <summary>Надстройка SWTools: выгрузку запускает её метод StartBomExport (SWTools 1.1.109+).</summary>
         public const string AddinClsid = "{59959DFA-3229-4B86-852E-52ABF2BDB8C0}";
         public const string ResultSchema = "swtools.headless-bom-export.v1";
+
+        /// <summary>
+        /// Первая версия, у которой выгрузка без окна не склеивает исполнения одного файла: до неё кнопка SWTools
+        /// «объединять конфигурации» (togetherConfig) действовала и на ЛЗК — строки -01 пропадали (З-23, swtools#22).
+        /// </summary>
+        public static readonly Version RequiredVersion = new Version(1, 1, 113);
+
+        /// <summary>«1.1.113», «1.1.113-LOCAL-TEST», «SWTools 1.1.110.0» → версия; null — не разобрать.</summary>
+        public static Version ParseVersion(string text)
+        {
+            Match m = Regex.Match(text ?? "", @"(\d+)\.(\d+)\.(\d+)");
+            if (!m.Success) return null;
+            try
+            {
+                return new Version(int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture),
+                    int.Parse(m.Groups[2].Value, CultureInfo.InvariantCulture), int.Parse(m.Groups[3].Value, CultureInfo.InvariantCulture));
+            }
+            catch (OverflowException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Замечание к книге о версии SWTools из отчёта выгрузки; "" — версия подходит. Книга не отвергается: до
+        /// обновления SWTools на всех местах ЛЗК нужна, а склейку исполнений видно по сверке состава (Л-6).
+        /// </summary>
+        public static string VersionWarning(string reported)
+        {
+            Version v = ParseVersion(reported);
+            if (v != null && v >= RequiredVersion) return "";
+            return (v == null ? "SWTools не сообщил свою версию" : "SWTools " + reported.Trim() + " старше " + RequiredVersion) +
+                ": при включённой в SWTools кнопке «объединять конфигурации» исполнения одного файла сливаются в одну строку, " +
+                "количество и масса исполнений -01, -02… в книге неверны";
+        }
+
+        public const string UpdateAdvice = "Обновите SWTools до 1.1.113 или новее (настройка рабочего места) и сформируйте ЛЗК заново";
 
         public sealed class Outcome
         {

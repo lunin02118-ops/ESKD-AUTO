@@ -373,6 +373,16 @@ namespace ESKD.Tests
                 Assert.IsTrue(summary != null, "лист «Сводная»");
                 Assert.AreEqual("Сводная ведомость расхода материалов", summary.Get("A1"), "название без списания");
                 Assert.AreEqual("Сортамент, материал, изделие", summary.Get("B6"), "шапка");
+                // Широкая шапка: срок в G3 (слияние G3:H3), цвет правее — в J3; срок не затирается цветом.
+                Assert.AreEqual("Срок отгрузки:", summary.Get("D3"), "подпись срока");
+                Assert.IsTrue(summary.Formula("G3").Contains("Срок"), "в G3 срок отгрузки, а не цвет: " + summary.Formula("G3"));
+                Assert.AreEqual("Цвет:", summary.Get("I3"), "подпись цвета не под слиянием D3:F3");
+                Assert.IsTrue(summary.Formula("J3").Contains("Цвет"), "цвет в J3: " + summary.Formula("J3"));
+                Assert.AreEqual("", summary.Get("F3"), "в F3 (внутри слияния D3:F3) ничего нет");
+                XlsxSheet painting = book.Sheet("Покрасочный");
+                Assert.AreEqual("Цвет:", painting.Get("F3"), "узкий лист: цвет на прежнем месте");
+                Assert.IsTrue(painting.Formula("E3").Contains("Срок"), "узкий лист: срок в E3");
+                Assert.IsTrue(painting.Formula("G3").Contains("Цвет"), "узкий лист: цвет в G3");
                 Assert.AreEqual("В чистоте на 1 изд.", summary.Get("D6"), "шапка: в чистоте на изделие");
                 Assert.AreEqual("Запас, %", summary.Get("F6"), "шапка: запас");
                 Assert.AreEqual("С запасом на заказ", summary.Get("G6"), "шапка: с запасом");

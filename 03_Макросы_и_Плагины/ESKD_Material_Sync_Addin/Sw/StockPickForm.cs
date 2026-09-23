@@ -11,6 +11,9 @@ namespace ESKD.MaterialSync.Sw
     /// 20.09.2026). Лист 6 мм бывает из Ст3сп и из 09Г2С — выбрать может только конструктор. Один и тот же
     /// типоразмер в разных позициях спрашивается один раз: выбранное применяется ко всем таким позициям.
     ///
+    /// Материал стоит, но с геометрией не сходится (сменили профиль или толщину) — в списке есть и «Оставить …»:
+    /// заменить выбор конструктора можно только с его согласия (решение владельца 23.09.2026).
+    ///
     /// Окно показывается из очереди простоя, когда SolidWorks уже отпустил документ, — в обработчике сохранения
     /// модальное окно вешает SolidWorks.
     /// </summary>
@@ -18,7 +21,11 @@ namespace ESKD.MaterialSync.Sw
     {
         private sealed class Row
         {
+            public string Key = "";
             public string Size = "";
+
+            /// <summary>Стоящий материал, который можно оставить; пусто — материала нет, оставлять нечего.</summary>
+            public string Current = "";
 
             /// <summary>Где этот типоразмер встретился: детали при обходе изделия, папки списка вырезов — в одной детали.</summary>
             public readonly List<string> Places = new List<string>();
@@ -40,12 +47,20 @@ namespace ESKD.MaterialSync.Sw
         private readonly List<Row> _rows = new List<Row>();
         private Button _ok;
 
-        /// <summary>Что выбрано: типоразмер (нормализованный) → материал. Пусто — конструктор отложил выбор.</summary>
+        /// <summary>
+        /// Что выбрано: ключ вопроса (<see cref="StockService.DecisionKey"/> — типоразмер, ГОСТ и стоящий материал) →
+        /// материал. Пусто — конструктор отложил выбор. Ключ только по типоразмеру отдавал выбор для трубы 40х20 одного
+        /// ГОСТа позиции того же размера другого ГОСТа.
+        /// </summary>
         public Dictionary<string, MaterialInfo> Chosen { get; private set; }
+
+        /// <summary>Ключи вопросов, на которые ответили «оставить как есть».</summary>
+        public HashSet<string> Kept { get; private set; }
 
         public StockPickForm(string partTitle, IEnumerable<StockFinding> findings)
         {
             Chosen = new Dictionary<string, MaterialInfo>(StringComparer.Ordinal);
+            Kept = new HashSet<string>(StringComparer.Ordinal);
             Group(findings);
 
             Text = "ЕСКД: материал по типоразмеру";
@@ -63,9 +78,9 @@ namespace ESKD.MaterialSync.Sw
                 Dock = DockStyle.Top,
                 Height = 44,
                 Padding = new Padding(12, 10, 12, 0),
-                Text = string.IsNullOrEmpty(partTitle)
-                    ? "Материал не назначен или не соответствует геометрии. Типоразмеру соответствует несколько материалов библиотеки — выберите нужный."
-                    : partTitle + ": материал не назначен или не соответствует геометрии. Типоразмеру соответствует несколько материалов библиотеки — выберите нужный."
+                Text = (string.IsNullOrEmpty(partTitle) ? "" : partTitle + ": ") +
+                    "материал не назначен или не соответствует геометрии. Выберите материал по типоразмеру " +
+                    "или оставьте стоящий. Деталь не сохраняется — сохраните её сами."
             };
 
             TableLayoutPanel table = new TableLayoutPanel
@@ -86,7 +101,7 @@ namespace ESKD.MaterialSync.Sw
                 {
                     AutoSize = true,
                     Margin = new Padding(0, 7, 10, 0),
-                    Text = row.Size + "  (" + row.Where + ")"
+                    Text = Caption(row)
                 };
                 row.Box = new ComboBox
                 {
@@ -96,6 +111,7 @@ namespace ESKD.MaterialSync.Sw
                     Width = 560
                 };
                 foreach (MaterialInfo info in row.Candidates) row.Box.Items.Add(Describe(info));
+                if (row.Current.Length > 0) row.Box.Items.Add(KeepCaption(row.Current));
                 // Ничего не выбрано заранее: вопрос, у которого уже есть ответ, — не вопрос. Иначе «Назначить»,
                 // нажатая не глядя, поставила бы первую по алфавиту марку (у листа 6 мм это 09Г2С, а не Ст3сп).
                 row.Box.SelectedIndexChanged += delegate { UpdateOk(); };
@@ -104,7 +120,7 @@ namespace ESKD.MaterialSync.Sw
                 line++;
             }
 
-            _ok = new Button { Text = "Назначить", DialogResult = DialogResult.OK, AutoSize = true, Margin = new Padding(6, 0, 0, 0), Enabled = false };
+            _ok = new Button { Text = "Применить", DialogResult = DialogResult.OK, AutoSize = true, Margin = new Padding(6, 0, 0, 0), Enabled = false };
             Button ok = _ok;
             Button later = new Button { Text = "Позже", DialogResult = DialogResult.Cancel, AutoSize = true, Margin = new Padding(6, 0, 0, 0) };
             FlowLayoutPanel buttons = new FlowLayoutPanel
@@ -125,7 +141,7 @@ namespace ESKD.MaterialSync.Sw
             // Ширина по содержимому: при обходе изделия слева стоят имена деталей, и в 760 точек они не влезают.
             int captions = 0;
             foreach (Row row in _rows)
-                captions = Math.Max(captions, TextRenderer.MeasureText(row.Size + "  (" + row.Where + ")", Font).Width);
+                captions = Math.Max(captions, TextRenderer.MeasureText(Caption(row), Font).Width);
             ClientSize = new Size(Math.Min(1100, Math.Max(760, captions + 600)), 44 + Math.Max(1, _rows.Count) * 30 + 60);
 
             FormClosing += delegate
@@ -155,7 +171,38 @@ namespace ESKD.MaterialSync.Sw
             foreach (Row row in _rows)
             {
                 int at = row.Box.SelectedIndex;
-                if (at >= 0 && at < row.Candidates.Count) Chosen[StockCatalog.NormalizeSize(row.Size)] = row.Candidates[at];
+                if (at >= 0 && at < row.Candidates.Count) Chosen[row.Key] = row.Candidates[at];
+                else if (at == row.Candidates.Count && row.Current.Length > 0) Kept.Add(row.Key);
+            }
+        }
+
+        /// <summary>
+        /// Ответ конструктора — в позиции: выбранный материал назначается, «оставить» снимает замену. Одно место вместо
+        /// двух копий цикла (сохранение детали и обход изделия).
+        /// </summary>
+        public void ApplyTo(IEnumerable<StockFinding> findings)
+        {
+            if (findings == null) return;
+            foreach (StockFinding f in findings)
+            {
+                // Уже оставленное в этом сеансе не трогаем: такой же вопрос другой детали — не ответ за эту.
+                if (f == null || !f.NeedsDecision || f.Kept) continue;
+                string key = StockService.DecisionKey(f);
+                MaterialInfo picked;
+                if (Kept.Contains(key))
+                {
+                    f.Kept = true;
+                    f.Chosen = null;
+                }
+                else if (Chosen.TryGetValue(key, out picked))
+                {
+                    f.Chosen = picked;
+                }
+                else if (f.Verdict == StockVerdict.Replace)
+                {
+                    // Строки не было или ответа нет — без согласия материал конструктора не заменяется.
+                    f.Chosen = null;
+                }
             }
         }
 
@@ -163,8 +210,19 @@ namespace ESKD.MaterialSync.Sw
         public string[] Captions()
         {
             List<string> out_ = new List<string>();
-            foreach (Row row in _rows) out_.Add(row.Size + "  (" + row.Where + ")");
+            foreach (Row row in _rows) out_.Add(Caption(row));
             return out_.ToArray();
+        }
+
+        private static string Caption(Row row)
+        {
+            return row.Size + "  (" + row.Where + ")" + (row.Current.Length > 0 ? ", сейчас «" + row.Current + "»" : "");
+        }
+
+        /// <summary>Пункт списка «оставить стоящий материал».</summary>
+        public static string KeepCaption(string current)
+        {
+            return "Оставить как есть: «" + (current ?? "").Trim() + "»";
         }
 
         /// <summary>Списки окна — по одному на типоразмер, в порядке строк. Для проверки состава без показа окна.</summary>
@@ -182,8 +240,8 @@ namespace ESKD.MaterialSync.Sw
             Dictionary<string, Row> byKey = new Dictionary<string, Row>(StringComparer.Ordinal);
             foreach (StockFinding finding in findings)
             {
-                if (!finding.NeedsChoice) continue;
-                string key = StockCatalog.NormalizeSize(finding.Request.Size) + "|" + StockCatalog.NormalizeGost(finding.Request.Gost);
+                if (finding == null || !finding.NeedsDecision) continue;
+                string key = StockService.DecisionKey(finding);
                 string where = Where(finding);
                 Row row;
                 if (byKey.TryGetValue(key, out row))
@@ -194,7 +252,9 @@ namespace ESKD.MaterialSync.Sw
                 }
                 row = new Row
                 {
+                    Key = key,
                     Size = finding.Request.Size,
+                    Current = (finding.CurrentMaterial ?? "").Trim(),
                     Candidates = new List<MaterialInfo>(finding.Match.Candidates)
                 };
                 row.Places.Add(where);

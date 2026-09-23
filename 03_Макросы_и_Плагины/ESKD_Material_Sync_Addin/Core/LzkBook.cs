@@ -675,8 +675,11 @@ namespace ESKD.MaterialSync.Core
             if (wide) s.Merge("G3:H3");
             if (color)
             {
-                s.SetText("F3", "Цвет:", st.Group);
-                s.SetFormula("G3", "IF(" + NameColor + "=\"\",\"не указан\"," + NameColor + ")", st.HeadValue);
+                // У широкого листа D3:F3 и G3:H3 заняты сроком: цвет правее, иначе подпись «Цвет:» пряталась под слиянием,
+                // а формула цвета затирала срок отгрузки в G3.
+                s.SetText(wide ? "I3" : "F3", "Цвет:", st.Group);
+                s.SetFormula(wide ? "J3" : "G3", "IF(" + NameColor + "=\"\",\"не указан\"," + NameColor + ")", st.HeadValue);
+                if (wide) s.Merge("J3:" + last + "3");
             }
         }
 

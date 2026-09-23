@@ -33,8 +33,24 @@ namespace ESKD.MaterialSync.Core
         // Флаги v6 (план, §3.8)
         public bool SyncOnSave = true;
         public bool SyncOnOpen;
+
+        /// <summary>
+        /// После «Сохранить как» файл пересохраняется ещё раз, чтобы обозначение по новому имени легло и на диск —
+        /// продолжение команды конструктора, а не отдельное сохранение.
+        /// </summary>
         public bool ResaveAfterSaveAs = true;
+
+        /// <summary>«Сохранить копию»: копия открывается скрыто, получает реквизиты по своему имени и сохраняется.</summary>
         public bool FixCopies;
+
+        /// <summary>
+        /// Формат листов чертежа — в «Формат» модели при сохранении чертежа (З-1). Выключено (по умолчанию): открытой
+        /// модели свойство пишется без сохранения (сохранит конструктор), закрытая не открывается — пустой «Формат»
+        /// дозаполнит «Синхронизировать» на сборке. Включено — как до 23.09.2026: закрытая модель открывается скрыто,
+        /// записывается и сохраняется, открытая без других правок сохраняется сразу. Деталь без команды конструктора
+        /// не сохраняется (решение владельца 23.09.2026).
+        /// </summary>
+        public bool FormatSavesModel;
         public bool OverwriteSignatures;
         public bool LegacyAliases;
         public bool DryRun;
@@ -93,6 +109,7 @@ namespace ESKD.MaterialSync.Core
                     s.SyncOnOpen = Int(key, "SyncOnOpen", 0) == 1;
                     s.ResaveAfterSaveAs = Int(key, "ResaveAfterSaveAs", 1) == 1;
                     s.FixCopies = Int(key, "FixCopies", 0) == 1;
+                    s.FormatSavesModel = Int(key, "FormatSavesModel", 0) == 1;
                     s.OverwriteSignatures = Int(key, "OverwriteSignatures", 0) == 1;
                     s.LegacyAliases = Int(key, "LegacyAliases", 0) == 1;
                     s.DryRun = Int(key, "DryRun", 0) == 1;

@@ -59,6 +59,18 @@ namespace ESKD.MaterialSync.Sw
         public BodyFolder FolderObject;
 
         public bool NeedsChoice { get { return Verdict == StockVerdict.Choose; } }
+
+        /// <summary>
+        /// Решает конструктор: подходящих несколько (Choose) или стоящий материал спорит с геометрией и его предлагается
+        /// заменить (Replace). Замена выбора конструктора — только с его согласия: «оставить так» или «исправить»
+        /// (решение владельца 23.09.2026). Молча Replace применяется лишь там, где спрашивать некому (окно выключено,
+        /// работа без интерфейса).
+        /// </summary>
+        public bool NeedsDecision { get { return Verdict == StockVerdict.Choose || Verdict == StockVerdict.Replace; } }
+
+        /// <summary>Конструктор оставил стоящий материал: позиция не назначается и в этом сеансе больше не спрашивается.</summary>
+        public bool Kept;
+
         public bool NeedsAssign
         {
             get { return Chosen != null && (Verdict == StockVerdict.Assign || Verdict == StockVerdict.Replace || Verdict == StockVerdict.Choose); }
@@ -115,6 +127,65 @@ namespace ESKD.MaterialSync.Sw
         public static void Resume(string path)
         {
             if (!string.IsNullOrEmpty(path)) lock (PostponedPaths) { PostponedPaths.Remove(path); }
+        }
+
+        /// <summary>
+        /// Позиции, по которым конструктор ответил «оставить как есть»: путь|типоразмер|ГОСТ|стоящий материал. Живёт до
+        /// конца сеанса SolidWorks — иначе вопрос повторялся бы при каждом сохранении. Сменится материал или профиль —
+        /// ключ другой, и вопрос прозвучит снова.
+        /// </summary>
+        private static readonly HashSet<string> KeptDecisions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Ключ вопроса о позиции: один типоразмер одного сортамента при одном стоящем материале — один вопрос.</summary>
+        public static string DecisionKey(StockFinding finding)
+        {
+            if (finding == null) return "";
+            return StockCatalog.NormalizeSize(finding.Request.Size) + "|" + StockCatalog.NormalizeGost(finding.Request.Gost) + "|" +
+                (finding.CurrentMaterial ?? "").Trim();
+        }
+
+        /// <summary>Запомнить ответы «оставить» по детали (после окна выбора).</summary>
+        public static void RememberKept(string path, IEnumerable<StockFinding> findings)
+        {
+            if (string.IsNullOrEmpty(path) || findings == null) return;
+            lock (KeptDecisions)
+                foreach (StockFinding f in findings)
+                    if (f != null && f.Kept) KeptDecisions.Add(path + "|" + DecisionKey(f));
+        }
+
+        /// <summary>
+        /// Снять с деталей позиции, по которым конструктор уже сказал «оставить»: они не назначаются и не спрашиваются.
+        /// Возвращает позиции, по которым решение ещё нужно.
+        /// </summary>
+        public static List<StockFinding> PendingDecisions(string path, IEnumerable<StockFinding> findings)
+        {
+            List<StockFinding> pending = new List<StockFinding>();
+            if (findings == null) return pending;
+            foreach (StockFinding f in findings)
+            {
+                if (f == null || !f.NeedsDecision) continue;
+                bool kept;
+                lock (KeptDecisions) kept = !string.IsNullOrEmpty(path) && KeptDecisions.Contains(path + "|" + DecisionKey(f));
+                if (kept)
+                {
+                    f.Kept = true;
+                    f.Chosen = null;
+                    continue;
+                }
+                pending.Add(f);
+            }
+            return pending;
+        }
+
+        /// <summary>
+        /// Конструктор не ответил («Позже» или окно не показано при включённом вопросе): замена его материала отменяется —
+        /// назначается только то, где материала не было вовсе (Assign).
+        /// </summary>
+        public static void Decline(IEnumerable<StockFinding> findings)
+        {
+            if (findings == null) return;
+            foreach (StockFinding f in findings)
+                if (f != null && f.Verdict == StockVerdict.Replace) f.Chosen = null;
         }
 
         /// <summary>Что деталь показывает про себя: только чтение, без отката и перестроения.</summary>

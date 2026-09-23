@@ -75,7 +75,13 @@ if (-not $SkipExe) {
 }
 
 # Манифест сборки
-function Get-Sha([string]$path) { (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant() }
+# SHA-256 средствами .NET: Windows PowerShell 5.1, запущенный из PowerShell 7, теряет Get-FileHash (аудит 23.09.2026)
+function Get-Sha([string]$path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::Open($path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    try { return ([System.BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLowerInvariant() }
+    finally { $stream.Dispose(); $sha.Dispose() }
+}
 $allSources = @($dllSources + $exeSources) | Sort-Object -Unique
 $manifest = [ordered]@{
     built   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
