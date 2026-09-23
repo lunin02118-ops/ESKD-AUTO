@@ -404,6 +404,7 @@ namespace ESKD.MaterialSync.Sw
                 int changed = StockService.Apply(_app, doc, findings, applied);
                 foreach (string warning in applied.Warnings) Log.Warn(warning);
                 foreach (string operation in applied.Operations) Log.Info(operation);
+                foreach (string hint in applied.Hints) Log.Info(hint);
                 if (changed == 0)
                 {
                     if (ask.Length > 0) Status("ЕСКД: " + ask);

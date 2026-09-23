@@ -265,7 +265,15 @@ namespace ESKD.MaterialSync.Sw
                 item.Designation = Value(w, cfg, "Обозначение");
                 item.Name = Value(w, cfg, "Наименование");
                 item.Operations = Value(w, cfg, LzkOperations.PropertyName);
+                // Ревизия чертежа — «Revision» чертежа (ниже), детали БЧ — её «Ревизия» (словарь SWPlus): К-7 у детали без
+                // чертежа пишет туда. Читалась только «Revision» — после новой ревизии БЧ-деталь пропускалась как «выданная»,
+                // а её прежние файлы уже были в «_Аннулировано» (аудит 23.09.2026, NAME-1). «Ревизия» — только у детали БЧ:
+                // у детали с чертежом ревизия принадлежит чертежу, и устаревшая или вписанная вручную «Ревизия» модели
+                // обходила бы защиту выданного (Т-30; ревью 23.09.2026).
                 item.Revision = ExportNaming.Revision(Value(w, cfg, "Revision"));
+                string format;
+                if (!assembly && BchService.State(model, out format))
+                    item.Revision = Math.Max(item.Revision, ExportNaming.Revision(Value(w, cfg, PropertyDictionary.RevisionName)));
                 item.IsPurchased = ComponentKind.IsPurchased(w, model, path, "Выгрузка", cipher);
             }
             catch (Exception ex)

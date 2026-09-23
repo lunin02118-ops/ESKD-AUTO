@@ -29,7 +29,7 @@ namespace ESKD.Tests
             {
                 Product = "ТС-52",
                 Assembly = Asm,
-                User = "Лунин В.И.",
+                User = "Тестов Т.Т.",
                 Time = new DateTime(2026, 9, 23, 14, 5, 0),
                 Version = version
             };
@@ -204,6 +204,34 @@ namespace ESKD.Tests
             bool legacy;
             ExportLog.MarkUnchecked("Выгрузка для производства\r\nИзделие:  ТС-52\r\n", out legacy);
             Assert.IsFalse(legacy, "отчёт до 23.09.2026 без строки версии не трогается");
+        }
+
+        public static void Test_Archived_files_leave_export_report()
+        {
+            // «Новая ревизия» уносит прежние файлы после выгрузки — отчёт выгрузки не должен на них ссылаться (ревью 23.09.2026).
+            ExportLog log = new ExportLog { Product = "ТС-52", User = "И", Version = "23.09.2026 14:05:31 #1a2b3c4d" };
+            log.Add(@"D:\И\02_PDF\ТС-52.00.01.001 Царга.pdf");
+            log.Add(@"D:\И\02_PDF\ТС-52.00.01.001 Царга_Изм1.pdf");
+            log.Checksums[log.Files[0]] = Sum('a');
+            log.Checksums[log.Files[1]] = Sum('b');
+            log.Skip("ТС-52.00.01.002 Косынка.sldprt", "нет чертежа");
+            string text = log.Text();
+            bool changed;
+            string left = ExportLog.RemoveFiles(text, new[] { "тс-52.00.01.001 царга.pdf" }, out changed);
+            Assert.IsTrue(changed, "файл был в отчёте");
+            ExportLog back = ExportLog.Parse(left);
+            Assert.AreEqual(1, back.Files.Count, "остался один файл");
+            Assert.AreEqual("ТС-52.00.01.001 Царга_Изм1.pdf", back.Files[0], "новая ревизия осталась");
+            Assert.AreEqual(Sum('b'), back.Checksums[back.Files[0]], "её сумма прежняя");
+            Assert.AreEqual(1, back.Skipped.Count, "пропуски не тронуты");
+            Assert.AreEqual("23.09.2026 14:05:31 #1a2b3c4d", back.Version, "версия не тронута");
+            Assert.IsTrue(left.Contains("Файлов:   1, пропущено: 1"), "счёт файлов исправлен");
+            Assert.IsTrue(left.Contains("Изделие:  ТС-52"), "шапка не тронута");
+            bool again;
+            Assert.AreEqual(left, ExportLog.RemoveFiles(left, new[] { "Другой.pdf" }, out again), "чужой файл — без изменений");
+            Assert.IsFalse(again, "нечего убирать");
+            string none = ExportLog.RemoveFiles(left, new[] { "ТС-52.00.01.001 Царга_Изм1.pdf" }, out changed);
+            Assert.IsTrue(none.Contains("Ничего не выгружено.") && none.Contains("Файлов:   0, пропущено: 1"), none);
         }
     }
 }

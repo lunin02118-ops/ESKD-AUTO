@@ -35,6 +35,8 @@ namespace ESKD.MaterialSync.Sw
         public readonly List<string> Warnings = new List<string>();
         /// <summary>Ошибки записи и сохранения — «документ: что не так». Показываются окном после записи.</summary>
         public readonly List<string> Errors = new List<string>();
+        /// <summary>Что ещё ответить: тот же вопрос о материале в других исполнениях — «документ: подсказка».</summary>
+        public readonly List<string> Hints = new List<string>();
 
         public string StatusLine()
         {
@@ -523,6 +525,11 @@ namespace ESKD.MaterialSync.Sw
             int assigned = StockService.Apply(app, model, findings, applied);
             foreach (string warning in applied.Warnings) batch.Errors.Add(t.Title + ": " + warning);
             foreach (string operation in applied.Operations) Log.Info(t.Title + ": " + operation);
+            foreach (string hint in applied.Hints)
+            {
+                Log.Info(t.Title + ": " + hint);
+                batch.Hints.Add(t.Title + ": " + hint);
+            }
             batch.Failed += applied.Failures;
             StockService.RememberKept(t.Node.Path, findings);
             if (assigned == 0) return;

@@ -48,7 +48,13 @@ namespace ESKD.MaterialSync.Sw
                 _depth--;
             }
             if (saved && before.Length > 0)
-                Changes.Add(new StampChange { Name = Path.GetFileName(path), Before = before, After = ProductFreshness.Checksum(path) });
+                Changes.Add(new StampChange
+                {
+                    Path = path,
+                    Name = System.IO.Path.GetFileName(path),
+                    Before = before,
+                    After = ProductFreshness.Checksum(path)
+                });
             return saved;
         }
     }

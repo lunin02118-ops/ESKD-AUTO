@@ -11,6 +11,8 @@ namespace ESKD.MaterialSync.Core
     /// <summary>Файл, который сохранила сама кнопка (ЛЗК, выгрузка): его сумма до сохранения и после.</summary>
     public sealed class StampChange
     {
+        /// <summary>Полный путь: по нему находится изделие, в отчёты которого идёт новая сумма; пусто — не известен.</summary>
+        public string Path = "";
         public string Name = "";
         public string Before = "";
         public string After = "";
@@ -126,6 +128,13 @@ namespace ESKD.MaterialSync.Core
         public static string Restamp(string reportText, IEnumerable<StampChange> changes, string step, DateTime time,
             out int replaced)
         {
+            return Restamp(reportText, changes, step, time, ChecksumTitle, out replaced);
+        }
+
+        /// <summary>То же для блока сумм с другим заголовком — «Документы изделия:» отчёта выдачи `_Выдано_…`.</summary>
+        public static string Restamp(string reportText, IEnumerable<StampChange> changes, string step, DateTime time, string title,
+            out int replaced)
+        {
             replaced = 0;
             List<StampChange> pending = (changes ?? Enumerable.Empty<StampChange>())
                 .Where(c => c != null && c.Before.Length > 0 && c.After.Length > 0 &&
@@ -134,10 +143,10 @@ namespace ESKD.MaterialSync.Core
             if (pending.Count == 0) return text;
             string newline = text.Contains("\r\n") ? "\r\n" : "\n";
             List<string> lines = text.Replace("\r\n", "\n").Split('\n').ToList();
-            int title = lines.FindIndex(l => l.TrimEnd() == ChecksumTitle);
-            if (title < 0) return text;
+            int at = lines.FindIndex(l => l.TrimEnd() == title);
+            if (at < 0) return text;
             List<string> names = new List<string>();
-            for (int i = title + 1; i < lines.Count; i++)
+            for (int i = at + 1; i < lines.Count; i++)
             {
                 string line = lines[i];
                 if (line.Trim().Length == 0 || !line.StartsWith(" ", StringComparison.Ordinal)) break;
@@ -159,7 +168,7 @@ namespace ESKD.MaterialSync.Core
                 }
             }
             if (replaced == 0) return text;
-            lines.Insert(title, RestampLabel + " " + step + ", " + time.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture) +
+            lines.Insert(at, RestampLabel + " " + step + ", " + time.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture) +
                 " — " + string.Join(", ", names.ToArray()));
             return string.Join(newline, lines.ToArray());
         }

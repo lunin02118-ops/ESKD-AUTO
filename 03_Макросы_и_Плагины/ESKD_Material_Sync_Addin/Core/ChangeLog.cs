@@ -67,6 +67,8 @@ namespace ESKD.MaterialSync.Core
         /// <summary>Что делать с заделом: использовать / доработать / в брак.</summary>
         public string Backlog = "";
         public string Applicability = "";
+        /// <summary>Строка отменена: штамп ревизии не сохранился (<see cref="ChangeLog.Cancel"/>).</summary>
+        public bool Cancelled;
 
         public string[] Cells()
         {
@@ -105,7 +107,11 @@ namespace ESKD.MaterialSync.Core
             return System.IO.Path.Combine(folder ?? "", FileName);
         }
 
-        /// <summary>Номер последней строки журнала; журнала нет или он пуст — 0.</summary>
+        /// <summary>
+        /// Номер последней строки журнала; журнала нет или он пуст — 0; журнал есть, но не прочитан — -1. Раньше и
+        /// непрочитанный журнал давал 0, и отчёт выдачи записывал «строка 0» — проверка потом считала ревизией любую
+        /// строку журнала (ревью 23.09.2026).
+        /// </summary>
         public static int LastNumber(string path)
         {
             if (!File.Exists(path)) return 0;
@@ -120,7 +126,7 @@ namespace ESKD.MaterialSync.Core
             catch (Exception ex)
             {
                 Log.Error("Журнал изменений: чтение " + path, ex);
-                return 0;
+                return -1;
             }
         }
 
@@ -214,6 +220,94 @@ namespace ESKD.MaterialSync.Core
                 book.Save();
                 return number;
             }
+        }
+
+        /// <summary>Пометка отменённой строки в графе «Что изменено».</summary>
+        public const string CancelledPrefix = "ОТМЕНЕНО: ";
+
+        /// <summary>
+        /// Строка отменена: графа «Что изменено» начинается словом «ОТМЕНЕНО» — с двоеточием или без, в любом регистре.
+        /// Так её пометит и конструктор вручную, когда книга была занята (ревью 23.09.2026): раньше засчитывалась только
+        /// точная пометка кнопки.
+        /// </summary>
+        public static bool IsCancelled(string what)
+        {
+            return (what ?? "").TrimStart().StartsWith(CancelledPrefix.TrimEnd(' ', ':'), StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Строка журнала отменена — штамп ревизии не сохранился (аудит 23.09.2026, SAVE-9): графа «Что изменено» получает
+        /// пометку «ОТМЕНЕНО: причина — …». Строка не удаляется: журнал нумеруется подряд, а номер мог уже попасть в
+        /// штамп. true — пометка записана.
+        /// </summary>
+        public static bool Cancel(string path, int number, string reason)
+        {
+            if (!File.Exists(path)) return false;
+            DateTime deadline = DateTime.UtcNow + Wait;
+            Exception last = null;
+            while (true)
+            {
+                try
+                {
+                    using (Lock(path))
+                    using (XlsxBook book = XlsxBook.Open(path))
+                    {
+                        XlsxSheet sheet = book.Sheet(SheetName);
+                        if (sheet == null) return false;
+                        foreach (int line in sheet.RowNumbers)
+                        {
+                            int n;
+                            if (!int.TryParse((sheet.Get(1, line) ?? "").Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out n) ||
+                                n != number) continue;
+                            string cell = XlsxBook.CellName(6, line);
+                            string what = sheet.Get(6, line) ?? "";
+                            if (IsCancelled(what)) return true;
+                            sheet.SetText(cell, CancelledPrefix + (reason ?? "") + " — " + what, sheet.StyleOf(cell));
+                            book.Save();
+                            return true;
+                        }
+                        return false;
+                    }
+                }
+                catch (IOException ex)
+                {
+                    last = ex;
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    last = ex;
+                }
+                if (DateTime.UtcNow >= deadline) break;
+                Thread.Sleep(500);
+            }
+            Log.Error("Журнал изменений: строка " + number + " не помечена отменённой в " + path, last);
+            return false;
+        }
+
+        /// <summary>Строки журнала: номер, ревизия, дата, документ, что изменено; отменённые помечены.</summary>
+        public static List<ChangeRow> Read(string path)
+        {
+            List<ChangeRow> rows = new List<ChangeRow>();
+            foreach (Dictionary<string, string> row in Rows(path))
+            {
+                int number, revision;
+                DateTime date;
+                int.TryParse(row[Columns[0]].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out number);
+                int.TryParse(row[Columns[1]].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out revision);
+                DateTime.TryParseExact(row[Columns[2]].Trim(), "dd.MM.yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out date);
+                string what = row[Columns[5]];
+                rows.Add(new ChangeRow
+                {
+                    Number = number,
+                    Revision = revision,
+                    Date = date,
+                    Who = row[Columns[3]],
+                    Document = row[Columns[4]],
+                    What = what,
+                    Cancelled = IsCancelled(what)
+                });
+            }
+            return rows;
         }
 
         /// <summary>Строки журнала как словари «колонка → значение» — для проверок и отчётов.</summary>

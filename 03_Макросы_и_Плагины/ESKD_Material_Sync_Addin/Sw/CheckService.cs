@@ -125,6 +125,8 @@ namespace ESKD.MaterialSync.Sw
                             "несохранённые правки: сохраните документ и проверьте изделие снова");
                 foreach (ProductNode node in nodes)
                     report.Checksums.Add(new KeyValuePair<string, string>(Path.GetFileName(node.Path), Checksum(node.Path)));
+                Status(app, "ЕСКД: проверка изделия — выданные документы…");
+                Issued(productFolder, report);
                 report.Version = VersionOf(productFolder, report);
                 SameVersion(productFolder, assemblyPath, report);
 
@@ -236,18 +238,27 @@ namespace ESKD.MaterialSync.Sw
             string done = applied.StatusLine();
             if (done.StartsWith("ЕСКД: ", StringComparison.Ordinal)) done = done.Substring("ЕСКД: ".Length);
             Status(app, outcome + "; " + done);
-            if (applied.Errors.Count == 0) return;
-            List<Notice> errors = new List<Notice>();
-            foreach (string error in applied.Errors)
-            {
-                int colon = error.IndexOf(": ", StringComparison.Ordinal);
-                errors.Add(Notices.Of(NoticeLevel.Critical, colon > 0 ? error.Substring(0, colon) : "",
-                    colon > 0 ? error.Substring(colon + 2) : error));
-            }
-            NoticeForm.Present(app, "ЕСКД: проверка изделия", "Записано не всё",
-                "Остальное записано" + (applied.Saved > 0 || applied.AssemblySaved ? " и сохранено" : "") +
-                ". Документы из списка ниже проверьте и сохраните сами; подробности — в журнале надстройки.",
-                errors, NoticeLevel.Critical);
+            if (applied.Errors.Count == 0 && applied.Hints.Count == 0) return;
+            List<Notice> notices = new List<Notice>();
+            foreach (string error in applied.Errors) notices.Add(Split(NoticeLevel.Critical, error));
+            foreach (string hint in applied.Hints) notices.Add(Split(NoticeLevel.Warning, hint));
+            if (applied.Errors.Count > 0)
+                NoticeForm.Present(app, "ЕСКД: проверка изделия", "Записано не всё",
+                    "Остальное записано" + (applied.Saved > 0 || applied.AssemblySaved ? " и сохранено" : "") +
+                    ". Документы из списка ниже проверьте и сохраните сами; подробности — в журнале надстройки.",
+                    notices, NoticeLevel.Critical);
+            else
+                NoticeForm.Present(app, "ЕСКД: проверка изделия", "Остался вопрос в других исполнениях",
+                    "Ответы записаны в активных исполнениях. В исполнениях ниже тот же вопрос о материале — в исполнениях " +
+                    "бывают разные материалы, поэтому ответ туда не перенесён: ответьте в каждом отдельно.",
+                    notices, NoticeLevel.Warning);
+        }
+
+        /// <summary>«документ: текст» → замечание с документом.</summary>
+        private static Notice Split(NoticeLevel level, string line)
+        {
+            int colon = line.IndexOf(": ", StringComparison.Ordinal);
+            return Notices.Of(level, colon > 0 ? line.Substring(0, colon) : "", colon > 0 ? line.Substring(colon + 2) : line);
         }
 
         // ------------------------------------------------------------------ правило «б»: перестроение
@@ -565,6 +576,45 @@ namespace ESKD.MaterialSync.Sw
                     report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), exported,
                         "файл изменён после выгрузки: выгрузите изделие заново");
             }
+        }
+
+        /// <summary>
+        /// Правило «е», выданное: деталь или чертёж из последнего `_Выдано_…` изменены после выдачи, а новой ревизии нет
+        /// (аудит 23.09.2026, CHK-13). Суммы SHA-256 отчёта выдачи сверяются с файлами «01_3D»; ревизия есть, если в
+        /// журнале изменений после выдачи — строка этого документа. Сохранения самих кнопок (ЛЗК, выгрузка) вписаны в
+        /// отчёт выдачи и изменением не считаются; сборки не сверяются — их файл меняется от сохранения после правки
+        /// детали. Отчёт выдачи до 23.09.2026 без строки журнала — ревизия считается по дате строки.
+        /// </summary>
+        private static void Issued(string productFolder, CheckReport report)
+        {
+            IssueRecord issued = IssueRecord.Latest(productFolder);
+            if (issued == null || issued.Documents.Count == 0) return;
+            string models = Path.Combine(productFolder, LzkNaming.ModelsFolder);
+            if (!Directory.Exists(models)) return;
+            Dictionary<string, string> current = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string file in Directory.GetFiles(models, "*.*", SearchOption.AllDirectories)
+                .Where(f => (f.EndsWith(".sldprt", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".slddrw", StringComparison.OrdinalIgnoreCase)) &&
+                    IssueRecord.IsDocumentFile(f)))
+                current[Path.GetFileName(file)] = Checksum(file);
+            List<ChangeRow> journal;
+            try
+            {
+                journal = ChangeLog.Read(ChangeLog.Path(productFolder));
+            }
+            catch (Exception ex)
+            {
+                // Непрочитанный журнал — не пустой: иначе каждая изменённая выданная деталь получила бы «новой ревизии
+                // нет», хотя ревизия оформлена (ревью 23.09.2026).
+                Log.Error("Проверка изделия: журнал изменений", ex);
+                report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), ChangeLog.FileName,
+                    "журнал изменений не прочитан — выданные документы с ним не сверены: закройте книгу, если она открыта, " +
+                    "и проверьте изделие снова");
+                return;
+            }
+            foreach (KeyValuePair<string, string> changed in IssueRecord.Unrevised(issued, current, journal))
+                report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), changed.Key,
+                    "изменён после выдачи в производство (" + Path.GetFileName(issued.Path) + "), а новой ревизии нет: нажмите " +
+                    "«Новая ревизия» в «" + changed.Value + "» — или верните выданный файл");
         }
 
         // ------------------------------------------------------------------ правило «з»: чертежи

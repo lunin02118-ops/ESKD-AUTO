@@ -48,6 +48,8 @@ namespace ESKD.MaterialSync.Sw
         public string SkipReason = "";
         public readonly List<string> Operations = new List<string>();
         public readonly List<string> Warnings = new List<string>();
+        /// <summary>Что ещё ответить конструктору: тот же вопрос о материале в других исполнениях детали.</summary>
+        public readonly List<string> Hints = new List<string>();
 
         /// <summary>Обозначение введено не по имени файла — null, если совпадает или имя файла без обозначения.</summary>
         public DesignationMismatch Designation;

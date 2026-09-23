@@ -484,6 +484,8 @@ namespace ESKD.MaterialSync
                 List<StockFinding> findings = StockService.Inspect(_app, doc);
                 SyncReport applied = new SyncReport();
                 int changed = StockService.Apply(_app, doc, findings, applied);
+                foreach (string warning in applied.Warnings) Core.Log.Warn("ApplyStockMaterialSilent: " + warning);
+                foreach (string hint in applied.Hints) Core.Log.Info("ApplyStockMaterialSilent: " + hint);
                 if (changed > 0)
                     SyncService.SyncModel(_app, doc, new SyncRequest
                     {

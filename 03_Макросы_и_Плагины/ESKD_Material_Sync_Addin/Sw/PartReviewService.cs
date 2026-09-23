@@ -61,8 +61,17 @@ namespace ESKD.MaterialSync.Sw
             if (interactive && applied.Errors.Count > 0)
             {
                 List<Notice> errors = applied.Errors.Select(e => Notices.Of(NoticeLevel.Critical, title, e)).ToList();
+                errors.AddRange(applied.Hints.Select(h => Notices.Of(NoticeLevel.Warning, title, h)));
                 NoticeForm.Present(app, "ЕСКД: синхронизация", "Записано не всё",
                     "Документ проверьте и сохраните сами; подробности — в журнале надстройки.", errors, NoticeLevel.Critical);
+            }
+            else if (interactive && applied.Hints.Count > 0)
+            {
+                // В исполнениях бывают разные материалы (решение владельца 23.09.2026): ответ в одном в другое не переносится.
+                NoticeForm.Present(app, "ЕСКД: синхронизация", "Остался вопрос в других исполнениях",
+                    "Ответ записан в активном исполнении. В исполнениях ниже тот же вопрос о материале — ответьте в каждом " +
+                    "отдельно: сделайте исполнение активным и нажмите «Синхронизировать».",
+                    applied.Hints.Select(h => Notices.Of(NoticeLevel.Warning, title, h)).ToList(), NoticeLevel.Warning);
             }
             return Done(applied.StatusLine());
         }

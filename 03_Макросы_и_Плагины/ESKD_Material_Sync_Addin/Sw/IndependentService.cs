@@ -331,8 +331,9 @@ namespace ESKD.MaterialSync.Sw
 
         /// <summary>
         /// Реквизиты новой модели (Т-23): прежние «Обозначение» и «Наименование» — от эталона, поэтому они
-        /// стираются, а синхронизация заполняет их из нового имени файла. Материал, подписи и «Операции»
-        /// остаются как были: это работа конструктора, а не кнопки.
+        /// стираются, а синхронизация заполняет их из нового имени файла. «Ревизия» БЧ-детали эталона к новой детали
+        /// отношения не имеет (Т-22, аудит 23.09.2026) — тоже стирается. Материал, подписи и «Операции» остаются как
+        /// были: это работа конструктора, а не кнопки.
         /// </summary>
         private static void Rename(ISldWorks app, string target, IndependentLog log, string title)
         {
@@ -347,7 +348,7 @@ namespace ESKD.MaterialSync.Sw
                 }
                 PropertyWriter w = new PropertyWriter(model, false);
                 foreach (string cfg in new[] { "" }.Concat(w.ConfigurationNames()).Distinct())
-                    foreach (string name in new[] { "Обозначение", "Наименование" })
+                    foreach (string name in new[] { "Обозначение", "Наименование", PropertyDictionary.RevisionName })
                         if (w.Exists(cfg, name)) w.Set(cfg, name, "");
                 SyncService.SyncModel(app, model, new SyncRequest { Reason = "сделано независимым" });
                 int errors = 0, warnings = 0;

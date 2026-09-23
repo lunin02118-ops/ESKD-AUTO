@@ -155,15 +155,38 @@ namespace ESKD.MaterialSync.Sw
         public static void Restamp(string productFolder, IList<StampChange> changes, string step)
         {
             if (changes == null || changes.Count == 0) return;
-            string path = CheckRules.ReportPath(productFolder);
+            // ЛЗК и выгрузка сохраняют и модели из папки другого изделия того же заказа: их новые суммы — и в отчёты того
+            // изделия, иначе там сохранение кнопки выглядело бы правкой после проверки и выдачи (ревью 23.09.2026). Сумма
+            // в отчёте меняется, только если она равна сумме файла до сохранения, — лишние файлы в списке ничего не портят.
+            List<string> folders = new List<string>();
+            if (!string.IsNullOrEmpty(productFolder)) folders.Add(productFolder);
+            foreach (StampChange change in changes)
+            {
+                if (change == null || string.IsNullOrEmpty(change.Path)) continue;
+                string folder = ProductReviewService.ProductFolderOf(change.Path);
+                if (!string.IsNullOrEmpty(folder) && !folders.Any(f => string.Equals(f, folder, StringComparison.OrdinalIgnoreCase)))
+                    folders.Add(folder);
+            }
+            foreach (string folder in folders)
+            {
+                RestampFile(CheckRules.ReportPath(folder), ProductStamp.ChecksumTitle, changes, step, "отчёте проверки");
+                // Изделие уже выдано: те же суммы — в последний отчёт выдачи, иначе проверка сочла бы сохранение кнопки
+                // правкой выданного без ревизии (CHK-13).
+                IssueRecord issued = IssueRecord.Latest(folder);
+                if (issued != null) RestampFile(issued.Path, IssueRecord.DocumentsTitle, changes, step, "отчёте выдачи");
+            }
+        }
+
+        private static void RestampFile(string path, string title, IList<StampChange> changes, string step, string what)
+        {
             try
             {
                 if (!File.Exists(path)) return;
                 int replaced;
-                string text = ProductStamp.Restamp(File.ReadAllText(path, Encoding.UTF8), changes, step, DateTime.Now, out replaced);
+                string text = ProductStamp.Restamp(File.ReadAllText(path, Encoding.UTF8), changes, step, DateTime.Now, title, out replaced);
                 if (replaced == 0) return;
                 File.WriteAllText(path, text, new UTF8Encoding(true));
-                Log.Info(step + ": в отчёте проверки обновлены суммы файлов, сохранённых кнопкой — " + replaced);
+                Log.Info(step + ": в " + what + " обновлены суммы файлов, сохранённых кнопкой — " + replaced);
             }
             catch (IOException ex)
             {

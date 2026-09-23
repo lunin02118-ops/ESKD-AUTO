@@ -343,6 +343,117 @@ class Stock(SwTestCase):
         self.s.close_all()
         self.assertIsNone(V(self.persisted(path), "Материал_Строка", "00"), "и в свойства ничего не записано")
 
+    def _body_materials(self, doc, cfg):
+        names = []
+        for body in com.as_list(com.dyn(doc).GetBodies2(0, False)):
+            db = com.ref_str("")
+            got = com.dyn(body).GetMaterialPropertyName(cfg, db)
+            # Позднее связывание отдаёт выходной параметр вместе с результатом: (имя, база).
+            names.append(str((got[0] if isinstance(got, tuple) else got) or ""))
+        return sorted(names)
+
+    def test_T13_material_goes_to_every_execution_with_the_same_profile(self):
+        """T13 (аудит 23.09.2026, MAT-5): материал SolidWorks у каждой конфигурации свой. Назначенный по типоразмеру
+        только в активной, в других исполнениях он оставался прежним — у них «Материал_Строка», масса и книга ЛЗК
+        расходились. Теперь в исполнении с тем же профилем и без материала он ставится сам — так его поставила бы и сама
+        система в этом исполнении; исполнение, где конструктор выбрал своё, не трогается (в исполнениях бывают разные
+        материалы — решение владельца 23.09.2026), активное исполнение остаётся прежним."""
+        path = self.s.ws(self._case_name(), "ПРТИ.301111.061 Распорка.sldprt")
+        self.s.set_settings(AutoStockMaterial=0)
+        try:
+            doc = build.structural_tube(self.s, 400, FLAT_OVAL, None)
+            first = str(doc.GetActiveConfiguration.Name)
+            build.add_configuration(doc, "01")
+            build.add_configuration(doc, "02")
+            build.set_material(doc, SHEET8, "02")
+            build.show_configuration(doc, first)
+            self.s.save_as(doc, path)
+            # Пересохранение после «Сохранить как» идёт в простое: до него подбор должен оставаться выключенным.
+            self.s.wait_addin_idle(timeout=60.0)
+        finally:
+            self.s.set_settings(AutoStockMaterial=1)
+        self.assertEqual(SHEET8, build.material_of(doc, "02")[0], "в «02» — свой материал конструктора")
+        self.assertEqual("", build.material_of(doc, "01")[0], "в «01» материала нет")
+
+        self.s.activate(doc)
+        changed = int(com.call(self.s.eskd(), "ApplyStockMaterialSilent"))
+        self.assertEqual(2, changed, "материал назначен в активном исполнении и в «01»")
+        self.assertEqual(TUBE_MATERIAL, build.material_of(doc, first)[0], "активное исполнение")
+        self.assertEqual(TUBE_MATERIAL, build.material_of(doc, "01")[0], "исполнение «01» получило тот же материал")
+        self.assertEqual(SHEET8, build.material_of(doc, "02")[0], "выбор конструктора в «02» не тронут")
+        self.assertEqual(first, str(doc.GetActiveConfiguration.Name), "активное исполнение прежнее")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+        self.s.close_all()
+
+    def test_T15_save_assigns_material_in_executions_without_it(self):
+        """T15 (аудит 23.09.2026, MAT-5, решение владельца 23.09.2026): путь конструктора — Ctrl+S. Материала нет, подходящий
+        один — надстройка ставит его в активном исполнении и в исполнении «01» с тем же профилем и без материала; в «02»
+        конструктор выбрал своё — не трогается. Деталь не сохраняется, активным остаётся прежнее исполнение."""
+        path = self.s.ws(self._case_name(), "ПРТИ.301111.063 Распорка.sldprt")
+        self.s.set_settings(AutoStockMaterial=0)
+        try:
+            doc = build.structural_tube(self.s, 400, FLAT_OVAL, None)
+            first = str(doc.GetActiveConfiguration.Name)
+            build.add_configuration(doc, "01")
+            build.add_configuration(doc, "02")
+            build.set_material(doc, SHEET8, "02")
+            build.show_configuration(doc, first)
+            self.s.save_as(doc, path)
+            self.s.wait_addin_idle(timeout=60.0)
+        finally:
+            self.s.set_settings(AutoStockMaterial=1)
+
+        self.s.save(doc)
+        self.s.wait_addin_idle(timeout=60.0)
+        warnings = [ln for ln in self.addin_log.new_lines() if "WARN" in ln or "ERROR" in ln]
+        self.path("warnings.txt").write_text("\n".join(warnings), encoding="utf-8")
+        self.assertEqual(TUBE_MATERIAL, build.material_of(doc, first)[0], "активное исполнение")
+        self.assertEqual(TUBE_MATERIAL, build.material_of(doc, "01")[0], "исполнение «01» без материала получило его")
+        self.assertEqual(SHEET8, build.material_of(doc, "02")[0], "выбор конструктора в «02» не тронут")
+        self.assertEqual(first, str(doc.GetActiveConfiguration.Name), "активное исполнение прежнее")
+        self.assertEqual([], [ln for ln in warnings if "не открылось" in ln or "не вернулось" in ln], "исполнения переключились")
+        self.s.close_all()
+
+    def test_T14_profile_material_goes_only_to_its_bodies(self):
+        """T14 (аудит 23.09.2026, MAT-6): в детали труба и приваренная к ней пластина (второе тело, не прокат). Позиция
+        проката одна, и раньше материал трубы ставился детали целиком — пластина становилась трубой. Теперь детали целиком
+        он не ставится, у пластины материала по-прежнему нет. Список вырезов ещё не построен, а тела профиля — не вся
+        деталь: какому телу какой материал, не понять — позиции нет, в журнале «обновите список вырезов» (ревью
+        23.09.2026). Если позиция всё же найдена, телу по отдельности SolidWorks 2025 материал через API не ставит
+        (отвечает «готово», а материал и масса прежние): тогда назначенным это не считается, а в журнале — «назначьте его
+        этим телам вручную»."""
+        path = self.s.ws(self._case_name(), "ПРТИ.301111.062 Кронштейн.sldprt")
+        self.s.set_settings(AutoStockMaterial=0)
+        try:
+            doc = build.structural_tube(self.s, 400, FLAT_OVAL, None)
+            build.sketch_rectangles(doc, [(0.0, 0.05, 0.1, 0.1)])
+            build.extrude(doc, 0.006, merge=False)
+            doc.ForceRebuild3(False)
+            self.assertEqual(2, len(com.as_list(com.dyn(doc).GetBodies2(0, False))), "два тела: труба и пластина")
+            self.s.save_as(doc, path)
+            self.s.wait_addin_idle(timeout=60.0)
+        finally:
+            self.s.set_settings(AutoStockMaterial=1)
+        cfg = str(doc.GetActiveConfiguration.Name)
+
+        self.s.activate(doc)
+        self.addin_log.new_lines()
+        changed = int(com.call(self.s.eskd(), "ApplyStockMaterialSilent"))
+        log = self.addin_log.new_lines()
+        self.path("log.txt").write_text("\n".join(log), encoding="utf-8")
+        self.assertEqual("", build.material_of(doc, cfg)[0], "детали целиком материал трубы не назначен")
+        bodies = self._body_materials(doc, cfg)
+        self.assertEqual("", bodies[0], f"у пластины материала трубы нет: {bodies}")
+        if bodies[1] == TUBE_MATERIAL:
+            self.assertEqual(1, changed, "материал встал телу трубы")
+        else:
+            self.assertEqual(["", ""], bodies, bodies)
+            self.assertEqual(0, changed, "не вставший материал назначенным не считается")
+            self.assertTrue(any("назначьте его этим телам вручную" in ln or "обновите список вырезов" in ln for ln in log),
+                            "\n".join(log))
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+        self.s.close_all()
+
     def test_T10_product_walk_reaches_parts_three_levels_deep(self):
         """T10: изделие — это сборка сборок. Деталь лежит на третьем уровне дерева, а нажимают кнопку
         в корневой сборке: обход обязан дойти и до неё."""

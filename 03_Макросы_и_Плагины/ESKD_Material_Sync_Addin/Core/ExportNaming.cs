@@ -151,6 +151,45 @@ namespace ESKD.MaterialSync.Core
             return source;
         }
 
+        /// <summary>
+        /// Файлы, перенесённые в «_Аннулировано» после выгрузки, — из блока «Выгружено» и из счёта «Файлов:». Кнопка
+        /// «Новая ревизия» уносит прежние файлы уже после того, как выгрузка записала отчёт, и отчёт ссылался на файл,
+        /// которого в папке выдачи нет (ревью 23.09.2026, REV-2). Прочее в тексте не трогается.
+        /// </summary>
+        public static string RemoveFiles(string text, IEnumerable<string> names, out bool changed)
+        {
+            changed = false;
+            string source = text ?? "";
+            HashSet<string> drop = new HashSet<string>(names ?? new string[0], StringComparer.OrdinalIgnoreCase);
+            if (drop.Count == 0) return source;
+            string newline = source.Contains("\r\n") ? "\r\n" : "\n";
+            List<string> lines = new List<string>(source.Replace("\r\n", "\n").Split('\n'));
+            bool files = false;
+            int header = -1;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string line = lines[i];
+                if (line.Length > 0 && !line.StartsWith("  ", StringComparison.Ordinal))
+                {
+                    files = line.StartsWith("Выгружено", StringComparison.Ordinal);
+                    if (files) header = i;
+                    continue;
+                }
+                if (!files) continue;
+                string body = line.Trim();
+                int gap = body.IndexOf("  ", StringComparison.Ordinal);
+                if (gap <= 0 || !drop.Contains(body.Substring(gap).Trim())) continue;
+                lines.RemoveAt(i--);
+                changed = true;
+            }
+            if (!changed) return source;
+            ExportLog left = Parse(string.Join("\n", lines.ToArray()));
+            if (left.Files.Count == 0 && header >= 0) lines[header] = "Ничего не выгружено.";
+            int count = lines.FindIndex(l => l.StartsWith("Файлов:", StringComparison.Ordinal));
+            if (count >= 0) lines[count] = "Файлов:   " + left.Files.Count + ", пропущено: " + left.Skipped.Count;
+            return string.Join(newline, lines.ToArray());
+        }
+
         /// <summary>Документ и причина из строки пропуска «документ — причина».</summary>
         public static KeyValuePair<string, string> SplitSkip(string line)
         {
@@ -269,6 +308,21 @@ namespace ESKD.MaterialSync.Core
         public static string Round(double mm)
         {
             return Math.Max(0, Math.Round(mm, MidpointRounding.AwayFromZero)).ToString("0", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Файл выдачи именно этого документа: имя — основа (<see cref="Stem"/>), за ней расширение, суффикс ревизии «_ИзмN»
+        /// или толщина развёртки «_S3мм_». Просто «начинается с основы» захватывало чужие файлы: «Деталь1» — и «Деталь10 …»
+        /// (аудит 23.09.2026, REV-2).
+        /// </summary>
+        public static bool BelongsTo(string fileName, string stem)
+        {
+            string name = fileName ?? "";
+            if (string.IsNullOrEmpty(stem) || !name.StartsWith(stem, StringComparison.OrdinalIgnoreCase)) return false;
+            string rest = name.Substring(stem.Length);
+            return rest.StartsWith(".", StringComparison.Ordinal) ||
+                Regex.IsMatch(rest, @"^_Изм\d+\.", RegexOptions.IgnoreCase) ||
+                Regex.IsMatch(rest, @"^_S\d+(\.\d+)?мм_", RegexOptions.IgnoreCase);
         }
 
         /// <summary>Куда убрать прежний файл выдачи при новой ревизии: _Аннулировано рядом с ним (Т-30).</summary>
