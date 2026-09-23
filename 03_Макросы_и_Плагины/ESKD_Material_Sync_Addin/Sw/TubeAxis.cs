@@ -13,6 +13,7 @@ namespace ESKD.MaterialSync.Sw
     /// настройка возвращается; модель, которая до выгрузки была сохранена, сохраняется снова — деталь остаётся как была.
     /// Сохраняется только проверенно вернувшаяся деталь: СК удалена и СК вывода прежняя; иначе — <see cref="Leftover"/>.
     /// Нет элемента конструкции или отрезка — <see cref="Applied"/> = false, выгрузка идёт в глобальной СК.
+    /// Без <see cref="ToolSaves"/> (null) деталь не сохраняется: её сохранит тот, кто переключал исполнения.
     /// </summary>
     public sealed class TubeAxis : IDisposable
     {
@@ -80,7 +81,9 @@ namespace ESKD.MaterialSync.Sw
         {
             for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
             {
-                if (f.GetTypeName2() != "WeldMemberFeat") continue;
+                // Погашенный в активном исполнении элемент — чужого исполнения: ось по нему легла бы поперёк трубы
+                // (IGS делается по каждому исполнению — критик сверки SW API 23.09.2026).
+                if (f.GetTypeName2() != "WeldMemberFeat" || f.IsSuppressed()) continue;
                 StructuralMemberFeatureData data = f.GetDefinition() as StructuralMemberFeatureData;
                 object[] groups = data == null ? null : data.Groups as object[];
                 if (groups == null || groups.Length == 0) continue;
@@ -154,11 +157,14 @@ namespace ESKD.MaterialSync.Sw
                 Log.Warn("Выгрузка: " + Leftover);
                 return;
             }
-            if (wasDirty) return;
+            if (wasDirty || saves == null) return;
             int errors;
             if (!saves.Save(model, out errors))
             {
-                Leftover = "деталь после временной СК не сохранена (код " + errors + "): SolidWorks спросит о сохранении — ответьте «Да»";
+                // СК убрана — в детали ничего не изменилось: «закройте без сохранения» верно при любой причине отказа
+                // (сверка SW API 23.09.2026, №17).
+                Leftover = "временная СК убрана, деталь не сохранена (" + SwCodes.SaveProblem(errors) +
+                    ") — в ней ничего не изменилось: закройте её без сохранения (на вопрос SolidWorks ответьте «Нет»)";
                 Log.Warn("Выгрузка: " + Leftover);
             }
         }

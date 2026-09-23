@@ -38,6 +38,8 @@ namespace ESKD.MaterialSync.Sw
         {
             public string Path = "";
             public ModelDoc2 Model;
+            /// <summary>Своё окно было до выгрузки. Нет — окно открыла сама выгрузка (ActivateDoc3), в конце оно закрывается.</summary>
+            public bool HadWindow = true;
             public bool IsAssembly;
             public bool IsPurchased;
             public string Designation = "";
@@ -111,8 +113,7 @@ namespace ESKD.MaterialSync.Sw
                 saves = new ToolSaves();
 
                 Status(app, "ЕСКД: выгрузка для производства — состав…");
-                List<Item> items = Collect(app, doc, path, productFolder);
-                HashSet<string> issued = ExportNaming.Issued(productFolder);
+                // Отчёт заводится до состава: нечитаемый и незагруженный компонент состав называет в «Пропущено» (№20, №29).
                 ExportLog log = new ExportLog
                 {
                     Product = LzkNaming.Cipher(productFolder, path),
@@ -123,40 +124,32 @@ namespace ESKD.MaterialSync.Sw
                 if (freshness != null && !freshness.Fresh)
                     log.Warn(Path.GetFileName(path), "выгрузка по непроверенному изделию — " + string.Join("; ", freshness.Reasons.ToArray()) +
                         ": нажмите «Проверить изделие» и выгрузите изделие заново");
-                foreach (Item item in items)
+                List<Item> items = Collect(app, doc, path, productFolder, log);
+                HashSet<string> issued = ExportNaming.Issued(productFolder);
+                try
                 {
-                    Status(app, "ЕСКД: выгрузка — " + Path.GetFileName(item.Path));
-                    // Чертёж открывается один раз — и для ревизии, и для PDF (аудит 19.09, Л-В7): по сети каждое
-                    // открытие чертежа — секунды, а у изделия их десятки.
-                    string drawingPath = Path.ChangeExtension(item.Path, ".slddrw");
-                    bool opened = false;
-                    ModelDoc2 drawing = null;
-                    try
+                    foreach (Item item in items)
                     {
-                        if (File.Exists(drawingPath)) drawing = OpenDrawing(app, drawingPath, out opened);
-                        // Ревизия принадлежит чертежу (Р0-8): её поднимает К-7 в чертеже, а модель об этом не знает.
-                        // Поэтому суффикс «_ИзмN» и право переписать выданное берутся из чертежа, если он есть.
-                        item.Revision = Math.Max(item.Revision, DrawingRevision(drawing, drawingPath));
-                        // Выданный документ перезаписывать нельзя: цех работает по тому, что у него на руках (Т-30).
-                        if (item.Revision == 0 && issued.Contains(Path.GetFileName(item.Path)))
+                        Status(app, "ЕСКД: выгрузка — " + Path.GetFileName(item.Path));
+                        // Один сбойный документ не обрывает выгрузку (сверка SW API 23.09.2026, №29): исключение уходило во
+                        // внешний catch — «Выгрузка не выполнена», отчёт не писался, а уже сделанные PDF и DXF лежали без него.
+                        try
                         {
-                            log.Skip(Path.GetFileName(item.Path), "документ выдан в производство, оформите новую ревизию");
-                            continue;
+                            ExportItem(app, item, productFolder, log, issued, saves);
                         }
-                        Pdf(app, item, productFolder, log, drawingPath, drawing);
-                    }
-                    finally
-                    {
-                        if (opened && drawing != null) app.CloseDoc(drawing.GetPathName());
-                    }
-                    if (!item.IsAssembly)
-                    {
-                        Dxf(app, item, productFolder, log, saves);
-                        Igs(app, item, productFolder, log, saves);
+                        catch (Exception ex)
+                        {
+                            Log.Error("Выгрузка: " + item.Path, ex);
+                            log.Skip(Path.GetFileName(item.Path), "не выгружен: " + ex.Message.Trim());
+                        }
                     }
                 }
-                // Экспорт переключал окна: конструктор должен увидеть ту же сборку, с которой начал.
-                Activate(app, path);
+                finally
+                {
+                    // Экспорт переключал окна: конструктор должен увидеть ту же сборку, с которой начал, — и после сбоя тоже.
+                    Activate(app, path);
+                    CloseOwnWindows(app, items);
+                }
                 // Свои сохранения кнопки — в отчёт проверки: изделие для следующей кнопки остаётся проверенным.
                 ProductFreshness.Restamp(productFolder, saves.Changes, "выгрузка для производства");
                 bool keepVersion = !partEdited && (assembly || SameAsChecked(path));
@@ -188,6 +181,48 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
+        /// <summary>Один документ выгрузки: PDF чертежа, у детали — ещё DXF развёрток и IGS профиля.</summary>
+        private static void ExportItem(ISldWorks app, Item item, string productFolder, ExportLog log, HashSet<string> issued,
+            ToolSaves saves)
+        {
+            // Чертёж открывается один раз — и для ревизии, и для PDF (аудит 19.09, Л-В7): по сети каждое
+            // открытие чертежа — секунды, а у изделия их десятки.
+            string drawingPath = Path.ChangeExtension(item.Path, ".slddrw");
+            bool opened = false;
+            ModelDoc2 drawing = null;
+            string problem = "";
+            try
+            {
+                if (File.Exists(drawingPath)) drawing = OpenDrawing(app, drawingPath, out opened, out problem);
+                // Ревизия принадлежит чертежу (Р0-8): её поднимает К-7 в чертеже, а модель об этом не знает.
+                // Поэтому суффикс «_ИзмN» и право переписать выданное берутся из чертежа, если он есть.
+                item.Revision = Math.Max(item.Revision, DrawingRevision(drawing, drawingPath));
+                // Выданный документ перезаписывать нельзя: цех работает по тому, что у него на руках (Т-30).
+                if (item.Revision == 0 && issued.Contains(Path.GetFileName(item.Path)))
+                {
+                    log.Skip(Path.GetFileName(item.Path), "документ выдан в производство, оформите новую ревизию");
+                    return;
+                }
+                Pdf(app, item, productFolder, log, drawingPath, drawing, problem);
+            }
+            finally
+            {
+                if (opened && drawing != null)
+                {
+                    // Сбой закрытия — в журнал: он не должен подменить собой исключение выгрузки (№29).
+                    try
+                    {
+                        app.CloseDoc(drawing.GetPathName());
+                    }
+                    catch (COMException ex)
+                    {
+                        Log.Error("Выгрузка: закрытие чертежа " + drawingPath, ex);
+                    }
+                }
+            }
+            if (!item.IsAssembly) PartFiles(app, item, productFolder, log, saves);
+        }
+
         /// <summary>Файл детали — ровно тот, что в отчёте последней проверки изделия (с поправкой на сохранения кнопок).</summary>
         private static bool SameAsChecked(string path)
         {
@@ -201,7 +236,7 @@ namespace ESKD.MaterialSync.Sw
 
         // ------------------------------------------------------------------ состав
         /// <summary>Что выгружать: сама модель и — для сборки — её новые детали и подсборки изделия (Т-26).</summary>
-        private static List<Item> Collect(ISldWorks app, ModelDoc2 doc, string path, string productFolder)
+        private static List<Item> Collect(ISldWorks app, ModelDoc2 doc, string path, string productFolder, ExportLog log)
         {
             List<Item> items = new List<Item>();
             string cipher = LzkNaming.Cipher(productFolder, path);
@@ -211,7 +246,9 @@ namespace ESKD.MaterialSync.Sw
             AssemblyDoc asm = (AssemblyDoc)doc;
             try
             {
-                asm.ResolveAllLightWeightComponents(false);
+                int resolved = asm.ResolveAllLightWeightComponents(false);
+                if (resolved != (int)swComponentResolveStatus_e.swResolveOk)
+                    Log.Warn("Выгрузка: облегчённые компоненты разрешены не все (код " + resolved + ")");
             }
             catch (COMException ex)
             {
@@ -220,44 +257,127 @@ namespace ESKD.MaterialSync.Sw
             object[] comps = asm.GetComponents(false) as object[] ?? new object[0];
             Dictionary<string, Item> byPath = new Dictionary<string, Item>(StringComparer.OrdinalIgnoreCase);
             HashSet<string> rejected = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { path };
+            // Экземпляры без модели в памяти: путь — исполнение (null — исключён из спецификации).
+            List<KeyValuePair<string, string>> unloaded = new List<KeyValuePair<string, string>>();
             foreach (object o in comps)
             {
                 Component2 comp = o as Component2;
                 if (comp == null) continue;
-                string componentPath = comp.GetPathName() ?? "";
-                if (componentPath.Length == 0 || rejected.Contains(componentPath)) continue;
-                if (comp.GetSuppression2() == (int)swComponentSuppressionState_e.swComponentSuppressed) continue;
-                // Каждый экземпляр считается: развёртке нужно количество на изделие по каждому исполнению (заказ 778).
+                string componentPath = "";
+                // Один нечитаемый компонент не обрывает выгрузку (сверка SW API 23.09.2026, №29): он назван в «Пропущено».
+                try
+                {
+                    componentPath = comp.GetPathName() ?? "";
+                    if (componentPath.Length == 0 || rejected.Contains(componentPath)) continue;
+                    if (ComponentState.Suppressed(comp)) continue;
+                    // Каждый экземпляр считается: развёртке нужно количество на изделие по каждому исполнению (заказ 778).
+                    Item known;
+                    if (byPath.TryGetValue(componentPath, out known))
+                    {
+                        if (!comp.ExcludeFromBOM) known.Count(comp.ReferencedConfiguration ?? "");
+                        continue;
+                    }
+                    // Выгружается только своё: эталоны базы и покупные приходят готовыми (Т-26).
+                    if (!File.Exists(componentPath) || !LzkNaming.IsInside(componentPath, productFolder))
+                    {
+                        rejected.Add(componentPath);
+                        continue;
+                    }
+                    ModelDoc2 model = comp.GetModelDoc2() as ModelDoc2;
+                    if (model == null)
+                    {
+                        unloaded.Add(new KeyValuePair<string, string>(componentPath,
+                            comp.ExcludeFromBOM ? null : comp.ReferencedConfiguration ?? ""));
+                        continue;
+                    }
+                    Item item = AddItem(items, model, componentPath, model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, cipher);
+                    if (item == null)
+                    {
+                        rejected.Add(componentPath);
+                        continue;
+                    }
+                    byPath[componentPath] = item;
+                    if (!comp.ExcludeFromBOM) item.Count(comp.ReferencedConfiguration ?? "");
+                }
+                catch (COMException ex)
+                {
+                    string label = componentPath.Length > 0 ? Path.GetFileName(componentPath) : NameOf(comp);
+                    Log.Error("Выгрузка: компонент " + label, ex);
+                    log.Skip(label, "компонент не прочитан (" + ex.Message.Trim() + ") — не выгружен");
+                }
+            }
+            // Модели нет в памяти (облегчённая не разрешилась, SpeedPak, скрытая незагруженная): деталь молча выпадала из
+            // выгрузки — ни в «Выгружено», ни в «Пропущено», а её экземпляры не входили в количество на развёртке (сверка
+            // SW API 23.09.2026, №20). Проверка и ЛЗК в том же случае пишут замечание.
+            HashSet<string> named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, string> lost in unloaded)
+            {
                 Item known;
-                if (byPath.TryGetValue(componentPath, out known))
+                if (byPath.TryGetValue(lost.Key, out known))
                 {
-                    if (!comp.ExcludeFromBOM) known.Count(comp.ReferencedConfiguration ?? "");
+                    if (lost.Value != null) known.Count(lost.Value);
                     continue;
                 }
-                // Выгружается только своё: эталоны базы и покупные приходят готовыми (Т-26).
-                if (!File.Exists(componentPath) || !LzkNaming.IsInside(componentPath, productFolder))
-                {
-                    rejected.Add(componentPath);
-                    continue;
-                }
-                ModelDoc2 model = comp.GetModelDoc2() as ModelDoc2;
-                if (model == null) continue;
-                Item item = AddItem(items, model, componentPath, model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, cipher);
-                if (item == null)
-                {
-                    rejected.Add(componentPath);
-                    continue;
-                }
-                byPath[componentPath] = item;
-                if (!comp.ExcludeFromBOM) item.Count(comp.ReferencedConfiguration ?? "");
+                if (rejected.Contains(lost.Key) || !named.Add(lost.Key)) continue;
+                log.Skip(Path.GetFileName(lost.Key), "модель не загружена (облегчённая, SpeedPak или скрытая) — PDF, DXF и IGS " +
+                    "не сделаны: откройте сборку полностью и выгрузите заново");
             }
             return items;
         }
 
+        private static string NameOf(Component2 comp)
+        {
+            try
+            {
+                return comp.Name2 ?? "компонент";
+            }
+            catch (COMException)
+            {
+                return "компонент";
+            }
+        }
+
         /// <summary>Добавить документ в выгрузку; null — покупное, не выгружается.</summary>
+        private static bool HasWindow(ModelDoc2 model)
+        {
+            try
+            {
+                return model == null || model.Visible;
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Выгрузка: окно документа", ex);
+                return true; // не знаем — не закрываем
+            }
+        }
+
+        /// <summary>
+        /// Окна деталей, которые открыла сама выгрузка (развёртку и ось трубы SolidWorks делает только в активном окне),
+        /// закрываются: модель остаётся загруженной в сборке, закрывается только окно. Раньше после изделия с десятками
+        /// деталей у конструктора оставались десятки окон (сверка SW API 23.09.2026, №15). Окно с несохранёнными
+        /// изменениями остаётся — о нём замечание отчёта. CloseDoc не сохраняет и снимает с модели, оставшейся в сборке,
+        /// отметку «изменена»: правка молча пропала бы при закрытии сборки (проба 23.09.2026).
+        /// </summary>
+        private static void CloseOwnWindows(ISldWorks app, IEnumerable<Item> items)
+        {
+            foreach (Item item in items)
+            {
+                if (item.HadWindow || item.Model == null) continue;
+                try
+                {
+                    if (!item.Model.Visible || DocumentGuard.HasUserEdits(item.Model)) continue;
+                    app.CloseDoc(item.Path);
+                }
+                catch (COMException ex)
+                {
+                    Log.Error("Выгрузка: закрытие окна " + item.Path, ex);
+                }
+            }
+        }
+
         private static Item AddItem(List<Item> items, ModelDoc2 model, string path, bool assembly, string cipher)
         {
-            Item item = new Item { Path = path, Model = model, IsAssembly = assembly };
+            Item item = new Item { Path = path, Model = model, IsAssembly = assembly, HadWindow = HasWindow(model) };
             try
             {
                 PropertyWriter w = new PropertyWriter(model, true);
@@ -300,24 +420,46 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
-        /// <summary>Чертёж, уже открытый в SolidWorks, или открытый здесь (opened — закрыть после работы); null — не открылся.</summary>
-        private static ModelDoc2 OpenDrawing(ISldWorks app, string drawingPath, out bool opened)
+        /// <summary>
+        /// Чертёж для ревизии и PDF: уже открытый — как есть, иначе — только для чтения. Выгрузка чертёж не меняет (PDF —
+        /// копия), а открытый на запись файл на время выгрузки заперт — коллега получил бы его «только для чтения».
+        /// problem — почему не открылся, словами: одноимённый чертёж другого заказа, открытый в SolidWorks, давал «чертёж
+        /// не открылся» без объяснения (сверка SW API 23.09.2026, №28). Открывается без окна, как в «Формате» чертежа:
+        /// окно каждого чертежа изделия мелькало и становилось активным (там же, шаг 2; e2e X20).
+        /// </summary>
+        private static ModelDoc2 OpenDrawing(ISldWorks app, string drawingPath, out bool opened, out string problem)
         {
             opened = false;
+            problem = "";
             try
             {
                 ModelDoc2 drawing = app.GetOpenDocumentByName(drawingPath) as ModelDoc2;
                 if (drawing != null) return drawing;
                 int errors = 0, warnings = 0;
-                drawing = app.OpenDoc6(drawingPath, (int)swDocumentTypes_e.swDocDRAWING,
-                    (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref errors, ref warnings) as ModelDoc2;
+                bool visible = app.GetDocumentVisible((int)swDocumentTypes_e.swDocDRAWING);
+                app.DocumentVisible(false, (int)swDocumentTypes_e.swDocDRAWING);
+                try
+                {
+                    drawing = app.OpenDoc6(drawingPath, (int)swDocumentTypes_e.swDocDRAWING,
+                        (int)(swOpenDocOptions_e.swOpenDocOptions_Silent | swOpenDocOptions_e.swOpenDocOptions_ReadOnly), "",
+                        ref errors, ref warnings) as ModelDoc2;
+                }
+                finally
+                {
+                    app.DocumentVisible(visible, (int)swDocumentTypes_e.swDocDRAWING);
+                }
                 opened = drawing != null;
-                if (drawing == null) Log.Warn("Выгрузка: чертёж не открылся (код " + errors + "): " + drawingPath);
+                if (drawing == null)
+                {
+                    problem = SwCodes.OpenProblem(errors);
+                    Log.Warn("Выгрузка: чертёж не открылся (код " + errors + ", предупреждения " + warnings + "): " + drawingPath);
+                }
                 return drawing;
             }
             catch (Exception ex)
             {
                 Log.Error("Выгрузка: открытие чертежа " + drawingPath, ex);
+                problem = ex.Message.Trim();
                 return null;
             }
         }
@@ -338,7 +480,8 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ PDF чертежей (Т-27)
-        private static void Pdf(ISldWorks app, Item item, string productFolder, ExportLog log, string drawingPath, ModelDoc2 drawing)
+        private static void Pdf(ISldWorks app, Item item, string productFolder, ExportLog log, string drawingPath, ModelDoc2 drawing,
+            string problem)
         {
             if (!File.Exists(drawingPath))
             {
@@ -351,7 +494,11 @@ namespace ESKD.MaterialSync.Sw
                 log.Skip(Path.GetFileName(drawingPath), "PDF не сделан: " + ExportNaming.TooLong(target));
                 return;
             }
-            Directory.CreateDirectory(Path.GetDirectoryName(target) ?? "");
+            if (drawing == null)
+            {
+                log.Skip(Path.GetFileName(drawingPath), "чертёж не открылся" + (problem.Length > 0 ? ": " + problem : ""));
+                return;
+            }
 
             int[] toggles =
             {
@@ -365,19 +512,13 @@ namespace ESKD.MaterialSync.Sw
             // по окну на каждый. В прогоне 21.09.2026 так набралось 152 окна PDF-XChange на 27 ГБ памяти,
             // после чего SolidWorks сам предупредил о нехватке памяти и упал. Прежнее значение возвращается.
             bool[] wanted = { true, true, true, false, true, false };
-            bool[] previous = new bool[toggles.Length];
-            if (drawing == null)
-            {
-                log.Skip(Path.GetFileName(drawingPath), "чертёж не открылся");
-                return;
-            }
+            PreferenceSwap<bool> preferences = null;
             try
             {
-                for (int i = 0; i < toggles.Length; i++)
-                {
-                    previous[i] = app.GetUserPreferenceToggle(toggles[i]);
-                    app.SetUserPreferenceToggle(toggles[i], wanted[i]);
-                }
+                // Папка — внутри try: на месте «02_PDF» может лежать файл или не хватить прав — это пропуск одного PDF,
+                // а не обрыв всей выгрузки (сверка SW API 23.09.2026, №29).
+                Directory.CreateDirectory(Path.GetDirectoryName(target) ?? "");
+                preferences = Toggles(app, toggles, wanted, "Выгрузка: восстановление настройки PDF");
                 ExportPdfData data = app.GetExportFileData((int)swExportDataFileType_e.swExportPdfData) as ExportPdfData;
                 // Листы перечисляются поимённо, как в SaveAsPDF SWPlus: режим «все листы» без списка
                 // SolidWorks не принимает — SetSheets возвращает false и PDF не создаётся.
@@ -401,37 +542,49 @@ namespace ESKD.MaterialSync.Sw
             }
             finally
             {
-                for (int i = 0; i < toggles.Length; i++)
-                {
-                    try
-                    {
-                        app.SetUserPreferenceToggle(toggles[i], previous[i]);
-                    }
-                    catch (COMException ex)
-                    {
-                        Log.Error("Выгрузка: восстановление настройки PDF", ex);
-                    }
-                }
+                if (preferences != null) preferences.Restore();
             }
         }
 
-        // ------------------------------------------------------------------ DXF развёрток (Т-28)
         /// <summary>
-        /// Развёртки всех исполнений детали, стоящих в изделии (заказ 778, 22.09.2026: у кронштейна 00, 01, 02, 03 —
-        /// выгружалась бы только активная конфигурация). Развёртку SolidWorks отдаёт по активной конфигурации, поэтому
-        /// исполнения по очереди делаются активными; прежняя конфигурация возвращается.
+        /// Настройки-переключатели SolidWorks на время выгрузки: меняется только отличающееся, возвращается только
+        /// изменённое (<see cref="PreferenceSwap{T}"/>; сверка SW API 23.09.2026, №25).
         /// </summary>
-        private static void Dxf(ISldWorks app, Item item, string productFolder, ExportLog log, ToolSaves saves)
+        private static PreferenceSwap<bool> Toggles(ISldWorks app, int[] ids, bool[] wanted, string label)
+        {
+            return new PreferenceSwap<bool>(id => app.GetUserPreferenceToggle(id),
+                (id, value) => { app.SetUserPreferenceToggle(id, value); return true; }, ids, wanted, label);
+        }
+
+        /// <summary>Числовые настройки SolidWorks на время выгрузки — так же, как <see cref="Toggles"/>.</summary>
+        private static PreferenceSwap<int> Numbers(ISldWorks app, int[] ids, int[] wanted, string label)
+        {
+            return new PreferenceSwap<int>(id => app.GetUserPreferenceIntegerValue(id),
+                (id, value) => app.SetUserPreferenceIntegerValue(id, value), ids, wanted, label);
+        }
+
+        // ------------------------------------------------------------------ файлы детали: DXF развёрток (Т-28) и IGS (Т-29)
+        /// <summary>
+        /// Развёртки и файлы трубореза всех исполнений детали, стоящих в изделии (заказ 778, 22.09.2026: у кронштейна 00,
+        /// 01, 02, 03 — выгружалась бы только активная конфигурация). И развёртку, и IGS SolidWorks отдаёт по активной
+        /// конфигурации, поэтому исполнения по очереди делаются активными — одно переключение на оба файла; прежняя
+        /// конфигурация возвращается. IGS выгружался только для активного исполнения — у трубы «-01» файла не было
+        /// (сверка с практиками API 23.09.2026, находка 12).
+        /// </summary>
+        private static void PartFiles(ISldWorks app, Item item, string productFolder, ExportLog log, ToolSaves saves)
         {
             if (!(item.Model is PartDoc)) return;
             if (item.Executions.Count == 0)
             {
-                DxfOne(app, item, item.Designation, item.Name, 0, productFolder, log);
+                string file = Path.GetFileName(item.Path);
+                DxfOne(app, item, item.Designation, item.Name, 0, productFolder, log, file);
+                IgsOne(app, item, item.Designation, item.Name, item.Operations, productFolder, log, saves, file);
                 return;
             }
             string original = ActiveConfiguration(item.Model);
-            bool wasDirty = item.Model.GetSaveFlag();
-            bool switched = false;
+            // SolidWorks не ответил — «правки есть»: такую деталь выгрузка не сохраняет (сверка SW API 23.09.2026, №29).
+            bool wasDirty = DocumentGuard.HasUserEdits(item.Model);
+            bool switched = false, leftover = false;
             try
             {
                 foreach (KeyValuePair<string, int> execution in item.Executions)
@@ -439,24 +592,44 @@ namespace ESKD.MaterialSync.Sw
                     string cfg = execution.Key.Length > 0 ? execution.Key : original;
                     if (!string.Equals(cfg, ActiveConfiguration(item.Model), StringComparison.Ordinal))
                     {
-                        if (!Activate(app, item.Path) || !item.Model.ShowConfiguration2(cfg))
+                        // Флаг — до переключения: сорвавшееся посередине переключение тоже возвращается (№29).
+                        switched = true;
+                        bool shown;
+                        try
                         {
-                            log.Skip(Path.GetFileName(item.Path) + " [" + cfg + "]", "исполнение не стало активным: DXF не сделан");
+                            shown = Activate(app, item.Path) && item.Model.ShowConfiguration2(cfg);
+                        }
+                        catch (COMException ex)
+                        {
+                            Log.Error("Выгрузка: исполнение " + cfg + " " + item.Path, ex);
+                            shown = false;
+                        }
+                        if (!shown)
+                        {
+                            log.Skip(Path.GetFileName(item.Path) + " [" + cfg + "]", "исполнение не стало активным: DXF и IGS не сделаны");
                             continue;
                         }
-                        switched = true;
                     }
-                    // Обозначение и наименование — той конфигурации, что теперь активна: у исполнения своё «…-02».
+                    // Обозначение, наименование и операции — той конфигурации, что теперь активна: у исполнения своё «…-02».
                     PropertyWriter w = new PropertyWriter(item.Model, true);
                     string designation = Value(w, cfg, "Обозначение");
                     string name = Value(w, cfg, "Наименование");
-                    DxfOne(app, item, designation.Length > 0 ? designation : item.Designation,
-                        name.Length > 0 ? name : item.Name, execution.Value, productFolder, log);
+                    designation = designation.Length > 0 ? designation : item.Designation;
+                    name = name.Length > 0 ? name : item.Name;
+                    // Пропуск и замечание исполнения подписываются им самим: «деталь.sldprt [01]» (проверка изделия
+                    // сопоставляет их с файлом по имени без расширения).
+                    string label = Path.GetFileName(item.Path) + (item.Executions.Count > 1 ? " [" + cfg + "]" : "");
+                    DxfOne(app, item, designation, name, execution.Value, productFolder, log, label);
+                    // Временную СК оси трубы IGS убирает, но деталь не сохраняет: её сохраняет возврат прежнего исполнения —
+                    // иначе в файл ушла бы чужая активная конфигурация. СК не убралась — деталь не сохраняется совсем.
+                    if (!IgsOne(app, item, designation, name, Value(w, cfg, LzkOperations.PropertyName), productFolder, log, null, label))
+                        leftover = true;
                 }
             }
             finally
             {
-                if (switched) RestoreConfiguration(item, original, wasDirty, log, saves);
+                if (switched || (!wasDirty && DocumentGuard.HasUserEdits(item.Model)))
+                    RestoreConfiguration(item, original, wasDirty || leftover, log, saves);
             }
         }
 
@@ -481,9 +654,11 @@ namespace ESKD.MaterialSync.Sw
                 }
                 if (wasDirty || !item.Model.GetSaveFlag()) return;
                 int errors;
+                // Исполнение возвращено — содержимое детали совпадает с файлом: совет «закройте без сохранения» верен при
+                // любой причине отказа; «ответьте «Да»» на детали только для чтения был неверен (сверка SW API 23.09.2026, №17).
                 if (!saves.Save(item.Model, out errors))
-                    log.Warn(file, "после переключения исполнений деталь не сохранена (код " + errors +
-                        "): SolidWorks спросит о сохранении — ответьте «Да»");
+                    log.Warn(file, "деталь не сохранена (" + SwCodes.SaveProblem(errors) + ") — исполнение возвращено, в детали " +
+                        "ничего не изменилось: закройте её без сохранения (на вопрос SolidWorks ответьте «Нет»)");
             }
             catch (COMException ex)
             {
@@ -507,7 +682,7 @@ namespace ESKD.MaterialSync.Sw
         }
 
         private static void DxfOne(ISldWorks app, Item item, string designation, string name, int quantity,
-            string productFolder, ExportLog log)
+            string productFolder, ExportLog log, string label)
         {
             PartDoc part = (PartDoc)item.Model;
             double thickness = SheetThicknessMm(item.Model);
@@ -516,42 +691,33 @@ namespace ESKD.MaterialSync.Sw
                 // Не листовая деталь — развёртки и не должно быть. Но если материал — лист, конструктор ждёт DXF:
                 // говорим, почему его нет, а не молчим (22.09.2026, заказ 778).
                 if (LzkMaterials.Cutting(MaterialName(item.Model)) == LzkOperations.SheetCutting)
-                    log.Skip(Path.GetFileName(item.Path), "материал — лист, но деталь построена не листовым металлом: DXF развёртки не сделан");
+                    log.Skip(label, "материал — лист, но деталь построена не листовым металлом: DXF развёртки не сделан");
                 return;
             }
 
             string folder = ExportNaming.LaserDirectory(productFolder);
-            Directory.CreateDirectory(folder);
             // Таблица соответствия слоёв превратила бы тихий экспорт в диалог: она здесь не нужна. Настройки
             // пользователя возвращаются после экспорта (аудит 19.09, Л-В8) — его ручной DXF не должен меняться.
             int[] toggles = { (int)swUserPreferenceToggle_e.swDxfMapping, (int)swUserPreferenceToggle_e.swDXFDontShowMap };
-            bool[] wanted = { false, true };
-            bool[] previous = new bool[toggles.Length];
-            bool[] changed = new bool[toggles.Length];
-            for (int i = 0; i < toggles.Length; i++)
-            {
-                try
-                {
-                    previous[i] = app.GetUserPreferenceToggle(toggles[i]);
-                    if (previous[i] == wanted[i]) continue;
-                    app.SetUserPreferenceToggle(toggles[i], wanted[i]);
-                    changed[i] = true;
-                }
-                catch (COMException ex)
-                {
-                    Log.Error("Выгрузка: настройки DXF", ex);
-                }
-            }
+            PreferenceSwap<bool> map = Toggles(app, toggles, new[] { false, true }, "Выгрузка: восстановление настройки DXF");
+            // Версия R2000 и масштаб 1:1 — по Т-28, а не как настроено у конструктора: у каждого своя версия, а с чужим
+            // масштабом вывода и деталь в файле, и рамка в имени не той величины (сверка 23.09.2026, находка 22).
+            int[] numbers = { (int)swUserPreferenceIntegerValue_e.swDxfVersion, (int)swUserPreferenceIntegerValue_e.swDxfOutputNoScale };
+            PreferenceSwap<int> format = Numbers(app, numbers, new[] { (int)swDxfFormat_e.swDxfFormat_R2000, 1 },
+                "Выгрузка: восстановление настройки DXF");
             // Размеры рамки видны только в готовой развёртке, поэтому экспорт идёт во временный файл,
             // а окончательное имя «…_S<толщина>мм_<ширина>х<длина>.dxf» получается после замера.
             string temporary = Path.Combine(folder, "_замер_" + Guid.NewGuid().ToString("N") + ".dxf");
             try
             {
+                // Папка — внутри try: на месте «Лазер_Лист» может лежать файл или не хватить прав — это пропуск одной
+                // развёртки, а не обрыв всей выгрузки (сверка SW API 23.09.2026, №29).
+                Directory.CreateDirectory(folder);
                 // Развёртку SolidWorks отдаёт только активному документу: компонент сборки, открытый в фоне,
                 // получает отказ без объяснения (боевой заказ NC3-7R). Активная сборка возвращается в конце.
                 if (!Activate(app, item.Path))
                 {
-                    log.Skip(Path.GetFileName(item.Path), "SolidWorks не сделал деталь активной: DXF не сделан");
+                    log.Skip(label, "SolidWorks не сделал деталь активной: DXF не сделан");
                     return;
                 }
                 // Выравнивание — 12 чисел, список видов — массив строк: null в этих параметрах
@@ -564,37 +730,38 @@ namespace ESKD.MaterialSync.Sw
                 {
                     Log.Warn("Выгрузка: ExportToDWG2 отказал для " + item.Path + " (ok=" + ok +
                         ", файл=" + File.Exists(temporary) + ", цель=" + temporary + ")");
-                    log.Skip(Path.GetFileName(item.Path), "нет развёртки: DXF не сделан");
+                    log.Skip(label, "нет развёртки: DXF не сделан");
                     return;
                 }
                 double width, length;
                 if (!DxfFrame.Measure(temporary, out width, out length))
                 {
-                    log.Skip(Path.GetFileName(item.Path), "развёртка пустая: DXF не сделан");
+                    log.Skip(label, "развёртка пустая: DXF не сделан");
                     return;
                 }
                 string target = ExportNaming.DxfPath(productFolder, designation, name, item.Path,
                     thickness, quantity, width, length, item.Revision);
                 if (ExportNaming.TooLong(target).Length > 0)
                 {
-                    log.Skip(Path.GetFileName(item.Path), "DXF не сделан: " + ExportNaming.TooLong(target));
+                    log.Skip(label, "DXF не сделан: " + ExportNaming.TooLong(target));
                     return;
                 }
                 // Два исполнения без своих обозначений дали бы одно имя — второе молча затёрло бы первое.
                 if (log.Files.Contains(target, StringComparer.OrdinalIgnoreCase))
                 {
-                    log.Skip(Path.GetFileName(item.Path), "у исполнения нет своего обозначения — его развёртка совпала бы по имени с " +
+                    log.Skip(label, "у исполнения нет своего обозначения — его развёртка совпала бы по имени с " +
                         Path.GetFileName(target) + ": DXF не сделан");
                     return;
                 }
                 if (File.Exists(target)) File.Delete(target);
                 File.Move(temporary, target);
                 log.Add(target);
+                RetireStaleDxf(folder, ExportNaming.Stem(designation, name, item.Path), item.Revision, target, log, label);
             }
             catch (Exception ex)
             {
                 Log.Error("Выгрузка: DXF " + item.Path, ex);
-                log.Skip(Path.GetFileName(item.Path), "DXF не сделан: " + ex.Message);
+                log.Skip(label, "DXF не сделан: " + ex.Message);
             }
             finally
             {
@@ -606,18 +773,43 @@ namespace ESKD.MaterialSync.Sw
                 {
                     Log.Error("Выгрузка: временный DXF " + temporary, ex);
                 }
-                for (int i = 0; i < toggles.Length; i++)
+                format.Restore();
+                map.Restore();
+            }
+        }
+
+        /// <summary>
+        /// Прежние развёртки этого документа той же ревизии под другим именем — в «_Аннулировано», с замечанием в отчёте:
+        /// в имени изменились рамка, количество или толщина, и цех получил бы две развёртки одной детали (сверка SW API
+        /// 23.09.2026: рамка теперь округляется вверх, и имена прежних выгрузок меняются). Выгруженное в этот раз не
+        /// трогается; выданное в производство сюда не попадает — его выгрузка пропускается раньше.
+        /// </summary>
+        private static void RetireStaleDxf(string folder, string stem, int revision, string target, ExportLog log, string label)
+        {
+            string file = "";
+            try
+            {
+                foreach (string path in Directory.GetFiles(folder, "*.dxf"))
                 {
-                    if (!changed[i]) continue;
-                    try
-                    {
-                        app.SetUserPreferenceToggle(toggles[i], previous[i]);
-                    }
-                    catch (COMException ex)
-                    {
-                        Log.Error("Выгрузка: восстановление настройки DXF", ex);
-                    }
+                    file = path;
+                    if (!ExportNaming.IsStaleDxf(Path.GetFileName(path), stem, revision, Path.GetFileName(target)) ||
+                        log.Files.Contains(path, StringComparer.OrdinalIgnoreCase)) continue;
+                    string archive = ExportNaming.ArchivePath(path, DateTime.Now);
+                    Directory.CreateDirectory(Path.GetDirectoryName(archive));
+                    File.Move(path, archive);
+                    log.Warn(label, "прежняя развёртка «" + Path.GetFileName(path) + "» убрана в " + ExportNaming.ArchiveFolder +
+                        ": в имени другая рамка, количество или толщина");
                 }
+            }
+            catch (IOException ex)
+            {
+                Log.Error("Выгрузка: прежняя развёртка " + file, ex);
+                log.Warn(label, "прежняя развёртка «" + Path.GetFileName(file) + "» не убрана: " + ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Log.Error("Выгрузка: прежняя развёртка " + file, ex);
+                log.Warn(label, "прежняя развёртка «" + Path.GetFileName(file) + "» не убрана: " + ex.Message);
             }
         }
 
@@ -641,9 +833,11 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>
-        /// Сделать документ активным — экспорт развёртки и IGS работает только с активным окном. false — не стал
-        /// активным: занятый SolidWorks отвечает отказом, и выгрузка пошла бы по чужому документу, но с отметкой «ok»
-        /// (аудит 20.09.2026). Проверяется не код возврата, а сам активный документ: он и есть признак успеха.
+        /// Сделать документ активным — развёртку (ExportToDWG2), построение СК оси трубы и переключение исполнения
+        /// SolidWorks делает только в активном окне; сам IGS (SaveAs) пишется и из фоновой модели — X06 (сверка SW API
+        /// 23.09.2026, находка 21). false — не стал активным: занятый SolidWorks отвечает отказом, и выгрузка пошла бы по
+        /// чужому документу, но с отметкой «ok» (аудит 20.09.2026). Проверяется не код возврата, а сам активный документ:
+        /// он и есть признак успеха.
         /// </summary>
         private static bool Activate(ISldWorks app, string path)
         {
@@ -664,27 +858,30 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
-        private static double Number(CustomPropertyManager m, string name)
-        {
-            string raw, resolved;
-            m.Get4(name, false, out raw, out resolved);
-            double value = LzkOperations.ParseNumber(resolved);
-            if (double.IsNaN(value)) value = LzkOperations.ParseNumber(raw);
-            return double.IsNaN(value) ? 0 : value;
-        }
-
         // ------------------------------------------------------------------ IGS профиля (Т-29)
-        private static void Igs(ISldWorks app, Item item, string productFolder, ExportLog log, ToolSaves saves)
+        /// <summary>
+        /// IGS активного исполнения детали. <paramref name="saves"/> = null — временную СК оси трубы убрать, но деталь не
+        /// сохранять: её сохранит возврат прежнего исполнения.
+        /// </summary>
+        private static bool IgsOne(ISldWorks app, Item item, string designation, string name, string operations,
+            string productFolder, ExportLog log, ToolSaves saves, string label)
         {
-            // Решает галочка «Лазерная резка трубы» в операциях; без операций — признак профиля в модели.
-            if (!LzkOperations.WantsTubeFile(item.Operations, IsStructuralMember(item.Model) || IsTubeByMaterial(item.Model))) return;
-            string target = ExportNaming.IgsPath(productFolder, item.Designation, item.Name, item.Path, item.Revision);
+            // Решает галочка «Лазерная резка трубы» в операциях; без операций — признак профиля в модели. Материал —
+            // активного исполнения: у исполнений он может быть разный (решение владельца 23.09.2026).
+            if (!LzkOperations.WantsTubeFile(operations, IsStructuralMember(item.Model) || IsTubeByMaterial(item.Model))) return true;
+            string target = ExportNaming.IgsPath(productFolder, designation, name, item.Path, item.Revision);
             if (ExportNaming.TooLong(target).Length > 0)
             {
-                log.Skip(Path.GetFileName(item.Path), "IGS не сделан: " + ExportNaming.TooLong(target));
-                return;
+                log.Skip(label, "IGS не сделан: " + ExportNaming.TooLong(target));
+                return true;
             }
-            Directory.CreateDirectory(Path.GetDirectoryName(target) ?? "");
+            // Два исполнения без своих обозначений дали бы одно имя — второе молча затёрло бы первое.
+            if (log.Files.Contains(target, StringComparer.OrdinalIgnoreCase))
+            {
+                log.Skip(label, "у исполнения нет своего обозначения — его IGS совпал бы по имени с " +
+                    Path.GetFileName(target) + ": IGS не сделан");
+                return true;
+            }
             // Труборезу нужны поверхности вместе с кривыми в стандартном наборе IGES (Т-29); прежние
             // настройки конструктора возвращаются на место — кнопка ничего за собой не оставляет.
             int[] prefs =
@@ -693,14 +890,13 @@ namespace ESKD.MaterialSync.Sw
                 (int)swUserPreferenceIntegerValue_e.swIGESSystem
             };
             int[] wanted = { (int)swIGESRepresentation_e.swIGES_TRMSRFANDCURVES, (int)swIGESPreferredSystem_e.swIGES_STANDARD };
-            int[] previous = new int[prefs.Length];
+            bool clean = true;
+            PreferenceSwap<int> iges = null;
             try
             {
-                for (int i = 0; i < prefs.Length; i++)
-                {
-                    previous[i] = app.GetUserPreferenceIntegerValue(prefs[i]);
-                    app.SetUserPreferenceIntegerValue(prefs[i], wanted[i]);
-                }
+                // Папка — внутри try, как у DXF (№29).
+                Directory.CreateDirectory(Path.GetDirectoryName(target) ?? "");
+                iges = Numbers(app, prefs, wanted, "Выгрузка: восстановление настройки IGES");
                 int errors = 0, warnings = 0;
                 bool ok;
                 TubeAxis axis = TubeAxis.Create(app, item.Model, item.Path, saves);
@@ -714,30 +910,22 @@ namespace ESKD.MaterialSync.Sw
                 finally
                 {
                     axis.Dispose();
+                    clean = axis.Leftover.Length == 0;
                 }
-                if (axis.Leftover.Length > 0) log.Warn(Path.GetFileName(item.Path), axis.Leftover);
+                if (!clean) log.Warn(label, axis.Leftover);
                 if (ok) log.Add(target);
-                else log.Skip(Path.GetFileName(item.Path), "IGS не сохранён (код " + errors + ")");
+                else log.Skip(label, "IGS не сохранён (код " + errors + ")");
             }
             catch (Exception ex)
             {
                 Log.Error("Выгрузка: IGS " + item.Path, ex);
-                log.Skip(Path.GetFileName(item.Path), "IGS не сделан: " + ex.Message);
+                log.Skip(label, "IGS не сделан: " + ex.Message);
             }
             finally
             {
-                for (int i = 0; i < prefs.Length; i++)
-                {
-                    try
-                    {
-                        app.SetUserPreferenceIntegerValue(prefs[i], previous[i]);
-                    }
-                    catch (COMException ex)
-                    {
-                        Log.Error("Выгрузка: восстановление настройки IGES", ex);
-                    }
-                }
+                if (iges != null) iges.Restore();
             }
+            return clean;
         }
 
         /// <summary>
@@ -774,20 +962,18 @@ namespace ESKD.MaterialSync.Sw
         {
             try
             {
+                // Погашенный в активном исполнении элемент — чужого исполнения: выгрузка идёт по исполнениям, и
+                // исполнение-пластина получала бы IGS (критик сверки SW API 23.09.2026). Так же — папка списка вырезов без
+                // тел: её тела погашены в этом исполнении (CutListFolders).
                 for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+                    if ((f.GetTypeName2() ?? "") == "WeldMemberFeat" && !f.IsSuppressed()) return true;
+                foreach (Feature sub in CutListFolders.Active(model))
                 {
-                    string type = f.GetTypeName2() ?? "";
-                    if (type == "WeldMemberFeat") return true;
-                    if (type != "SolidBodyFolder") continue;
-                    for (Feature sub = f.GetFirstSubFeature() as Feature; sub != null; sub = sub.GetNextSubFeature() as Feature)
-                    {
-                        if (sub.GetTypeName2() != "CutListFolder") continue;
-                        CustomPropertyManager m = sub.CustomPropertyManager;
-                        if (m == null) continue;
-                        // Имя свойства зависит от языка SolidWorks («ДЛИНА»), поэтому ищется по английской ссылке.
-                        string length = CutListProperties.Find(LzkService.Written(m), "LENGTH", CutListProperties.LengthSpellings);
-                        if (LzkService.Value(m, length) > 0) return true;
-                    }
+                    CustomPropertyManager m = sub.CustomPropertyManager;
+                    if (m == null) continue;
+                    // Имя свойства зависит от языка SolidWorks («ДЛИНА»), поэтому ищется по английской ссылке.
+                    string length = CutListProperties.Find(LzkService.Written(m), "LENGTH", CutListProperties.LengthSpellings);
+                    if (LzkService.Value(m, length) > 0) return true;
                 }
             }
             catch (Exception ex)
@@ -836,9 +1022,9 @@ namespace ESKD.MaterialSync.Sw
                 if (previous.Checksums.TryGetValue(name, out sum)) log.Checksums[found] = sum;
             }
             foreach (string line in previous.Skipped)
-                if (!documents.Contains(Path.GetFileNameWithoutExtension(ExportLog.SplitSkip(line).Key))) log.Skipped.Add(line);
+                if (!documents.Contains(ExportLog.DocumentName(ExportLog.SplitSkip(line).Key))) log.Skipped.Add(line);
             foreach (string line in previous.Warnings)
-                if (!documents.Contains(Path.GetFileNameWithoutExtension(ExportLog.SplitSkip(line).Key))) log.Warnings.Add(line);
+                if (!documents.Contains(ExportLog.DocumentName(ExportLog.SplitSkip(line).Key))) log.Warnings.Add(line);
         }
 
         private static void Show(ISldWorks app, ExportLog log, string productFolder)

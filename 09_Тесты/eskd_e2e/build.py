@@ -174,6 +174,77 @@ def sheet_metal_plate(session, length_mm, width_mm, thickness_mm, material):
     return doc
 
 
+def sheet_metal_two_bodies(session, t1_mm, t2_mm, material):
+    """Многотельная листовая деталь: две базовые кромки на непересекающихся прямоугольниках, у каждой свой «Листовой
+    металл» и своя толщина (сверка SW API 23.09.2026, №39). Толщина второй кромки сама по себе не держится: SolidWorks
+    ведёт все тела по параметрам листа детали, и оба тела выходили толщиной последней кромки (проба 23.09.2026). Своя
+    толщина — только у «Листового металла» со своими параметрами (SetOverrideDefaultParameter2)."""
+    doc = session.new_doc(paths.PART_TEMPLATE)
+    for x0, thickness_mm in ((0.0, t1_mm), (0.3, t2_mm)):
+        sketch_rectangles(doc, [(x0 - 0.1, -0.05, x0 + 0.1, 0.05)])
+        t = thickness_mm / 1000.0
+        feat = doc.FeatureManager.InsertSheetMetalBaseFlange2(t, False, t, 0.0254, 0.01, False, 0, 0, 1, com.null_dispatch(),
+                                                               False, 0, 0.0001, 0.0001, 0.5, True, False, True, True)
+        if feat is None:
+            raise RuntimeError(f"Базовая кромка {thickness_mm} мм не построена")
+    sheets = []
+    feat = com.call(doc, "FirstFeature")
+    while feat is not None:
+        if str(com.call(feat, "GetTypeName2")) == "SheetMetal":
+            sheets.append(feat)
+        feat = com.call(feat, "GetNextFeature")
+    for feat, thickness_mm in zip(sheets, (t1_mm, t2_mm)):
+        data = com.call(feat, "GetDefinition")
+        com.call(data, "AccessSelections", doc, com.null_dispatch())
+        com.call(data, "SetOverrideDefaultParameter", True)
+        for parameter in (0, 1, 2):  # swSheetMetalOverrideDefaultParameters_e: гибка, допуск на изгиб, разгрузка
+            com.call(data, "SetOverrideDefaultParameter2", parameter, True)
+        com.dyn(data).Thickness = thickness_mm / 1000.0
+        if not com.call(feat, "ModifyDefinition", data, doc, com.null_dispatch()):
+            raise RuntimeError(f"Толщина {thickness_mm} мм «Листового металла» не задана")
+    set_material(doc, material)
+    doc.ForceRebuild3(False)
+    got = []
+    for body in com.as_list(com.dyn(doc).GetBodies2(0, False)) or []:
+        box = com.as_list(com.call(body, "GetBodyBox"))
+        got.append(round(min(abs(box[k + 3] - box[k]) for k in range(3)) * 1000.0, 3))
+    if sorted(got) != sorted(float(v) for v in (t1_mm, t2_mm)):
+        raise RuntimeError(f"Тела листовой детали вышли толщиной {got}, а нужно {t1_mm} и {t2_mm} мм")
+    return doc
+
+
+def sheet_metal_outline(session, outline, thickness_mm, material):
+    """Листовая деталь из замкнутого контура на фронтальной плоскости: outline — список отрезков ((x1, y1), (x2, y2))
+    и дуг ((cx, cy), (x1, y1), (x2, y2)) против часовой, мм; («круг», (cx, cy), r) — окружность. Для замера рамки
+    развёртки: круг, дуги, контур под углом к осям."""
+    doc = session.new_doc(paths.PART_TEMPLATE)
+    doc.ClearSelection2(True)
+    select_plane(doc, "front")
+    sk = doc.SketchManager
+    sk.InsertSketch(True)
+    sk.AddToDB = True
+    for item in outline:
+        if item[0] == "круг":
+            (cx, cy), r = item[1], item[2]
+            sk.CreateCircleByRadius(cx / 1000.0, cy / 1000.0, 0.0, r / 1000.0)
+        elif len(item) == 2:
+            (x1, y1), (x2, y2) = item
+            sk.CreateLine(x1 / 1000.0, y1 / 1000.0, 0.0, x2 / 1000.0, y2 / 1000.0, 0.0)
+        else:
+            (cx, cy), (x1, y1), (x2, y2) = item
+            sk.CreateArc(cx / 1000.0, cy / 1000.0, 0.0, x1 / 1000.0, y1 / 1000.0, 0.0, x2 / 1000.0, y2 / 1000.0, 0.0, 1)
+    sk.AddToDB = False
+    sk.InsertSketch(True)
+    t = thickness_mm / 1000.0
+    feat = doc.FeatureManager.InsertSheetMetalBaseFlange2(t, False, t, 0.0254, 0.01, False, 0, 0, 1, com.null_dispatch(),
+                                                          False, 0, 0.0001, 0.0001, 0.5, True, False, True, True)
+    if feat is None:
+        raise RuntimeError("Базовая кромка листовой детали из контура не построена")
+    set_material(doc, material)
+    doc.ForceRebuild3(False)
+    return doc
+
+
 def sheet_metal_angle(session, leg_mm, flange_mm, depth_mm, thickness_mm, material):
     """Гнутая листовая деталь — уголок: базовая кромка из открытого L-эскиза (полка leg_mm, отгиб flange_mm)
     глубиной depth_mm. Развёртка длиннее полки, но короче суммы полки и отгиба; габарит согнутой детали —
@@ -201,19 +272,42 @@ def sheet_metal_angle(session, leg_mm, flange_mm, depth_mm, thickness_mm, materi
     return doc
 
 
-def structural_tube(session, length_mm, profile, material, angle_deg=0.0):
+def weldment_feature(doc):
+    """Элемент «Сварная деталь» — его SolidWorks ставит сам, когда конструктор добавляет первый элемент конструкции.
+    InsertStructuralWeldment4 его не добавляет, и у такой детали нет списка вырезов — только «Твердые тела»:
+    SetAutomaticCutList и UpdateCutList отвечают false, папок элементов нет (проба 23.09.2026)."""
+    feat = doc.FeatureManager.InsertWeldmentFeature()
+    if feat is None:
+        raise RuntimeError("Элемент «Сварная деталь» не вставлен")
+    return feat
+
+
+def structural_tube(session, length_mm, profile, material, angle_deg=0.0, weldment=False):
     """Деталь сварной конструкции: элемент конструкции (WeldMemberFeat) по отрезку вдоль X из профиля .sldlfp
     (выгрузка IGS, Т-29).
-    angle_deg — наклон отрезка во фронтальной плоскости: ось трубы не совпадает с осями детали. Массивы объектов API передаются VARIANT с VT_DISPATCH — иначе SolidWorks их не принимает."""
+    angle_deg — наклон отрезка во фронтальной плоскости: ось трубы не совпадает с осями детали.
+    weldment — сначала элемент «Сварная деталь», как у детали из окна SolidWorks: со списком вырезов."""
+    doc = session.new_doc(paths.PART_TEMPLATE)
+    if weldment:
+        weldment_feature(doc)
+    add_structural_member(doc, length_mm, profile, angle_deg)
+    set_material(doc, material)
+    doc.ForceRebuild3(False)
+    return doc
+
+
+def add_structural_member(doc, length_mm, profile, angle_deg=0.0, start_mm=(0.0, 0.0)):
+    """Элемент конструкции в деталь: свой эскиз на фронтальной плоскости с отрезком из start_mm под углом angle_deg.
+    Массивы объектов API передаются VARIANT с VT_DISPATCH — иначе SolidWorks их не принимает."""
     import pythoncom
     import win32com.client
-    doc = session.new_doc(paths.PART_TEMPLATE)
     doc.ClearSelection2(True)
     select_plane(doc, "front")
     sk = doc.SketchManager
     sk.InsertSketch(True)
     a = math.radians(angle_deg)
-    segment = sk.CreateLine(0.0, 0.0, 0.0, length_mm / 1000.0 * math.cos(a), length_mm / 1000.0 * math.sin(a), 0.0)
+    x0, y0 = start_mm[0] / 1000.0, start_mm[1] / 1000.0
+    segment = sk.CreateLine(x0, y0, 0.0, x0 + length_mm / 1000.0 * math.cos(a), y0 + length_mm / 1000.0 * math.sin(a), 0.0)
     sk.InsertSketch(True)
     fm = doc.FeatureManager
     group = win32com.client.Dispatch(com.call(fm, "CreateStructuralMemberGroup")._oleobj_)
@@ -222,9 +316,80 @@ def structural_tube(session, length_mm, profile, material, angle_deg=0.0):
                                         win32com.client.VARIANT(pythoncom.VT_ARRAY | pythoncom.VT_DISPATCH, [group._oleobj_]))
     if feat is None:
         raise RuntimeError(f"Элемент конструкции не построен: {profile}")
+    return feat
+
+
+def structural_tube_executions(session, members, profile, material, cut_list=False):
+    """Деталь сварной конструкции с исполнением на каждый элемент: members — [(длина, угол, (x, y) начала[, профиль])], мм и
+    градусы; профиль элемента по умолчанию — profile. Первое исполнение — исходная конфигурация, дальше «01», «02»…;
+    элемент i погашен во всех исполнениях, кроме своего (как «Укосина» с разной трубой в исполнениях). cut_list — список
+    вырезов обновлён в каждом исполнении: у свежей детали папок элементов нет; тогда сначала ставится элемент «Сварная
+    деталь» — без него списка вырезов нет вовсе. Возвращает (doc, имена исполнений по порядку элементов)."""
+    doc = session.new_doc(paths.PART_TEMPLATE)
+    if cut_list:
+        weldment_feature(doc)
+    features = [add_structural_member(doc, m[0], m[3] if len(m) > 3 else profile, m[1], m[2]) for m in members]
     set_material(doc, material)
     doc.ForceRebuild3(False)
-    return doc
+    names = [str(doc.GetActiveConfiguration.Name)]
+    for i in range(1, len(members)):
+        names.append(f"{i:02d}")
+        add_configuration(doc, names[-1])
+    show_configuration(doc, names[0])
+    for feat, own in zip(features, names):
+        others = [name for name in names if name != own]
+        # 0 — погасить, 3 — в указанных конфигурациях.
+        if not com.dyn(feat).SetSuppression2(0, 3, com.str_array(others)):
+            raise RuntimeError(f"Элемент не погашен в {others}")
+    doc.ForceRebuild3(False)
+    if cut_list:
+        for name in reversed(names):
+            show_configuration(doc, name)
+            doc.ForceRebuild3(False)
+            update_cut_list(doc)
+    return doc, names
+
+
+def cut_list_root(doc):
+    """Папка «Список вырезов» (SolidBodyFolder); None — её нет."""
+    feat = com.call(doc, "FirstFeature")
+    while feat is not None:
+        if str(com.call(feat, "GetTypeName2")) == "SolidBodyFolder":
+            return feat
+        feat = com.call(feat, "GetNextFeature")
+    return None
+
+
+def update_cut_list(doc):
+    """Обновить список вырезов, как «Обновить» в дереве: автоматический список включается, папки элементов строятся."""
+    root = cut_list_root(doc)
+    if root is None:
+        raise RuntimeError("В детали нет папки «Список вырезов»")
+    folder = com.call(root, "GetSpecificFeature2")
+    com.call(folder, "SetAutomaticCutList", True)
+    ok = com.call(folder, "UpdateCutList")
+    doc.ForceRebuild3(False)
+    return ok
+
+
+def cut_list_folders(doc):
+    """[(имя папки, тел в активном исполнении)] списка вырезов — вместе с папками без тел и вложенными в подсварки."""
+    found = []
+
+    def walk(parent):
+        sub = com.call(parent, "GetFirstSubFeature")
+        while sub is not None:
+            kind = str(com.call(sub, "GetTypeName2"))
+            if kind == "SubWeldFolder":
+                walk(sub)
+            elif kind == "CutListFolder":
+                found.append((str(com.dyn(sub).Name), int(com.call(com.call(sub, "GetSpecificFeature2"), "GetBodyCount"))))
+            sub = com.call(sub, "GetNextSubFeature")
+
+    root = cut_list_root(doc)
+    if root is not None:
+        walk(root)
+    return found
 
 
 def tube_profile(name="40х40х2"):

@@ -8,6 +8,19 @@ namespace ESKD.Tests
 {
     public static class LzkNamingTests
     {
+        public static void Test_Model_is_not_saved_when_execution_did_not_return()
+        {
+            // Сверка SW API 23.09.2026, №18: замер переключал исполнение, а прежнее не вернулось активным — модель не
+            // сохраняется, иначе в файл ушла бы чужая активная конфигурация. Правки конструктора — не сохраняется (З-25).
+            Assert.AreEqual("", LzkService.SaveRefusal(false, "00", "00"), "исполнение вернулось — сохранять можно");
+            Assert.IsTrue(LzkService.SaveRefusal(false, "00", "01").Contains("«00»"), "не вернулось — сказать, какое вернуть");
+            Assert.IsTrue(LzkService.SaveRefusal(true, "00", "00").StartsWith("в модели ваши несохранённые правки"),
+                "правки конструктора — прежний текст (L14)");
+            Assert.IsTrue(LzkService.SaveRefusal(true, "00", "01").Contains("«00»"), "не вернулось — важнее правок");
+            Assert.AreEqual("", LzkService.SaveRefusal(false, "", "01"), "прежнее не известно — сверять не с чем");
+            Assert.AreEqual("", LzkService.SaveRefusal(false, "Покраска", "покраска"), "регистр имени — не другое исполнение");
+        }
+
         /// <summary>IGS на труборез — по галочке «Лазерная резка трубы» (решение владельца 22.09.2026).</summary>
         public static void Test_Tube_file_follows_tube_cutting_checkbox()
         {

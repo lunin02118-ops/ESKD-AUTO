@@ -381,7 +381,9 @@ namespace ESKD.MaterialSync.Sw
             ModelDoc2 drawing = null;
             try
             {
-                File.Copy(sourceDrawing, targetDrawing, true);
+                // Имя свободно по TargetPath; файл появился между проверкой и копированием — IOException и пропуск с
+                // причиной, а не перезапись чужого чертежа (сверка SW API 23.09.2026, №27).
+                File.Copy(sourceDrawing, targetDrawing, false);
                 File.SetAttributes(targetDrawing, FileAttributes.Normal);
                 // Ссылка меняется у закрытого файла: так виды не успевают перестроиться по эталону
                 // и SolidWorks не спрашивает про «файл только для чтения».

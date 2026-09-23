@@ -133,6 +133,17 @@ namespace ESKD.MaterialSync.Core
             return trimmed;
         }
 
+        /// <summary>
+        /// Техническая производная по имени (сверка SW API 23.09.2026, №40): развёртка «…SM-FLAT-PATTERN», «…&lt;Как
+        /// сварено&gt;», «…&lt;Как обработанный&gt;». Это не исполнение: материал ставится её родителю. Производная обычного
+        /// типа («01» от «00», «Укосина») — исполнение (M06b). Признаки — те же, что у разбора исполнения ниже.
+        /// </summary>
+        public static bool IsTechnicalConfigurationName(string name)
+        {
+            string s = (name ?? "").Trim();
+            return s.IndexOf("SM-FLAT-PATTERN", StringComparison.OrdinalIgnoreCase) >= 0 || s.IndexOf('<') > 0;
+        }
+
         /// <summary>Исполнение по имени конфигурации (ГОСТ 2.113): «00» — базовое, «01», «-02», «исп. 3» …</summary>
         public static bool ExtractExecutionFromConfigName(string configName, out string execution, out bool isBase)
         {

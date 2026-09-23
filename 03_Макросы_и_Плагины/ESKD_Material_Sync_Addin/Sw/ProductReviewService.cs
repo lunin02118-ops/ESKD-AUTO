@@ -64,6 +64,11 @@ namespace ESKD.MaterialSync.Sw
         public bool InProduct;
         /// <summary>До проверки в документе были несохранённые правки конструктора.</summary>
         public bool Edited;
+        /// <summary>
+        /// Исполнения (конфигурации), стоящие в изделии, в порядке появления; пусто — не известны. Проверка сверяет каждое,
+        /// а не только активное в файле (сверка SW API 23.09.2026, находка 14).
+        /// </summary>
+        public readonly List<string> Configurations = new List<string>();
     }
 
     /// <summary>План окна «Проверить изделие» вместе с документами, к которым он относится.</summary>
@@ -143,6 +148,7 @@ namespace ESKD.MaterialSync.Sw
             }
             object[] comps = asm.GetComponents(false) as object[] ?? new object[0];
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { assemblyPath };
+            Dictionary<string, ProductNode> byPath = new Dictionary<string, ProductNode>(StringComparer.OrdinalIgnoreCase);
             foreach (object o in comps)
             {
                 Component2 comp = o as Component2;
@@ -159,7 +165,13 @@ namespace ESKD.MaterialSync.Sw
                             report.Add(CheckRules.References, CheckRules.LevelOf(CheckRules.References), name, "файл компонента не найден");
                         continue;
                     }
-                    if (comp.GetSuppression2() == (int)swComponentSuppressionState_e.swComponentSuppressed) continue;
+                    if (ComponentState.Suppressed(comp)) continue;
+                    ProductNode known;
+                    if (byPath.TryGetValue(path, out known))
+                    {
+                        Use(known, comp);
+                        continue;
+                    }
                     if (!seen.Add(path)) continue;
                     ModelDoc2 model = comp.GetModelDoc2() as ModelDoc2;
                     if (model == null)
@@ -172,7 +184,7 @@ namespace ESKD.MaterialSync.Sw
                     if (!inProduct && report != null && !Allowed(path, assemblyPath))
                         report.Add(CheckRules.References, CheckRules.LevelOf(CheckRules.References), name,
                             "ссылка за пределами заказа и базы (или на другой заказ): " + path);
-                    nodes.Add(new ProductNode
+                    ProductNode node = new ProductNode
                     {
                         Path = path,
                         Model = model,
@@ -183,7 +195,10 @@ namespace ESKD.MaterialSync.Sw
                         InProduct = inProduct,
                         // До первой записи: потом правки конструктора уже не отличить от записанного проверкой.
                         Edited = DocumentGuard.HasUserEdits(model)
-                    });
+                    };
+                    Use(node, comp);
+                    nodes.Add(node);
+                    byPath[path] = node;
                 }
                 catch (COMException ex)
                 {
@@ -194,6 +209,21 @@ namespace ESKD.MaterialSync.Sw
                 }
             }
             return nodes;
+        }
+
+        /// <summary>Исполнение компонента — в список исполнений изделия; исключённый из спецификации не в счёт, как в выгрузке.</summary>
+        private static void Use(ProductNode node, Component2 comp)
+        {
+            try
+            {
+                if (comp.ExcludeFromBOM) return;
+                string cfg = comp.ReferencedConfiguration ?? "";
+                if (cfg.Length > 0 && !node.Configurations.Contains(cfg, StringComparer.OrdinalIgnoreCase)) node.Configurations.Add(cfg);
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Проверка изделия: исполнение компонента", ex);
+            }
         }
 
         private static string NameOf(Component2 comp)
@@ -336,7 +366,7 @@ namespace ESKD.MaterialSync.Sw
                 if (f.Verdict == StockVerdict.Assign && f.Chosen != null)
                     file.Changes.Add("материал «" + StockText.Describe(f.Chosen) + "» — по типоразмеру «" + f.Request.Size + "»" +
                         (f.Folder.Length > 0 && f.Folder != StockService.SheetFolderName ? " («" + f.Folder + "»)" : ""));
-                else if (f.Verdict == StockVerdict.NotInLibrary)
+                else if (f.Verdict == StockVerdict.NotInLibrary || f.Verdict == StockVerdict.Unclear)
                     target.StockNotes.Add(StockService.Message(f));
             }
             foreach (StockFinding f in pending)

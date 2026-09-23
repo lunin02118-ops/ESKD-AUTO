@@ -190,6 +190,31 @@ namespace ESKD.MaterialSync.Core
             return string.Join(newline, lines.ToArray());
         }
 
+        /// <summary>
+        /// Имя документа из подписи строки отчёта — без исполнения и расширения: «Труба.sldprt [01]» → «Труба». Имя
+        /// конфигурации SolidWorks бывает с «&lt;», «&gt;» и точкой («По умолчанию&lt;Как сварено&gt;», «1.5»): Path.* на «&lt;»
+        /// бросал исключение — проверка изделия и выгрузка одной детали падали, а точку принимал за расширение — пропуск
+        /// исполнения терялся (ревью 23.09.2026).
+        /// </summary>
+        public static string DocumentName(string label)
+        {
+            string s = (label ?? "").Trim();
+            foreach (string extension in new[] { ".sldprt", ".sldasm", ".slddrw" })
+            {
+                int at = s.IndexOf(extension + " [", StringComparison.OrdinalIgnoreCase);
+                if (at > 0) return s.Substring(0, at);
+            }
+            if (s.EndsWith("]", StringComparison.Ordinal))
+            {
+                int open = s.IndexOf(" [", StringComparison.Ordinal);
+                if (open > 0) s = s.Substring(0, open);
+            }
+            int slash = s.LastIndexOfAny(new[] { '\\', '/' });
+            if (slash >= 0) s = s.Substring(slash + 1);
+            int dot = s.LastIndexOf('.');
+            return dot > 0 ? s.Substring(0, dot) : s;
+        }
+
         /// <summary>Документ и причина из строки пропуска «документ — причина».</summary>
         public static KeyValuePair<string, string> SplitSkip(string line)
         {
@@ -305,9 +330,13 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>Сторона рамки развёртки: целые миллиметры, вверх — деталь меньше рамки не бывает.</summary>
+        /// <remarks>
+        /// Округлялось до ближайшего — 200,4 мм давали «200», заготовка в имени меньше детали (сверка 23.09.2026, находка 13).
+        /// Сотые доли миллиметра — погрешность замера, а не деталь: 200,004 остаются «200».
+        /// </remarks>
         public static string Round(double mm)
         {
-            return Math.Max(0, Math.Round(mm, MidpointRounding.AwayFromZero)).ToString("0", CultureInfo.InvariantCulture);
+            return Math.Max(0, Math.Ceiling(mm - 0.01)).ToString("0", CultureInfo.InvariantCulture);
         }
 
         /// <summary>
@@ -323,6 +352,24 @@ namespace ESKD.MaterialSync.Core
             return rest.StartsWith(".", StringComparison.Ordinal) ||
                 Regex.IsMatch(rest, @"^_Изм\d+\.", RegexOptions.IgnoreCase) ||
                 Regex.IsMatch(rest, @"^_S\d+(\.\d+)?мм_", RegexOptions.IgnoreCase);
+        }
+
+        /// <summary>
+        /// Прежняя развёртка того же документа и той же ревизии под другим именем: в имени DXF — толщина, количество и рамка,
+        /// и после правки детали (или нового округления рамки — вверх, сверка SW API 23.09.2026) выгрузка кладёт файл с
+        /// новым именем, а старый оставался рядом: в «Лазер_Лист» две развёртки одной детали. current — только что
+        /// выгруженный файл, он не прежний. Файлы другой ревизии («_ИзмN») и других документов — не её.
+        /// </summary>
+        public static bool IsStaleDxf(string fileName, string stem, int revision, string current)
+        {
+            string name = fileName ?? "";
+            if (!name.EndsWith(".dxf", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(stem) ||
+                string.Equals(name, current ?? "", StringComparison.OrdinalIgnoreCase)) return false;
+            if (!name.StartsWith(stem, StringComparison.OrdinalIgnoreCase) ||
+                !Regex.IsMatch(name.Substring(stem.Length), @"^_S\d+(\.\d+)?мм_", RegexOptions.IgnoreCase)) return false;
+            Match suffix = Regex.Match(name, @"_Изм(\d+)\.dxf$", RegexOptions.IgnoreCase);
+            int found = suffix.Success ? int.Parse(suffix.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
+            return found == Math.Max(0, revision);
         }
 
         /// <summary>Куда убрать прежний файл выдачи при новой ревизии: _Аннулировано рядом с ним (Т-30).</summary>

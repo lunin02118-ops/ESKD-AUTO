@@ -32,7 +32,7 @@ namespace ESKD.MaterialSync.Sw
         private sealed class DocState
         {
             public ModelDoc2 Doc;
-            /// <summary>Пришёл DestroyNotify: события этого документа больше не обрабатываются.</summary>
+            /// <summary>Пришёл DestroyNotify2 «разрушен»: события этого документа больше не обрабатываются.</summary>
             public bool Destroyed;
             public int Type;
             public string LastPath = "";
@@ -41,12 +41,12 @@ namespace ESKD.MaterialSync.Sw
             public DrawingDoc Drw;
             public DPartDocEvents_FileSaveNotifyEventHandler PSave;
             public DPartDocEvents_FileSavePostNotifyEventHandler PPost;
-            public DPartDocEvents_DestroyNotifyEventHandler PDestroy;
+            public DPartDocEvents_DestroyNotify2EventHandler PDestroy;
             public DAssemblyDocEvents_FileSaveNotifyEventHandler ASave;
             public DAssemblyDocEvents_FileSavePostNotifyEventHandler APost;
-            public DAssemblyDocEvents_DestroyNotifyEventHandler ADestroy;
+            public DAssemblyDocEvents_DestroyNotify2EventHandler ADestroy;
             public DDrawingDocEvents_FileSavePostNotifyEventHandler DPost;
-            public DDrawingDocEvents_DestroyNotifyEventHandler DDestroy;
+            public DDrawingDocEvents_DestroyNotify2EventHandler DDestroy;
         }
 
         private sealed class IdleTask
@@ -80,13 +80,27 @@ namespace ESKD.MaterialSync.Sw
             get { return string.Join("\n", _lastWarnings.ToArray()); }
         }
 
+        // Отписки в порядке подписок: Detach снимает ровно то, что успело встать, — и после сбоя посреди Attach
+        // (сверка SW API 23.09.2026, №0). Раньше все отписки шли одним try: сбой на первой оставлял остальные.
+        private readonly List<KeyValuePair<string, Action>> _unsubscribe = new List<KeyValuePair<string, Action>>();
+
+        private void Undo(string name, Action action)
+        {
+            _unsubscribe.Add(new KeyValuePair<string, Action>(name, action));
+        }
+
         public void Attach()
         {
             _events.FileNewNotify2 += OnFileNew2;
+            Undo("FileNewNotify2", delegate { _events.FileNewNotify2 -= OnFileNew2; });
             _events.FileOpenPostNotify += OnFileOpenPost;
+            Undo("FileOpenPostNotify", delegate { _events.FileOpenPostNotify -= OnFileOpenPost; });
             _events.ActiveDocChangeNotify += OnActiveDocChange;
+            Undo("ActiveDocChangeNotify", delegate { _events.ActiveDocChangeNotify -= OnActiveDocChange; });
             _events.CommandCloseNotify += OnCommandClose;
+            Undo("CommandCloseNotify", delegate { _events.CommandCloseNotify -= OnCommandClose; });
             _events.OnIdleNotify += OnIdle;
+            Undo("OnIdleNotify", delegate { _events.OnIdleNotify -= OnIdle; });
             try
             {
                 ModelDoc2 d = _app.GetFirstDocument() as ModelDoc2;
@@ -104,20 +118,26 @@ namespace ESKD.MaterialSync.Sw
 
         public void Detach()
         {
-            try
+            for (int i = _unsubscribe.Count - 1; i >= 0; i--)
             {
-                _events.FileNewNotify2 -= OnFileNew2;
-                _events.FileOpenPostNotify -= OnFileOpenPost;
-                _events.ActiveDocChangeNotify -= OnActiveDocChange;
-                _events.CommandCloseNotify -= OnCommandClose;
-                _events.OnIdleNotify -= OnIdle;
+                try
+                {
+                    _unsubscribe[i].Value();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("EventHub.Detach: " + _unsubscribe[i].Key, ex);
+                }
             }
-            catch (Exception ex)
-            {
-                Log.Error("EventHub.Detach", ex);
-            }
+            _unsubscribe.Clear();
             foreach (DocState s in _docs.ToArray()) Untrack(s);
             _docs.Clear();
+            // Отложенная задача после выгрузки не выполнится: пусть это будет видно в журнале, как при закрытии
+            // документа (OnDocDestroy). Только путь — без обращений к документу (сверка SW API 23.09.2026, №3).
+            // Пробная задача открытия («opendiag») только пишет строку журнала — о ней не предупреждаем (ревью 23.09.2026).
+            foreach (IdleTask task in _idle)
+                if (task.Kind != "opendiag")
+                    Log.Warn("Надстройка выгружена до выполнения отложенной задачи «" + task.Kind + "»: " + (task.TargetPath ?? ""));
             _idle.Clear();
         }
 
@@ -149,26 +169,24 @@ namespace ESKD.MaterialSync.Sw
         {
             try
             {
-                ModelDoc2 doc = FindDoc(fileName);
+                ModelDoc2 doc = OpenDocByName(fileName);
+                if (doc == null)
+                {
+                    Log.Warn("FileOpenPostNotify: «" + fileName + "» не найден среди открытых документов");
+                    return 0;
+                }
                 DocState state = Track(doc);
                 if (state != null) state.LastPath = SafePath(doc);
                 Settings settings = Settings.Read();
-                if (doc == null || !settings.ServiceEnabled || doc.GetType() == (int)swDocumentTypes_e.swDocDRAWING) return 0;
+                if (!settings.ServiceEnabled || doc.GetType() == (int)swDocumentTypes_e.swDocDRAWING) return 0;
                 // Модель или чертёж, которые надстройка открыла скрыто ради формата, сразу закроются.
                 if (DrawingFormatService.Busy) return 0;
                 if (settings.SyncOnOpen)
-                {
                     SyncService.SyncModel(_app, doc, new SyncRequest { Reason = "открытие (SyncOnOpen)" });
-                }
                 else
-                {
-                    SyncReport plan = SyncService.SyncModel(_app, doc, new SyncRequest
-                    {
-                        Reason = "диагностика при открытии", DryRun = true, Signatures = false, Materials = false, Mass = false
-                    });
-                    if (plan.Operations.Count > 0)
-                        Log.Info(string.Format("Реквизиты «{0}» будут обновлены при сохранении: {1} операций", SafeTitle(doc), plan.Operations.Count));
-                }
+                    // Пробный проход ради строки журнала — в простое: открытие большого изделия его не ждёт (сверка SW API
+                    // 23.09.2026, №11).
+                    Enqueue(new IdleTask { Doc = doc, Kind = "opendiag", TargetPath = SafePath(doc) });
             }
             catch (Exception ex)
             {
@@ -235,8 +253,8 @@ namespace ESKD.MaterialSync.Sw
                 // Только задачи, стоявшие в очереди к началу прохода. Задача, заведённая самим проходом (сохранение
                 // внутри задачи → событие сохранения → новая задача), ждёт следующего простоя: цепочка
                 // задача → событие → задача не замыкается в бесконечный цикл внутри одного OnIdleNotify.
-                int batch = _idle.Count;
-                while (batch-- > 0 && _idle.Count > 0)
+                int count = _idle.Count;
+                while (count-- > 0 && _idle.Count > 0)
                 {
                     IdleTask task = _idle.Dequeue();
                     try
@@ -267,6 +285,17 @@ namespace ESKD.MaterialSync.Sw
                 return;
             }
             if (task.Doc == null) return;
+            if (task.Kind == "opendiag")
+            {
+                if (!Alive(task.Doc) || !Settings.Read().ServiceEnabled) return;
+                SyncReport plan = SyncService.SyncModel(_app, task.Doc, new SyncRequest
+                {
+                    Reason = "диагностика при открытии", DryRun = true, Signatures = false, Materials = false, Mass = false
+                });
+                if (plan.Operations.Count > 0)
+                    Log.Info(string.Format("Реквизиты «{0}» будут обновлены при сохранении: {1} операций", SafeTitle(task.Doc), plan.Operations.Count));
+                return;
+            }
             if (task.Kind == "material")
             {
                 if (!Alive(task.Doc)) return;
@@ -287,6 +316,9 @@ namespace ESKD.MaterialSync.Sw
                 if (!Settings.Read().ServiceEnabled) { Log.Info("Материал по геометрии: служба выключена, задача отменена"); return; }
                 if (!Alive(task.Doc)) { Log.Info("Материал по геометрии: документ закрыт, задача отменена"); return; }
                 if (ReadOnly(task.Doc)) { Log.Info("Материал по геометрии: документ открыт только для чтения, задача отменена"); return; }
+                // Окно детали закрыто, а сама она осталась в сборке (DestroyNotify2 «скрыт»): без окна надстройка документ
+                // не правит — конструктор не увидел бы, что деталь стала изменённой (ревью 23.09.2026).
+                if (Windowless(task.Doc)) { Log.Info("Материал по геометрии: у документа нет окна, задача отменена — " + SafePath(task.Doc)); return; }
                 ApplyStock(task.Doc);
                 return;
             }
@@ -407,7 +439,15 @@ namespace ESKD.MaterialSync.Sw
                 foreach (string hint in applied.Hints) Log.Info(hint);
                 if (changed == 0)
                 {
-                    if (ask.Length > 0) Status("ЕСКД: " + ask);
+                    // Замечания назначения («не назначен: …») — не только в журнал: видны в строке состояния и по
+                    // «Синхронизировать» (ревью 23.09.2026).
+                    if (applied.Warnings.Count > 0)
+                    {
+                        _lastWarnings.Clear();
+                        _lastWarnings.AddRange(applied.Warnings);
+                        Status(applied.StatusLine() + (ask.Length > 0 ? "; " + ask : ""));
+                    }
+                    else if (ask.Length > 0) Status("ЕСКД: " + ask);
                     return;
                 }
 
@@ -420,8 +460,10 @@ namespace ESKD.MaterialSync.Sw
                 });
                 doc.EditRebuild3();
                 _lastWarnings.Clear();
+                _lastWarnings.AddRange(applied.Warnings);
                 _lastWarnings.AddRange(report.Warnings);
                 string text = "ЕСКД: материал назначен по типоразмеру (" + changed + ") — деталь изменена, сохраните её" +
+                    (applied.Warnings.Count > 0 ? "; замечания (" + applied.Warnings.Count + ") — в «Синхронизировать»" : "") +
                     (ask.Length > 0 ? "; " + ask : "");
                 Log.Info(text + ": " + path);
                 Status(text);
@@ -580,11 +622,15 @@ namespace ESKD.MaterialSync.Sw
                 }
                 else if (saveType == SaveTypeCopyAndOpen)
                 {
-                    ModelDoc2 copy = FindDoc(fileName);
+                    ModelDoc2 copy = OpenDocByName(fileName);
                     if (copy != null)
                     {
                         Track(copy);
                         Enqueue(new IdleTask { Doc = copy, Kind = "saveas", TargetPath = SafePath(copy), PreviousPath = previous });
+                    }
+                    else
+                    {
+                        Log.Warn("Копия «" + fileName + "» не найдена среди открытых документов — откройте её и сохраните, чтобы обновить обозначение");
                     }
                 }
             }
@@ -595,7 +641,7 @@ namespace ESKD.MaterialSync.Sw
             return 0;
         }
 
-        private int OnDocDestroy(DocState s)
+        private int OnDocDestroy(DocState s, int destroyType)
         {
             // Документ разрушается: к нему не обращаемся и отменяем отложенные задачи. Подписки здесь НЕ снимаются:
             // отписка (Unadvise) внутри DestroyNotify меняет список подписчиков, который SolidWorks в этот момент
@@ -604,20 +650,47 @@ namespace ESKD.MaterialSync.Sw
             // забывается, его события дальше игнорируются; подписки уходят вместе с разрушенным документом —
             // так же делает зонд автотестов (ESKD_ProbeHost).
             if (s.Destroyed) return 0;
+            // DestroyNotify2 приходит и при скрытии: окно закрыли, а документ остался в памяти — деталь открытой сборки
+            // или её чертежа (swDestroyNotifyHidden). Документ жив: учёт и подписки остаются, его сохранения из сборки
+            // синхронизируются, а повторно открытое окно находит ту же запись. Раньше надстройка слушала DestroyNotify без
+            // типа и такую деталь забывала (сверка SW API 23.09.2026, №9). Отложенные задачи снимаются, как при закрытии:
+            // без окна надстройка документ не правит.
+            bool hidden = destroyType == (int)swDestroyNotifyType_e.swDestroyNotifyHidden;
+            DropTasks(s, hidden ? "Окно документа закрыто до выполнения отложенной задачи" : "Документ закрыт до выполнения отложенной задачи");
+            if (hidden) return 0;
             s.Destroyed = true;
-            if (_idle.Count > 0)
-            {
-                IdleTask[] pending = _idle.ToArray();
-                _idle.Clear();
-                foreach (IdleTask t in pending)
-                {
-                    if (!object.ReferenceEquals(t.Doc, s.Doc)) _idle.Enqueue(t);
-                    else Log.Warn("Документ закрыт до выполнения отложенной задачи «" + t.Kind + "»: " + t.TargetPath);
-                }
-            }
             _docs.Remove(s);
             s.Doc = null;
             return 0;
+        }
+
+        /// <summary>У документа нет окна: скрыт (окно закрыто, документ остался в сборке) или открыт невидимо.</summary>
+        private static bool Windowless(ModelDoc2 doc)
+        {
+            try
+            {
+                return doc == null || !doc.Visible;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Видимость документа", ex);
+                return true;
+            }
+        }
+
+        /// <summary>Снять отложенные задачи документа с записью в журнал.</summary>
+        private void DropTasks(DocState s, string text)
+        {
+            if (_idle.Count == 0) return;
+            IdleTask[] pending = _idle.ToArray();
+            _idle.Clear();
+            foreach (IdleTask t in pending)
+            {
+                if (!object.ReferenceEquals(t.Doc, s.Doc)) _idle.Enqueue(t);
+                // Пробная задача открытия только пишет строку журнала: закрытие заказа и очистка открывают и закрывают
+                // файлы подряд, и предупреждение «задача не выполнена» было бы ложным (ревью 23.09.2026).
+                else if (t.Kind != "opendiag" && t.Kind != "status") Log.Warn(text + " «" + t.Kind + "»: " + t.TargetPath);
+            }
         }
 
         /// <summary>
@@ -631,10 +704,13 @@ namespace ESKD.MaterialSync.Sw
             _lastWarnings.Clear();
             _lastWarnings.AddRange(report.Warnings);
             // Материал по геометрии (Р-8): назначать и спрашивать — только в простое, документ сейчас занят SolidWorks.
-            if (report.StockNeedsWork && doc != null)
-                Enqueue(new IdleTask { Doc = doc, Kind = "stock" });
+            // Не из собственного пересохранения: подбор к нему либо уже поставлен в очередь (после «Сохранить как»),
+            // либо только что выполнен. Иначе замена, которая не прижилась (материал тела перекрывает материал детали),
+            // ставила себя в очередь бесконечно — T05, 23.09.2026.
+            if (report.StockNeedsWork && doc != null && !_resaving)
+                Enqueue(new IdleTask { Doc = doc, Kind = "stock", TargetPath = SafePath(doc) });
             if (report.Warnings.Count > 0 && doc != null)
-                Enqueue(new IdleTask { Doc = doc, Kind = "status", Text = report.StatusLine() });
+                Enqueue(new IdleTask { Doc = doc, Kind = "status", Text = report.StatusLine(), TargetPath = SafePath(doc) });
         }
 
         // ------------------------------------------------------------------ учёт документов
@@ -656,28 +732,28 @@ namespace ESKD.MaterialSync.Sw
                     s.Part = (PartDoc)doc;
                     s.PSave = delegate(string fn) { return OnDocSave(s, fn); };
                     s.PPost = delegate(int t, string fn) { return OnDocSavePost(s, t, fn); };
-                    s.PDestroy = delegate() { return OnDocDestroy(s); };
+                    s.PDestroy = delegate(int destroyType) { return OnDocDestroy(s, destroyType); };
                     s.Part.FileSaveNotify += s.PSave;
                     s.Part.FileSavePostNotify += s.PPost;
-                    s.Part.DestroyNotify += s.PDestroy;
+                    s.Part.DestroyNotify2 += s.PDestroy;
                 }
                 else if (s.Type == (int)swDocumentTypes_e.swDocASSEMBLY)
                 {
                     s.Asm = (AssemblyDoc)doc;
                     s.ASave = delegate(string fn) { return OnDocSave(s, fn); };
                     s.APost = delegate(int t, string fn) { return OnDocSavePost(s, t, fn); };
-                    s.ADestroy = delegate() { return OnDocDestroy(s); };
+                    s.ADestroy = delegate(int destroyType) { return OnDocDestroy(s, destroyType); };
                     s.Asm.FileSaveNotify += s.ASave;
                     s.Asm.FileSavePostNotify += s.APost;
-                    s.Asm.DestroyNotify += s.ADestroy;
+                    s.Asm.DestroyNotify2 += s.ADestroy;
                 }
                 else if (s.Type == (int)swDocumentTypes_e.swDocDRAWING)
                 {
                     s.Drw = (DrawingDoc)doc;
                     s.DPost = delegate(int t, string fn) { return OnDocSavePost(s, t, fn); };
-                    s.DDestroy = delegate() { return OnDocDestroy(s); };
+                    s.DDestroy = delegate(int destroyType) { return OnDocDestroy(s, destroyType); };
                     s.Drw.FileSavePostNotify += s.DPost;
-                    s.Drw.DestroyNotify += s.DDestroy;
+                    s.Drw.DestroyNotify2 += s.DDestroy;
                 }
                 else
                 {
@@ -703,18 +779,18 @@ namespace ESKD.MaterialSync.Sw
                 {
                     s.Part.FileSaveNotify -= s.PSave;
                     s.Part.FileSavePostNotify -= s.PPost;
-                    s.Part.DestroyNotify -= s.PDestroy;
+                    s.Part.DestroyNotify2 -= s.PDestroy;
                 }
                 else if (s.Asm != null)
                 {
                     s.Asm.FileSaveNotify -= s.ASave;
                     s.Asm.FileSavePostNotify -= s.APost;
-                    s.Asm.DestroyNotify -= s.ADestroy;
+                    s.Asm.DestroyNotify2 -= s.ADestroy;
                 }
                 else if (s.Drw != null)
                 {
                     s.Drw.FileSavePostNotify -= s.DPost;
-                    s.Drw.DestroyNotify -= s.DDestroy;
+                    s.Drw.DestroyNotify2 -= s.DDestroy;
                 }
             }
             catch (Exception ex)
@@ -727,20 +803,20 @@ namespace ESKD.MaterialSync.Sw
             s.Doc = null;
         }
 
-        private ModelDoc2 FindDoc(string path)
+        /// <summary>
+        /// Только документ с этим именем. Раньше при неудаче брался активный документ — чужой: при SyncOnOpen = 1 запись
+        /// ушла бы в него (сверка SW API 23.09.2026, №11).
+        /// </summary>
+        private ModelDoc2 OpenDocByName(string path)
         {
+            if (string.IsNullOrEmpty(path)) return null;
             try
             {
-                if (!string.IsNullOrEmpty(path))
-                {
-                    ModelDoc2 d = _app.GetOpenDocumentByName(path) as ModelDoc2;
-                    if (d != null) return d;
-                }
-                return _app.ActiveDoc as ModelDoc2;
+                return _app.GetOpenDocumentByName(path) as ModelDoc2;
             }
             catch (Exception ex)
             {
-                Log.Error("FindDoc " + path, ex);
+                Log.Error("Поиск документа " + path, ex);
                 return null;
             }
         }

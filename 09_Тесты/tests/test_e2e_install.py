@@ -4,7 +4,7 @@ import re
 import unittest
 from pathlib import Path
 
-from eskd_e2e import com, oracles, paths
+from eskd_e2e import build, com, oracles, paths, testing
 from eskd_e2e.testing import SwTestCase, known_defect
 
 LEGACY = {"Разраб.", "Разработал", "Автор", "п_Разраб", "DrawnBy", "п_Разраб_Дата", "DrawnDate", "Пров.", "п_Пров",
@@ -185,6 +185,55 @@ class AddinLifecycle(SwTestCase):
                                  (3, common + revision)):
             with self.subTest(doc_type=doc_type):
                 self.assertEqual(wanted, str(com.call(self.s.eskd(), "TabButtons", doc_type)))
+
+
+class FailedConnect(SwTestCase):
+
+    def test_I11_failed_connect_leaves_no_subscriptions(self):
+        """I11 (сверка SW API 23.09.2026, №0): ConnectToSW упал — SolidWorks считает надстройку незагруженной и
+        DisconnectFromSW не зовёт. Раньше вкладка и подписки на события оставались, и «выключенная» надстройка писала
+        реквизиты при сохранении. Теперь откат снимает всё, что успело встать. Сбой — тестовый ключ DebugFailConnect:
+        свой SolidWorks запускается с ним, и надстройка падает при автозагрузке. Выгрузить и снова загрузить надстройку в
+        том же SolidWorks для этого нельзя: LoadAddIn после UnloadAddIn ConnectToSW не звал (прогон 23.09.2026)."""
+        import time
+        from eskd_e2e.session import TEST_SETTINGS, SwSession
+
+        path = self.path("ПРТИ.468211.331 Пластина откат.sldprt")
+        run_dir = self.s.run_dir
+        testing.shutdown()
+        own = SwSession(run_dir, load_eskd=False, settings=dict(TEST_SETTINGS, DebugFailConnect=1))
+        # Служба включена: иначе работу «выключенной» надстройки не было бы видно.
+        own.settings["ServiceEnabled"] = 1
+
+        def idle(seconds):
+            deadline = time.time() + seconds
+            while time.time() < deadline:
+                own.sw.RevisionNumber()
+                time.sleep(0.2)
+
+        try:
+            own.start()
+            self.assertIsNone(own.sw.GetAddInObject(paths.ADDIN_PROGID), "надстройка не загрузилась")
+            doc, _ = build.plate(own, 100, 50, 3, None)
+            own.save_as(doc, path)
+            idle(3.0)
+            own.save(doc)
+            idle(3.0)
+            own.close(doc)
+            lines = self.addin_log.new_lines()
+            self.path("addin.log").write_text("\n".join(lines), encoding="utf-8")
+            failed = [i for i, line in enumerate(lines) if "ConnectToSW: InvalidOperationException" in line]
+            self.assertTrue(failed, "сбой ConnectToSW в журнале")
+            after = lines[failed[-1] + 1:]
+            self.assertEqual([], [line for line in after if "Синхронизация (" in line or "Задача простоя" in line],
+                             "незагруженная надстройка работала")
+            dump = oracles.read_persisted(own, path)
+            values = [item["raw"] for level in [dump["general"], *dump["configs"].values()] for item in level.values()]
+            self.assertNotIn("ПРТИ.468211.331", values, "обозначение не записано")
+        finally:
+            own.stop()
+            # Общая сессия — заново, чистым SolidWorks: tearDown и следующие тесты работают в ней.
+            self.s = testing.session()
 
 
 class FixtureMaterials(SwTestCase):

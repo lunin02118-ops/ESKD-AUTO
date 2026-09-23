@@ -72,6 +72,41 @@ namespace ESKD.MaterialSync.Core
     /// </summary>
     public static class CheckRules
     {
+        /// <summary>
+        /// Исполнения из изделия, которые проверка сверяет сверх активного в файле: есть в файле, не активное, без пустых и
+        /// повторов (сверка SW API 23.09.2026, находка 14). Имена конфигураций SolidWorks сравнивает без учёта регистра.
+        /// Техническая производная («00&lt;Как сварено&gt;», «01SM-FLAT-PATTERN») — не исполнение: сверяется её исполнение
+        /// («00», «01»), если оно есть в файле, — материал ставят там, а не в производной.
+        /// </summary>
+        public static List<string> OtherExecutions(IEnumerable<string> used, string active, IEnumerable<string> existing)
+        {
+            HashSet<string> names = new HashSet<string>(existing ?? new string[0], StringComparer.OrdinalIgnoreCase);
+            List<string> result = new List<string>();
+            foreach (string name in used ?? new string[0])
+            {
+                string cfg = name ?? "";
+                string owner = TechnicalOwner(cfg);
+                if (owner.Length > 0 && names.Contains(owner)) cfg = owner;
+                if (cfg.Length == 0 || string.Equals(cfg, active, StringComparison.OrdinalIgnoreCase) || !names.Contains(cfg) ||
+                    result.Contains(cfg, StringComparer.OrdinalIgnoreCase)) continue;
+                result.Add(cfg);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Исполнение технической производной по имени: «00&lt;Как сварено&gt;» → «00», «01SM-FLAT-PATTERN» → «01»; не
+        /// техническая — пусто. Признаки те же, что в разборе исполнения по имени конфигурации (DesignationParser).
+        /// </summary>
+        public static string TechnicalOwner(string cfg)
+        {
+            string s = cfg ?? "";
+            string t = System.Text.RegularExpressions.Regex.Replace(s, @"<[^>]*>", "");
+            t = System.Text.RegularExpressions.Regex.Replace(t, @"[-_]?SM-FLAT-PATTERN.*$", "",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+            return t.Length > 0 && !string.Equals(t, s.Trim(), StringComparison.Ordinal) ? t : "";
+        }
+
         public const string ReportName = "_Проверка.txt";
         public const string PreviousReportName = "_Проверка_пред.txt";
         public const string ExportReportName = "_Экспорт.txt";

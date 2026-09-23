@@ -28,9 +28,26 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Сохранить документ молча. false — не сохранён; errors — код SolidWorks.</summary>
         public bool Save(ModelDoc2 model, out int errors)
         {
+            int warnings;
+            return Save(model, out errors, out warnings);
+        }
+
+        /// <summary>
+        /// Сохранить документ молча. Открытый только для чтения (деталь держит коллега, файл защищён) не сохраняется вовсе:
+        /// Save3 не зовётся, errors — код SolidWorks «только для чтения», и отчёт скажет «закройте без сохранения», а не
+        /// «ответьте «Да»» (сверка SW API 23.09.2026, №17). Ошибки перестроения в модели — в журнал, сохранение засчитано.
+        /// </summary>
+        public bool Save(ModelDoc2 model, out int errors, out int warnings)
+        {
             errors = 0;
-            int warnings = 0;
+            warnings = 0;
             string path = DocInfo.PathOf(model);
+            if (OpenedReadOnly(model))
+            {
+                errors = SwCodes.SaveReadOnly;
+                Log.Warn("Сохранение кнопкой: документ открыт только для чтения — " + path);
+                return false;
+            }
             string before = path.Length > 0 && File.Exists(path) ? ProductFreshness.Checksum(path) : "";
             bool saved;
             _depth++;
@@ -47,6 +64,8 @@ namespace ESKD.MaterialSync.Sw
             {
                 _depth--;
             }
+            if (saved && (warnings & SwCodes.SaveWarningRebuildError) != 0)
+                Log.Warn("Сохранение кнопкой: в модели ошибки перестроения — " + path);
             if (saved && before.Length > 0)
                 Changes.Add(new StampChange
                 {
@@ -56,6 +75,19 @@ namespace ESKD.MaterialSync.Sw
                     After = ProductFreshness.Checksum(path)
                 });
             return saved;
+        }
+
+        private static bool OpenedReadOnly(ModelDoc2 model)
+        {
+            try
+            {
+                return model.IsOpenedReadOnly();
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Сохранение кнопкой: только для чтения ли документ", ex);
+                return true;
+            }
         }
     }
 }

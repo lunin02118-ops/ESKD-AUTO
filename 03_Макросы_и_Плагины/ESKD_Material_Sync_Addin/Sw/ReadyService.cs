@@ -112,6 +112,8 @@ namespace ESKD.MaterialSync.Sw
                 if (string.IsNullOrWhiteSpace(who)) who = Environment.UserName;
                 MarkIssued(workbook, now.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture) + ", " + who);
                 string report = Report(product, cipher, assembly, workbook, sheets.Select(p => p.Value).ToList(), who, now);
+                // Изделие выдано: кнопка «Новая ревизия» его чертежей должна стать доступной сразу, а не через 10 с.
+                RevisionService.ForgetIssued();
                 LastOutcome = string.Join("|", new[] { "ok", report, sheets.Count.ToString(CultureInfo.InvariantCulture), product });
                 Log.Info("Готово к производству: " + LastOutcome);
                 Status(app, "ЕСКД: изделие готово к производству");

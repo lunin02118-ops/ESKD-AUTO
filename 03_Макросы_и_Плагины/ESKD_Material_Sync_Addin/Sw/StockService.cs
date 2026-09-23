@@ -26,7 +26,12 @@ namespace ESKD.MaterialSync.Sw
         /// Материал стоит, но геометрии не соответствует, а подходящий в библиотеке один — заменяем (решение владельца
         /// 22.09.2026; до этого только уведомляли). Подходящих несколько — это <see cref="Choose"/>.
         /// </summary>
-        Replace = 5
+        Replace = 5,
+        /// <summary>
+        /// Листовая деталь, по которой материал не подобрать: тела разной толщины или рядом нелистовые (сверка SW API
+        /// 23.09.2026, №39) — замечание, ничего не меняем и не спрашиваем.
+        /// </summary>
+        Unclear = 6
     }
 
     /// <summary>Одна позиция проката детали: папка списка вырезов или листовая деталь целиком.</summary>
@@ -58,6 +63,12 @@ namespace ESKD.MaterialSync.Sw
 
         /// <summary>Папка списка вырезов, которой после смены материала нужен UpdateCutList.</summary>
         public BodyFolder FolderObject;
+
+        /// <summary>
+        /// Позиция папки списка вырезов. У неё пустой список тел — не «вся деталь», а папка без тел в этом исполнении
+        /// (сверка SW API 23.09.2026, №32); «вся деталь» без тел — только листовая деталь.
+        /// </summary>
+        public bool FromCutList;
 
         public bool NeedsChoice { get { return Verdict == StockVerdict.Choose; } }
 
@@ -215,22 +226,23 @@ namespace ESKD.MaterialSync.Sw
                 for (Feature f = doc.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
                 {
                     string type = f.GetTypeName2();
-                    if (type == "WeldMemberFeat")
+                    // Элемент, погашенный в активном исполнении, — профиль другого исполнения (сверка SW API 23.09.2026,
+                    // №32): с ним у «Укосины» выходило «несколько профилей», и деталь оставалась без позиции.
+                    if (type == "WeldMemberFeat" && !f.IsSuppressed())
                     {
                         string profile = ProfilePath(f);
                         if (profile.Length == 0) continue;
                         if (!profiles.Contains(profile)) profiles.Add(profile);
                         if (!members.ContainsKey(profile)) members[profile] = new List<Feature>();
                         members[profile].Add(f);
-                        continue;
                     }
-                    if (type != "SolidBodyFolder") continue;
-                    for (Feature sub = f.GetFirstSubFeature() as Feature; sub != null; sub = sub.GetNextSubFeature() as Feature)
-                    {
-                        if (sub.GetTypeName2() != "CutListFolder") continue;
-                        StockFinding finding = FromFolder(sub, part, library, cfg);
-                        if (finding != null) findings.Add(finding);
-                    }
+                }
+                // Папки с телами активного исполнения, вместе с подсварками (CutListFolders): папка
+                // погашенного тела давала позицию «вся деталь» с чужим профилем и ставила его материал детали (№32).
+                foreach (Feature sub in CutListFolders.Active(doc))
+                {
+                    StockFinding finding = FromFolder(sub, part, library, cfg);
+                    if (finding != null) findings.Add(finding);
                 }
             }
             catch (COMException ex)
@@ -253,6 +265,41 @@ namespace ESKD.MaterialSync.Sw
                 Log.Warn("Материал по геометрии: в детали " + DocInfo.TitleOf(doc) + " несколько профилей, а список вырезов не построен — " +
                          "обновите список вырезов, иначе неясно, какому телу какой материал");
                 return findings;
+            }
+
+            // Многотельная листовая деталь: материал детали целиком — только если все тела листовые и одной толщины
+            // (сверка SW API 23.09.2026, №39). Раньше толщина первого элемента «Листовой металл» в дереве шла всей детали,
+            // и тела 8 мм получали «Лист 3»; вложенный в папку «Листовой металл» давал NaN, и подбор молча пропускался.
+            List<Body2> solids = SolidBodies(part);
+            if (solids.Count > 1)
+            {
+                List<double> thickness = solids.Select(BodySheetThicknessMm).ToList();
+                double single;
+                string problem = StockCatalog.SheetBodiesProblem(thickness, out single);
+                // Конструктор уже назначил телам материалы по их толщине — вопроса нет, замечание при каждом сохранении
+                // только мешало бы (ревью 23.09.2026).
+                if (problem.Length > 0 && StockCatalog.SheetBodiesSettled(thickness, BodyActualMaterials(part, solids, cfg),
+                        (mm, material) => FitsThickness(library, mm, material)))
+                {
+                    Log.Info("Материал по геометрии: " + DocInfo.TitleOf(doc) + " — " + problem + ", материалы телам назначены");
+                    return findings;
+                }
+                if (problem.Length > 0)
+                {
+                    Log.Warn("Материал по геометрии: " + DocInfo.TitleOf(doc) + " — " + problem);
+                    findings.Add(new StockFinding
+                    {
+                        Folder = SheetFolderName,
+                        Verdict = StockVerdict.Unclear,
+                        Request = new StockRequest { Kind = StockKind.Sheet, Size = problem, Source = SheetFolderName }
+                    });
+                    return findings;
+                }
+                if (!double.IsNaN(single))
+                {
+                    sheetMm = single;
+                    sheet = true;
+                }
             }
 
             // Листовая деталь: материал у детали целиком — назначение телу SolidWorks не принимает.
@@ -316,7 +363,7 @@ namespace ESKD.MaterialSync.Sw
                 return null;
             }
             finding.Bodies.AddRange(all);
-            finding.CurrentMaterial = PositionMaterial(part, finding.Bodies, cfg);
+            finding.CurrentMaterial = PositionMaterial(part, finding, library, cfg);
             Decide(finding, library);
             return finding;
         }
@@ -387,6 +434,9 @@ namespace ESKD.MaterialSync.Sw
         /// </summary>
         private static StockFinding FromFolder(Feature folder, PartDoc part, List<MaterialInfo> library, string cfg)
         {
+            // Сначала тела: папка без тел в активном исполнении — не позиция, а пустой список тел означал бы «вся деталь».
+            List<Body2> bodies = CutListFolders.Bodies(folder);
+            if (bodies.Count == 0) return null;
             CustomPropertyManager props = folder.CustomPropertyManager;
             if (props == null) return null;
 
@@ -405,22 +455,11 @@ namespace ESKD.MaterialSync.Sw
                 Source = finding.Folder
             };
 
-            BodyFolder bodyFolder = folder.GetSpecificFeature2() as BodyFolder;
-            finding.FolderObject = bodyFolder;
-            if (bodyFolder != null)
-            {
-                object[] bodies = bodyFolder.GetBodies() as object[];
-                if (bodies != null)
-                {
-                    foreach (object o in bodies)
-                    {
-                        Body2 body = o as Body2;
-                        if (body != null) finding.Bodies.Add(body);
-                    }
-                }
-            }
+            finding.FolderObject = folder.GetSpecificFeature2() as BodyFolder;
+            finding.FromCutList = true;
+            finding.Bodies.AddRange(bodies);
             // У тела своего материала нет — значит действует материал детали, его и сверяем.
-            finding.CurrentMaterial = PositionMaterial(part, finding.Bodies, cfg);
+            finding.CurrentMaterial = PositionMaterial(part, finding, library, cfg);
             Decide(finding, library);
             return finding;
         }
@@ -470,13 +509,21 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Стоящий материал соответствует геометрии: он среди подходящих или совпадает с одним из них по свойствам.</summary>
         private static bool Fits(StockFinding finding, List<MaterialInfo> library)
         {
+            return FitsName(finding, library, finding.CurrentMaterial);
+        }
+
+        /// <summary>Материал name соответствует геометрии позиции (finding.Match уже посчитан).</summary>
+        private static bool FitsName(StockFinding finding, List<MaterialInfo> library, string name)
+        {
+            string wanted = (name ?? "").Trim();
+            if (wanted.Length == 0) return false;
             foreach (MaterialInfo info in finding.Match.Candidates)
             {
-                if (string.Equals((info.Name ?? "").Trim(), finding.CurrentMaterial.Trim(), StringComparison.Ordinal))
+                if (string.Equals((info.Name ?? "").Trim(), wanted, StringComparison.Ordinal))
                     return true;
             }
             // Материал мог быть схлопнут как дубль по свойствам: тогда он тоже соответствует геометрии.
-            MaterialInfo current = ByName(library, finding.CurrentMaterial);
+            MaterialInfo current = ByName(library, wanted);
             if (current != null)
             {
                 string key = StockCatalog.RecordKey(current);
@@ -510,6 +557,9 @@ namespace ESKD.MaterialSync.Sw
             string where = finding.Folder.Length > 0 ? "«" + finding.Folder + "»" : "деталь";
             switch (finding.Verdict)
             {
+                case StockVerdict.Unclear:
+                    return string.Format("{0}: {1} — материал по толщине не подбирается, назначьте его телам сами (список " +
+                        "вырезов или «Твёрдые тела» → правой кнопкой → «Материал»)", where, finding.Request.Size);
                 case StockVerdict.NotInLibrary:
                     return string.Format("{0}: типоразмер «{1}»{2} не найден в библиотеке материалов — проверьте материал",
                         where, finding.Request.Size,
@@ -541,11 +591,178 @@ namespace ESKD.MaterialSync.Sw
             if (doc == null || findings == null) return 0;
             PartDoc part = doc as PartDoc;
             if (part == null) return 0;
-            string cfg = ActiveConfiguration(doc);
+            string active = ActiveConfiguration(doc);
+            // Активна развёртка «…SM-FLAT-PATTERN» или «Как сварено» — не исполнение: материал ставится её родителю, иначе
+            // он доставался одной развёртке, а исполнение с его графой 3 и массой оставалось прежним (сверка SW API
+            // 23.09.2026, №40). Переключаться не нужно: материал ставится и читается по имени конфигурации.
+            string cfg = MaterialConfiguration(doc, active);
+            string db;
+            string before = (SyncService.MaterialName(part, doc, cfg, out db) ?? "").Trim();
             List<StockFinding> assigned = new List<StockFinding>();
             int changed = ApplyIn(app, doc, part, cfg, findings, report, assigned, "");
-            if (assigned.Count > 0) changed += OtherConfigurations(app, doc, part, cfg, assigned, report);
+            if (assigned.Count > 0)
+            {
+                changed += OtherConfigurations(app, doc, part, cfg, active, assigned, report);
+                changed += DerivedOverride(doc, part, cfg, before, report);
+            }
             return changed;
+        }
+
+        /// <summary>
+        /// Производная, которая не исполнение: развёртка «…SM-FLAT-PATTERN», «&lt;Как сварено&gt;», «&lt;Как обработанный&gt;»
+        /// (swConfigurationType_e или признак в имени; сверка SW API 23.09.2026, №40). Производная обычного типа («01» от
+        /// «00», «Укосина») — исполнение (M06b).
+        /// </summary>
+        private static bool IsTechnical(Configuration c)
+        {
+            if (c == null) return false;
+            try
+            {
+                if (!c.IsDerived()) return false;
+                int type = c.Type;
+                return type == (int)swConfigurationType_e.swConfiguration_AsMachined ||
+                       type == (int)swConfigurationType_e.swConfiguration_AsWelded ||
+                       type == (int)swConfigurationType_e.swConfiguration_SheetMetal ||
+                       DesignationParser.IsTechnicalConfigurationName(c.Name);
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Материал по геометрии: вид конфигурации", ex);
+                return false;
+            }
+        }
+
+        /// <summary>Где ставится материал: у технической производной — у её родителя (до первого не технического), иначе — в ней.</summary>
+        internal static string MaterialConfiguration(ModelDoc2 doc, string cfg)
+        {
+            try
+            {
+                Configuration c = doc.GetConfigurationByName(cfg) as Configuration;
+                for (int depth = 0; depth < 8 && IsTechnical(c); depth++)
+                {
+                    Configuration parent = c.GetParent() as Configuration;
+                    if (parent == null) break;
+                    c = parent;
+                }
+                return c != null ? c.Name ?? cfg : cfg;
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Материал по геометрии: родитель конфигурации " + cfg, ex);
+                return cfg;
+            }
+        }
+
+        /// <summary>
+        /// Материал технических производных исполнения после назначения ему материала (№40). SolidWorks копирует материал
+        /// исполнения в производную при её создании и дальше за исполнением не следит (проба 23.09.2026): развёртка,
+        /// созданная при материале трубы, оставалась трубой. Производная с материалом, который был у исполнения до
+        /// назначения (before), — такая копия: она получает новый материал вместе с исполнением. Другой материал —
+        /// переопределение, сделанное вручную: надстройка его не трогает, только говорит — развёртка и её масса
+        /// разойдутся с деталью. Возвращает число производных, получивших материал.
+        /// </summary>
+        private static int DerivedOverride(ModelDoc2 doc, PartDoc part, string cfg, string before, SyncReport report)
+        {
+            int changed = 0;
+            try
+            {
+                string[] names = doc.GetConfigurationNames() as string[];
+                if (names == null) return 0;
+                string db;
+                string own = (SyncService.MaterialName(part, doc, cfg, out db) ?? "").Trim();
+                string ownDb = db ?? "";
+                foreach (string name in names)
+                {
+                    if (string.Equals(name, cfg, StringComparison.Ordinal)) continue;
+                    if (!IsTechnical(doc.GetConfigurationByName(name) as Configuration) ||
+                        !string.Equals(MaterialConfiguration(doc, name), cfg, StringComparison.Ordinal)) continue;
+                    string there = (part.GetMaterialPropertyName2(name, out db) ?? "").Trim();
+                    if (there.Length == 0 || string.Equals(there, own, StringComparison.Ordinal)) continue;
+                    if (own.Length > 0 && string.Equals(there, before ?? "", StringComparison.Ordinal))
+                    {
+                        part.SetMaterialPropertyName2(name, ownDb, own);
+                        string now = (part.GetMaterialPropertyName2(name, out db) ?? "").Trim();
+                        if (string.Equals(now, own, StringComparison.Ordinal))
+                        {
+                            changed++;
+                            Log.Info("Материал по геометрии: производная «" + name + "» получила материал «" + own +
+                                     "» вместе с «" + cfg + "» — " + DocInfo.TitleOf(doc));
+                            continue;
+                        }
+                    }
+                    if (report == null) continue;
+                    report.Warnings.Add(string.Format("в «{0}» свой материал «{1}», а у «{2}» — «{3}»: развёртка и её масса " +
+                        "разойдутся с деталью — уберите материал «{0}» (дерево → «Материал» в этой конфигурации)", name, there, cfg, own));
+                }
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Материал по геометрии: материал производных " + DocInfo.TitleOf(doc), ex);
+            }
+            return changed;
+        }
+
+        /// <summary>
+        /// Позиция — вся деталь: листовая деталь (не папка и без тел) или её тела вместе с телами других позиций, которым
+        /// назначается тот же материал, покрывают все тела детали (сверка SW API 23.09.2026, №41). Рама из одной трубы
+        /// разной длины — папка на каждую длину, подсварка — свои папки: каждая позиция покрывала часть тел, материал
+        /// ставился телам, а телу SolidWorks 2025 материал через API не ставит (T14) — рама оставалась без материала.
+        /// Папка без тел — не вся деталь (№32). Отделено от SolidWorks ради юнит-тестов.
+        /// </summary>
+        public static bool CoversWholePart(IEnumerable<StockFinding> findings, StockFinding finding, int solids)
+        {
+            if (finding == null) return false;
+            if (finding.Bodies.Count == 0) return !finding.FromCutList;
+            if (finding.Chosen == null) return finding.Bodies.Count >= solids;
+            int covered = 0;
+            foreach (StockFinding f in findings ?? Enumerable.Empty<StockFinding>())
+                if (f != null && f.NeedsAssign && SameTarget(f.Chosen, finding.Chosen)) covered += f.Bodies.Count;
+            if (!(findings ?? Enumerable.Empty<StockFinding>()).Contains(finding)) covered += finding.Bodies.Count;
+            return covered >= solids;
+        }
+
+        /// <summary>Материал детали встал, но из другой библиотеки (одноимённый) (№31); пусто — из нужной.</summary>
+        private static string LibraryProblem(MaterialInfo target, string db)
+        {
+            string got = Path.GetFileNameWithoutExtension(db ?? "") ?? "";
+            string wanted = Path.GetFileNameWithoutExtension(target.Database ?? "") ?? "";
+            if (got.Length > 0 && wanted.Length > 0 && !string.Equals(got, wanted, StringComparison.OrdinalIgnoreCase))
+                return "SolidWorks взял его из библиотеки «" + got + "», а не «" + wanted + "»";
+            return "";
+        }
+
+        /// <summary>
+        /// Материал детали встал, но у тел позиции свой материал, не подходящий геометрии, — он перекрывает материал детали
+        /// (№31); пусто — не перекрывает.
+        /// </summary>
+        private static string BodiesProblem(List<StockFinding> all, StockFinding finding, string cfg)
+        {
+            MaterialInfo target = finding.Chosen;
+            List<string> covered = new List<string>();
+            foreach (StockFinding f in all)
+            {
+                if (f != finding && !(f.NeedsAssign && SameTarget(f.Chosen, target))) continue;
+                foreach (Body2 body in f.Bodies)
+                {
+                    string own = OwnMaterial(body, cfg);
+                    if (own.Length == 0 || string.Equals(own, target.Name.Trim(), StringComparison.Ordinal) ||
+                        f.Match.Candidates.Any(c => string.Equals((c.Name ?? "").Trim(), own, StringComparison.Ordinal))) continue;
+                    string name = BodyName(body);
+                    if (!covered.Contains(name)) covered.Add(name);
+                }
+            }
+            return covered.Count == 0 ? "" : "у тел «" + string.Join("», «", covered.ToArray()) + "» свой материал перекрывает " +
+                "материал детали — снимите его (список вырезов → правой кнопкой → «Материал»)";
+        }
+
+        private static bool SameTarget(MaterialInfo a, MaterialInfo b)
+        {
+            return a != null && b != null && string.Equals(TargetKey(a), TargetKey(b), StringComparison.Ordinal);
+        }
+
+        private static string TargetKey(MaterialInfo target)
+        {
+            return (target.Database ?? "").Trim() + "|" + (target.Name ?? "").Trim();
         }
 
         /// <summary>Назначение в одной конфигурации — активной сейчас; assigned — сюда позиции, получившие материал.</summary>
@@ -555,48 +772,37 @@ namespace ESKD.MaterialSync.Sw
             int changed = 0;
             List<BodyFolder> refresh = new List<BodyFolder>();
             int solids = SolidBodies(part).Count;
+            List<StockFinding> all = findings.ToList();
+            // Материал детали целиком по группе позиций ставится один раз: ключ — назначаемый материал, значение — встал ли.
+            Dictionary<string, bool> wholeDone = new Dictionary<string, bool>(StringComparer.Ordinal);
+            // Материал детали из чужой библиотеки: встал, но в другие исполнения не переносится.
+            HashSet<string> localOnly = new HashSet<string>(StringComparer.Ordinal);
 
-            foreach (StockFinding finding in findings)
+            foreach (StockFinding finding in all)
             {
                 if (!finding.NeedsAssign) continue;
+                // Папка без тел в этом исполнении — не позиция (№32): пустой список тел означал бы «вся деталь».
+                if (finding.FromCutList && finding.Bodies.Count == 0) continue;
                 MaterialInfo target = finding.Chosen;
                 string database = DatabasePath(app, target);
-                // Позиция — вся деталь (все её тела или листовая деталь) — материал ставится детали целиком. Так его видит
-                // вся прежняя цепочка: «Материал_ФБ», «Материал_Строка», масса, книга ЛЗК — все они читают материал
-                // детали, а не тела. Позиция — часть тел — материал только им: материал детали перетёр бы соседние тела.
-                // Раньше «одна позиция — вся деталь», и пластины, приваренные к трубе, получали материал трубы
-                // (аудит 23.09.2026, MAT-6).
-                bool wholePart = finding.Bodies.Count == 0 || finding.Bodies.Count >= solids;
+                // Позиция — вся деталь (все её тела вместе с позициями того же материала, или листовая деталь) — материал
+                // ставится детали целиком. Так его видит вся прежняя цепочка: «Материал_ФБ», «Материал_Строка», масса, книга
+                // ЛЗК — все они читают материал детали, а не тела. Позиция — часть тел — материал только им: материал детали
+                // перетёр бы соседние тела. Раньше «одна позиция — вся деталь», и пластины, приваренные к трубе, получали
+                // материал трубы (аудит 23.09.2026, MAT-6).
+                bool wholePart = CoversWholePart(all, finding, solids);
+                bool done;
+                if (wholePart && wholeDone.TryGetValue(TargetKey(target), out done))
+                {
+                    // Деталь уже получила этот материал по соседней позиции группы (другая длина той же трубы).
+                    if (done && assigned != null && !localOnly.Contains(TargetKey(target))) assigned.Add(finding);
+                    continue;
+                }
                 try
                 {
                     if (!wholePart)
                     {
-                        bool ok = true;
-                        foreach (Body2 body in finding.Bodies)
-                        {
-                            // Успех у SolidWorks — swBodyMaterialApplicationError_NoError = 1, а не 0. Но и «успех» ещё не
-                            // материал: на SolidWorks 2025 назначение телу отвечает NoError и не меняет ни материала тела, ни
-                            // массы (e2e T14, 23.09.2026) — поэтому материал тела читается обратно.
-                            int code = body.SetMaterialProperty(cfg, database, target.Name);
-                            if (code == (int)swBodyMaterialApplicationError_e.swBodyMaterialApplicationError_NoError &&
-                                !string.Equals(OwnMaterial(body, cfg), target.Name.Trim(), StringComparison.Ordinal))
-                            {
-                                ok = false;
-                                if (report != null)
-                                    report.Warnings.Add(prefix + string.Format(
-                                        "«{0}»: SolidWorks не поставил материал «{1}» телу «{2}» — назначьте его этим телам вручную " +
-                                        "(список вырезов или «Твёрдые тела» → правой кнопкой → «Материал»); детали целиком он не " +
-                                        "назначается: у остальных тел свой материал", finding.Folder, target.Name, BodyName(body)));
-                                break;
-                            }
-                            if (code != (int)swBodyMaterialApplicationError_e.swBodyMaterialApplicationError_NoError)
-                            {
-                                ok = false;
-                                if (report != null)
-                                    report.Warnings.Add(prefix + string.Format("«{0}»: материал «{1}» не назначен телу (код {2})",
-                                        finding.Folder, target.Name, code));
-                            }
-                        }
+                        bool ok = AssignBodies(app, doc, part, finding, cfg, database, target, report, prefix, refresh);
                         if (ok)
                         {
                             changed++;
@@ -605,12 +811,16 @@ namespace ESKD.MaterialSync.Sw
                             if (report != null)
                                 report.Operations.Add(prefix + string.Format("«{0}»: материал «{1}» назначен по типоразмеру «{2}»{3}",
                                     finding.Folder, target.Name, finding.Request.Size, Instead(finding)));
-                            // Графа 3 («Материал_ФБ», «Материал_Строка»), масса и книга ЛЗК берут материал детали целиком, а
-                            // он при назначении телам не меняется: остался заменённый или пустой — это надо видеть (ревью
-                            // 23.09.2026). Материал детали, выбранный для других тел, — выбор конструктора, о нём молчим.
-                            string whole = PartMaterial(part, cfg).Trim();
+                            // Графа 3 («Материал_ФБ», «Материал_Строка») и книга ЛЗК берут фактический материал: один на все
+                            // тела — его, иначе материал детали (№33). Назначение части тел его не меняет: остался заменённый
+                            // или пустой — это надо видеть (ревью 23.09.2026). Материал детали, выбранный для других тел, —
+                            // выбор конструктора, о нём молчим.
+                            string actualDb;
+                            string actual = (SyncService.ActualMaterial(part, doc, cfg, out actualDb, null) ?? "").Trim();
+                            string whole = actual.Length > 0 ? actual : PartMaterial(part, cfg).Trim();
                             string old = (finding.CurrentMaterial ?? "").Trim();
-                            if (report != null && (whole.Length == 0 || old.Length > 0 && string.Equals(whole, old, StringComparison.Ordinal)))
+                            if (report != null && !string.Equals(actual, target.Name.Trim(), StringComparison.Ordinal) &&
+                                (whole.Length == 0 || old.Length > 0 && string.Equals(whole, old, StringComparison.Ordinal)))
                                 report.Warnings.Add(prefix + string.Format(
                                     "«{0}»: материал «{1}» стоит только у тел этой позиции; графа 3 основной надписи, масса и книга " +
                                     "ЛЗК берут материал детали целиком, а там {2} — назначьте материал детали (дерево → «Материал» → " +
@@ -619,25 +829,35 @@ namespace ESKD.MaterialSync.Sw
                     }
                     else
                     {
+                        string beforeDb;
+                        string before = SyncService.MaterialName(part, doc, cfg, out beforeDb) ?? "";
                         part.SetMaterialPropertyName2(cfg, database, target.Name);
                         // SetMaterialPropertyName2 ничего не возвращает и при неверном имени молча не делает ничего —
                         // поэтому читаем обратно (П-4 отчёта 20.09.2026).
                         string db;
                         string now = SyncService.MaterialName(part, doc, cfg, out db) ?? "";
-                        if (string.Equals(now.Trim(), target.Name.Trim(), StringComparison.Ordinal))
+                        // Встал — назначен: материал детали уже сменился, графа 3 и другие исполнения должны его видеть. Чужая
+                        // библиотека или тела со своим материалом, перекрывающим материал детали (сверка SW API 23.09.2026,
+                        // №31), — замечанием «назначен детали, но …», а не «не назначен» при сменившемся материале (ревью
+                        // 23.09.2026).
+                        // Назначением считается только смена материала детали (уже стоял — ничего не изменилось); материал
+                        // чужой библиотеки в другие исполнения не переносится.
+                        bool set, propagate;
+                        bool took = string.Equals(now.Trim(), target.Name.Trim(), StringComparison.Ordinal);
+                        string outcome = StockCatalog.WholePartResult(before, now, target.Name,
+                            took ? LibraryProblem(target, db) : "", took ? BodiesProblem(all, finding, cfg) : "", out set, out propagate);
+                        wholeDone[TargetKey(target)] = set;
+                        if (!propagate) localOnly.Add(TargetKey(target));
+                        if (set)
                         {
                             changed++;
-                            if (assigned != null) assigned.Add(finding);
+                            if (propagate && assigned != null) assigned.Add(finding);
                             if (finding.FolderObject != null && !refresh.Contains(finding.FolderObject)) refresh.Add(finding.FolderObject);
                             if (report != null)
                                 report.Operations.Add(prefix + string.Format("Материал «{0}» назначен по типоразмеру «{1}»{2}",
                                     target.Name, finding.Request.Size, Instead(finding)));
                         }
-                        else if (report != null)
-                        {
-                            report.Warnings.Add(prefix + string.Format("Материал «{0}» не назначен: SolidWorks оставил «{1}»",
-                                target.Name, now));
-                        }
+                        if (outcome.Length > 0 && report != null) report.Warnings.Add(prefix + outcome);
                     }
                 }
                 catch (COMException ex)
@@ -666,7 +886,9 @@ namespace ESKD.MaterialSync.Sw
         ///   в исполнениях бывают разные материалы (решение владельца 23.09.2026) — подсказка «ответьте в нём отдельно».
         /// Исполнение с другой геометрией или своим материалом не трогается. В конце — снова прежнее исполнение.
         /// </summary>
-        private static int OtherConfigurations(ISldWorks app, ModelDoc2 doc, PartDoc part, string active,
+        /// <param name="assignedIn">Где материал уже поставлен (у технической производной — её родитель).</param>
+        /// <param name="active">Активная конфигурация: к ней выгрузка возвращается в конце.</param>
+        private static int OtherConfigurations(ISldWorks app, ModelDoc2 doc, PartDoc part, string assignedIn, string active,
             List<StockFinding> assigned, SyncReport report)
         {
             string[] names = doc.GetConfigurationNames() as string[];
@@ -677,11 +899,13 @@ namespace ESKD.MaterialSync.Sw
             {
                 foreach (string name in names)
                 {
-                    if (string.Equals(name, active, StringComparison.Ordinal)) continue;
-                    // Производная конфигурация (развёртка «…SM-FLAT-PATTERN», «Как сварено») — не исполнение: материал у
-                    // неё родительский. Раньше надстройка переключалась в неё и просила «ответить в ней» (ревью 23.09.2026).
-                    Configuration configuration = doc.GetConfigurationByName(name) as Configuration;
-                    if (configuration != null && configuration.IsDerived()) continue;
+                    if (string.Equals(name, active, StringComparison.Ordinal) || string.Equals(name, assignedIn, StringComparison.Ordinal))
+                        continue;
+                    // Техническая производная (развёртка «…SM-FLAT-PATTERN», «Как сварено») — не исполнение: материал у неё
+                    // родительский. Раньше надстройка переключалась в неё и просила «ответить в ней» (ревью 23.09.2026).
+                    // Производная обычного типа («01» от «00») — исполнение (M06b): раньше её пропускали вместе с
+                    // техническими, и исполнение без материала его не получало (сверка SW API 23.09.2026, №40).
+                    if (IsTechnical(doc.GetConfigurationByName(name) as Configuration)) continue;
                     if (!doc.ShowConfiguration2(name))
                     {
                         if (report != null)
@@ -744,40 +968,121 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Путь к файлу библиотеки, в которой лежит материал: SetMaterialProperty требует именно путь.</summary>
         private static string DatabasePath(ISldWorks app, MaterialInfo target)
         {
-            if (target == null) return "";
+            return target == null ? "" : DatabasePathByName(app, target.Database);
+        }
+
+        /// <summary>Путь подключённой библиотеки материалов по её имени (или пути); не нашлась — как есть.</summary>
+        private static string DatabasePathByName(ISldWorks app, string database)
+        {
+            string wanted = System.IO.Path.GetFileNameWithoutExtension(database ?? "") ?? "";
             foreach (string path in SyncService.MaterialDatabases(app))
             {
                 if (string.IsNullOrEmpty(path)) continue;
-                if (string.Equals(System.IO.Path.GetFileNameWithoutExtension(path), target.Database, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(System.IO.Path.GetFileNameWithoutExtension(path), wanted, StringComparison.OrdinalIgnoreCase))
                     return path;
             }
-            return target.Database ?? "";
+            return database ?? "";
         }
 
         /// <summary>
-        /// Материал позиции: у каждого тела — свой, а без своего — материал детали. Он у всех тел один — это он. Тела
-        /// расходятся только потому, что у части тел своего материала нет, — пусто: позиция не в порядке, недостающим
-        /// телам нужен материал. Раньше брался материал первого тела со своим материалом, и тела без него (например,
-        /// полученные зеркалом) так и оставались без материала (ревью 23.09.2026). У тел разные свои материалы — первый
-        /// из них, как прежде: это выбор конструктора, и молча его не перетирают.
+        /// Материал телам позиции — всем или ни одному (сверка SW API 23.09.2026, №38): на отказе SolidWorks пройденным
+        /// телам возвращается прежний свой материал; что вернуть не удалось — в замечание, а папка — на UpdateCutList, чтобы
+        /// список вырезов показывал фактическое. Раньше в одной позиции оставались разные материалы.
         /// </summary>
-        private static string PositionMaterial(PartDoc part, List<Body2> bodies, string cfg)
+        private static bool AssignBodies(ISldWorks app, ModelDoc2 doc, PartDoc part, StockFinding finding, string cfg, string database,
+            MaterialInfo target, SyncReport report, string prefix, List<BodyFolder> refresh)
+        {
+            string wanted = target.Name.Trim();
+            Dictionary<string, string> beforeDb = new Dictionary<string, string>(StringComparer.Ordinal);
+            bool rebuilt = false;
+            BodyAssignmentOutcome outcome = BodyAssignment.Apply(finding.Bodies,
+                body => BodyName(body),
+                body =>
+                {
+                    string db;
+                    string old = SyncService.OwnMaterial(body, cfg, out db);
+                    beforeDb[BodyName(body)] = db ?? "";
+                    return old;
+                },
+                // Успех у SolidWorks — swBodyMaterialApplicationError_NoError = 1, а не 0.
+                body => body.SetMaterialProperty(cfg, database, target.Name),
+                done =>
+                {
+                    // «Успех» ещё не материал: на SolidWorks 2025 назначение телу отвечает NoError и не меняет ни материала
+                    // тела, ни массы (e2e T14) — материал читается обратно; не встал — одно перестроение и ещё раз.
+                    List<Body2> missed = NotApplied(part, done, cfg, wanted);
+                    if (missed.Count > 0 && !rebuilt)
+                    {
+                        rebuilt = true;
+                        doc.EditRebuild3();
+                        missed = NotApplied(part, done, cfg, wanted);
+                    }
+                    return missed;
+                },
+                (body, old) =>
+                {
+                    Body2 fresh = Fresh(part, body);
+                    if (old.Length == 0)
+                        return fresh.RemoveMaterialProperty((int)swInConfigurationOpts_e.swSpecifyConfiguration, new[] { cfg }) &&
+                               OwnMaterial(fresh, cfg).Length == 0;
+                    string db;
+                    beforeDb.TryGetValue(BodyName(body), out db);
+                    return fresh.SetMaterialProperty(cfg, DatabasePathByName(app, db), old) == SwCodes.BodyMaterialNoError &&
+                           string.Equals(OwnMaterial(fresh, cfg), old, StringComparison.Ordinal);
+                },
+                SwCodes.BodyMaterialProblem);
+            if (outcome.Ok) return true;
+            if (outcome.Stuck.Count > 0 && finding.FolderObject != null && !refresh.Contains(finding.FolderObject))
+                refresh.Add(finding.FolderObject);
+            if (report != null)
+                report.Warnings.Add(prefix + string.Format("«{0}»: материал «{1}» не назначен — {2}; {3}", finding.Folder, target.Name,
+                    outcome.Failure, outcome.Stuck.Count == 0 ? "у тел позиции материал прежний"
+                        : "у тел «" + string.Join("», «", outcome.Stuck.ToArray()) + "» он уже сменился и назад не вернулся — проверьте их"));
+            return false;
+        }
+
+        /// <summary>Тела, у которых материал не встал; после перестроения тела ищутся заново по имени.</summary>
+        private static List<Body2> NotApplied(PartDoc part, List<Body2> done, string cfg, string wanted)
+        {
+            List<Body2> missed = new List<Body2>();
+            foreach (Body2 body in done)
+                if (!string.Equals(OwnMaterial(Fresh(part, body), cfg), wanted, StringComparison.Ordinal)) missed.Add(body);
+            return missed;
+        }
+
+        /// <summary>Тело детали с тем же именем среди нынешних тел (после перестроения прежний объект может устареть).</summary>
+        private static Body2 Fresh(PartDoc part, Body2 body)
+        {
+            string name = BodyName(body);
+            foreach (Body2 now in SolidBodies(part))
+                if (string.Equals(BodyName(now), name, StringComparison.Ordinal)) return now;
+            return body;
+        }
+
+        /// <summary>
+        /// Стоящий материал позиции по фактическому материалу каждого тела: свой, а без своего — материал детали (правило —
+        /// <see cref="StockCatalog.PositionCurrent"/>). Раньше при теле со своим материалом и теле с материалом детали выходило
+        /// «материала нет», подходящий молча ставился детали, а свой материал тела оставался (сверка SW API 23.09.2026, №31).
+        /// Тела без материала (например, полученные зеркалом) дозаполняются (ревью 23.09.2026).
+        /// </summary>
+        private static string PositionMaterial(PartDoc part, StockFinding finding, List<MaterialInfo> library, string cfg)
         {
             string whole = null;
-            string first = null;
-            bool mixed = false;
-            List<string> own = new List<string>();
-            foreach (Body2 body in bodies)
+            List<string> actual = new List<string>();
+            foreach (Body2 body in finding.Bodies)
             {
                 string name = OwnMaterial(body, cfg);
-                if (name.Length > 0) { if (!own.Contains(name)) own.Add(name); }
-                else name = whole ?? (whole = PartMaterial(part, cfg).Trim());
-                if (first == null) first = name;
-                else if (!string.Equals(first, name, StringComparison.Ordinal)) mixed = true;
+                actual.Add(name.Length > 0 ? name : whole ?? (whole = PartMaterial(part, cfg).Trim()));
             }
-            if (first == null) return PartMaterial(part, cfg).Trim();
-            if (!mixed) return first;
-            return own.Count <= 1 ? "" : own[0];
+            if (actual.Count == 0) return PartMaterial(part, cfg).Trim();
+            return PositionCurrentFor(finding, library, actual);
+        }
+
+        /// <summary>Стоящий материал позиции по материалам её тел — с подбором по геометрии позиции. Отделено ради юнит-тестов.</summary>
+        public static string PositionCurrentFor(StockFinding finding, List<MaterialInfo> library, IList<string> bodyMaterials)
+        {
+            finding.Match = StockCatalog.Match(library, finding.Request);
+            return StockCatalog.PositionCurrent(bodyMaterials, name => FitsName(finding, library, name));
         }
 
         /// <summary>Свой материал тела; нет или не прочитан — пусто.</summary>
@@ -794,6 +1099,55 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Материал по геометрии: материал тела", ex);
                 return "";
             }
+        }
+
+        /// <summary>Фактический материал каждого тела: свой, без своего — материал детали.</summary>
+        private static List<string> BodyActualMaterials(PartDoc part, List<Body2> bodies, string cfg)
+        {
+            string whole = PartMaterial(part, cfg).Trim();
+            return bodies.Select(b =>
+            {
+                string own = OwnMaterial(b, cfg);
+                return own.Length > 0 ? own : whole;
+            }).ToList();
+        }
+
+        /// <summary>Материал подходит листу этой толщины — тем же правилом, что позиция (FitsName: и дубль библиотеки).</summary>
+        private static bool FitsThickness(List<MaterialInfo> library, double mm, string material)
+        {
+            StockFinding probe = new StockFinding
+            {
+                Folder = SheetFolderName,
+                Request = new StockRequest { Kind = StockKind.Sheet, Size = StockCatalog.SizeFromThickness(mm), Source = SheetFolderName }
+            };
+            probe.Match = StockCatalog.Match(library, probe.Request);
+            return FitsName(probe, library, material);
+        }
+
+        /// <summary>
+        /// Толщина листового тела, мм, из его собственного элемента «Листовой металл» (IBody2.GetFeatures, сверка SW API
+        /// 23.09.2026, №39): у многотельной листовой детали он у каждого тела свой. NaN — тело не листовое или не прочитано.
+        /// </summary>
+        private static double BodySheetThicknessMm(Body2 body)
+        {
+            try
+            {
+                if (body == null || !body.IsSheetMetal()) return double.NaN;
+                object[] features = body.GetFeatures() as object[];
+                if (features == null) return double.NaN;
+                foreach (object o in features)
+                {
+                    Feature f = o as Feature;
+                    if (f == null || f.GetTypeName2() != "SheetMetal") continue;
+                    SheetMetalFeatureData data = f.GetDefinition() as SheetMetalFeatureData;
+                    if (data != null) return data.Thickness * 1000.0;
+                }
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Материал по геометрии: толщина листового тела", ex);
+            }
+            return double.NaN;
         }
 
         /// <summary>Толщина листовой детали, мм; NaN — деталь не листовая.</summary>

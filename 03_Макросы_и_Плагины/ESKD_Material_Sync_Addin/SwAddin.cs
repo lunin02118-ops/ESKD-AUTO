@@ -37,12 +37,33 @@ namespace ESKD.MaterialSync
             AppDomain.CurrentDomain.AssemblyResolve += ResolveNextToAddin;
         }
 
+        /// <summary>Зависимости надстройки, которые лежат рядом с ней: сама сборка и её копии интеропа SolidWorks.</summary>
+        private static readonly string[] OwnDependencies =
+        {
+            "ESKD_Material_Sync_v5", "SolidWorks.Interop.sldworks", "SolidWorks.Interop.swconst", "SolidWorks.Interop.swpublished"
+        };
+
+        /// <summary>
+        /// Своя зависимость — из каталога надстройки, и только своей сборке или её соседям (копия swpublished просит
+        /// sldworks после обновления SolidWorks). Все .NET-надстройки SolidWorks живут в одном AppDomain: обработчик
+        /// отвечал на любое имя любой сборке и подсовывал чужой надстройке наш файл (сверка SW API 23.09.2026, №8).
+        /// Запрос без сборки (CLR для RCW, загрузка по имени) не отсекается — это может быть наш после сервис-пака SW.
+        /// Подписка статическая и не снимается: статический конструктор при повторной загрузке второй раз не выполняется.
+        /// </summary>
         private static Assembly ResolveNextToAddin(object sender, ResolveEventArgs args)
         {
             try
             {
-                string dir = Path.GetDirectoryName(typeof(SwAddin).Assembly.Location);
-                string candidate = Path.Combine(dir ?? "", new AssemblyName(args.Name).Name + ".dll");
+                string name = new AssemblyName(args.Name).Name;
+                if (Array.FindIndex(OwnDependencies, n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase)) < 0) return null;
+                string dir = (Path.GetDirectoryName(typeof(SwAddin).Assembly.Location) ?? "").TrimEnd('\\');
+                if (args.RequestingAssembly != null)
+                {
+                    string from = args.RequestingAssembly.IsDynamic ? "" : args.RequestingAssembly.Location;
+                    if (!string.Equals((Path.GetDirectoryName(from ?? "") ?? "").TrimEnd('\\'), dir, StringComparison.OrdinalIgnoreCase))
+                        return null;
+                }
+                string candidate = Path.Combine(dir, name + ".dll");
                 return File.Exists(candidate) ? Assembly.LoadFrom(candidate) : null;
             }
             catch (Exception ex)
@@ -69,11 +90,15 @@ namespace ESKD.MaterialSync
                 CreateCommands();
                 _hub = new EventHub(_app);
                 _hub.Attach();
+                if (FailConnectForTest()) throw new InvalidOperationException("DebugFailConnect: проверка отката");
                 return true;
             }
             catch (Exception ex)
             {
+                // SolidWorks считает надстройку незагруженной и DisconnectFromSW не зовёт: всё, что успело встать, снимаем
+                // здесь, иначе вкладка и подписки живут у «выключенной» надстройки (сверка SW API 23.09.2026, №0).
                 Core.Log.Error("ConnectToSW", ex);
+                Release("откат ConnectToSW");
                 return false;
             }
         }
@@ -81,21 +106,48 @@ namespace ESKD.MaterialSync
         public bool DisconnectFromSW()
         {
             Core.Log.Info("=== DisconnectFromSW ===");
-            try
-            {
-                if (_hub != null) _hub.Detach();
-                RemoveCommands();
-            }
-            catch (Exception ex)
-            {
-                Core.Log.Error("DisconnectFromSW", ex);
-            }
-            _hub = null;
-            _commands = null;
-            _app = null;
+            Release("надстройка ЕСКД выгружена");
             GC.Collect();
             GC.WaitForPendingFinalizers();
             return true;
+        }
+
+        /// <summary>
+        /// Снять своё: ведомость ЛЗК, подписки, вкладку и меню — каждый шаг отдельно, сбой одного не оставляет
+        /// остальные (сверка SW API 23.09.2026, №0 и №3). Общий путь для DisconnectFromSW и отката ConnectToSW.
+        /// </summary>
+        private void Release(string reason)
+        {
+            try
+            {
+                LzkService.Abort(reason);
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("Выгрузка: ведомость ЛЗК", ex);
+            }
+            try
+            {
+                if (_hub != null) _hub.Detach();
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("Выгрузка: подписки", ex);
+            }
+            RemoveCommands();
+            _hub = null;
+            _commands = null;
+            _app = null;
+        }
+
+        /// <summary>
+        /// Только для автотеста I11: HKCU\...\ESKD_Settings\DebugFailConnect = 1 — ConnectToSW падает после подписок.
+        /// У конструктора этого значения нет.
+        /// </summary>
+        private static bool FailConnectForTest()
+        {
+            using (Microsoft.Win32.RegistryKey key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(Settings.KeyPath))
+                return key != null && Settings.Int(key, "DebugFailConnect", 0) == 1;
         }
 
         // ------------------------------------------------------------------ вкладка и меню
@@ -142,7 +194,8 @@ namespace ESKD.MaterialSync
                 "Всё по изделию в одном окне: что обновится само, вопросы (материал к профилю, обозначение), замечания — " +
                 "«Применить и сохранить» и отчёт _Проверка.txt с итогом ГОТОВО, ЗАМЕЧАНИЯ или БРАК",
                 "Проверить изделие", 4, "CheckProduct", "EnableCheckCommand", CommandUserIds[5], buttons);
-            // Пункт «Отчёт проверки» живёт в меню «Инструменты → ЕСКД» и на панели инструментов: на вкладке
+            // Пункт «Отчёт проверки» живёт в меню «Инструменты → ЕСКД» (плавающая панель ЕСКД скрывается при каждом запуске
+            // SolidWorks — ниже, SetToolbarVisibility; сверка SW API 23.09.2026, №5): на вкладке
             // ему места нет, а открыть прежний отчёт, ничего не проверяя, бывает нужно (ТЗ-02 Т-34).
             int report = group.AddCommandItem2("Отчёт проверки", -1, "Открыть последний отчёт _Проверка.txt, не проверяя заново",
                 "Отчёт проверки", 5, "ShowCheckReport", "EnableCheckCommand", CommandUserIds[6], buttons);
@@ -173,6 +226,9 @@ namespace ESKD.MaterialSync
             group.Activate();
             try
             {
+                // Плавающая панель ЕСКД скрывается при каждом запуске, а не только при первом создании группы: работают с
+                // вкладкой и меню (коммиты 1515a7c, add8bcd). Помнить выбор конструктора — вопрос владельцу (сверка SW API
+                // 23.09.2026, №5).
                 if (group.ToolbarId > 0) _app.SetToolbarVisibility(group.ToolbarId, false);
             }
             catch (Exception ex)
@@ -355,7 +411,39 @@ namespace ESKD.MaterialSync
         /// На сборке (пункт меню — на вкладке сборки кнопки нет) — «Проверить изделие»: всё изделие обновляется одним окном
         /// с вопросами и списком сохранения (решение владельца 23.09.2026, З-27).
         /// </summary>
+        /// <summary>
+        /// Тело кнопки: исключение, ушедшее в SolidWorks, он проглатывает молча — кнопка «ничего не сделала», в журнале
+        /// пусто. Здесь оно пишется в журнал и показывается коротким окном (сверка SW API 23.09.2026, №7). Сервисы ловят
+        /// свои ошибки сами и показывают свой отказ — сюда доходит только прорвавшееся мимо них. *Silent-методы для
+        /// автотестов и внешних программ не обёрнуты: там исключение должно дойти до вызывающего.
+        /// </summary>
+        private static void Guarded(string command, Action body)
+        {
+            try
+            {
+                body();
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error(command, ex);
+                try
+                {
+                    MessageBox.Show("«" + command + "» не выполнена: " + ex.Message + "\n\nПодробности — в журнале " + Core.Log.FilePath,
+                        "ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                catch (Exception shown)
+                {
+                    Core.Log.Error(command + ": окно ошибки", shown);
+                }
+            }
+        }
+
         public void SyncCurrentDoc()
+        {
+            Guarded("Синхронизировать", SyncCurrentDocBody);
+        }
+
+        private void SyncCurrentDocBody()
         {
             if (ActiveDocType() == (int)swDocumentTypes_e.swDocASSEMBLY)
             {
@@ -583,6 +671,11 @@ namespace ESKD.MaterialSync
         /// </summary>
         public void ToggleDrawingless()
         {
+            Guarded("Деталь БЧ", ToggleDrawinglessBody);
+        }
+
+        private void ToggleDrawinglessBody()
+        {
             if ((DateTime.Now - _bchDialogClosed).TotalMilliseconds < 800) return;
             ModelDoc2 doc = null;
             string format;
@@ -690,7 +783,7 @@ namespace ESKD.MaterialSync
 
         public void BuildLzk()
         {
-            LzkService.Start(_app, true);
+            Guarded("Ведомость ЛЗК", delegate { LzkService.Start(_app, true); });
         }
 
         /// <summary>Ведомость ЛЗК без окон (проверки, пакетный запуск). Итог — LzkStatus().</summary>
@@ -703,6 +796,27 @@ namespace ESKD.MaterialSync
         public string LzkStatus()
         {
             return LzkService.LastOutcome;
+        }
+
+        /// <summary>
+        /// Для проверок: развёртка активной листовой детали, измеренная по телу, «длина×ширина×толщина», мм — так ведомость
+        /// ЛЗК меряет деталь без граничной рамки в списке вырезов (у SolidWorks 2025 эти свойства не удалить, иначе путь не
+        /// проверить). Пусто — не измерить. Модель помечается изменённой.
+        /// </summary>
+        public string MeasureUnfoldedSilent()
+        {
+            try
+            {
+                PartDoc part = _app.ActiveDoc as PartDoc;
+                double[] m = part == null ? null
+                    : LzkService.MeasureUnfolded(part, (ModelDoc2)part, StockService.SheetThicknessMm((ModelDoc2)part));
+                return m == null ? "" : LzkOperations.FormatSize(m[0], m[1], double.IsNaN(m[2]) ? 0 : m[2]);
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("MeasureUnfoldedSilent", ex);
+                return "";
+            }
         }
 
         /// <summary>Кнопка «Проверить изделие» доступна на сборке (ТЗ-02 Т-2, Т-25).</summary>
@@ -725,7 +839,7 @@ namespace ESKD.MaterialSync
 
         public void CheckProduct()
         {
-            CheckService.Run(_app, true);
+            Guarded("Проверить изделие", delegate { CheckService.Run(_app, true); });
         }
 
         /// <summary>Проверка изделия без окон и без записи в модели. Итог — CheckStatus().</summary>
@@ -752,7 +866,7 @@ namespace ESKD.MaterialSync
         /// <summary>Открыть последний отчёт проверки, не проверяя заново (Т-34).</summary>
         public void ShowCheckReport()
         {
-            CheckService.ShowLast(_app, true);
+            Guarded("Отчёт проверки", delegate { CheckService.ShowLast(_app, true); });
         }
 
         /// <summary>Последний отчёт без окон: итог — CheckStatus().</summary>
@@ -797,7 +911,7 @@ namespace ESKD.MaterialSync
 
         public void ExportProduct()
         {
-            ExportService.Run(_app, true);
+            Guarded("Выгрузить в производство", delegate { ExportService.Run(_app, true); });
         }
 
         /// <summary>Выгрузка без окон. Итог — ExportStatus().</summary>
@@ -836,7 +950,7 @@ namespace ESKD.MaterialSync
 
         public void MakeIndependent()
         {
-            IndependentService.Run(_app, true);
+            Guarded("Сделать независимым", delegate { IndependentService.Run(_app, true); });
         }
 
         /// <summary>
@@ -874,7 +988,7 @@ namespace ESKD.MaterialSync
             {
                 int type = ActiveDocType();
                 if (type != (int)swDocumentTypes_e.swDocDRAWING && type != (int)swDocumentTypes_e.swDocPART) return 0;
-                return RevisionService.Unavailable(_app, true).Length == 0 ? 1 : 0;
+                return RevisionService.AvailableForButton(_app) ? 1 : 0;
             }
             catch (COMException)
             {
@@ -895,7 +1009,7 @@ namespace ESKD.MaterialSync
 
         public void NewRevision()
         {
-            RevisionService.Run(_app, true);
+            Guarded("Новая ревизия", delegate { RevisionService.Run(_app, true); });
         }
 
         /// <summary>Новая ревизия без окон (Т-9): что изменено, код причины, задел.</summary>
@@ -933,7 +1047,7 @@ namespace ESKD.MaterialSync
 
         public void EtalonSnapshot()
         {
-            EtalonService.Run(_app, true);
+            Guarded("Снимок эталона", delegate { EtalonService.Run(_app, true); });
         }
 
         /// <summary>Снимок эталона без окон (Т-9): что изменено и код причины.</summary>
@@ -958,7 +1072,7 @@ namespace ESKD.MaterialSync
 
         public void ReadyForProduction()
         {
-            ReadyService.Run(_app, true);
+            Guarded("Готово к производству", delegate { ReadyService.Run(_app, true); });
         }
 
         /// <summary>Без окон (автотесты): активная главная сборка изделия.</summary>
@@ -983,7 +1097,7 @@ namespace ESKD.MaterialSync
 
         public void CloseOrder()
         {
-            CloseOrderService.Run(_app, true, "", "");
+            Guarded("Закрыть заказ", delegate { CloseOrderService.Run(_app, true, "", ""); });
         }
 
         /// <summary>Закрытие без окон (Т-9): папка заказа и корень архива.</summary>

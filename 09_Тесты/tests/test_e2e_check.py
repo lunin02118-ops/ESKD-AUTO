@@ -148,6 +148,60 @@ class Check(SwTestCase):
         self.s.close_all()
         self.assertEqual(stamps, {p: p.stat().st_mtime_ns for p in stamps}, "файлы изделия не переписаны")
 
+    def test_K08_every_execution_in_product_needs_material(self):
+        """K08 (сверка SW API 23.09.2026, находка 14): у пластины два исполнения — «00» с материалом и «01» без него.
+        Если в изделии стоят оба, проверка сверяет каждое, а не только активное в файле: у «01» — брак «материал не
+        назначен». Если стоит только «00», про «01» проверка молчит: сверяются исполнения изделия. Исполнения не
+        переключаются — проверка не помечает ни деталь, ни сборку изменёнными."""
+        from eskd_e2e import build
+        short = self._case_name().split("_")[1]
+        models = self.s.run_dir / f"{short}/_Заявки/2026-001/02_Металл/И01_ПРТИ.468211.210/01_3D"
+        if (self.s.run_dir / short).exists():
+            shutil.rmtree(self.s.run_dir / short, ignore_errors=True)
+        models.mkdir(parents=True)
+        doc, _ = build.plate(self.s, 150, 80, 4, None)
+        active = str(doc.GetActiveConfiguration.Name)
+        build.add_configuration(doc, "01")
+        build.show_configuration(doc, active)
+        build.set_material(doc, "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89", active)
+        self.assertEqual("", build.material_of(doc, "01")[0], "у «01» материала нет")
+        part = models / "ПРТИ.468211.211 Пластина.sldprt"
+        self.s.save_as(doc, part)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.s.close_all()
+        for configs, expected in (([active, "01"], True), ([active], False)):
+            asm, _ = build.assembly(self.s, [(part, 0, 0.2 * i, 0) for i in range(len(configs))])
+            for comp, cfg in zip(com.as_list(asm.GetComponents(True)), configs):
+                com.dyn(comp).ReferencedConfiguration = cfg
+            asm.ForceRebuild3(False)
+            asm_path = models / "ПРТИ.468211.210 СБ Опора.sldasm"
+            self.s.save_as(asm, asm_path)
+            self.s.close_all()
+            doc = self.s.open(asm_path)
+            self.s.activate(doc)
+            part_doc = com.call(self.s.sw, "GetOpenDocumentByName", str(part))
+            self.assertIsNotNone(part_doc, "деталь открыта со сборкой")
+            # Сборку, где деталь стоит не в активном исполнении файла, SolidWorks при открытии перестраивает и помечает
+            # изменённой — это не проверка. Такие документы сохраняются до неё: дальше флаг ставит только проверка.
+            for opened in (doc, part_doc):
+                if bool(com.dyn(opened).GetSaveFlag):
+                    self.s.save(com.dyn(opened))
+                    self.s.wait_addin_idle(timeout=60.0)
+                self.assertFalse(bool(com.dyn(opened).GetSaveFlag), "документ без изменений перед проверкой")
+            status = self._check()
+            self.assertTrue(status.startswith("ok|"), status)
+            text = (models.parent / "_Проверка.txt").read_text(encoding="utf-8-sig")
+            lines = [line for line in text.splitlines() if "исполнение «01»" in line]
+            if expected:
+                self.assertTrue(any(line.lstrip().startswith("БРАК") and "ПРТИ.468211.211" in line and "материал не назначен" in line
+                                    for line in lines), f"брак у «01», стоящего в изделии:\n{text}")
+            else:
+                self.assertEqual([], lines, f"«01» в изделии нет — про него ни слова:\n{text}")
+            self.assertFalse(bool(com.dyn(doc).GetSaveFlag), "сборка не помечена изменённой")
+            self.assertFalse(bool(com.dyn(part_doc).GetSaveFlag), "деталь не помечена изменённой: исполнения не переключались")
+            self.s.close_all()
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
     def test_K04_refuses_part_and_keeps_files(self):
         """K04: у детали кнопка недоступна и проверка отказывает без изменений файлов."""
         path, doc = self.open_copy(SHEET_PART)

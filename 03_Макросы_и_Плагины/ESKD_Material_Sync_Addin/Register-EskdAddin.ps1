@@ -24,8 +24,8 @@ $script:EskdAddin = @{
     Guid                = "{B64E6875-B101-4D5C-B245-FF8D50772E25}"
     ProgId              = "ESKD.MaterialSync.SwAddin_v5"
     ClassName           = "ESKD.MaterialSync.SwAddin"
-    AssemblyName        = "ESKD_Material_Sync_v5, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
-    AssemblyVersion     = "1.0.0.0"
+    # Полное имя и версия сборки берутся из самой DLL (Get-EskdAssemblyIdentity), здесь — только простое имя.
+    AssemblySimpleName  = "ESKD_Material_Sync_v5"
     RuntimeVersion      = "v4.0.30319"
     ManagedCategory     = "{62C8FE65-4EBB-45E7-B440-6E39B2CDBF29}"
     Title               = "ЕСКД: Синхронизация материалов и реквизитов"
@@ -40,6 +40,88 @@ $script:EskdAddin = @{
 function Test-EskdAdministrator {
     $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Get-EskdSessionUserSid {
+    # Хозяин рабочего стола — пользователь, вошедший в этот сеанс Windows (WTSQuerySessionInformation: прав не требует и
+    # не зависит от того, чей процесс спрашивает). Раньше — владелец explorer.exe: процесс чужой учётки без повышения прав
+    # («Запуск от имени другого пользователя») владельца не прочтёт, и проверка молча пропускала (ревью 23.09.2026).
+    # Пусто, если определить нельзя (служебный сеанс, сбой): тогда проверка учётки регистрации не мешает.
+    try {
+        if (-not ('Eskd.SessionUser' -as [type])) {
+            Add-Type -Namespace Eskd -Name SessionUser -MemberDefinition @"
+[DllImport("wtsapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+static extern bool WTSQuerySessionInformation(IntPtr server, int session, int infoClass, out IntPtr buffer, out int bytes);
+[DllImport("wtsapi32.dll")]
+static extern void WTSFreeMemory(IntPtr memory);
+public static string Query(int infoClass) {
+    IntPtr buffer; int bytes;
+    if (!WTSQuerySessionInformation(IntPtr.Zero, -1, infoClass, out buffer, out bytes)) return "";
+    try { return Marshal.PtrToStringUni(buffer) ?? ""; } finally { WTSFreeMemory(buffer); }
+}
+"@
+        }
+        $user = [Eskd.SessionUser]::Query(5)     # WTSUserName
+        $domain = [Eskd.SessionUser]::Query(7)   # WTSDomainName
+        if (-not $user) { return "" }
+        $account = if ($domain) { "$domain\$user" } else { $user }
+        return (New-Object Security.Principal.NTAccount $account).Translate([Security.Principal.SecurityIdentifier]).Value
+    } catch { }
+    return ""
+}
+
+function Get-EskdAccountName {
+    param([string]$Sid)
+    try { return (New-Object Security.Principal.SecurityIdentifier $Sid).Translate([Security.Principal.NTAccount]).Value } catch { return $Sid }
+}
+
+function Get-EskdForeignAccountMessage {
+    # Сверка SW API 23.09.2026 (№2): автозагрузка AddInsStartup пишется в HKCU того, кто запустил. Под чужой учётной
+    # записью («Запуск от имени администратора» с паролем ИТ) конструктор остался бы без неё, а скрипт писал «[OK]».
+    # Сравниваются SID: повышение прав под своей учёткой SID не меняет.
+    param([string]$CurrentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
+          [string]$SessionSid = (Get-EskdSessionUserSid),
+          [ValidateSet("Register", "Unregister")][string]$Action = "Register",
+          [string]$ScriptPath = "unregister.ps1")
+    if (-not $SessionSid -or $SessionSid -eq $CurrentSid) { return "" }
+    $me = Get-EskdAccountName $CurrentSid
+    $owner = Get-EskdAccountName $SessionSid
+    if ($Action -eq "Unregister") {
+        # Команда целиком: двойной щелчок по .ps1 открывает Блокнот, а по умолчанию сценарии в PowerShell запрещены.
+        # С правами администратора под своей же учётной записью можно — тогда снимется и регистрация для всех.
+        return ("Снятие регистрации запущено от имени {0}, а в Windows сейчас вошёл {1}: снялась бы регистрация {0}, а не " +
+                "того, кто работает в SolidWorks. Войдите в Windows под учётной записью конструктора и выполните в окне " +
+                "PowerShell: powershell -NoProfile -ExecutionPolicy Bypass -File ""{2}""") -f $me, $owner, $ScriptPath
+    }
+    return ("Регистрация запущена от имени {0}, а в Windows сейчас вошёл {1}. Автозагрузка надстройки пишется в профиль " +
+            "того, кто запустил, а SolidWorks читает профиль того, кто вошёл. Войдите в Windows под учётной записью " +
+            "конструктора и запустите «Регистрация_ЕСКД_на_этом_компьютере.cmd» двойным щелчком.") -f $me, $owner
+}
+
+function Assert-EskdNativeProcess {
+    # Сверка SW API 23.09.2026 (№4): 32-битный PowerShell на 64-битной Windows пишет HKCU\Software\Classes\CLSID и
+    # HKLM\Software в Wow6432Node — 64-битный SolidWorks такую регистрацию не видит, а проверка читает то же 32-битное
+    # представление реестра и сообщает, что всё в порядке.
+    param([ValidateSet("Register", "Unregister")][string]$Action = "Register")
+    if ([Environment]::Is64BitOperatingSystem -and -not [Environment]::Is64BitProcess) {
+        if ($Action -eq "Unregister") {
+            throw ("Снятие регистрации запущено в 32-битном PowerShell: оно сняло бы не ту регистрацию, которую видит 64-битный " +
+                   "SolidWorks. Выполните в обычном (64-битном) окне PowerShell: powershell -NoProfile -ExecutionPolicy Bypass " +
+                   "-File unregister.ps1")
+        }
+        throw "Регистрация запущена в 32-битном PowerShell: 64-битный SolidWorks её не увидит. Запустите файл двойным щелчком из Проводника."
+    }
+}
+
+function Get-EskdAssemblyIdentity {
+    # Сверка SW API 23.09.2026 (№6): полное имя и версия сборки для COM-активации — из самой DLL (манифест читается без
+    # загрузки сборки), а не из константы скрипта: версия, поднятая в AssemblyInfo.cs, не разойдётся с регистрацией.
+    param([Parameter(Mandatory = $true)][string]$DllPath)
+    $identity = [Reflection.AssemblyName]::GetAssemblyName($DllPath)
+    if ($identity.Name -ne $script:EskdAddin.AssemblySimpleName) {
+        throw "Это не сборка надстройки ЕСКД: $DllPath ($($identity.FullName))"
+    }
+    return $identity
 }
 
 function Get-EskdCodeBase {
@@ -89,17 +171,21 @@ function Register-EskdAddin {
         [string]$UserRoot = "HKCU:\Software",
         [string]$MachineRoot = "HKLM:\Software"
     )
+    Assert-EskdNativeProcess
     if (-not (Test-Path -LiteralPath $DllPath)) { throw "Не найдена сборка надстройки: $DllPath" }
     $dll = (Resolve-Path -LiteralPath $DllPath).ProviderPath
     $codeBase = Get-EskdCodeBase -DllPath $dll
+    $identity = Get-EskdAssemblyIdentity -DllPath $dll
     $a = $script:EskdAddin
 
     foreach ($root in (Get-EskdRoots -UserRoot $UserRoot -MachineRoot $MachineRoot -SystemWide:$SystemWide)) {
         $clsid = "$root\Classes\CLSID\$($a.Guid)"
+        # Подраздел InprocServer32\<версия> прежней сборки остался бы со старым именем — класс пишется заново (№6).
+        Remove-EskdRegistryKey -Path $clsid
         Set-EskdRegistryValue -Path $clsid -Name "(Default)" -Value $a.ClassName
-        foreach ($inproc in @("$clsid\InprocServer32", "$clsid\InprocServer32\$($a.AssemblyVersion)")) {
+        foreach ($inproc in @("$clsid\InprocServer32", "$clsid\InprocServer32\$($identity.Version)")) {
             Set-EskdRegistryValue -Path $inproc -Name "Class" -Value $a.ClassName
-            Set-EskdRegistryValue -Path $inproc -Name "Assembly" -Value $a.AssemblyName
+            Set-EskdRegistryValue -Path $inproc -Name "Assembly" -Value $identity.FullName
             Set-EskdRegistryValue -Path $inproc -Name "RuntimeVersion" -Value $a.RuntimeVersion
             Set-EskdRegistryValue -Path $inproc -Name "CodeBase" -Value $codeBase
         }
@@ -135,6 +221,7 @@ function Unregister-EskdAddin {
         [string]$UserRoot = "HKCU:\Software",
         [string]$MachineRoot = "HKLM:\Software"
     )
+    Assert-EskdNativeProcess -Action Unregister
     $a = $script:EskdAddin
     foreach ($root in (Get-EskdRoots -UserRoot $UserRoot -MachineRoot $MachineRoot -SystemWide:$SystemWide)) {
         foreach ($guid in @($a.Guid) + $a.ObsoleteGuids) {

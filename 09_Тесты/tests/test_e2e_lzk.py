@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """E2E, группа L — кнопка «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37, ТЗ-04): операции, габарит, выгрузка SWTools без окна,
 живая книга ЛЗК — паспорт, участки, расход, нормы — в «04_Сопроводительная документация» изделия."""
+import math
 import os
 import shutil
 import time
@@ -612,6 +613,145 @@ class Lzk(SwTestCase):
         self.assertIn("непроверенному изделию", notices, "изделие не проверялось — сказано")
         self.assertEqual("не проверено", self._book_version(product / DOCS / BOOK), "паспорт: книга по непроверенному изделию")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_L15_flat_pattern_measured_by_body_is_bounding_box(self):
+        """L15 (сверка 23.09.2026; замечание владельца — размер заготовки по внешней рамке): деталь без граничной рамки в
+        списке вырезов (боевой заказ NC3-7R) ведомость меряет по развёрнутому телу — наименьшим прямоугольником вокруг
+        контура, как SolidWorks. Раньше — габаритным ящиком по осям модели: пластина 200×100, построенная под 30°, давала
+        223×187. Свойства граничной рамки SolidWorks 2025 удалить не даёт, поэтому замер вызывается напрямую.
+        Развёрнутая конструктором деталь после замера остаётся развёрнутой, свёрнутая — свёрнутой."""
+        from eskd_e2e import build
+
+        def flat_pattern(doc):
+            feat = com.call(doc, "FirstFeature")
+            while feat is not None:
+                if str(com.call(feat, "GetTypeName2")) == "FlatPattern":
+                    return feat
+                feat = com.call(feat, "GetNextFeature")
+            return None
+
+        a = math.radians(30)
+        corners = [(x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a))
+                   for x, y in ((-100, -50), (100, -50), (100, 50), (-100, 50))]
+        cases = [
+            ("диск Ø150", [("круг", (0, 0), 75)], "150×150×3"),
+            ("планка R40", [((-100, -40), (100, -40)), ((100, 0), (100, -40), (100, 40)),
+                            ((100, 40), (-100, 40)), ((-100, 0), (-100, 40), (-100, -40))], "280×80×3"),
+            ("пластина под 30°", [(corners[i], corners[(i + 1) % 4]) for i in range(4)], "200×100×3"),
+        ]
+        for what, outline, expected in cases:
+            doc = build.sheet_metal_outline(self.s, outline, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89")
+            self.s.activate(doc)
+            self.assertTrue(bool(com.call(flat_pattern(doc), "IsSuppressed")), f"{what}: деталь свёрнута")
+            self.assertEqual(expected, str(com.call(self.s.eskd(), "MeasureUnfoldedSilent")), what)
+            self.assertTrue(bool(com.call(flat_pattern(doc), "IsSuppressed")), f"{what}: после замера снова свёрнута")
+            if what.startswith("пластина"):
+                flat = flat_pattern(doc)
+                com.call(doc, "ClearSelection2", True)
+                self.assertTrue(com.call(flat, "Select2", False, 0), "развёртка выделена")
+                com.call(doc, "EditUnsuppress2")
+                doc.ForceRebuild3(False)
+                self.assertFalse(bool(com.call(flat_pattern(doc), "IsSuppressed")), "конструктор развернул деталь")
+                self.assertEqual(expected, str(com.call(self.s.eskd(), "MeasureUnfoldedSilent")), what + ", развёрнутая")
+                self.assertFalse(bool(com.call(flat_pattern(doc), "IsSuppressed")), "развёрнутая деталь осталась развёрнутой")
+            self.s.close_all()
+        # Гнутый уголок: полка 100, отгиб 60, ширина 80. Без «Объединить грани» развёртка разбита по зонам сгиба, и
+        # наибольшая плоская грань — одна полка: по её рёбрам выходило ≈94×80 (ревью 23.09.2026). Рамка — по всему телу.
+        doc = build.sheet_metal_angle(self.s, 100, 60, 80, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89")
+        self.s.activate(doc)
+        merged = str(com.call(self.s.eskd(), "MeasureUnfoldedSilent"))
+        sides = [float(v.replace(",", ".")) for v in merged.split("×")]
+        self.assertTrue(148 <= sides[0] <= 162 and sides[1] == 80, f"уголок развёрнут: полка и отгиб без сгиба, {merged}")
+        flat = flat_pattern(doc)
+        data = com.call(flat, "GetDefinition")
+        com.dyn(data).MergeFace = False
+        self.assertTrue(com.call(flat, "ModifyDefinition", data, doc, com.null_dispatch()), "«Объединить грани» снята")
+        doc.ForceRebuild3(False)
+        self.assertFalse(bool(com.dyn(com.call(flat_pattern(doc), "GetDefinition")).MergeFace), "грани не объединяются")
+        self.assertEqual(merged, str(com.call(self.s.eskd(), "MeasureUnfoldedSilent")), "без объединения граней — та же рамка")
+        self.s.close_all()
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_L17_unloading_addin_aborts_running_lzk(self):
+        """L17 (сверка SW API 23.09.2026, №3): надстройку выгрузили, пока SWTools формирует ведомость. Раньше таймер
+        выгруженной надстройки дописывал книгу и показывал окно, а в SolidWorks, запущенном из другой программы,
+        ведомость зависала до следующей загрузки. Теперь ведомость прерывается: SWTools остановлен, книги нет, итог —
+        «прервана», кнопку можно нажать снова."""
+        import psutil
+
+        def swtools_running():
+            return any((p.info["name"] or "").lower() == "swtools.exe" for p in psutil.process_iter(["name"]))
+
+        product, asm = self._product()
+        doc = self.s.open(asm)
+        self.s.activate(doc)
+        com.call(self.s.eskd(), "BuildLzkSilent")
+        self.assertEqual("running", str(com.call(self.s.eskd(), "LzkStatus")), "ведомость формируется")
+        self.s.unload_eskd()
+        deadline = time.time() + TIMEOUT
+        while time.time() < deadline and swtools_running():
+            time.sleep(1)
+        self.wait_idle(3.0)
+        self.assertFalse((product / DOCS / BOOK).exists(), "выгруженная надстройка книгу не пишет")
+        self.s.load_eskd()
+        self.s.activate(doc)
+        status = str(com.call(self.s.eskd(), "LzkStatus"))
+        self.assertTrue(status.startswith("error|"), status)
+        self.assertIn("прервана", status)
+        self.assertEqual(1, int(com.call(self.s.eskd(), "EnableLzkCommand")), "ведомость можно запустить заново")
+        self.assertTrue(any("Ведомость ЛЗК прервана" in line for line in self.addin_log.new_lines()), "запись в журнале")
+        self.s.close_all()
+
+    def test_L16_hidden_folder_is_not_a_second_blank(self):
+        """L16 (сверка SW API 23.09.2026, №34): «Укосина» — в «00» труба 500, в «01» — 700, чужой элемент погашен. Папка
+        погашенного элемента остаётся в списке вырезов без тел. Раньше книга считала её второй заготовкой: длина обоих
+        исполнений шла с «*» (оценка), и «Габарит» в модель не писался. Теперь у каждого исполнения своя длина без
+        оценки, и она записана в модель."""
+        import openpyxl
+        from eskd_e2e import build
+
+        product = self.case_dir / PRODUCT
+        (product / "01_3D").mkdir(parents=True, exist_ok=True)
+        for name in ("Нормативы_производства.xlsx", "ЛЗК_бланки.xlsx"):
+            ref = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / name
+            (self.case_dir / ref.name).write_bytes(ref.read_bytes())
+        part = product / "01_3D" / "ПРТИ.468211.174 Укосина.sldprt"
+        material = "Труба 40х40х2,0 ГОСТ 8639-82 / Ст3сп ГОСТ 13663-86"
+        doc, (base, other) = build.structural_tube_executions(
+            self.s, [(500, 0, (0, 0)), (700, 90, (-100, 0))], build.tube_profile(), material, cut_list=True)
+        build.set_material(doc, material, other)
+        self.s.save_as(doc, part)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.s.save(doc)
+        self.s.wait_addin_idle(timeout=60.0)
+        folders = build.cut_list_folders(doc)
+        self.path("folders.txt").write_text(repr(folders), encoding="utf-8")
+        if not any(count == 0 for _, count in folders):
+            self.skipTest(f"SolidWorks не держит папку погашенного элемента — состояние не воспроизводится: {folders}")
+        asm, opened = build.assembly(self.s, [(part, 0, 0, 0), (part, 0, 0.8, 0)])
+        comps = com.as_list(asm.GetComponents(True))
+        com.dyn(comps[1]).ReferencedConfiguration = other
+        asm.ForceRebuild3(False)
+        self.s.save_as(asm, product / "01_3D" / ASM)
+        for d in opened:
+            self.s.close(d)
+        self.s.activate(asm)
+        status = self._build()
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.assertTrue(status.startswith("ok|"), f"{status}\n{notices}")
+
+        main = openpyxl.load_workbook(product / DOCS / BOOK)["Ведомость"]
+        sizes = {str(main.cell(r, 3).value): str(main.cell(r, 6).value or "") for r in range(7, main.max_row + 1)}
+        self.assertEqual("L=500", sizes.get("ПРТИ.468211.174"), f"исполнение 00 — одна заготовка: {sizes}")
+        self.assertEqual("L=700", sizes.get("ПРТИ.468211.174-01"), f"исполнение 01 — одна заготовка: {sizes}")
+        # №18: замер переключал исполнение — прежнее вернулось, и модель сохранена кнопкой без вопроса «Сохранить?».
+        opened = com.dyn(self.s.sw.GetOpenDocumentByName(str(part)))
+        self.assertEqual(base, str(opened.GetActiveConfiguration.Name), "после замера активно прежнее исполнение")
+        self.assertFalse(bool(opened.GetSaveFlag), "модель сохранена кнопкой")
+        self.s.close_all()
+        disk = self.persisted(part)
+        self.assertEqual("L=500", V(disk, "Габарит", base), "«Габарит» записан в модель")
+        self.assertEqual("L=700", V(disk, "Габарит", other), "«Габарит» исполнения записан в модель")
 
     def test_L03_refuses_non_assembly(self):
         """L03: у детали кнопка отказывает без изменений файлов."""

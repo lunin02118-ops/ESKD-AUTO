@@ -280,6 +280,43 @@ class Performance(SwTestCase):
         self.assertLessEqual(with_addin - without, 2.0, f"сохранение A-09: {report}")
         self.assertLessEqual(switch_addin - switch_plain, 0.05, f"переключение окна: {report}")
 
+    def _reopen_save_times(self, path, n):
+        """Открыть, сразу пометить изменённым и сохранить, дождаться простоя надстройки, закрыть — n раз, с."""
+        import time
+        out = []
+        for _ in range(n):
+            doc = self.s.open(path)
+            doc.SetSaveFlag()
+            started = time.perf_counter()
+            ok, err, _ = self.s.save(doc)
+            self.s.wait_addin_idle(timeout=180.0)
+            out.append(time.perf_counter() - started)
+            self.assertTrue(ok, f"Save3 err={err}")
+            self.s.close(doc)
+        return out
+
+    def test_P20_library_part_save_overhead(self):
+        """P20 (сверка SW API 23.09.2026, №24): библиотечная деталь B-01 — сотня исполнений-типоразмеров, у каждого масса
+        ссылкой «SW-Mass@@исполнение@…». Ctrl+S сразу после открытия длился ~29 с против 0,15 с без надстройки: свойства
+        каждого исполнения читались с пересчётом (Get4, UseCached = false), и SolidWorks заново считал массу всех
+        исполнений. Для сравнения с нужным значением пересчёт не нужен. Надстройка добавляет не больше 3 с (медиана трёх
+        открытий с сохранением)."""
+        path = [self.s.workspace_copy(src, subdir=self._case_name()) for src in paths.CORPUS_B_LIBRARY["B-01"]][0]
+        doc = self.s.open(path)
+        self.s.wait_addin_idle(timeout=180.0)
+        doc.SetSaveFlag()
+        self.s.save(doc)  # первое сохранение: надстройка дописывает свои реквизиты, в том числе массу, во все исполнения
+        self.s.wait_addin_idle(timeout=180.0)
+        self.s.close(doc)
+        with_addin = self._median(self._reopen_save_times(path, 3))
+        with self.s.eskd_muted():
+            without = self._median(self._reopen_save_times(path, 3))
+        report = {"reopen_save_with_addin_s": round(with_addin, 3), "reopen_save_without_s": round(without, 3)}
+        self.path("performance_b01.json").write_text(__import__("json").dumps(report, ensure_ascii=False, indent=1),
+                                                     encoding="utf-8")
+        self.assertLessEqual(with_addin - without, 3.0, f"сохранение B-01 после открытия: {report}")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
 
 class PersistenceOpen(SwTestCase):
 
@@ -364,6 +401,88 @@ class PersistenceOpen(SwTestCase):
         self.s.save(doc)
         self.s.close(doc)
         self.assertIn("6,0", V(self.persisted(path), "Материал_ФБ", "00") or "")
+
+
+class HiddenDocument(SwTestCase):
+    """Деталь, чьё окно закрыто, а сама она осталась в памяти как компонент открытой сборки (сверка SW API 23.09.2026,
+    №9). Раньше надстройка по DestroyNotify без типа считала такую деталь закрытой и больше её не синхронизировала."""
+
+    def _hidden_part(self, name):
+        from eskd_e2e import build
+
+        part_path = self.path(name)
+        doc, _ = build.plate(self.s, 120, 60, 3, None)
+        self.s.save_as(doc, part_path)
+        self.s.wait_addin_idle()
+        asm, _ = build.assembly(self.s, [(part_path, 0, 0, 0)])
+        asm_path = self.path("ПРТИ.468211.320 СБ Сборка скрытая.sldasm")
+        self.s.save_as(asm, asm_path)
+        self.s.wait_addin_idle()
+        self.s.sw.CloseDoc(doc.GetTitle)
+        self.s._opened[:] = [d for d in self.s._opened if d is not doc]
+        self.wait_idle(2.0)
+        hidden = self.s.sw.GetOpenDocumentByName(str(part_path))
+        self.assertIsNotNone(hidden, "деталь осталась в памяти сборки")
+        return part_path, hidden, asm
+
+    def test_P17_hidden_part_saved_from_assembly_is_synced(self):
+        """P17: окно детали закрыто, сборка открыта; обозначение детали стёрто и деталь сохранена — надстройка
+        восстанавливает обозначение, как у любой сохранённой детали."""
+        from eskd_e2e import build
+
+        part_path, hidden, asm = self._hidden_part("ПРТИ.468211.321 Пластина скрытая.sldprt")
+        build.props(hidden, {"Обозначение": ""})
+        err, warn = com.ref_int(), com.ref_int()
+        hidden.Save3(com.SAVE_SILENT, err, warn)
+        self.s.wait_addin_idle()
+        self.wait_idle(2.0)
+        self.s.close_all()
+        self.assertEqual("ПРТИ.468211.321", V(self.persisted(part_path), "Обозначение"), "обозначение восстановлено")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_P18_hidden_then_closed_part_is_tracked_again(self):
+        """P18: деталь скрыта, затем сборка закрыта (деталь разрушена), деталь открыта снова — учёт новый, без мёртвой
+        записи: стёртое обозначение восстанавливается при сохранении, ошибок в журнале нет."""
+        from eskd_e2e import build
+
+        part_path, hidden, asm = self._hidden_part("ПРТИ.468211.322 Пластина скрытая.sldprt")
+        hidden = None
+        self.s.close_all()
+        self.wait_idle(2.0)
+        doc = self.s.open(part_path)
+        build.props(doc, {"Обозначение": ""})
+        self.s.save(doc)
+        self.s.close(doc)
+        self.assertEqual("ПРТИ.468211.322", V(self.persisted(part_path), "Обозначение"), "обозначение восстановлено")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+
+class OpenDiagnostics(SwTestCase):
+
+    def test_P19_open_diagnostics_line_comes_in_idle(self):
+        """P19 (сверка SW API 23.09.2026, №11): строка «Реквизиты … будут обновлены при сохранении» при открытии документа
+        с устаревшими реквизитами по-прежнему пишется — теперь в простое, открытие её не ждёт; документ не меняется."""
+        from eskd_e2e import build
+
+        path = self.path("ПРТИ.468211.341 Пластина диагностика.sldprt")
+        doc, _ = build.plate(self.s, 100, 50, 3, None)
+        self.s.save_as(doc, path)
+        self.s.wait_addin_idle()
+        with self.s.eskd_muted():
+            build.props(doc, {"Обозначение": ""})
+            self.s.save(doc)
+            self.s.close(doc)
+        self.addin_log = oracles.AddinLog()
+        doc = self.s.open(path)
+        self.s.wait_addin_idle()
+        self.wait_idle(2.0)
+        lines = self.addin_log.new_lines()
+        self.assertTrue(any("Реквизиты «" in line and "будут обновлены при сохранении" in line for line in lines),
+                        "строка диагностики при открытии")
+        self.assertFalse(bool(doc.GetSaveFlag), "открытие не пометило документ изменённым")
+        memory, disk = self.memory_equals_disk(doc, path)
+        self.assertEqual(disk, memory, "свойства в памяти отличаются от файла — надстройка писала при открытии")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
 
 class BasicMaterialScenario(SwTestCase):

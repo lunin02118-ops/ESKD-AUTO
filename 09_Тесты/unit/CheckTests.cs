@@ -118,6 +118,30 @@ namespace ESKD.Tests
     /// <summary>Правила проверки изделия и отчёт (ТЗ-02 Т-32…Т-34).</summary>
     public static class CheckRulesTests
     {
+        public static void Test_Other_executions_are_used_ones_except_active()
+        {
+            // Сверка SW API 23.09.2026, находка 14: проверка сверяет исполнения, стоящие в изделии, кроме активного в файле.
+            CollectionAssertEqual(new[] { "01" }, CheckRules.OtherExecutions(new[] { "00", "01", "01", "", "99" }, "00",
+                new[] { "00", "01", "02" }), "только «01»: «00» активно, «99» в файле нет, пустое и повтор не в счёт");
+            CollectionAssertEqual(new[] { "01" }, CheckRules.OtherExecutions(new[] { "01", "01" }, "00", new[] { "00", "01" }),
+                "регистр имён SolidWorks не различает");
+            CollectionAssertEqual(new string[0], CheckRules.OtherExecutions(new string[0], "00", new[] { "00", "01" }),
+                "исполнения изделия не известны — сверх активного ничего");
+            // Техническая производная — её исполнение: материал ставят в «01», а не в «01<Как сварено>» (ревью 23.09.2026).
+            CollectionAssertEqual(new[] { "01" }, CheckRules.OtherExecutions(new[] { "00<Как обработано>", "01<Как сварено>",
+                "01SM-FLAT-PATTERN" }, "00", new[] { "00", "01", "00<Как обработано>", "01<Как сварено>", "01SM-FLAT-PATTERN" }),
+                "производные сварной и листовой детали");
+            CollectionAssertEqual(new[] { "По умолчанию<Как сварено>" }, CheckRules.OtherExecutions(new[] { "По умолчанию<Как сварено>" },
+                "00", new[] { "00", "По умолчанию<Как сварено>" }), "исполнения-родителя в файле нет — сверяется сама производная");
+            Assert.AreEqual("", CheckRules.TechnicalOwner("01"), "обычное исполнение");
+            Assert.AreEqual("00", CheckRules.TechnicalOwner("00-SM-FLAT-PATTERN"), "развёртка");
+        }
+
+        private static void CollectionAssertEqual(string[] expected, System.Collections.Generic.List<string> actual, string what)
+        {
+            Assert.AreEqual(string.Join("|", expected), string.Join("|", actual.ToArray()), what);
+        }
+
         public static void Test_Levels_follow_tz()
         {
             foreach (string rule in new[] { CheckRules.References, CheckRules.Rebuild, CheckRules.Attributes })

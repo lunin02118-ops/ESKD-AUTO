@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using ESKD.MaterialSync.Core;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
@@ -495,7 +496,18 @@ namespace ESKD.MaterialSync.Sw
             foreach (string cfg in w.ConfigurationNames())
             {
                 string db;
-                string material = MaterialName(part, model, cfg, out db);
+                List<string> mixed = new List<string>();
+                bool known;
+                string material = ActualMaterial(part, model, cfg, out db, mixed, out known);
+                if (!known)
+                {
+                    // Материал этого исполнения виден только на его телах, когда оно активно: не стирать «Материал_Строка»
+                    // по телам чужого исполнения (ревью 23.09.2026).
+                    Log.Info("Конфигурация «" + cfg + "»: материал тел не узнать без переключения — «Материал_Строка» не тронута");
+                    continue;
+                }
+                if (mixed.Count > 1)
+                    report.Warnings.Add(MixedWarning(cfg, material, mixed));
                 MaterialRecord record = null;
                 if (material != null)
                 {
@@ -563,6 +575,93 @@ namespace ESKD.MaterialSync.Sw
             return string.Format("Конфигурация «{0}»: материал из библиотеки «{1}», но она не подключена в SolidWorks " +
                 "(Параметры → Месторасположение файлов → Базы данных материалов) — дробь материала не записана. " +
                 "Запустите настройку рабочего места.", cfg, database);
+        }
+
+        /// <summary>
+        /// Фактический материал конфигурации: свой материал тела перекрывает материал детали, и массу SolidWorks считает по
+        /// нему. Один на все тела — он (db — его библиотека); у тел своего нет — материал детали <see cref="MaterialName"/>;
+        /// разные — материал детали, как раньше, а различающиеся складываются в mixed («» — тела без материала). Раньше графа 3,
+        /// «Материал_Строка», запись БЧ и проверка «материал не назначен» читали только материал детали (сверка SW API
+        /// 23.09.2026, №33). Что писать в графу 3 у детали из разных материалов, решает владелец (MAT-15).
+        /// </summary>
+        internal static string ActualMaterial(PartDoc part, ModelDoc2 model, string cfg, out string db, List<string> mixed)
+        {
+            bool known;
+            return ActualMaterial(part, model, cfg, out db, mixed, out known);
+        }
+
+        /// <param name="known">false — материал исполнения cfg не узнать без переключения: у детали его нет, тела видны только
+        /// активной конфигурации, а материалы тел в детали в ходу (ревью 23.09.2026). Тогда «Материал_Строка» не трогают, а
+        /// проверка не пишет «не назначен».</param>
+        internal static string ActualMaterial(PartDoc part, ModelDoc2 model, string cfg, out string db, List<string> mixed, out bool known)
+        {
+            string partDb;
+            string whole = MaterialName(part, model, cfg, out partDb);
+            db = partDb;
+            known = true;
+            List<string> own = new List<string>();
+            List<string> dbs = new List<string>();
+            List<string> ownActive = new List<string>();
+            bool belongs;
+            try
+            {
+                // GetBodies2 отдаёт тела активной конфигурации: у другого исполнения тела могут быть свои (ревью 23.09.2026).
+                // Материал тела у технической производной — как у её исполнения-родителя, так же, как MaterialName.
+                Configuration active = model.GetActiveConfiguration() as Configuration;
+                string activeName = active != null ? active.Name ?? "" : "";
+                belongs = BodyMaterials.BodiesBelongTo(cfg, activeName);
+                string bodyCfg = StockService.MaterialConfiguration(model, cfg);
+                object[] bodies = part.GetBodies2((int)swBodyType_e.swSolidBody, false) as object[];
+                if (bodies != null)
+                    foreach (object o in bodies)
+                    {
+                        Body2 body = o as Body2;
+                        if (body == null) continue;
+                        string bodyDb;
+                        own.Add(OwnMaterial(body, bodyCfg, out bodyDb));
+                        dbs.Add(bodyDb);
+                        if (!belongs && activeName.Length > 0) ownActive.Add(OwnMaterial(body, activeName, out bodyDb));
+                    }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Материал тел " + cfg, ex);
+                return whole;
+            }
+            string actual = BodyMaterials.Actual(own, ownActive, whole ?? "", belongs, mixed, out known);
+            if (string.IsNullOrEmpty(actual)) return null;
+            if (!string.Equals(actual, (whole ?? "").Trim(), StringComparison.Ordinal))
+            {
+                int at = own.IndexOf(actual);
+                if (at >= 0) db = dbs[at];
+            }
+            return actual;
+        }
+
+        /// <summary>Свой материал тела в конфигурации; «» — своего нет (материал детали).</summary>
+        internal static string OwnMaterial(Body2 body, string cfg, out string db)
+        {
+            db = "";
+            try
+            {
+                string name = body.GetMaterialPropertyName(cfg, out db);
+                if (string.IsNullOrWhiteSpace(name) || name.IndexOf("<не указан>", StringComparison.OrdinalIgnoreCase) >= 0) return "";
+                return name.Trim();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Материал тела " + cfg, ex);
+                return "";
+            }
+        }
+
+        /// <summary>Замечание: у тел разные материалы — в графе 3 материал детали, масса — по материалам тел (MAT-15).</summary>
+        internal static string MixedWarning(string cfg, string whole, List<string> mixed)
+        {
+            string list = string.Join("», «", mixed.Select(m => m.Length == 0 ? "без материала" : m).ToArray());
+            return string.Format("Конфигурация «{0}»: у тел разные материалы («{1}») — в графе 3 и «Материал_Строка» {2}, " +
+                "а масса считается по материалам тел", cfg, list,
+                string.IsNullOrEmpty(whole) ? "пусто" : "материал детали «" + whole + "»");
         }
 
         /// <summary>Материал SolidWorks этой конфигурации (производная — родительской) или null; общий для сохранения и «Детали БЧ» (Д-41).</summary>

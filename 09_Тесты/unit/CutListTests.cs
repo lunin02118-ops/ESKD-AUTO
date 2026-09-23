@@ -24,6 +24,20 @@ namespace ESKD.Tests
             };
         }
 
+        /// <summary>
+        /// Ссылка SolidWorks в значении («LENGTH@@@Элемент списка вырезов2@…») — не число: из неё выходило 2 — номер папки
+        /// (или 40 из «Труба 40х20…»), и это «2 мм» шло в «Расход» и в признак профиля выгрузки (сверка SW API 23.09.2026, №35).
+        /// </summary>
+        public static void Test_Link_text_is_not_a_number()
+        {
+            string link = Russian()[0].Value;
+            Assert.IsTrue(double.IsNaN(CutListProperties.Number(link, "")), "ссылка без вычисленного значения");
+            Assert.IsTrue(double.IsNaN(CutListProperties.Number(link, link)), "невычисленная ссылка в вычисленном");
+            Assert.IsTrue(double.IsNaN(CutListProperties.Number("\"LENGTH@@@Труба 40х20х1,5@Деталь.SLDPRT\"", "")), "не 40 из имени папки");
+            Assert.AreEqual(612.5, CutListProperties.Number(link, "612,5"), "вычисленное значение");
+            Assert.AreEqual(600.0, CutListProperties.Number("600", ""), "число, вписанное руками");
+        }
+
         /// <summary>Русский SolidWorks: имя «ДЛИНА», но ссылка внутри значения английская — по ней и находим.</summary>
         public static void Test_Length_is_found_by_link_not_by_name()
         {

@@ -18,6 +18,8 @@ OPEN_READONLY = 2
 # swOpenDocOptions_OverrideDefaultLoadLightweight | swOpenDocOptions_LoadLightweight: без первого флага SolidWorks берёт
 # настройку пользователя «Загружать компоненты облегчёнными» и второй не замечает.
 OPEN_LIGHTWEIGHT = 64 | 128
+# swOpenDocOptions_DontLoadHiddenComponents: скрытые компоненты сборки остаются без модели в памяти.
+OPEN_DONT_LOAD_HIDDEN = 256
 
 SAVE_SILENT = 1
 SAVE_COPY = 2

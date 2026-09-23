@@ -69,22 +69,47 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ доступность (Т-48)
-        /// <summary>Причина, по которой кнопка недоступна, или пустая строка.</summary>
-        public static string Unavailable(ISldWorks app)
+        // SolidWorks опрашивает доступность кнопки на каждую перерисовку, а ответ «выдан ли документ» — это чтение
+        // отчётов выдачи с NAS. Раньше опрос читал их в потоке SolidWorks раз в 2 с, и подвисший NAS замораживал
+        // SolidWorks; переход между двумя окнами каждый раз сбрасывал запомненный ответ (сверка SW API 23.09.2026, №1).
+        // Теперь опрос отвечает из памяти, а отчёты перечитываются в фоне раз в 10 с по каждому документу. Само нажатие
+        // и автотесты (RevisionUnavailable) читают отчёты заново.
+        private static readonly BackgroundFlags IssuedFlags = new BackgroundFlags(IssuedByKey, TimeSpan.FromSeconds(10),
+            BackgroundFlags.OnThreadPool, delegate { return DateTime.UtcNow; });
+
+        /// <summary>Ключ признака: «d|» — чертёж, «m|» — модель, дальше путь. Только файлы, без SolidWorks: идёт в фоне.</summary>
+        private static bool IssuedByKey(string key)
         {
-            return Unavailable(app, false);
+            return Issued(key.Substring(2), key.StartsWith("d|", StringComparison.Ordinal));
         }
 
-        // SolidWorks опрашивает доступность кнопки на каждое движение мыши, а ответ «выдан ли документ» — это чтение
-        // отчётов выдачи с NAS. Для опроса ответ держим IssuedCacheTime по пути документа (аудит 19.09, волна 2);
-        // само нажатие и автотесты (RevisionUnavailable) всегда читают отчёты заново.
-        private static readonly TimeSpan IssuedCacheTime = TimeSpan.FromSeconds(2);
-        private static string _issuedKey = "";
-        private static bool _issuedValue;
-        private static DateTime _issuedAt;
+        /// <summary>
+        /// Для опроса кнопки: те же проверки, что у <see cref="Unavailable"/>, но «выдан ли» — из памяти. Пока ответ не
+        /// посчитан, кнопка серая: у только что открытого выданного чертежа — доли секунды до следующего опроса.
+        /// </summary>
+        public static bool AvailableForButton(ISldWorks app)
+        {
+            ModelDoc2 doc = app.ActiveDoc as ModelDoc2;
+            if (doc == null) return false;
+            int type = doc.GetType();
+            bool drawing = type == (int)swDocumentTypes_e.swDocDRAWING;
+            string format;
+            if (!drawing && (type != (int)swDocumentTypes_e.swDocPART || !BchService.State(doc, out format))) return false;
+            string path = doc.GetPathName() ?? "";
+            if (path.Length == 0) return false;
+            bool known;
+            bool issued = IssuedFlags.Get((drawing ? "d|" : "m|") + path, out known);
+            return known && issued;
+        }
 
-        /// <summary>quick — для опроса кнопки: ответ о выдаче берётся из кэша на IssuedCacheTime.</summary>
-        public static string Unavailable(ISldWorks app, bool quick)
+        /// <summary>Выдача изделия или закрытие заказа: запомненные ответы опроса кнопки больше не верны.</summary>
+        public static void ForgetIssued()
+        {
+            IssuedFlags.Forget();
+        }
+
+        /// <summary>Причина, по которой кнопка недоступна, или пустая строка. Отчёты выдачи читаются заново.</summary>
+        public static string Unavailable(ISldWorks app)
         {
             try
             {
@@ -99,8 +124,7 @@ namespace ESKD.MaterialSync.Sw
                 string path = doc.GetPathName() ?? "";
                 if (path.Length == 0) return "документ ещё не сохранён";
                 bool drawing = type == (int)swDocumentTypes_e.swDocDRAWING;
-                return (quick ? IssuedQuick(path, drawing) : Issued(path, drawing))
-                    ? "" : "документ ещё не выдан — правьте свободно";
+                return Issued(path, drawing) ? "" : "документ ещё не выдан — правьте свободно";
             }
             catch (COMException ex)
             {
@@ -109,18 +133,6 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Ревизия: проверка выданного документа", ex);
                 return "SolidWorks не ответил — проверить, выдан ли документ, не удалось; повторите";
             }
-        }
-
-        private static bool IssuedQuick(string path, bool drawing)
-        {
-            string key = (drawing ? "d|" : "m|") + path;
-            DateTime now = DateTime.UtcNow;
-            if (key == _issuedKey && now - _issuedAt < IssuedCacheTime) return _issuedValue;
-            bool value = Issued(path, drawing);
-            _issuedKey = key;
-            _issuedValue = value;
-            _issuedAt = now;
-            return value;
         }
 
         /// <summary>Документ (или его модель) числится в отчётах выдачи изделия (Т-48).</summary>
@@ -372,7 +384,12 @@ namespace ESKD.MaterialSync.Sw
                 if (!before.ContainsKey(name)) before[name] = NoteText(note);
                 note.SetText(value);
             });
+            // Полное перестроение нужно: связанные надписи ревизии обновляются на всех листах до PDF, а EditRebuild3 (Ctrl+B)
+            // перестроил бы только активный лист. Время — в журнал: если на крупном СБ оно долгое, перейти на EditRebuild3
+            // по каждому листу в VisitNotes (сверка SW API 23.09.2026, №30).
+            System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
             target.Document.ForceRebuild3(false);
+            Log.Info("Новая ревизия: перестроение чертежа " + watch.ElapsedMilliseconds + " мс — " + target.DocumentPath);
             return Save(target.Document);
         }
 
@@ -635,6 +652,17 @@ namespace ESKD.MaterialSync.Sw
         private static string Export(ISldWorks app, Target target)
         {
             if (target.ModelPath.Length == 0) return "модель не найдена: выгрузка не сделана";
+            // Модель чертежа загружена без окна: окно открывается ради выгрузки и в конце закрывается (сверка SW API
+            // 23.09.2026, №15). Раньше оно оставалось у конструктора.
+            bool hidden = false;
+            try
+            {
+                hidden = target.Model != null && !target.Model.Visible;
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Новая ревизия: окно модели", ex);
+            }
             try
             {
                 int errors = 0;
@@ -655,6 +683,10 @@ namespace ESKD.MaterialSync.Sw
                 {
                     int errors = 0;
                     app.ActivateDoc3(target.DocumentPath, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref errors);
+                    // Окно с несохранёнными изменениями остаётся: о нём замечание выгрузки. Сохранённый ревизией чертёж
+                    // пишет в модель свой формат — модель изменена. CloseDoc не сохраняет и снимает с модели, оставшейся
+                    // в чертеже, отметку «изменена»: правка молча пропала бы при закрытии чертежа (проба 23.09.2026).
+                    if (hidden && target.Model.Visible && !DocumentGuard.HasUserEdits(target.Model)) app.CloseDoc(target.ModelPath);
                 }
                 catch (COMException ex)
                 {

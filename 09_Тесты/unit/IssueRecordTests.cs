@@ -14,6 +14,69 @@ namespace ESKD.Tests
     /// </summary>
     public static class IssueRecordTests
     {
+        /// <summary>
+        /// Папка изделия, которая есть, но не перечисляется (сетевая папка отвалилась, оборванная ссылка): Directory.Exists —
+        /// да, Directory.GetFiles — исключение. Здесь — соединение (junction) на удалённую папку.
+        /// </summary>
+        private static string Unlistable()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "eskd_unlistable_" + Guid.NewGuid().ToString("N"));
+            string target = Path.Combine(root, "target"), link = Path.Combine(root, "link");
+            Directory.CreateDirectory(target);
+            System.Diagnostics.ProcessStartInfo start = new System.Diagnostics.ProcessStartInfo("cmd.exe",
+                "/c mklink /J \"" + link + "\" \"" + target + "\"") { UseShellExecute = false, CreateNoWindow = true };
+            using (System.Diagnostics.Process process = System.Diagnostics.Process.Start(start)) process.WaitForExit();
+            Directory.Delete(target);
+            return link;
+        }
+
+        private static void Release(string link)
+        {
+            string root = Path.GetDirectoryName(link);
+            if (Directory.Exists(link)) Directory.Delete(link);
+            Directory.Delete(root, true);
+        }
+
+        public static void Test_Latest_of_unlistable_folder_is_null()
+        {
+            // Сверка SW API 23.09.2026, №7: исключение уходило из finally ЛЗК и выгрузки прямо в SolidWorks.
+            string dir = Unlistable();
+            try
+            {
+                bool denied = false;
+                try
+                {
+                    Directory.GetFiles(dir);
+                }
+                catch (IOException)
+                {
+                    denied = true;
+                }
+                Assert.IsTrue(Directory.Exists(dir) && denied, "подготовка: папка есть, список не читается");
+                Assert.IsNull(IssueRecord.Latest(dir), "папку не перечислить — отчёта выдачи нет, без исключения");
+            }
+            finally
+            {
+                Release(dir);
+            }
+        }
+
+        public static void Test_Restamp_survives_unlistable_folder()
+        {
+            string dir = Unlistable();
+            try
+            {
+                ESKD.MaterialSync.Sw.ProductFreshness.Restamp(dir, new List<StampChange>
+                {
+                    new StampChange { Path = Path.Combine(dir, "Деталь.sldprt"), Name = "Деталь.sldprt", Before = "aa", After = "bb" }
+                }, "тест");
+            }
+            finally
+            {
+                Release(dir);
+            }
+        }
+
         private const string Part = "ТС-52.00.01.001 Царга.sldprt";
         private const string Drawing = "ТС-52.00.01.001 Царга.slddrw";
         private const string Bch = "ТС-52.00.01.002 Косынка.sldprt";

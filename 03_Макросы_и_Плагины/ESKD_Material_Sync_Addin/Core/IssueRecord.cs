@@ -91,8 +91,24 @@ namespace ESKD.MaterialSync.Core
         public static IssueRecord Latest(string productFolder)
         {
             if (string.IsNullOrEmpty(productFolder) || !Directory.Exists(productFolder)) return null;
-            string path = Directory.GetFiles(productFolder, ExportNaming.IssuedPrefix + "*.txt")
-                .OrderBy(p => System.IO.Path.GetFileName(p), StringComparer.Ordinal).LastOrDefault();
+            string path;
+            // Папка есть, но не перечисляется (сетевая папка отвалилась, нет прав): отчёта выдачи нет. Исключение уходило
+            // из finally ЛЗК и выгрузки прямо в SolidWorks (сверка SW API 23.09.2026, №7).
+            try
+            {
+                path = Directory.GetFiles(productFolder, ExportNaming.IssuedPrefix + "*.txt")
+                    .OrderBy(p => System.IO.Path.GetFileName(p), StringComparer.Ordinal).LastOrDefault();
+            }
+            catch (IOException ex)
+            {
+                Log.Error("Отчёт выдачи: папка " + productFolder, ex);
+                return null;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Log.Error("Отчёт выдачи: папка " + productFolder, ex);
+                return null;
+            }
             if (path == null) return null;
             try
             {

@@ -10,7 +10,12 @@ if not exist "%PS_SCRIPT%" (
     exit /b 1
 )
 
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
+rem Started from a 32-bit program, System32 is the 32-bit PowerShell and the registration would go to Wow6432Node,
+rem where 64-bit SolidWorks does not look. Sysnative is visible to 32-bit programs only and leads to the 64-bit one.
+set "WINPS=%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe"
+if exist "%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe" set "WINPS=%SystemRoot%\Sysnative\WindowsPowerShell\v1.0\powershell.exe"
+if not exist "%WINPS%" set "WINPS=powershell.exe"
+"%WINPS%" -NoProfile -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
 set "RESULT=%ERRORLEVEL%"
 echo.
 pause

@@ -19,6 +19,8 @@ V = oracles.value
 PROFILES = paths.ROOT / "04_Библиотеки_Материалов_и_Профилей" / "Профили сварных деталей" / "Сортамент ГОСТ"
 FLAT_OVAL = PROFILES / "Труба плоскоовальная ГОСТ 8644-68" / "30х15х1,5.SLDLFP"
 RECTANGLE = PROFILES / "Прямоугольная труба ГОСТ 8645-68" / "30х15х1,5.sldlfp"
+SQUARE_40 = PROFILES / "Труба квадратная ГОСТ 8639-82" / "40х40х2.sldlfp"
+SQUARE_40_MATERIAL = "Труба 40х40х2,0 ГОСТ 8639-82 / Ст3сп ГОСТ 13663-86"
 
 TUBE_MATERIAL = "Труба ПО 30х15х1,5 ГОСТ 8644-68 / 08пс ГОСТ 13663-86"
 TUBE_LINE = "Труба ПО 30х15х1,5 ГОСТ 8644-68 / 08пс ГОСТ 13663-86"
@@ -451,6 +453,133 @@ class Stock(SwTestCase):
             self.assertEqual(0, changed, "не вставший материал назначенным не считается")
             self.assertTrue(any("назначьте его этим телам вручную" in ln or "обновите список вырезов" in ln for ln in log),
                             "\n".join(log))
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+        self.s.close_all()
+
+    def test_T16_hidden_folder_of_other_execution_is_ignored(self):
+        """T16 (сверка SW API 23.09.2026, №32): «Укосина» — в «00» плоскоовальная труба 30х15х1,5, в «01» квадратная
+        40х40х2; чужой элемент в каждом исполнении погашен. Его папка в списке вырезов остаётся, но без тел. Раньше такая
+        папка считалась позицией «вся деталь»: в отчёте две позиции, и материал квадратной трубы ставился детали «00» —
+        и через «ту же позицию» в «01». Теперь позиция одна — своя; «01» получает свой материал, когда станет активным."""
+        path = self.s.ws(self._case_name(), "ПРТИ.301111.064 Укосина.sldprt")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.s.set_settings(AutoStockMaterial=0)
+        try:
+            doc, (base, other) = build.structural_tube_executions(
+                self.s, [(400, 0, (0, 0), FLAT_OVAL), (300, 90, (-100, 0), SQUARE_40)], FLAT_OVAL, None, cut_list=True)
+            self.s.save_as(doc, path)
+            self.s.wait_addin_idle(timeout=60.0)
+        finally:
+            self.s.set_settings(AutoStockMaterial=1)
+        folders = build.cut_list_folders(doc)
+        self.path("folders.txt").write_text(repr(folders), encoding="utf-8")
+        if not any(count == 0 for _, count in folders):
+            self.skipTest(f"SolidWorks не держит папку погашенного элемента — состояние не воспроизводится: {folders}")
+
+        self.s.activate(doc)
+        rows = self._report()
+        self.assertEqual(1, len(rows), rows)
+        self.assertIn("8644", rows[0][3], f"позиция — своя плоскоовальная труба: {rows}")
+        changed = int(com.call(self.s.eskd(), "ApplyStockMaterialSilent"))
+        self.assertGreaterEqual(changed, 1, "материал назначен")
+        self.assertEqual(TUBE_MATERIAL, build.material_of(doc, base)[0], "в «00» — материал своей трубы")
+        self.assertEqual("", build.material_of(doc, other)[0], "в «01» другой профиль — не тронут")
+        self.assertEqual(base, str(doc.GetActiveConfiguration.Name), "активное исполнение прежнее")
+        self.assertEqual(["Ok"], self._verdicts(), "вопрос больше не появляется")
+
+        build.show_configuration(doc, other)
+        com.call(self.s.eskd(), "ApplyStockMaterialSilent")
+        self.assertEqual(SQUARE_40_MATERIAL, build.material_of(doc, other)[0], "«01» получил материал своей трубы")
+        self.assertEqual(TUBE_MATERIAL, build.material_of(doc, base)[0], "у «00» материал прежний")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+        self.s.close_all()
+
+    def test_T17_frame_of_one_tube_in_two_lengths_gets_part_material(self):
+        """T17 (сверка SW API 23.09.2026, №41): рама из одной плоскоовальной трубы двух длин — в списке вырезов две папки,
+        каждая покрывает часть тел. Раньше материал ставился телам каждой папки, а телу SolidWorks 2025 материал через API
+        не ставит (T14): рама оставалась без материала, в журнале — «назначьте вручную». Позиции одного материала вместе
+        покрывают все тела — это вся деталь: материал ставится детали целиком."""
+        path = self.s.ws(self._case_name(), "ПРТИ.301111.065 Рама.sldprt")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.s.set_settings(AutoStockMaterial=0)
+        try:
+            doc = build.structural_tube(self.s, 400, FLAT_OVAL, None, weldment=True)
+            build.add_structural_member(doc, 250, FLAT_OVAL, 90, (-100, 0))
+            doc.ForceRebuild3(False)
+            build.update_cut_list(doc)
+            self.s.save_as(doc, path)
+            self.s.wait_addin_idle(timeout=60.0)
+        finally:
+            self.s.set_settings(AutoStockMaterial=1)
+        cfg = str(doc.GetActiveConfiguration.Name)
+        folders = build.cut_list_folders(doc)
+        self.path("folders.txt").write_text(repr(folders), encoding="utf-8")
+        self.assertEqual([1, 1], sorted(count for _, count in folders), f"две папки по телу: {folders}")
+        self.assertEqual(["Assign", "Assign"], self._verdicts(), "обе длины — без материала, подходящий один")
+
+        self.s.activate(doc)
+        changed = int(com.call(self.s.eskd(), "ApplyStockMaterialSilent"))
+        self.assertGreaterEqual(changed, 1, "материал назначен")
+        self.assertEqual(TUBE_MATERIAL, build.material_of(doc, cfg)[0], "материал трубы — детали целиком")
+        self.assertEqual(["Ok", "Ok"], self._verdicts(), "обе длины получили материал")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+        self.s.close_all()
+
+    def test_T18_flat_pattern_configuration_passes_material_to_its_parent(self):
+        """T18 (сверка SW API 23.09.2026, №40): у листа 8 мм материал трубы — не подходит, подходящий один (замена). Активна
+        производная развёртки «…SM-FLAT-PATTERN». Раньше материал ставился в неё саму, а исполнение-родитель оставалось с
+        материалом трубы — его графа 3 и масса не менялись. Развёртка — не исполнение: материал ставится родителю,
+        активной остаётся развёртка. Развёртка, созданная при материале трубы, держит свою копию материала, и SolidWorks
+        за родителем её не ведёт (проба 23.09.2026): копия прежнего материала родителя получает новый вместе с ним."""
+        path = self.s.ws(self._case_name(), "ПРТИ.301111.066 Лист.sldprt")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.s.set_settings(AutoStockMaterial=0)
+        try:
+            doc = build.sheet_metal_plate(self.s, 200, 100, 8, TUBE_MATERIAL)
+            first = str(doc.GetActiveConfiguration.Name)
+            flat = first + "SM-FLAT-PATTERN"
+            build.add_derived_configuration(doc, flat, first)
+            build.show_configuration(doc, flat)
+            doc.ForceRebuild3(False)
+            self.s.save_as(doc, path)
+            self.s.wait_addin_idle(timeout=60.0)
+        finally:
+            self.s.set_settings(AutoStockMaterial=1)
+        self.assertEqual(flat, str(doc.GetActiveConfiguration.Name), "активна развёртка")
+        self.assertEqual(TUBE_MATERIAL, build.material_of(doc, first)[0], "у исполнения — материал трубы")
+
+        self.s.activate(doc)
+        changed = int(com.call(self.s.eskd(), "ApplyStockMaterialSilent"))
+        self.assertGreaterEqual(changed, 1, "материал заменён")
+        self.assertEqual(SHEET8, build.material_of(doc, first)[0], "материал получило исполнение-родитель")
+        self.assertEqual(SHEET8, build.material_of(doc, flat)[0], "копия материала трубы в развёртке заменена вместе с родителем")
+        self.assertEqual(flat, str(doc.GetActiveConfiguration.Name), "активной осталась развёртка")
+        build.show_configuration(doc, first)
+        self.assertEqual(["Ok"], self._verdicts(), "в исполнении вопрос больше не появляется")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+        self.s.close_all()
+
+    def test_T19_multibody_sheet_of_different_thickness_is_not_guessed(self):
+        """T19 (сверка SW API 23.09.2026, №39): листовая деталь из двух тел 3 и 8 мм. Раньше толщина первого «Листового
+        металла» шла всей детали — молча «Лист 3» и телу 8 мм. Теперь материал по толщине не подбирается, конструктору —
+        замечание «разной толщины». Два тела одной толщины (8 и 8) — как раньше, вся деталь получает «Лист 8»."""
+        doc = build.sheet_metal_two_bodies(self.s, 3, 8, None)
+        bodies = com.as_list(com.dyn(doc).GetBodies2(0, False))
+        self.assertEqual(2, len(bodies), "два тела")
+        self.assertTrue(all(bool(com.dyn(b).IsSheetMetal()) for b in bodies), "оба листовые")
+        self.assertEqual(["Unclear"], self._verdicts(), "вердикт — неясно")
+        path = self._save(doc, "ПРТИ.301111.067 Лист двойной.sldprt", None)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.assertEqual(("", ""), build.material_of(doc, ""), "материал не назначен")
+        warnings = str(com.call(self.s.eskd(), "LastSyncWarnings"))
+        self.assertIn("разной толщины", warnings, warnings)
+        self.s.close(doc)
+
+        doc = build.sheet_metal_two_bodies(self.s, 8, 8, None)
+        self._save(doc, "ПРТИ.301111.068 Лист двойной 8.sldprt", ["Assign"])
+        self.s.save(doc)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.assertEqual(SHEET8, build.material_of(doc, "")[0], "одна толщина — вся деталь, лист 8")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
         self.s.close_all()
 

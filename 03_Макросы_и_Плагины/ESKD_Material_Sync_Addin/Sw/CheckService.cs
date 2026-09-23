@@ -314,15 +314,20 @@ namespace ESKD.MaterialSync.Sw
                 {
                     string database;
                     PartDoc part = node.Model as PartDoc;
-                    string material = part == null ? null : SyncService.MaterialName(part, node.Model, cfg, out database);
+                    List<string> mixed = new List<string>();
+                    // Свой материал тела перекрывает материал детали (сверка SW API 23.09.2026, №33): деталь с материалом
+                    // только у тел — не «материал не назначен».
+                    string material = part == null ? null : SyncService.ActualMaterial(part, node.Model, cfg, out database, mixed);
                     if (material == null)
                         report.Add(CheckRules.Attributes, CheckRules.LevelOf(CheckRules.Attributes), name,
-                            "материал не назначен: выберите его из библиотеки материалов");
+                            mixed.Count > 1 ? "материал детали не назначен, а у тел разные материалы: выберите материал детали из библиотеки"
+                                : "материал не назначен: выберите его из библиотеки материалов");
                     else
                         report.Add(CheckRules.Sync, CheckRules.LevelOf(CheckRules.Sync), name,
                             "материал «" + material + "» не записан в «Материал_Строка»: нажмите «Проверить изделие»").Fixable =
-                            Writes(planned, "Материал_Строка");
+                            Writes(planned, "Материал_Строка", cfg);
                 }
+                if (!node.IsAssembly) Executions(node, w, cfg, name, planned, report);
                 if (LzkOperations.ParseNumber(Value(w, cfg, "Масса_ФБ")) <= 0 &&
                     LzkOperations.ParseNumber(Value(w, cfg, "Масса_Таблица")) <= 0)
                 {
@@ -415,6 +420,45 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>Синхронизация вхолостую записала бы это свойство («Деталь [00] Масса_ФБ: … → …»).</summary>
+        /// <summary>
+        /// Материал исполнений, стоящих в изделии, кроме активного в файле: раньше проверка смотрела только активное, и
+        /// исполнение «-01» без материала проходило (сверка SW API 23.09.2026, находка 14). Исполнения не переключаются —
+        /// проверка документ не меняет (Т-6): материал и «Материал_Строка» читаются по имени конфигурации.
+        /// </summary>
+        private static void Executions(ProductNode node, PropertyWriter w, string active, string name, SyncReport planned,
+            CheckReport report)
+        {
+            PartDoc part = node.Model as PartDoc;
+            if (part == null) return;
+            foreach (string cfg in CheckRules.OtherExecutions(node.Configurations, active, w.ConfigurationNames()))
+            {
+                if (Value(w, cfg, "Материал_Строка").Length > 0) continue;
+                string database;
+                bool known;
+                string material = SyncService.ActualMaterial(part, node.Model, cfg, out database, null, out known);
+                if (!known)
+                    report.Add(CheckRules.Attributes, CheckLevel.Issue, name, "исполнение «" + cfg + "» (стоит в изделии): " +
+                        "материал не проверен — у детали его нет, а материал тел этого исполнения виден, только когда оно активно: " +
+                        "сделайте его активным и нажмите «Синхронизировать»");
+                else if (material == null)
+                    report.Add(CheckRules.Attributes, CheckRules.LevelOf(CheckRules.Attributes), name, "исполнение «" + cfg +
+                        "» (стоит в изделии): материал не назначен — сделайте исполнение активным и выберите материал из библиотеки");
+                else
+                    report.Add(CheckRules.Sync, CheckRules.LevelOf(CheckRules.Sync), name, "исполнение «" + cfg + "»: материал «" +
+                        material + "» не записан в «Материал_Строка»: нажмите «Проверить изделие»").Fixable =
+                        Writes(planned, "Материал_Строка", cfg);
+            }
+        }
+
+        /// <summary>Синхронизация запишет свойство в этой конфигурации (строка плана «файл [конфигурация] свойство: …»).</summary>
+        private static bool Writes(SyncReport planned, string property, string cfg)
+        {
+            if (planned == null) return false;
+            string marker = "[" + (string.IsNullOrEmpty(cfg) ? "общие" : cfg) + "] " + property + ": ";
+            return planned.Operations.Any(op => op.IndexOf(marker, StringComparison.Ordinal) >= 0 &&
+                !op.EndsWith(": удалено", StringComparison.Ordinal));
+        }
+
         private static bool Writes(SyncReport planned, string property)
         {
             if (planned == null) return false;
@@ -547,13 +591,13 @@ namespace ESKD.MaterialSync.Sw
                 string name = Path.GetFileNameWithoutExtension(node.Path);
                 string file = Path.GetFileName(node.Path);
                 string failed = log.Skipped.Select(ExportLog.SplitSkip)
-                    .Where(s => Path.GetFileNameWithoutExtension(s.Key).Equals(name, StringComparison.OrdinalIgnoreCase)
+                    .Where(s => ExportLog.DocumentName(s.Key).Equals(name, StringComparison.OrdinalIgnoreCase)
                         && !ExportLog.IsBenignSkip(s.Value))
                     .Select(s => s.Value).FirstOrDefault();
                 if (failed != null)
                     report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), file, "выгрузка не сделана: " + failed);
                 else if (!log.Files.Any(f => f.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0) &&
-                         !log.Skipped.Any(s => Path.GetFileNameWithoutExtension(ExportLog.SplitSkip(s).Key)
+                         !log.Skipped.Any(s => ExportLog.DocumentName(ExportLog.SplitSkip(s).Key)
                              .Equals(name, StringComparison.OrdinalIgnoreCase)))
                     report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), file,
                         "нет в отчёте выгрузки " + CheckRules.ExportReportName);
@@ -626,12 +670,12 @@ namespace ESKD.MaterialSync.Sw
                 if (!File.Exists(drawingPath)) continue;
                 ModelDoc2 drawing = null;
                 bool opened = false;
+                int errors = 0, warnings = 0;
                 try
                 {
                     drawing = app.GetOpenDocumentByName(drawingPath) as ModelDoc2;
                     if (drawing == null)
                     {
-                        int errors = 0, warnings = 0;
                         drawing = app.OpenDoc6(drawingPath, (int)swDocumentTypes_e.swDocDRAWING,
                             (int)swOpenDocOptions_e.swOpenDocOptions_Silent | (int)swOpenDocOptions_e.swOpenDocOptions_ReadOnly,
                             "", ref errors, ref warnings) as ModelDoc2;
@@ -639,8 +683,10 @@ namespace ESKD.MaterialSync.Sw
                     }
                     if (drawing == null)
                     {
+                        // Причина словами — одноимённый чертёж другого заказа, более новая версия… (сверка SW API 23.09.2026, №28).
+                        string problem = SwCodes.OpenProblem(errors);
                         report.Add(CheckRules.Drawings, CheckRules.LevelOf(CheckRules.Drawings), Path.GetFileName(drawingPath),
-                            "чертёж не открылся");
+                            "чертёж не открылся" + (problem.Length > 0 ? ": " + problem : ""));
                         continue;
                     }
                     int dangling = Dangling(drawing);

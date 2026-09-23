@@ -342,5 +342,133 @@ namespace ESKD.Tests
             Assert.AreEqual("", StockService.GostFrom("Труба прямоугольная 40х20х1,5"), "ГОСТа в строке нет");
             Assert.AreEqual("", StockService.GostFrom(""), "пустая строка");
         }
+
+        public static void Test_Sheet_bodies_of_different_thickness_are_unclear()
+        {
+            // Сверка SW API 23.09.2026, №39: толщина первого «Листового металла» в дереве шла всей многотельной детали, и
+            // тела 8 мм получали «Лист 3». Разные толщины (или нелистовое тело рядом) — материал по толщине не подбирается.
+            double single;
+            Assert.AreEqual("", StockCatalog.SheetBodiesProblem(new[] { 8.0, 8.0 }, out single), "одна толщина — вся деталь");
+            Assert.AreEqual(8.0, single, "её толщина");
+            string mixed = StockCatalog.SheetBodiesProblem(new[] { 3.0, 8.0 }, out single);
+            Assert.IsTrue(mixed.Contains("разной толщины") && mixed.Contains("3") && mixed.Contains("8"), mixed);
+            Assert.IsTrue(double.IsNaN(single), "толщины для всей детали нет");
+            string plain = StockCatalog.SheetBodiesProblem(new[] { 3.0, double.NaN }, out single);
+            Assert.IsTrue(plain.Contains("не листов"), plain);
+            Assert.AreEqual("", StockCatalog.SheetBodiesProblem(new[] { double.NaN }, out single), "листовых тел нет — не листовая деталь");
+            Assert.IsTrue(double.IsNaN(single), "и толщины нет");
+            StockFinding f = new StockFinding { Folder = StockService.SheetFolderName, Verdict = StockVerdict.Unclear,
+                Request = new StockRequest { Kind = StockKind.Sheet, Size = mixed } };
+            string message = StockService.Message(f);
+            Assert.IsTrue(message.Contains("разной толщины") && message.Contains("назначьте"), message);
+            Assert.IsFalse(f.NeedsAssign, "не назначается");
+            Assert.IsFalse(f.NeedsDecision, "и не спрашивается");
+        }
+
+        public static void Test_Sheet_bodies_with_fitting_materials_are_settled()
+        {
+            // Ревью 23.09.2026: замечание «тела разной толщины — назначьте телам сами» повторялось при каждом сохранении и
+            // после того, как конструктор так и сделал. Решено — у каждого листового тела материал его толщины, у не
+            // листового — какой-нибудь материал.
+            // Подходит ли материал толщине — правилом самой надстройки (FitsName: и дубль библиотеки под другим именем).
+            Func<double, string, bool> fit = (mm, m) => mm == 3.0 ? m == "Лист 3" :
+                mm == 8.0 && (m == "Лист 8 Ст3" || m == "Лист 8 09Г2С");
+            Assert.IsTrue(StockCatalog.SheetBodiesSettled(new[] { 3.0, 8.0 }, new[] { "Лист 3", " Лист 8 09Г2С" }, fit),
+                "у каждого тела подходящий");
+            Assert.IsFalse(StockCatalog.SheetBodiesSettled(new[] { 3.0, 8.0 }, new[] { "Лист 3", "Лист 3" }, fit), "у тела 8 мм лист 3");
+            Assert.IsFalse(StockCatalog.SheetBodiesSettled(new[] { 3.0, 8.0 }, new[] { "Лист 3", "" }, fit), "у тела нет материала");
+            Assert.IsTrue(StockCatalog.SheetBodiesSettled(new[] { 3.0, double.NaN }, new[] { "Лист 3", "Круг 20" }, fit),
+                "не листовое тело — любой материал");
+            Assert.IsFalse(StockCatalog.SheetBodiesSettled(new[] { 3.0, double.NaN }, new[] { "Лист 3", "" }, fit),
+                "не листовое тело без материала");
+            Assert.IsFalse(StockCatalog.SheetBodiesSettled(new[] { 3.0, double.NaN }, new[] { "Лист 3", "Лист 3" }, fit),
+                "у не листового тела материал листа (унаследован от детали) — никто не решал");
+            Assert.IsFalse(StockCatalog.SheetBodiesSettled(new[] { 3.0 }, new string[0], fit), "материалы не прочитаны — не решено");
+        }
+
+        public static void Test_Whole_part_material_that_took_is_counted()
+        {
+            // Ревью 23.09.2026: материал детали встал, а тела позиции со своим материалом его перекрывают. Раньше отчёт писал
+            // «не назначен», хотя материал детали уже сменился, и графа 3 с другими исполнениями не обновлялись.
+            bool applied, propagate;
+            string bodies = "у тел «Т1» свой материал перекрывает материал детали — снимите его";
+            string library = "SolidWorks взял его из библиотеки «X», а не «Y»";
+            string w = StockCatalog.WholePartResult("Старый", "Т", "Т", "", bodies, out applied, out propagate);
+            Assert.IsTrue(applied, "материал детали сменился — назначен");
+            Assert.IsTrue(propagate, "в другие исполнения — как всегда");
+            Assert.IsTrue(w.StartsWith("Материал «Т» назначен детали, но у тел «Т1»"), w);
+            w = StockCatalog.WholePartResult("", " Т ", "Т", "", "", out applied, out propagate);
+            Assert.IsTrue(applied && propagate, "встал без замечаний");
+            Assert.AreEqual("", w, "замечания нет");
+            w = StockCatalog.WholePartResult("Т", "Т", "Т", "", bodies, out applied, out propagate);
+            Assert.IsFalse(applied, "материал детали уже стоял — ничего не изменилось, назначением это не считается");
+            Assert.IsTrue(w.Contains("не назначен") && w.Contains("уже стоит") && w.Contains("«Т1»"), w);
+            w = StockCatalog.WholePartResult("", "Т", "Т", library, "", out applied, out propagate);
+            Assert.IsTrue(applied, "материал детали сменился — графа 3 должна это видеть");
+            Assert.IsFalse(propagate, "материал чужой библиотеки в другие исполнения не переносится");
+            Assert.IsTrue(w.Contains("«X»") && w.Contains("вручную") && w.Contains("не переносится"), w);
+            w = StockCatalog.WholePartResult("", "Старый", "Т", "", "", out applied, out propagate);
+            Assert.IsFalse(applied, "SolidWorks оставил прежний");
+            Assert.IsTrue(w.Contains("не назначен") && w.Contains("«Старый»"), w);
+            w = StockCatalog.WholePartResult("", "", "Т", "", "", out applied, out propagate);
+            Assert.IsFalse(applied, "SolidWorks не поставил");
+            Assert.IsTrue(w.Contains("не назначен") && w.Contains("не поставил"), w);
+        }
+
+        public static void Test_Foreign_body_material_is_asked_not_overwritten()
+        {
+            // Сверка SW API 23.09.2026, №31: у одного тела трубы свой материал листа, у другого — подходящий материал детали.
+            // Раньше позиция считалась «без материала» (Assign), подходящий молча ставился детали, а лист тела оставался. Теперь
+            // стоящий материал позиции — лист: заменить его можно только с согласия конструктора.
+            const string tube = "Труба ПО 30х15х1,5 ГОСТ 8644-68 / 08пс ГОСТ 13663-86";
+            const string sheet = "Лист 8,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97";
+            List<MaterialInfo> library = Library();
+            StockFinding f = new StockFinding { Request = new StockRequest { Kind = StockKind.Profile, Size = "30х15х1,5", Gost = "ГОСТ 8644-68" } };
+            Assert.AreEqual(sheet, StockService.PositionCurrentFor(f, library, new[] { sheet, tube }), "лист у части тел — он");
+            Assert.AreEqual("", StockService.PositionCurrentFor(f, library, new[] { tube, "" }), "подходящий и без материала — дозаполнить");
+            Assert.AreEqual(tube, StockService.PositionCurrentFor(f, library, new[] { tube, tube }), "у всех подходящий — он");
+            f.CurrentMaterial = StockService.PositionCurrentFor(f, library, new[] { "", sheet });
+            StockService.Decide(f, library);
+            Assert.AreEqual(StockVerdict.Replace, f.Verdict, "не подходящий материал тела — замена с согласия");
+            Assert.IsTrue(f.NeedsDecision, "решает конструктор");
+        }
+
+        /// <summary>Позиция папки списка вырезов: вердикт Assign, материал chosen, bodies тел (заглушки — счёт, не геометрия).</summary>
+        private static StockFinding CutListPosition(MaterialInfo chosen, int bodies)
+        {
+            StockFinding finding = new StockFinding { Verdict = StockVerdict.Assign, Chosen = chosen, FromCutList = true };
+            for (int i = 0; i < bodies; i++) finding.Bodies.Add(null);
+            return finding;
+        }
+
+        public static void Test_Frame_of_one_tube_in_two_lengths_is_whole_part()
+        {
+            // Сверка SW API 23.09.2026, №41: рама из одной трубы разной длины — папка списка вырезов на каждую длину, и каждая
+            // позиция покрывала часть тел: материал ставился телам, а на SolidWorks 2025 телу он через API не встаёт (T14).
+            // Позиции одного материала вместе покрывают все тела — это вся деталь.
+            MaterialInfo tube = new MaterialInfo { Name = "Труба ПО 30х15х1,5 ГОСТ 8644-68 / 08пс ГОСТ 13663-86", Database = "Библиотека" };
+            MaterialInfo sheet = new MaterialInfo { Name = "Лист 8,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-2024", Database = "Библиотека" };
+            StockFinding longer = CutListPosition(tube, 1), shorter = CutListPosition(tube, 2);
+            Assert.IsTrue(StockService.CoversWholePart(new[] { longer, shorter }, longer, 3), "две длины одной трубы — вся деталь");
+            Assert.IsTrue(StockService.CoversWholePart(new[] { longer, shorter }, shorter, 3), "и со стороны второй папки");
+            Assert.IsFalse(StockService.CoversWholePart(new[] { longer }, longer, 3), "одна длина из трёх тел — часть");
+            StockFinding plate = CutListPosition(sheet, 1);
+            Assert.IsFalse(StockService.CoversWholePart(new[] { longer, shorter, plate }, longer, 4),
+                "с пластиной другого материала — только тела трубы");
+            StockFinding kept = CutListPosition(tube, 1);
+            kept.Verdict = StockVerdict.Ok;
+            Assert.IsFalse(StockService.CoversWholePart(new[] { shorter, kept }, shorter, 3), "позиция без назначения группу не дополняет");
+        }
+
+        public static void Test_Empty_cut_list_folder_is_not_whole_part()
+        {
+            // Сверка SW API 23.09.2026, №32: папка без тел — погашенный элемент другого исполнения, а не «вся деталь».
+            MaterialInfo tube = new MaterialInfo { Name = "Труба 40х40х2,0 ГОСТ 8639-82 / Ст3сп ГОСТ 13663-86", Database = "Библиотека" };
+            StockFinding hidden = CutListPosition(tube, 0);
+            Assert.IsFalse(StockService.CoversWholePart(new[] { hidden }, hidden, 1), "пустая папка — не вся деталь");
+            StockFinding sheet = new StockFinding { Verdict = StockVerdict.Assign, Chosen = tube };
+            Assert.IsTrue(StockService.CoversWholePart(new[] { sheet }, sheet, 1), "листовая деталь без тел в позиции — вся");
+            Assert.IsFalse(StockService.CoversWholePart(new StockFinding[0], null, 1), "позиции нет");
+        }
     }
 }

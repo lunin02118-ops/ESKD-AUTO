@@ -8,12 +8,13 @@ import hashlib
 import os
 import shutil
 import stat
+import time
 import unittest
 from pathlib import Path
 
 import openpyxl
 
-from eskd_e2e import com, oracles, paths
+from eskd_e2e import com, guards, oracles, paths
 from eskd_e2e.testing import SwTestCase
 
 PRODUCT = "И01_ПРТИ.468211.100"
@@ -228,6 +229,64 @@ class Revision(SwTestCase):
         status = self._revision()
         self.assertTrue(status.startswith("error|"), status)
         self.assertFalse((product / "Изменения.xlsx").exists(), "журнал не заведён")
+
+    def test_V08_button_poll_does_not_wait_for_issue_reports(self):
+        """V08 (сверка SW API 23.09.2026, №1): SolidWorks опрашивает доступность «Новой ревизии» на каждую перерисовку, а
+        «выдан ли документ» — это чтение отчётов выдачи с NAS. Раньше отчёт читался в потоке SolidWorks раз в 2 с:
+        на подвисшем NAS замирал весь SolidWorks. Теперь опрос отвечает из памяти, отчёты читаются в фоне."""
+        product, models = self._product()
+        doc = self.s.open(models / DRAWING)
+        self.s.activate(doc)
+        deadline = time.monotonic() + 10.0
+        while int(com.call(self.s.eskd(), "EnableRevisionCommand")) != 1:
+            self.assertLess(time.monotonic(), deadline, "у чертежа выданной детали кнопка стала доступна")
+            time.sleep(0.2)
+        time.sleep(11.0)   # запомненный ответ устарел — опрос обязан перечитать отчёт
+        with guards.stalled_open(product / "_Выдано_2026-09-10.txt", 4.0):
+            started = time.monotonic()
+            enabled = int(com.call(self.s.eskd(), "EnableRevisionCommand"))
+            spent = time.monotonic() - started
+        self.assertLess(spent, 1.0, "опрос кнопки ждал подвисший отчёт выдачи")
+        self.assertEqual(1, enabled, "пока фон перечитывает — прежний ответ")
+        self.assertEqual("", str(com.call(self.s.eskd(), "RevisionUnavailable")), "нажатие читает отчёты само: выдан")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_V09_revision_export_closes_model_window_it_opened(self):
+        """V09 (сверка SW API 23.09.2026, №15): новая ревизия выгружает модель чертежа — для этого её окно открывается.
+        Раньше окно оставалось; теперь закрывается, модель остаётся загруженной в чертеже, активен снова чертёж.
+        Кроме модели с правками: ревизия сохраняет чертёж, и тот пишет в модель свой формат («*)», листы А4 и А3), —
+        окно такой модели остаётся. CloseDoc снимает с модели отметку «изменена», и правка молча пропала бы при
+        закрытии чертежа (проба 23.09.2026)."""
+        product, models = self._product()
+        doc = self.s.open(models / DRAWING)
+        self.s.activate(doc)
+        model = self.s.sw.GetOpenDocumentByName(str(models / PART))
+        self.assertIsNotNone(model, "модель загружена чертежом")
+        self.assertFalse(bool(com.dyn(model).Visible), "до ревизии у модели окна нет")
+        status = self._revision()
+        self.assertTrue(status.startswith("ok|"), status)
+        model = self.s.sw.GetOpenDocumentByName(str(models / PART))
+        self.assertIsNotNone(model, "модель по-прежнему загружена")
+        self.assertTrue(bool(com.dyn(model).GetSaveFlag), "формат чертежа записан в модель — она изменена")
+        self.assertTrue(bool(com.dyn(model).Visible), "окно изменённой модели остаётся: закрытие стёрло бы правку")
+
+        # Конструктор сохраняет модель и закрывает её окно; следующая ревизия модель не меняет.
+        ok, err, _ = self.s.save(model)
+        self.assertTrue(ok and err == 0, f"модель сохранена: ошибка {err}")
+        self.s.wait_addin_idle(timeout=60.0)
+        self.s.sw.CloseDoc(str(models / PART))
+        self.s.activate(doc)
+        model = self.s.sw.GetOpenDocumentByName(str(models / PART))
+        self.assertIsNotNone(model, "модель осталась загруженной в чертеже")
+        self.assertFalse(bool(com.dyn(model).Visible), "перед второй ревизией у модели окна нет")
+        status = self._revision(what="отверстие 10 → 12 мм")
+        self.assertTrue(status.startswith("ok|2|"), status)
+        model = self.s.sw.GetOpenDocumentByName(str(models / PART))
+        self.assertIsNotNone(model, "модель по-прежнему загружена")
+        self.assertFalse(bool(com.dyn(model).GetSaveFlag), "формат уже в модели — ревизия её не изменила")
+        self.assertFalse(bool(com.dyn(model).Visible), "окно модели, открытое ревизией, закрыто")
+        active = com.dyn(self.s.sw.ActiveDoc)
+        self.assertEqual(str(models / DRAWING).lower(), str(active.GetPathName).lower(), "активен снова чертёж")
 
     def test_V04_assembly_has_no_revision(self):
         """V04: у сборки ревизии нет — ревизия принадлежит чертежу (Р0-8)."""
