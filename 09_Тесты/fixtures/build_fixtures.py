@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from eskd_e2e import build, com, paths  # noqa: E402
+from eskd_e2e import build, com, oracles, paths  # noqa: E402
 from eskd_e2e.session import SwSession  # noqa: E402
 
 SHEET4 = "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
@@ -272,6 +272,23 @@ def build_all(session, manifest):
     build_corpus_r4(session, items)
 
 
+def raw_props(doc):
+    """Сырые значения свойств: общие — под «», конфигураций — под их именами."""
+    dump = oracles.dump_properties(doc)
+    levels = {"": dump["general"], **dump["configs"]}
+    return {level: {name: v["raw"] for name, v in props.items()} for level, props in levels.items()}
+
+
+def assert_props_kept(name, doc, before):
+    """Пересохранение не меняет свойств: сборщик перестраивает геометрию, свойства пишет только надстройка."""
+    after = raw_props(doc)
+    changed = sorted((level, prop) for level in set(before) | set(after)
+                     for prop in set(before.get(level, {})) | set(after.get(level, {}))
+                     if before.get(level, {}).get(prop) != after.get(level, {}).get(prop))
+    if changed:
+        raise RuntimeError(f"{name}: свойства изменились при пересохранении: {changed[:10]}")
+
+
 def check_masses(manifest):
     """Масса, посчитанная SolidWorks, обязана совпадать с аналитической (0,5 %)."""
     problems = []
@@ -465,7 +482,8 @@ def sheet_metal_in_place():
     каждая деталь из SHEET_PARTS открывается и перестраивается на месте: вытягивания снимаются, лист строится базовой
     кромкой с язычками исполнений, как в build_all. Документ тот же — сборки A-08, A-09, A-14 и чертежи A-10, A-11
     остаются связаны с деталями; они пересохраняются, чтобы в них не осталось прежней геометрии. Материалы, конфигурации
-    и свойства деталей не трогаются, надстройка не загружается, открываются только копии в каталоге прогона.
+    и свойства не трогаются — свойства каждого файла сверяются до и после; служба надстройки выключена (она
+    поднимается из автозагрузки SolidWorks), открываются только копии в каталоге прогона.
     """
     run_dir = paths.RUNS / ("fixtures_sheet_metal_" + time.strftime("%Y%m%d_%H%M%S"))
     manifest = json.loads(paths.FIXTURE_MANIFEST.read_text(encoding="utf-8"))
@@ -480,6 +498,7 @@ def sheet_metal_in_place():
             item = items[fid]
             material = item.get("material") or materials[fid]
             doc = session.open(session.run_dir / item["file"])
+            props = raw_props(doc)
             configs = [str(c) for c in com.as_list(doc.GetConfigurationNames)]
             active = str(doc.GetActiveConfiguration.Name)
             order = item.get("configs") or [active]
@@ -497,6 +516,7 @@ def sheet_metal_in_place():
             ok, err, warn = session.save(doc)
             if not ok:
                 raise RuntimeError(f"{fid}: сохранение не удалось: err={err} warn={warn}")
+            assert_props_kept(fid, doc, props)
             session.close(doc)
             if "sw_mass_kg" in item:
                 item["sw_mass_kg"] = masses if isinstance(item["sw_mass_kg"], dict) else masses[order[0]]
@@ -505,6 +525,7 @@ def sheet_metal_in_place():
             item["provenance"] = "; ".join(p for p in (item.get("provenance"), SHEET_NOTE) if p)
         for name in dependents:
             doc = session.open(session.run_dir / name)
+            props = raw_props(doc)
             # Детали должны подгрузиться из каталога прогона — по сохранённому пути SolidWorks мог бы найти старую копию.
             loaded = [str(com.dyn(d).GetPathName) for d in com.as_list(session.sw.GetDocuments)]
             outside = [p for p in loaded if Path(p).parent != session.run_dir]
@@ -517,10 +538,17 @@ def sheet_metal_in_place():
                     doc.ActivateSheet(str(sheet))
                     doc.ForceRebuild3(False)
                 doc.ActivateSheet(current)
-            doc.ForceRebuild3(False)
+            # Сборка перестраивается только сама: с деталями (ForceRebuild3(False)) они менялись бы лишь в памяти —
+            # сохраняется одна сборка, и при открытии она оказывалась изменённой (P09, 23.09.2026).
+            doc.ForceRebuild3(name.lower().endswith(".sldasm"))
             ok, err, warn = session.save(doc)
             if not ok:
                 raise RuntimeError(f"{name}: пересохранение не удалось: err={err} warn={warn}")
+            assert_props_kept(name, doc, props)
+            session.close_all()
+            doc = session.open(session.run_dir / name)
+            if com.call(doc, "GetSaveFlag"):
+                raise RuntimeError(f"{name}: после пересохранения открывается изменённым")
             session.close_all()
         unexpected = session.watchdog.pop_unexpected()
         if unexpected:
@@ -539,6 +567,9 @@ def sheet_metal_in_place():
     legacy = items["A-14"]
     legacy["provenance"] += "; " + A14_ASSEMBLY + " пересохранена 23.09.2026 без надстройки (лист A-01 — листовым металлом)"
     paths.FIXTURE_MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Сборки и чертежи хранят пути к деталям в этом каталоге. Пока он есть, SolidWorks берёт детали отсюда, а не из копий
+    # теста рядом со сборкой: P09 видел сборку изменённой, N05 не находил компонент (23.09.2026).
+    shutil.rmtree(run_dir)
     print("перестроены листовым металлом и пересохранены:", changed)
 
 
