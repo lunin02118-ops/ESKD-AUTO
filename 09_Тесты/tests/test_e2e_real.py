@@ -152,6 +152,10 @@ class FormatReload(SwTestCase):
 
 
 class GoldenMaster(SwTestCase):
+    # Сценарии читают записи свойств при сохранении (AD-06), а new_part_ui_save сохраняет командой интерфейса — путь
+    # подставляет зонд из FileSaveAsNotify2 (SwSession.ui_save_as). Снимок v5 снят с событиями документа; в полном прогоне
+    # их оставлял включёнными R05 (FormatReload._reload), а R01 отдельно падал на new_part_ui_save (24.09.2026).
+    doc_events = True
 
     def test_R01_behaviour_differs_from_v5_only_by_explained_changes(self):
         """R01: сценарии golden master (корпуса А и Б) на текущей надстройке — каждое отличие от снимка baseline/v5
