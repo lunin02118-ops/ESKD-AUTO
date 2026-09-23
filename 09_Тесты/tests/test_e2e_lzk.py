@@ -2,6 +2,7 @@
 """E2E, группа L — кнопка «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37, ТЗ-04): операции, габарит, выгрузка SWTools без окна,
 живая книга ЛЗК — паспорт, участки, расход, нормы — в «04_Сопроводительная документация» изделия."""
 import os
+import shutil
 import time
 import unittest
 import winreg
@@ -117,12 +118,16 @@ class Lzk(SwTestCase):
         же заказа записывается (без окна — как с галочкой «В модель», которая стоит по умолчанию)."""
         from eskd_e2e import build
 
-        case = self._case_name()
-        product = self.case_dir / "03_ЗАКАЗЫ" / "778_Тест" / "02_Металл" / PRODUCT
+        # Каталог назван коротко: с полным именем теста путь к сборке переваливает за 260 знаков, и SolidWorks молча
+        # не сохраняет её.
+        case = "L12"
+        root = self.s.run_dir / case
+        shutil.rmtree(root, ignore_errors=True)
+        product = root / "03_ЗАКАЗЫ" / "778_Тест" / "02_Металл" / PRODUCT
         (product / "01_3D").mkdir(parents=True, exist_ok=True)
         for name in ("Нормативы_производства.xlsx", "ЛЗК_бланки.xlsx"):
             ref = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / name
-            (self.case_dir / ref.name).write_bytes(ref.read_bytes())
+            (root / ref.name).write_bytes(ref.read_bytes())
         foreign = self.s.workspace_copy(Path(paths.FIXTURES_A) / SHEET_PART,
                                         subdir=f"{case}/03_ЗАКАЗЫ/775_Другой/02_Металл/И01_775_Стол/01_3D")
         same = self.s.workspace_copy(Path(paths.FIXTURES_A) / "ПРТИ.468211.111 Стойка трубная.sldprt",

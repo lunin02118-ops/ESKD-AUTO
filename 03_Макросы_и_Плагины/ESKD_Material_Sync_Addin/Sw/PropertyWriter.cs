@@ -23,6 +23,7 @@ namespace ESKD.MaterialSync.Sw
         private readonly Dictionary<string, CustomPropertyManager> _managers = new Dictionary<string, CustomPropertyManager>(StringComparer.Ordinal);
         private readonly Dictionary<string, string[]> _values = new Dictionary<string, string[]>(StringComparer.Ordinal);
         private string[] _configurations;
+        private bool _dirty;
 
         public int Changes { get; private set; }
         public int Failures { get; private set; }
@@ -63,6 +64,7 @@ namespace ESKD.MaterialSync.Sw
             {
                 _doc.set_SummaryInfo((int)swSummInfoField_e.swSumInfoAuthor, value);
                 Changes++;
+                Dirty();
                 return true;
             }
             catch (Exception ex)
@@ -70,6 +72,25 @@ namespace ESKD.MaterialSync.Sw
                 Failures++;
                 Log.Error("SummaryInfo Author = " + value, ex);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Свойства, записанные через API, SolidWorks изменением документа не считает (D13, 23.09.2026): без флага документ
+        /// закрылся бы без вопроса «сохранить?», и записанное надстройкой в открытую модель (формат из чертежа, кнопка
+        /// «Синхронизировать», «Применить без сохранения») молча пропало бы. Флаг ставится один раз на экземпляр.
+        /// </summary>
+        private void Dirty()
+        {
+            if (_dirty) return;
+            _dirty = true;
+            try
+            {
+                _doc.SetSaveFlag();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("SetSaveFlag " + _docTitle, ex);
             }
         }
 
@@ -227,6 +248,7 @@ namespace ESKD.MaterialSync.Sw
                 }
                 Names(cfg).Add(name);
                 Changes++;
+                Dirty();
                 return true;
             }
             catch (Exception ex)
@@ -262,6 +284,7 @@ namespace ESKD.MaterialSync.Sw
                 }
                 Names(cfg).Remove(name);
                 Changes++;
+                Dirty();
                 return true;
             }
             catch (Exception ex)

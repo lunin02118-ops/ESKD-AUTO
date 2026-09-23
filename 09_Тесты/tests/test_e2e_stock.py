@@ -266,6 +266,48 @@ class Stock(SwTestCase):
                          "деталь без материала обходом заполнена")
 
 
+    def test_T12_check_saves_changed_parts_but_not_designer_edits(self):
+        """T12 (решение владельца 23.09.2026, З-27): «Проверить изделие» — один порядок работы. Без окна (ответы как без
+        конструктора) проверка назначает материал деталям, которые отдельно не сохраняли, и сохраняет их. Деталь с
+        несохранёнными правками конструктора материал получает, но не сохраняется: вместе с ним ушли бы и его правки."""
+        folder = self.s.ws(self._case_name())
+        folder.mkdir(parents=True, exist_ok=True)
+        tube = folder / "ПРТИ.301111.061 Лежак.sldprt"
+        edited = folder / "ПРТИ.301111.062 Стойка.sldprt"
+        self.s.set_settings(AutoStockMaterial=0)
+        try:
+            for path in (tube, edited):
+                doc = build.structural_tube(self.s, 300, FLAT_OVAL, None)
+                self.s.save_as(doc, path)
+            asm, _ = build.assembly(self.s, [(tube, 0, 0, 0), (edited, 0, 0.2, 0)])
+            asm_path = folder / "ПРТИ.301111.060 СБ Опора.sldasm"
+            self.s.save_as(asm, asm_path)
+            self.s.close_all()
+        finally:
+            self.s.set_settings(AutoStockMaterial=1)
+        before = edited.read_bytes()
+
+        asm = self.s.open(asm_path)
+        part = self.s.sw.GetOpenDocumentByName(str(edited))
+        self.assertIsNotNone(part, "«Стойка» загружена сборкой")
+        # Несохранённая правка конструктора: любая правка помечает документ изменённым — так же поступаем и здесь.
+        com.dyn(part).SetSaveFlag()
+        self.assertTrue(bool(com.dyn(part).GetSaveFlag), "у «Стойки» несохранённая правка")
+        self.s.activate(asm)
+        com.call(self.s.eskd(), "CheckProductApplySilent")
+        status = str(com.call(self.s.eskd(), "CheckStatus"))
+        applied = str(com.call(self.s.eskd(), "CheckApplied"))
+        self.path("outcome.txt").write_text(status + "\n" + applied + "\n" + str(com.call(self.s.eskd(), "LastNotices")),
+                                            encoding="utf-8")
+        self.assertTrue(status.startswith("ok|"), status)
+        self.assertIn("материалов назначено 2", applied, applied)
+        self.assertIn("не сохранено (сохраните сами) 1", applied, applied)
+        self.assertTrue(bool(com.dyn(part).GetSaveFlag), "«Стойка» осталась несохранённой — её сохраняет конструктор")
+        self.s.close_all()
+
+        self.assertEqual(TUBE_LINE, V(self.persisted(tube), "Материал_Строка", "00"), "«Лежак» заполнен и сохранён")
+        self.assertEqual(before, edited.read_bytes(), "файл «Стойки» не тронут")
+
     def test_T11_plain_solid_is_left_alone(self):
         """T11: решение владельца 21.09.2026 — по геометрии не гадать. Плоская деталь, сделанная вытяжкой,
         а не листовым металлом, может быть и пластиком, и фанерой: толщина тела о прокате не говорит ничего.

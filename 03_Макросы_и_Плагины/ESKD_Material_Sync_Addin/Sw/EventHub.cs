@@ -395,7 +395,7 @@ namespace ESKD.MaterialSync.Sw
             {
                 string path = SafePath(doc);
                 List<StockFinding> findings = StockService.Inspect(_app, doc);
-                List<StockFinding> pending = StockService.PendingDecisions(path, findings);
+                List<StockFinding> pending = StockService.PendingDecisions(path, findings, StockService.Accepted(doc));
                 if (pending.Count > 0 && Settings.Read().StockAskOnSave)
                 {
                     if (StockService.IsPostponed(path))
@@ -542,8 +542,8 @@ namespace ESKD.MaterialSync.Sw
                 Settings settings = Settings.Read();
                 if (!settings.ServiceEnabled || !settings.SyncOnSave) return 0;
                 if (s.Type == (int)swDocumentTypes_e.swDocDRAWING) return 0;
-                // Пакетный обход изделия сохраняет детали сам и уже всё записал — второй круг не нужен.
-                if (BatchSyncService.Running || DrawingFormatService.Busy) return 0;
+                // «Проверить изделие» сохраняет документы сам и уже всё записал — второй круг не нужен.
+                if (ProductReviewService.Running || DrawingFormatService.Busy) return 0;
                 Remember(s.Doc, SyncService.SyncModel(_app, s.Doc, new SyncRequest
                 {
                     Reason = _resaving ? "пересохранение" : "сохранение",
@@ -570,7 +570,7 @@ namespace ESKD.MaterialSync.Sw
                     s.LastPath = fileName ?? s.LastPath;
                 }
                 if (!settings.ServiceEnabled || !settings.SyncOnSave) return 0;
-                if (BatchSyncService.Running || DrawingFormatService.Busy) return 0;
+                if (ProductReviewService.Running || DrawingFormatService.Busy) return 0;
                 if (s.Type == (int)swDocumentTypes_e.swDocDRAWING)
                 {
                     // З-1: формат листов — в «Формат» модели. Листы читаются сейчас, пока чертёж открыт; запись в модель —
@@ -639,7 +639,7 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>
         /// Предупреждения видны пользователю (Д-38): после автоматической синхронизации — в строке состояния SolidWorks
         /// (выставляется в простое, иначе её затирает сообщение о записи файла), полностью — по кнопке «Синхронизировать»
-        /// и в журнале.
+        /// (деталь, чертёж), в окне «Проверить изделие» и в журнале.
         /// </summary>
         private void Remember(ModelDoc2 doc, SyncReport report)
         {

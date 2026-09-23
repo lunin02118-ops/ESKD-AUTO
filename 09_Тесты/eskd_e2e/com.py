@@ -15,6 +15,9 @@ SW_DOC_DRAWING = 3
 
 OPEN_SILENT = 1
 OPEN_READONLY = 2
+# swOpenDocOptions_OverrideDefaultLoadLightweight | swOpenDocOptions_LoadLightweight: без первого флага SolidWorks берёт
+# настройку пользователя «Загружать компоненты облегчёнными» и второй не замечает.
+OPEN_LIGHTWEIGHT = 64 | 128
 
 SAVE_SILENT = 1
 SAVE_COPY = 2

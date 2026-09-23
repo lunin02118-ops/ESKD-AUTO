@@ -339,12 +339,12 @@ class SwSession:
             self.on_open(doc)
         return doc
 
-    def open(self, path, readonly=False):
+    def open(self, path, readonly=False, lightweight=False):
         path = str(path)
         if self.sw.GetOpenDocumentByName(path) is not None:
             raise RuntimeError(f"Документ уже открыт в сессии: {path}")
         err, warn = com.ref_int(), com.ref_int()
-        options = com.OPEN_SILENT | (com.OPEN_READONLY if readonly else 0)
+        options = com.OPEN_SILENT | (com.OPEN_READONLY if readonly else 0) | (com.OPEN_LIGHTWEIGHT if lightweight else 0)
         doc = self.sw.OpenDoc6(path, com.doc_type_for(path), options, "", err, warn)
         if doc is None:
             raise RuntimeError(f"OpenDoc6 не открыл {path}: errors={err.value} warnings={warn.value}")

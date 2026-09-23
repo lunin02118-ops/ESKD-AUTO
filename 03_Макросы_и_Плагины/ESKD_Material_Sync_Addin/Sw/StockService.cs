@@ -159,6 +159,15 @@ namespace ESKD.MaterialSync.Sw
         /// </summary>
         public static List<StockFinding> PendingDecisions(string path, IEnumerable<StockFinding> findings)
         {
+            return PendingDecisions(path, findings, "");
+        }
+
+        /// <summary>
+        /// То же с ответами, сохранёнными в самой модели (свойство <see cref="ReviewAccepted.PropertyName"/>, значение —
+        /// <see cref="Accepted"/>): «Оставить как есть» из окна «Проверить изделие» помнится и в следующих сеансах.
+        /// </summary>
+        public static List<StockFinding> PendingDecisions(string path, IEnumerable<StockFinding> findings, string accepted)
+        {
             List<StockFinding> pending = new List<StockFinding>();
             if (findings == null) return pending;
             foreach (StockFinding f in findings)
@@ -166,6 +175,7 @@ namespace ESKD.MaterialSync.Sw
                 if (f == null || !f.NeedsDecision) continue;
                 bool kept;
                 lock (KeptDecisions) kept = !string.IsNullOrEmpty(path) && KeptDecisions.Contains(path + "|" + DecisionKey(f));
+                if (!kept) kept = ReviewAccepted.Contains(accepted, ReviewAccepted.Material(DecisionKey(f)));
                 if (kept)
                 {
                     f.Kept = true;
@@ -175,6 +185,21 @@ namespace ESKD.MaterialSync.Sw
                 pending.Add(f);
             }
             return pending;
+        }
+
+        /// <summary>Сохранённые в модели ответы «Оставить как есть» (значение свойства; пусто — нет).</summary>
+        public static string Accepted(ModelDoc2 doc)
+        {
+            if (doc == null) return "";
+            try
+            {
+                return new PropertyWriter(doc, true).Raw("", ReviewAccepted.PropertyName) ?? "";
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Материал по геометрии: свойство " + ReviewAccepted.PropertyName, ex);
+                return "";
+            }
         }
 
         /// <summary>

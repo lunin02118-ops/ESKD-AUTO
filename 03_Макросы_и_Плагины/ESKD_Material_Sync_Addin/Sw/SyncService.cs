@@ -25,13 +25,13 @@ namespace ESKD.MaterialSync.Sw
         public bool DryRun;
 
         /// <summary>
-        /// Обозначение — по имени файла, даже если в свойстве другое значение: конструктор сам отметил деталь в окне
-        /// обхода изделия (замечание владельца 22.09.2026: «Тело5» у тел, выделенных из многотельной детали).
+        /// Обозначение — по имени файла, даже если в свойстве другое значение: конструктор сам выбрал это в окне
+        /// «Проверить изделие» (замечание владельца 22.09.2026: «Тело5» у тел, выделенных из многотельной детали).
         /// </summary>
         public bool DesignationFromFile;
     }
 
-    /// <summary>Обозначение в свойствах расходится с именем файла — вопрос конструктору при обходе изделия.</summary>
+    /// <summary>Обозначение в свойствах расходится с именем файла — вопрос конструктору в окне «Проверить изделие».</summary>
     public sealed class DesignationMismatch
     {
         public string Current = "";
@@ -64,7 +64,7 @@ namespace ESKD.MaterialSync.Sw
             get
             {
                 foreach (StockFinding f in Stock)
-                    if (f.NeedsAssign || f.NeedsChoice) return true;
+                    if ((f.NeedsAssign || f.NeedsChoice) && !f.Kept) return true;
                 return false;
             }
         }
@@ -249,7 +249,9 @@ namespace ESKD.MaterialSync.Sw
                 w.Set("", number, expected);
             }
             else if (designation == Provenance.Manual && now.HasDesignation && !manual &&
-                     !string.Equals((current ?? "").Trim(), expected, StringComparison.Ordinal))
+                     !string.Equals((current ?? "").Trim(), expected, StringComparison.Ordinal) &&
+                     // «Оставить как есть» в окне «Проверить изделие» — ответ помнит сама модель; сменится имя файла — спросим снова.
+                     !ReviewAccepted.Contains(w.Raw("", ReviewAccepted.PropertyName), ReviewAccepted.Designation((current ?? "").Trim(), expected)))
             {
                 string warning = string.Format("Обозначение «{0}» не совпадает с именем файла «{1}» и оставлено без изменений",
                     current, now.BaseName);
@@ -606,9 +608,13 @@ namespace ESKD.MaterialSync.Sw
             try
             {
                 List<StockFinding> findings = StockService.Inspect(app, doc);
+                // Ответ «Оставить как есть» (в этом сеансе или в свойстве модели) снимает вопрос: без этого конструктору
+                // при каждом сохранении предлагали бы выбрать материал, который он оставил (ревью 23.09.2026).
+                StockService.PendingDecisions(DocInfo.PathOf(doc), findings, StockService.Accepted(doc));
                 report.Stock.AddRange(findings);
                 foreach (StockFinding finding in findings)
                 {
+                    if (finding.Kept) continue;
                     string message = StockService.Message(finding);
                     if (message.Length > 0) report.Warnings.Add(message);
                 }

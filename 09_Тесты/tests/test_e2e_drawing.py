@@ -223,7 +223,7 @@ class Drawing(SwTestCase):
     def test_D17_closed_model_is_not_opened_and_saved_by_default(self):
         """D17 (решение владельца 23.09.2026): деталь без команды конструктора не сохраняется. Чертёж сохранили и
         закрыли — модель, выгруженная вместе с ним, не открывается и не переписывается; конструктору сказано об этом в
-        строке состояния. Прежний «Формат» (не пустой) исправляет «Синхронизировать» на сборке: чертёж новее модели."""
+        строке состояния. Прежний «Формат» (не пустой) исправляет «Проверить изделие»: чертёж новее модели."""
         model = self._prepare_model()
         doc = self.s.open(model)
         for cfg in ("",) + tuple(com.as_list(doc.GetConfigurationNames)):
@@ -275,8 +275,8 @@ class Drawing(SwTestCase):
         self.assertEqual({c: "*)" for c in formats}, formats, "«Формат» модели — из листов А3 и А4 закрытого чертежа")
 
     def test_D15_product_sync_backfills_empty_format_from_drawings(self):
-        """D15: чертежи, сохранённые до исправления, формат в модель не записали. «Синхронизировать» на сборке
-        дозаполняет пустой «Формат» деталей и сборки по чертежу рядом (тот же путь, .slddrw)."""
+        """D15: чертежи, сохранённые до исправления, формат в модель не записали. «Проверить изделие» (здесь — её
+        запись без окна) дозаполняет пустой «Формат» деталей и сборки по чертежу рядом (тот же путь, .slddrw)."""
         for name in (A09,) + A09_COMPONENTS + (A10, A11):
             self.copy_fixture(name)
         plate, asm_path = self.path(A01), self.path(A09)
@@ -298,6 +298,41 @@ class Drawing(SwTestCase):
         formats = self._formats(asm_path)
         self.assertEqual({c: "А2" for c in formats}, formats, "сборка: формат чертежа СБ")
 
+
+    def test_D18_assembly_save_keeps_designer_edits_in_parts(self):
+        """D18 (ревью 23.09.2026): «Проверить изделие» дописала «Формат» сборке и сохранила её, а в её детали —
+        несохранённая правка конструктора. Save3 сборки без swSaveAsOptions_SaveReferenced изменённые компоненты не
+        пишет (проверено на SolidWorks 2025 23.09.2026): файл детали не меняется, деталь остаётся несохранённой — её
+        сохраняет конструктор. Тест держит это поведение: иначе сохранение сборки унесло бы и чужие правки."""
+        for name in (A09,) + A09_COMPONENTS + (A10, A11):
+            self.copy_fixture(name)
+        plate, asm_path = self.path(A01), self.path(A09)
+        with self.s.eskd_muted():
+            doc = self.s.open(asm_path)
+            for cfg in ("",) + tuple(com.as_list(doc.GetConfigurationNames)):
+                build.props(doc, {"Формат": ""}, cfg)
+            self.s.save(doc)
+            self.s.close(doc)
+        before = plate.read_bytes()
+        asm = self.s.open(asm_path)
+        part = self.s.sw.GetOpenDocumentByName(str(plate))
+        self.assertIsNotNone(part, "пластина загружена сборкой")
+        # Несохранённая правка конструктора: любая правка помечает документ изменённым — так же поступаем и здесь.
+        com.dyn(part).SetSaveFlag()
+        self.s.activate(asm)
+        com.call(self.s.eskd(), "CheckProductApplySilent")
+        applied = str(com.call(self.s.eskd(), "CheckApplied"))
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        part_dirty, asm_dirty = bool(com.dyn(part).GetSaveFlag), bool(com.dyn(asm).GetSaveFlag)
+        self.s.close_all()
+        untouched = before == plate.read_bytes()
+        self.path("outcome.txt").write_text(f"{applied}\nпластина изменена: {part_dirty}, сборка изменена: {asm_dirty}, "
+                                            f"файл пластины не тронут: {untouched}\n{notices}", encoding="utf-8")
+        self.assertIn("формат из чертежа", applied, applied)
+        self.assertIn("сборка сохранена", applied, applied)
+        self.assertFalse(asm_dirty, "сборка сохранена")
+        self.assertTrue(untouched, "файл пластины не тронут")
+        self.assertTrue(part_dirty, "пластина осталась несохранённой — её сохраняет конструктор")
 
     def test_D16_flat_pattern_sheet_does_not_block_format(self):
         """D16 (живая проверка NC3-7R 22.09.2026): у листовой детали в чертеже есть лист развёртки Drew «DXF1»

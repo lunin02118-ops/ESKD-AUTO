@@ -15,9 +15,24 @@ using SolidWorks.Interop.swconst;
 
 namespace ESKD.MaterialSync.Sw
 {
+    /// <summary>Как запущена проверка изделия.</summary>
+    public enum CheckMode
+    {
+        /// <summary>Только отчёт: модели не меняются (Т-6) — «Готово к производству», автотесты.</summary>
+        Report = 0,
+        /// <summary>Кнопка: одно окно с вопросами, обновлениями, замечаниями и списком сохранения.</summary>
+        Interactive = 1,
+        /// <summary>Без окна, с записью и сохранением — как ответило бы окно без конструктора (автотесты).</summary>
+        ApplySilent = 2
+    }
+
     /// <summary>
-    /// Кнопка К-3 «Проверить изделие» (ТЗ-02 Т-32…Т-34): изделие проверяется целиком и получает отчёт
-    /// `_Проверка.txt` с итогом ГОТОВО / ЗАМЕЧАНИЯ / БРАК. Ничего в моделях не меняется (Т-6).
+    /// Кнопка К-3 «Проверить изделие» (ТЗ-02 Т-32…Т-34). С 23.09.2026 — единственный порядок работы с изделием (решение
+    /// владельца, журнал З-27): проверка собирает всё сразу — что обновится само, о чём спросить конструктора, какие
+    /// замечания остаются — и показывает в одном окне (<see cref="ProductReviewForm"/>). «Применить и сохранить»
+    /// записывает ответы и обновления и сохраняет отмеченные файлы; отчёт `_Проверка.txt` с итогом ГОТОВО / ЗАМЕЧАНИЯ /
+    /// БРАК пишется по состоянию после записи. Сама проверка модели не перестраивает и без ответа ничего не меняет;
+    /// в режиме <see cref="CheckMode.Report"/> модели не меняются вовсе (Т-6).
     /// </summary>
     public static class CheckService
     {
@@ -27,23 +42,29 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Находки последней проверки: «Готово к производству» показывает их, если изделие не готово.</summary>
         public static CheckReport LastReport;
 
-        private sealed class Node
+        /// <summary>Итог записи последней проверки — строка <see cref="BatchReport.StatusLine"/>; пусто — ничего не записано.</summary>
+        public static string LastApplied = "";
+
+        /// <summary>Правила, которых запись окна не касается: их находки после записи не пересчитываются.</summary>
+        private static readonly string[] Stable =
         {
-            public string Path = "";
-            public ModelDoc2 Model;
-            public bool IsAssembly;
-            public bool IsPurchased;
-            public bool InProduct;
-        }
+            CheckRules.References, CheckRules.Drawing, CheckRules.Operations, CheckRules.Export, CheckRules.Drawings
+        };
 
         public static bool Run(ISldWorks app, bool interactive)
         {
+            return Run(app, interactive ? CheckMode.Interactive : CheckMode.Report);
+        }
+
+        public static bool Run(ISldWorks app, CheckMode mode)
+        {
+            bool interactive = mode == CheckMode.Interactive;
             LastOutcome = "";
+            LastApplied = "";
             LastReport = null;
-            ModelDoc2 doc = null;
             try
             {
-                doc = app.ActiveDoc as ModelDoc2;
+                ModelDoc2 doc = app.ActiveDoc as ModelDoc2;
                 if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY)
                 {
                     Fail(app, interactive, "Проверка изделия запускается на сборке изделия.");
@@ -56,36 +77,47 @@ namespace ESKD.MaterialSync.Sw
                     return false;
                 }
                 ProductLocation location = ProductLocator.Locate(assemblyPath);
-                string productFolder = location.ProductFolder.Length > 0
-                    ? location.ProductFolder : LzkNaming.ProductFolder(assemblyPath);
+                string productFolder = ProductReviewService.ProductFolderOf(assemblyPath);
+                string cipher = LzkNaming.Cipher(productFolder, assemblyPath);
+                // Правки конструктора в самой сборке — до первого обращения к составу. Разрешение облегчённых компонентов
+                // сборку изменённой не помечает (e2e K07, 23.09.2026), но читать флаг лучше до любых действий проверки.
+                bool topEdited = DocumentGuard.HasUserEdits(doc);
 
                 Status(app, "ЕСКД: проверка изделия — состав…");
-                CheckReport report = new CheckReport
-                {
-                    Assembly = Path.GetFileName(assemblyPath),
-                    Product = LzkNaming.Cipher(productFolder, assemblyPath),
-                    User = Settings.AuthorOrUser(),
-                    Time = DateTime.Now
-                };
+                CheckReport report = NewReport(assemblyPath, cipher);
                 if (!location.Found)
                     report.Add(CheckRules.References, CheckLevel.Issue, report.Assembly,
                         "изделие лежит вне заказа и базы (" + location.Reason + "): проверены только состав и реквизиты");
+                List<ProductNode> nodes = ProductReviewService.Collect(app, doc, assemblyPath, productFolder, report);
+                nodes[0].Edited = topEdited;
 
-                List<Node> nodes = Collect(app, doc, assemblyPath, productFolder, report);
-                Status(app, "ЕСКД: проверка изделия — перестроение…");
-                Rebuild(doc, report);
+                Status(app, "ЕСКД: проверка изделия — что обновится…");
+                ReviewSession session = ProductReviewService.Prepare(app, productFolder, cipher, nodes, mode != CheckMode.Report);
                 Status(app, "ЕСКД: проверка изделия — реквизиты…");
-                foreach (Node node in nodes.Where(n => n.InProduct && !n.IsPurchased))
+                Inspect(app, nodes, productFolder, assemblyPath, session, report, true);
+
+                bool asked = false;
+                BatchReport applied = null;
+                if (mode != CheckMode.Report && session.Plan.HasWork)
                 {
-                    Attributes(app, node, report);
-                    DrawingOrBch(node, report);
-                    Operations(node, report);
+                    ReviewChoice choice = ReviewChoice.ApplyAndSave;
+                    if (interactive)
+                    {
+                        asked = true;
+                        choice = Ask(app, session, report);
+                    }
+                    else session.Plan.AnswerSilently();
+                    if (choice != ReviewChoice.Cancel)
+                    {
+                        Status(app, "ЕСКД: проверка изделия — запись…");
+                        applied = ProductReviewService.Apply(app, session, choice == ReviewChoice.ApplyAndSave);
+                        LastApplied = applied.StatusLine();
+                        // Отчёт — по состоянию после записи: реквизиты, перестроение и книга считаются заново.
+                        Status(app, "ЕСКД: проверка изделия — проверка после записи…");
+                        report = Recheck(app, nodes, productFolder, assemblyPath, session, report);
+                    }
                 }
-                Status(app, "ЕСКД: проверка изделия — документы изделия…");
-                Workbook(productFolder, assemblyPath, report);
-                Export(productFolder, nodes, report);
-                Drawings(app, nodes, report);
-                foreach (Node node in nodes)
+                foreach (ProductNode node in nodes)
                     report.Checksums.Add(new KeyValuePair<string, string>(Path.GetFileName(node.Path), Checksum(node.Path)));
 
                 string path = Write(productFolder, report);
@@ -96,8 +128,12 @@ namespace ESKD.MaterialSync.Sw
                     "ok", CheckRules.OutcomeName(report.Outcome), report.Count(CheckLevel.Defect).ToString(),
                     report.Count(CheckLevel.Issue).ToString(), path
                 });
-                if (interactive) Show(app, report, path);
                 Status(app, "");
+                if (interactive)
+                {
+                    if (asked) Told(app, report, applied);
+                    else Show(app, report, path);
+                }
                 return report.Outcome != CheckLevel.Defect;
             }
             catch (Exception ex)
@@ -108,94 +144,138 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
-        // ------------------------------------------------------------------ правило «а»: состав
-        private static List<Node> Collect(ISldWorks app, ModelDoc2 doc, string assemblyPath, string productFolder, CheckReport report)
+        private static CheckReport NewReport(string assemblyPath, string cipher)
         {
-            List<Node> nodes = new List<Node>
+            return new CheckReport
             {
-                new Node { Path = assemblyPath, Model = doc, IsAssembly = true, InProduct = true }
+                Assembly = Path.GetFileName(assemblyPath),
+                Product = cipher,
+                User = Settings.AuthorOrUser(),
+                Time = DateTime.Now
             };
-            AssemblyDoc asm = (AssemblyDoc)doc;
-            try
-            {
-                asm.ResolveAllLightWeightComponents(false);
-            }
-            catch (COMException ex)
-            {
-                Log.Error("Проверка изделия: разрешение облегчённых компонентов", ex);
-            }
-            object[] comps = asm.GetComponents(false) as object[] ?? new object[0];
-            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { assemblyPath };
-            foreach (object o in comps)
-            {
-                Component2 comp = o as Component2;
-                if (comp == null) continue;
-                string path = comp.GetPathName() ?? "";
-                string name = path.Length > 0 ? Path.GetFileName(path) : (comp.Name2 ?? "компонент");
-                // Пропавший файл проверяется раньше подавления: SolidWorks показывает потерянный
-                // компонент подавленным, а это не исключение из состава, а оборванная ссылка.
-                if (path.Length == 0 || !File.Exists(path))
-                {
-                    report.Add(CheckRules.References, CheckRules.LevelOf(CheckRules.References), name, "файл компонента не найден");
-                    continue;
-                }
-                if (comp.GetSuppression2() == (int)swComponentSuppressionState_e.swComponentSuppressed) continue;
-                if (!seen.Add(path)) continue;
-                ModelDoc2 model = comp.GetModelDoc2() as ModelDoc2;
-                if (model == null)
-                {
-                    report.Add(CheckRules.References, CheckRules.LevelOf(CheckRules.References), name, "модель не загрузилась");
-                    continue;
-                }
-                bool inProduct = LzkNaming.IsInside(path, productFolder);
-                if (!inProduct && !Allowed(path, assemblyPath))
-                    report.Add(CheckRules.References, CheckRules.LevelOf(CheckRules.References), name,
-                        "ссылка за пределами заказа и базы (или на другой заказ): " + path);
-                nodes.Add(new Node
-                {
-                    Path = path,
-                    Model = model,
-                    IsAssembly = model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY,
-                    // Покупное — и по свойствам (SProp), и по папке заказа: в боевых заказах фурнитуру
-                    // складывают в «Стандартные изделия и фурнитура», не помечая каждую модель.
-                    IsPurchased = ComponentKind.IsPurchased(null, model, path, "Проверка изделия", LzkNaming.Cipher(productFolder, assemblyPath)),
-                    InProduct = inProduct
-                });
-            }
-            return nodes;
         }
 
-        /// <summary>Ссылка допустима: этот же заказ, база эталонов или библиотека стандартных изделий. Деталь чужого
-        /// заказа — нет (Т-32а): тот заказ закроют в архив, и ссылка оборвётся.</summary>
-        private static bool Allowed(string path, string assemblyPath)
+        /// <summary>
+        /// Правила проверки. first = false — после записи окна: пересчитываются только правила, которых запись касается
+        /// (перестроение, реквизиты, книга), остальные находки переносятся из первого прохода.
+        /// </summary>
+        private static void Inspect(ISldWorks app, List<ProductNode> nodes, string productFolder, string assemblyPath,
+            ReviewSession session, CheckReport report, bool first)
         {
-            ProductLocation location = ProductLocator.Locate(path);
-            if (location.InBase) return true;
-            if (!location.InOrder) return false;
-            string own = ProductLocator.Locate(assemblyPath).OrderFolder;
-            return own.Length == 0 || string.Equals(location.OrderFolder.TrimEnd('\\'), own.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase);
+            List<ProductNode> own = nodes.Where(n => n.InProduct && !n.IsPurchased).ToList();
+            RebuildErrors(own, report);
+            foreach (ProductNode node in own)
+            {
+                Attributes(app, node, first ? session.Planned(node.Path) : null, report);
+                if (!first) continue;
+                DrawingOrBch(node, report);
+                Operations(node, report);
+            }
+            ProductReviewService.Findings(session, report);
+            Status(app, "ЕСКД: проверка изделия — документы изделия…");
+            Workbook(productFolder, assemblyPath, report);
+            if (!first) return;
+            Export(productFolder, nodes, report);
+            Drawings(app, nodes, report);
         }
 
+        private static CheckReport Recheck(ISldWorks app, List<ProductNode> nodes, string productFolder, string assemblyPath,
+            ReviewSession session, CheckReport before)
+        {
+            CheckReport after = NewReport(assemblyPath, before.Product);
+            foreach (CheckFinding f in before.Findings.Where(x => Stable.Contains(x.Rule))) after.Findings.Add(f);
+            Inspect(app, nodes, productFolder, assemblyPath, session, after, false);
+            return after;
+        }
+
+        // ------------------------------------------------------------------ окно
+        /// <summary>Окно «Проверить изделие»: вопросы, обновления, замечания, список сохранения.</summary>
+        private static ReviewChoice Ask(ISldWorks app, ReviewSession session, CheckReport report)
+        {
+            ReviewPlan plan = session.Plan;
+            // Что окно запишет само и о чём оно спрашивает, в замечаниях не повторяется.
+            List<Notice> notices = new List<Notice>();
+            foreach (CheckFinding f in report.Findings)
+                if (!plan.Handles(f)) notices.Add(Notices.Of(Notices.FromCheck(f.Level), f.Document, f.Text));
+            List<string> parts = new List<string>();
+            if (plan.AutoChanges > 0) parts.Add("обновится само — " + plan.AutoChanges);
+            if (plan.Questions.Count > 0) parts.Add("вопросов — " + plan.Questions.Count);
+            if (notices.Count > 0) parts.Add("замечаний — " + notices.Count);
+            string headline = "Изделие " + report.Product + ": " + string.Join(", ", parts.ToArray());
+            string details = "Сборка " + report.Assembly + ". Ответьте на вопросы и нажмите «Применить и сохранить»: ответы " +
+                "и сохранение — за один раз, сохранять детали ещё раз не нужно. «Решить позже» ничего не меняет — вопрос " +
+                "вернётся при следующей проверке.";
+            Status(app, "");
+            using (ProductReviewForm form = new ProductReviewForm(plan, notices, headline, details))
+            {
+                form.ShowDialog(NoticeForm.Owner(app));
+                return form.DialogResult == DialogResult.OK ? form.Choice : ReviewChoice.Cancel;
+            }
+        }
+
+        /// <summary>Итог после окна — в строку состояния; ошибки записи и сохранения — окном.</summary>
+        private static void Told(ISldWorks app, CheckReport report, BatchReport applied)
+        {
+            string outcome = "ЕСКД: изделие проверено — " + CheckRules.OutcomeName(report.Outcome) +
+                (report.Findings.Count > 0
+                    ? " (брак " + report.Count(CheckLevel.Defect) + ", замечаний " + report.Count(CheckLevel.Issue) + ")"
+                    : "");
+            if (applied == null)
+            {
+                Status(app, outcome + "; ничего не изменено");
+                return;
+            }
+            string done = applied.StatusLine();
+            if (done.StartsWith("ЕСКД: ", StringComparison.Ordinal)) done = done.Substring("ЕСКД: ".Length);
+            Status(app, outcome + "; " + done);
+            if (applied.Errors.Count == 0) return;
+            List<Notice> errors = new List<Notice>();
+            foreach (string error in applied.Errors)
+            {
+                int colon = error.IndexOf(": ", StringComparison.Ordinal);
+                errors.Add(Notices.Of(NoticeLevel.Critical, colon > 0 ? error.Substring(0, colon) : "",
+                    colon > 0 ? error.Substring(colon + 2) : error));
+            }
+            NoticeForm.Present(app, "ЕСКД: проверка изделия", "Записано не всё",
+                "Остальное записано" + (applied.Saved > 0 || applied.AssemblySaved ? " и сохранено" : "") +
+                ". Документы из списка ниже проверьте и сохраните сами; подробности — в журнале надстройки.",
+                errors, NoticeLevel.Critical);
+        }
 
         // ------------------------------------------------------------------ правило «б»: перестроение
-        private static void Rebuild(ModelDoc2 doc, CheckReport report)
+        /// <summary>
+        /// Ошибки перестроения — по списку SolidWorks «Что не так», без перестроения: ForceRebuild3 помечал сборку
+        /// изменённой, и после проверки SolidWorks просил её сохранить (аудит 23.09.2026). Предупреждения — не ошибки.
+        /// </summary>
+        private static void RebuildErrors(List<ProductNode> nodes, CheckReport report)
         {
-            try
+            foreach (ProductNode node in nodes)
             {
-                if (!doc.ForceRebuild3(false))
-                    report.Add(CheckRules.Rebuild, CheckRules.LevelOf(CheckRules.Rebuild), Path.GetFileName(doc.GetPathName() ?? ""),
-                        "сборка не перестроилась без ошибок");
-            }
-            catch (COMException ex)
-            {
-                Log.Error("Проверка изделия: перестроение", ex);
-                report.Add(CheckRules.Rebuild, CheckRules.LevelOf(CheckRules.Rebuild), Path.GetFileName(doc.GetPathName() ?? ""),
-                    "перестроение не выполнено: " + ex.Message);
+                string name = Path.GetFileName(node.Path);
+                try
+                {
+                    ModelDocExtension ext = node.Model.Extension;
+                    if (ext.GetWhatsWrongCount() == 0) continue;
+                    object features, codes, warnings;
+                    if (!ext.GetWhatsWrong(out features, out codes, out warnings)) continue;
+                    int errors = 0;
+                    Array flags = warnings as Array;
+                    if (flags == null) continue;
+                    foreach (object flag in flags)
+                        if (flag is bool && !(bool)flag) errors++;
+                    if (errors > 0)
+                        report.Add(CheckRules.Rebuild, CheckRules.LevelOf(CheckRules.Rebuild), name,
+                            "ошибок перестроения: " + errors + " — см. «Что не так» в SolidWorks");
+                }
+                catch (COMException ex)
+                {
+                    Log.Error("Проверка изделия: ошибки перестроения " + name, ex);
+                }
             }
         }
 
         // ------------------------------------------------------------------ правило «в»: реквизиты, материал, масса
-        private static void Attributes(ISldWorks app, Node node, CheckReport report)
+        private static void Attributes(ISldWorks app, ProductNode node, SyncReport planned, CheckReport report)
         {
             string name = Path.GetFileName(node.Path);
             try
@@ -204,12 +284,13 @@ namespace ESKD.MaterialSync.Sw
                 string cfg = w.ActiveConfigurationName();
                 ParsedName parsed = DesignationParser.Parse(node.Path, " ");
                 // Пустое свойство — ещё не брак: обозначение и наименование система берёт из имени файла,
-                // материал — из материала SolidWorks. Их записывает «Синхронизировать», об этом и сообщаем.
+                // материал — из материала SolidWorks. Их записывает «Проверить изделие», об этом и сообщаем.
+                // Наименование берётся только из слов после обозначения: «775.СТЛ.00.005.sldprt» его не даёт (ревью
+                // 23.09.2026 — раньше такой случай обещал запись, которой синхронизация не делает).
                 Required(report, name, Value(w, cfg, "Обозначение"), parsed.HasDesignation, "Обозначение",
-                    "в имени файла его тоже нет — переименуйте по ЕСКД или оформите как покупное изделие");
-                Required(report, name, Value(w, cfg, "Наименование"),
-                    parsed.Title.Length > 0 || parsed.BaseName.Length > 0, "Наименование",
-                    "наименование неоткуда взять: переименуйте файл по ЕСКД");
+                    "в имени файла его тоже нет — переименуйте по ЕСКД или оформите как покупное изделие", planned);
+                Required(report, name, Value(w, cfg, "Наименование"), parsed.Title.Length > 0, "Наименование",
+                    "наименование неоткуда взять: переименуйте файл по ЕСКД", planned);
                 if (!node.IsAssembly && Value(w, cfg, "Материал_Строка").Length == 0)
                 {
                     string database;
@@ -220,14 +301,16 @@ namespace ESKD.MaterialSync.Sw
                             "материал не назначен: выберите его из библиотеки материалов");
                     else
                         report.Add(CheckRules.Sync, CheckRules.LevelOf(CheckRules.Sync), name,
-                            "материал «" + material + "» не записан в «Материал_Строка»: нажмите «Синхронизировать»");
+                            "материал «" + material + "» не записан в «Материал_Строка»: нажмите «Проверить изделие»").Fixable =
+                            Writes(planned, "Материал_Строка");
                 }
                 if (LzkOperations.ParseNumber(Value(w, cfg, "Масса_ФБ")) <= 0 &&
                     LzkOperations.ParseNumber(Value(w, cfg, "Масса_Таблица")) <= 0)
                 {
                     if (SyncService.ActiveMass(node.Model) > 0)
                         report.Add(CheckRules.Sync, CheckRules.LevelOf(CheckRules.Sync), name,
-                            "масса не записана в свойства: нажмите «Синхронизировать»");
+                            "масса не записана в свойства: нажмите «Проверить изделие»").Fixable =
+                            Writes(planned, "Масса_ФБ") || Writes(planned, "Масса_Таблица");
                     else
                         report.Add(CheckRules.Attributes, CheckRules.LevelOf(CheckRules.Attributes), name,
                             "массы нет: в модели нет тел или не назначен материал");
@@ -239,7 +322,7 @@ namespace ESKD.MaterialSync.Sw
                 report.Add(CheckRules.Attributes, CheckRules.LevelOf(CheckRules.Attributes), name, "реквизиты не прочитаны: " + ex.Message);
             }
             Thickness(node, report, name);
-            Diagnose(app, node, report, name);
+            Diagnose(app, node, planned, report, name);
         }
 
         /// <summary>
@@ -248,7 +331,7 @@ namespace ESKD.MaterialSync.Sw
         /// </summary>
         private const double MaxSheetThicknessMm = 50;
 
-        private static void Thickness(Node node, CheckReport report, string name)
+        private static void Thickness(ProductNode node, CheckReport report, string name)
         {
             if (node.IsAssembly) return;
             try
@@ -273,19 +356,20 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>
-        /// Предупреждения синхронизации вхолостую (ТЗ-02 Т-32в): ручной материал, обозначение не по имени
-        /// файла и прочее, о чём кнопка «Синхронизировать» сказала бы конструктору окном.
+        /// Предупреждения синхронизации вхолостую (ТЗ-02 Т-32в): ручной материал, обозначение не по имени файла и прочее —
+        /// все, без обрезки (раньше показывались первые три). planned — уже сделанная для окна; null — сделать сейчас.
         /// </summary>
-        private static void Diagnose(ISldWorks app, Node node, CheckReport report, string name)
+        private static void Diagnose(ISldWorks app, ProductNode node, SyncReport planned, CheckReport report, string name)
         {
             try
             {
-                SyncReport sync = SyncService.SyncModel(app, node.Model,
+                SyncReport sync = planned ?? SyncService.SyncModel(app, node.Model,
                     new SyncRequest { Reason = "проверка изделия", DryRun = true });
+                string designation = sync.Designation != null ? sync.Designation.Warning : null;
                 // Переключение единиц массы — работа самой синхронизации, а не повод разбираться: в отчёт не идёт.
                 foreach (string warning in sync.Warnings
-                    .Where(x => x.IndexOf(SyncService.MassUnitsWarning, StringComparison.Ordinal) < 0).Take(3))
-                    report.Add(CheckRules.Sync, CheckRules.LevelOf(CheckRules.Sync), name, warning);
+                    .Where(x => x.IndexOf(SyncService.MassUnitsWarning, StringComparison.Ordinal) < 0))
+                    report.Add(CheckRules.Sync, CheckRules.LevelOf(CheckRules.Sync), name, warning).Fixable = warning == designation;
             }
             catch (Exception ex)
             {
@@ -295,19 +379,29 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>
-        /// Реквизит записан — молчим; пусто, но восстановимо из имени файла — замечание «синхронизировать»;
-        /// восстановить неоткуда — брак (ТЗ-02 Т-32, правила «в» и «в2»).
+        /// Реквизит записан — молчим; пусто, но восстановимо из имени файла — замечание: «Проверить изделие» запишет;
+        /// восстановить неоткуда — брак (ТЗ-02 Т-32, правила «в» и «в2»). Исправимой (окно само запишет) находка
+        /// помечается, только если запись этого свойства есть в плане окна — иначе окно скрыло бы то, чего не делает.
         /// </summary>
         private static void Required(CheckReport report, string document, string value, bool recoverable,
-            string property, string defectText)
+            string property, string defectText, SyncReport planned)
         {
             if (value.Length > 0) return;
             if (recoverable)
                 report.Add(CheckRules.Sync, CheckRules.LevelOf(CheckRules.Sync), document,
-                    "свойство «" + property + "» не записано в модель: нажмите «Синхронизировать»");
+                    "свойство «" + property + "» не записано в модель: нажмите «Проверить изделие»").Fixable = Writes(planned, property);
             else
                 report.Add(CheckRules.Attributes, CheckRules.LevelOf(CheckRules.Attributes), document,
                     "не заполнено «" + property + "»: " + defectText);
+        }
+
+        /// <summary>Синхронизация вхолостую записала бы это свойство («Деталь [00] Масса_ФБ: … → …»).</summary>
+        private static bool Writes(SyncReport planned, string property)
+        {
+            if (planned == null) return false;
+            string marker = "] " + property + ": ";
+            return planned.Operations.Any(op => op.IndexOf(marker, StringComparison.Ordinal) >= 0 &&
+                !op.EndsWith(": удалено", StringComparison.Ordinal));
         }
 
         private static string Value(PropertyWriter w, string cfg, string name)
@@ -326,7 +420,7 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ правило «г»: чертёж или БЧ
-        private static void DrawingOrBch(Node node, CheckReport report)
+        private static void DrawingOrBch(ProductNode node, CheckReport report)
         {
             if (node.IsAssembly) return;
             string name = Path.GetFileName(node.Path);
@@ -345,7 +439,7 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ правило «д»: операции
-        private static void Operations(Node node, CheckReport report)
+        private static void Operations(ProductNode node, CheckReport report)
         {
             string name = Path.GetFileName(node.Path);
             try
@@ -409,7 +503,7 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ правило «е»: выгрузка для производства
-        private static void Export(string productFolder, List<Node> nodes, CheckReport report)
+        private static void Export(string productFolder, List<ProductNode> nodes, CheckReport report)
         {
             string path = Path.Combine(productFolder, CheckRules.ExportReportName);
             if (!File.Exists(path))
@@ -421,7 +515,7 @@ namespace ESKD.MaterialSync.Sw
             // Сверяем блоки отчёта по отдельности: имя детали стоит и в «Пропущено» («PDF не сохранён»), и такая
             // деталь выгруженной не считается (Т-32е).
             ExportLog log = ExportLog.Parse(File.ReadAllText(path, Encoding.UTF8));
-            foreach (Node node in nodes.Where(n => n.InProduct && !n.IsPurchased && !n.IsAssembly))
+            foreach (ProductNode node in nodes.Where(n => n.InProduct && !n.IsPurchased && !n.IsAssembly))
             {
                 string name = Path.GetFileNameWithoutExtension(node.Path);
                 string file = Path.GetFileName(node.Path);
@@ -458,9 +552,9 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ правило «з»: чертежи
-        private static void Drawings(ISldWorks app, List<Node> nodes, CheckReport report)
+        private static void Drawings(ISldWorks app, List<ProductNode> nodes, CheckReport report)
         {
-            foreach (Node node in nodes.Where(n => n.InProduct && !n.IsPurchased))
+            foreach (ProductNode node in nodes.Where(n => n.InProduct && !n.IsPurchased))
             {
                 string drawingPath = Path.ChangeExtension(node.Path, ".slddrw");
                 if (!File.Exists(drawingPath)) continue;

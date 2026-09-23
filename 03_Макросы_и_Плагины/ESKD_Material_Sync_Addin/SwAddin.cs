@@ -130,7 +130,8 @@ namespace ESKD.MaterialSync
             int buttons = (int)(swCommandItemType_e.swMenuItem | swCommandItemType_e.swToolbarItem);
             int settings = group.AddCommandItem2("Настройки ЕСКД", -1, "Фамилии, организация, масса, флаги синхронизации",
                 "Настройки ЕСКД", 0, "ShowSettings", "EnableCommand", CommandUserIds[1], buttons);
-            int sync = group.AddCommandItem2("Синхронизировать", -1, "Обновить реквизиты, материал и массу активного документа",
+            int sync = group.AddCommandItem2("Синхронизировать", -1,
+                "Обновить реквизиты, материал и массу активной детали (на чертеже — его модели); на сборке — «Проверить изделие»",
                 "Синхронизировать", 1, "SyncCurrentDoc", "EnableCommand", CommandUserIds[2], buttons);
             int bch = group.AddCommandItem2("Деталь БЧ", -1, "Установить или снять признак безчертёжной детали (ГОСТ Р 2.109-2023)",
                 "Деталь БЧ", 2, "ToggleDrawingless", "EnableBchCommand", CommandUserIds[3], buttons);
@@ -138,7 +139,8 @@ namespace ESKD.MaterialSync
                 "Операции, тираж и срок, выгрузка SWTools — книга ЛЗК с участками и калькулятором расхода: в заказе — в «04_Сопроводительная документация», иначе — рядом со сборкой",
                 "Ведомость ЛЗК", 3, "BuildLzk", "EnableLzkCommand", CommandUserIds[4], buttons);
             int check = group.AddCommandItem2("Проверить изделие", -1,
-                "Состав, перестроение, реквизиты, чертежи и ведомость — отчёт _Проверка.txt с итогом ГОТОВО, ЗАМЕЧАНИЯ или БРАК",
+                "Всё по изделию в одном окне: что обновится само, вопросы (материал к профилю, обозначение), замечания — " +
+                "«Применить и сохранить» и отчёт _Проверка.txt с итогом ГОТОВО, ЗАМЕЧАНИЯ или БРАК",
                 "Проверить изделие", 4, "CheckProduct", "EnableCheckCommand", CommandUserIds[5], buttons);
             // Пункт «Отчёт проверки» живёт в меню «Инструменты → ЕСКД» и на панели инструментов: на вкладке
             // ему места нет, а открыть прежний отчёт, ничего не проверяя, бывает нужно (ТЗ-02 Т-34).
@@ -200,8 +202,10 @@ namespace ESKD.MaterialSync
                     // «Новая ревизия» (ids[8]) живёт там, где живёт ревизия: на чертеже и на БЧ-детали (Т-48).
                     // «Готово к производству» (ids[10]) и «Закрыть заказ» (ids[11]) завершают работу над изделием и заказом,
                     // поэтому стоят на вкладке сборки в конце — там, где работа над изделием заканчивается.
+                    // «Синхронизировать» (ids[1]) на сборке не стоит: всё изделие обновляет «Проверить изделие» (ids[4]) —
+                    // одна кнопка вместо двух (решение владельца 23.09.2026, З-27).
                     int[] wanted = part ? new[] { ids[0], ids[1], ids[2], ids[6], ids[8] }
-                        : assembly ? new[] { ids[0], ids[1], ids[7], ids[3], ids[4], ids[6], ids[10], ids[11] }
+                        : assembly ? new[] { ids[0], ids[7], ids[3], ids[4], ids[6], ids[10], ids[11] }
                         : new[] { ids[0], ids[1], ids[8] };
                     CommandTab tab = _commands.GetCommandTab(docType, TabTitle);
 
@@ -348,15 +352,14 @@ namespace ESKD.MaterialSync
 
         /// <summary>
         /// Кнопка «Синхронизировать»: итог в строке состояния, предупреждения — окном (только по нажатию, Д-38).
-        /// Стоя в сборке — реквизиты самой сборки и обход всего изделия: материал конструктор назначает в дереве сборки,
-        /// детали при этом отдельно не сохраняются, и без обхода их свойства остаются пустыми (замечание владельца
-        /// 20.09.2026). Изменённые детали обход сохраняет только после подтверждения (23.09.2026).
+        /// На сборке (пункт меню — на вкладке сборки кнопки нет) — «Проверить изделие»: всё изделие обновляется одним окном
+        /// с вопросами и списком сохранения (решение владельца 23.09.2026, З-27).
         /// </summary>
         public void SyncCurrentDoc()
         {
             if (ActiveDocType() == (int)swDocumentTypes_e.swDocASSEMBLY)
             {
-                SyncProductBatch();
+                CheckService.Run(_app, CheckMode.Interactive);
                 return;
             }
             SyncReport report = RunExplicitSync();
@@ -382,8 +385,9 @@ namespace ESKD.MaterialSync
         }
 
         /// <summary>
-        /// Обход изделия без окон — для автотестов и работы без интерфейса. Неоднозначные типоразмеры пропускаются.
-        /// Возвращает строку итога, как в строке состояния.
+        /// Обновить изделие без окон, как ответило бы окно «Проверить изделие» без конструктора, — для автотестов и работы
+        /// без интерфейса: всё, что обновляется само, и единственный подходящий материал; спорное остаётся без ответа.
+        /// Изменённые документы без несохранённых правок сохраняются. Возвращает строку итога, как в строке состояния.
         /// </summary>
         public string SyncProductSilent()
         {
@@ -391,7 +395,7 @@ namespace ESKD.MaterialSync
             {
                 ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
                 if (doc == null || doc.GetType() != (int)swDocumentTypes_e.swDocASSEMBLY) return "";
-                return BatchSyncService.SyncProduct(_app, doc, null).StatusLine();
+                return ProductReviewService.SyncProduct(_app, doc).StatusLine();
             }
             catch (Exception ex)
             {
@@ -456,36 +460,6 @@ namespace ESKD.MaterialSync
             {
                 Core.Log.Error("ApplyStockMaterialSilent", ex);
                 return -1;
-            }
-        }
-
-        /// <summary>
-        /// Обход изделия из сборки: каждой детали — то же, что при сохранении, плюс подбор материала по
-        /// типоразмеру, и сохранение. Неоднозначные типоразмеры спрашиваются один раз на всё изделие.
-        /// </summary>
-        private void SyncProductBatch()
-        {
-            try
-            {
-                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
-                if (doc == null) return;
-                IntPtr hwnd = IntPtr.Zero;
-                Frame frame = _app.Frame() as Frame;
-                if (frame != null) hwnd = new IntPtr(frame.GetHWnd());
-                IWin32Window owner = hwnd != IntPtr.Zero ? new WindowWrapper(hwnd) : null;
-
-                BatchReport batch = BatchSyncService.SyncProduct(_app, doc, owner);
-                StatusText(batch.StatusLine());
-                if (batch.Warnings.Count > 0)
-                    MessageBox.Show(string.Join("\n", batch.Warnings.ToArray()), "ЕСКД: обход изделия",
-                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                else if (batch.Parts == 0)
-                    MessageBox.Show("В сборке нет деталей из папки изделия — обходить нечего.", "ЕСКД: обход изделия",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            catch (Exception ex)
-            {
-                Core.Log.Error("Обход изделия", ex);
             }
         }
 
@@ -717,10 +691,25 @@ namespace ESKD.MaterialSync
             CheckService.Run(_app, true);
         }
 
-        /// <summary>Проверка изделия без окон. Итог — CheckStatus().</summary>
+        /// <summary>Проверка изделия без окон и без записи в модели. Итог — CheckStatus().</summary>
         public void CheckProductSilent()
         {
-            CheckService.Run(_app, false);
+            CheckService.Run(_app, CheckMode.Report);
+        }
+
+        /// <summary>
+        /// «Проверить изделие» без окна, с записью: ответы — как без конструктора (единственный подходящий материал; спорное —
+        /// без ответа), сохраняются изменённые документы без несохранённых правок. Итог — CheckStatus() и CheckApplied().
+        /// </summary>
+        public void CheckProductApplySilent()
+        {
+            CheckService.Run(_app, CheckMode.ApplySilent);
+        }
+
+        /// <summary>Что записала последняя проверка — строка итога записи; пусто — ничего не записано.</summary>
+        public string CheckApplied()
+        {
+            return CheckService.LastApplied;
         }
 
         /// <summary>Открыть последний отчёт проверки, не проверяя заново (Т-34).</summary>

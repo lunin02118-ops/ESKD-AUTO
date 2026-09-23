@@ -23,6 +23,12 @@ namespace ESKD.MaterialSync.Core
         public string Document = "";
         public string Text = "";
 
+        /// <summary>
+        /// Окно «Проверить изделие» исправит это само или спросит об этом (не записанное свойство, обозначение не по имени
+        /// файла, спорный материал): пока документ стоит в окне, находка в его замечаниях не повторяется.
+        /// </summary>
+        public bool Fixable;
+
         public override string ToString()
         {
             return CheckRules.LevelName(Level) + " — " + (Document.Length > 0 ? Document : "изделие") + " — " + Text;
@@ -50,9 +56,11 @@ namespace ESKD.MaterialSync.Core
             return Findings.Count(f => f.Level == level);
         }
 
-        public void Add(string rule, CheckLevel level, string document, string text)
+        public CheckFinding Add(string rule, CheckLevel level, string document, string text)
         {
-            Findings.Add(new CheckFinding { Rule = rule, Level = level, Document = document ?? "", Text = text ?? "" });
+            CheckFinding finding = new CheckFinding { Rule = rule, Level = level, Document = document ?? "", Text = text ?? "" };
+            Findings.Add(finding);
+            return finding;
         }
     }
 
@@ -68,13 +76,13 @@ namespace ESKD.MaterialSync.Core
 
         /// <summary>Правило а: компоненты найдены и лежат в этом заказе, базе или библиотеке.</summary>
         public const string References = "а";
-        /// <summary>Правило б: перестроение без ошибок.</summary>
+        /// <summary>Правило б: перестроение без ошибок (список «Что не так», без перестроения).</summary>
         public const string Rebuild = "б";
         /// <summary>Правило в: реквизиты, материал из библиотеки, масса записана.</summary>
         public const string Attributes = "в";
         /// <summary>
         /// Правило в2: реквизит в модель ещё не записан, но берётся из имени файла или материала
-        /// SolidWorks — это не брак, а несделанная синхронизация: кнопка «Синхронизировать» всё запишет.
+        /// SolidWorks — это не брак, а несделанная синхронизация: окно «Проверить изделие» всё запишет.
         /// </summary>
         public const string Sync = "в2";
         /// <summary>Правило г: у детали есть чертёж или признак БЧ.</summary>

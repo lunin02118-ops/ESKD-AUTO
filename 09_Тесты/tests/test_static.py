@@ -818,9 +818,9 @@ class StaticRepository(StaticTestCase):
         self.assertEqual(1, export.count("swDocumentTypes_e.swDocDRAWING,"), "чертёж открывается в одном месте")
         self.assertIn("восстановление настройки DXF", export, "настройки DXF пользователя возвращаются")
         services = {name: (ADDIN / "Sw" / name).read_text(encoding="utf-8")
-                    for name in ("CheckService.cs", "ExportService.cs", "LzkService.cs")}
+                    for name in ("ProductReviewService.cs", "ExportService.cs", "LzkService.cs")}
         self.assertEqual([], [n for n, text in services.items() if "ComponentKind.IsPurchased(" not in text],
-                         "проверка, выгрузка и ЛЗК решают «покупное» одним правилом")
+                         "проверка (состав изделия собирает ProductReviewService), выгрузка и ЛЗК решают «покупное» одним правилом")
         etalon = (ADDIN / "Sw" / "EtalonService.cs").read_text(encoding="utf-8")
         self.assertIn("ReadManifest(snapshot) ?? State(snapshot)", etalon, "прежние снимки сравниваются по манифесту")
         setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")

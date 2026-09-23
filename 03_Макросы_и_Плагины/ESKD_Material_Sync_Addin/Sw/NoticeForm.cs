@@ -200,7 +200,8 @@ namespace ESKD.MaterialSync.Sw
                 form.ShowDialog(Owner(app));
         }
 
-        private static IWin32Window Owner(ISldWorks app)
+        /// <summary>Окно SolidWorks как владелец модального окна; null — не найдено.</summary>
+        internal static IWin32Window Owner(ISldWorks app)
         {
             try
             {
