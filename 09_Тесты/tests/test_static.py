@@ -986,6 +986,55 @@ class StaticRepository(StaticTestCase):
                 pass
             backup.unlink(missing_ok=True)
 
+    def test_T0_session_waits_for_own_solidworks_only(self):
+        """T0 (23.09.2026, T05): после зависания stop() завершает свой SolidWorks через kill, и процесс ещё виден
+        какое-то время. Новая сессия его дожидается, а не отказывает — иначе все следующие тесты прогона становятся
+        ошибками. SolidWorks, запущенный не тестами (в том числе получивший номер нашего завершённого процесса),
+        по-прежнему — немедленный отказ, и его никто не трогает. Вместо SolidWorks — дочерние процессы Python."""
+        import sys
+        import time
+        import psutil
+        from eskd_e2e import session
+
+        def child(seconds):
+            return subprocess.Popen([sys.executable, "-c", f"import time; time.sleep({seconds})"])
+
+        children = []
+        try:
+            # Свой, завершается за время ожидания: старт дожидается, а не отказывает.
+            leaving = child(2)
+            children.append(leaving)
+            session.remember_own(leaving.pid)
+            session.wait_own_exit([psutil.Process(leaving.pid)], timeout=30)
+            self.assertIsNotNone(leaving.poll(), "старт не дождался своего процесса")
+
+            # Свой, но не завершается: отказ после ожидания, с номером процесса.
+            stuck = child(60)
+            children.append(stuck)
+            session.remember_own(stuck.pid)
+            with self.assertRaisesRegex(session.SessionRefused, str(stuck.pid)):
+                session.wait_own_exit([psutil.Process(stuck.pid)], timeout=1)
+
+            # Чужой: отказ сразу, без ожидания, процесс жив.
+            foreign = child(60)
+            children.append(foreign)
+            started = time.time()
+            with self.assertRaisesRegex(session.SessionRefused, "уже запущен"):
+                session.wait_own_exit([psutil.Process(foreign.pid)], timeout=30)
+            self.assertLess(time.time() - started, 5, "чужой SolidWorks не повод ждать")
+            self.assertIsNone(foreign.poll(), "чужой процесс завершён")
+
+            # Номер нашего процесса достался другому: время создания не то — чужой.
+            session._OWN_SOLIDWORKS[foreign.pid] = psutil.Process(foreign.pid).create_time() - 100
+            with self.assertRaisesRegex(session.SessionRefused, "уже запущен"):
+                session.wait_own_exit([psutil.Process(foreign.pid)], timeout=30)
+        finally:
+            for p in children:
+                session._OWN_SOLIDWORKS.pop(p.pid, None)
+                if p.poll() is None:
+                    p.kill()
+                p.wait(10)
+
     def test_T0_vba_export_matches_swp(self):
         """T0: текстовая выгрузка модулей VBA пяти макросов SWPlus и SHA-256 в manifest.json совпадают с .swp (WP-0.2);
         после правки макроса выгрузку обновляет tools/export_vba.py в том же коммите."""
@@ -1007,6 +1056,18 @@ class StaticRepository(StaticTestCase):
         for handler in ("OnDocSave(DocState s, string fileName)", "OnDocSavePost(DocState s, int saveType, string fileName)"):
             start = hub.index(handler)
             self.assertIn("if (s.Destroyed) return 0;", hub[start:start + 200], handler)
+
+    def test_T0_idle_queue_cannot_spin(self):
+        """T0 (23.09.2026, T05): очередь простоя надстройки не крутится без конца. Замена материала, которая не прижилась
+        (материал тела перекрывает материал детали), пересохраняла деталь, FileSaveNotify снова ставил подбор, и OnIdle
+        не возвращал управление SolidWorks — тот переставал отвечать, прогон e2e обрывался на T06."""
+        hub = (ADDIN / "Sw" / "EventHub.cs").read_text(encoding="utf-8-sig")
+        idle = re.search(r"private int OnIdle\(\)\s*\{(.*?)\n        \}", hub, re.S).group(1)
+        self.assertRegex(idle, r"int count = _idle\.Count;\s*(//[^\n]*\s*)*while \(count-- > 0",
+                         "OnIdle выполняет только задачи, стоявшие в очереди на входе")
+        remember = re.search(r"private void Remember\(ModelDoc2 doc, SyncReport report\)\s*\{(.*?)\n        \}", hub, re.S).group(1)
+        self.assertIn("if (report.StockNeedsWork && doc != null && !_resaving)", remember,
+                      "собственное пересохранение надстройки не ставит подбор материала заново")
 
     def test_T0_swplus_macros_rebuild_from_original(self):
         """T0 (аудит 19.09, М-К2): исходный SWPlus из git + все правки ЕСКД по порядку (tools/swplus_apply_all.py) дают

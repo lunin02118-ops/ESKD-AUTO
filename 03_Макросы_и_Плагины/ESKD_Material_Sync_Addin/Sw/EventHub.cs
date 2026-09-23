@@ -227,7 +227,11 @@ namespace ESKD.MaterialSync.Sw
             _processingIdle = true;
             try
             {
-                while (_idle.Count > 0)
+                // Только задачи, стоявшие в очереди на входе; поставленные по ходу ждут следующего простоя. Задача с
+                // Save3 внутри сама ставит новые (FileSaveNotify), и цепочка «задача → сохранение → задача» не выпускала
+                // SolidWorks из обработчика: он переставал отвечать (T05, 23.09.2026).
+                int count = _idle.Count;
+                while (count-- > 0 && _idle.Count > 0)
                 {
                     IdleTask task = _idle.Dequeue();
                     try
@@ -597,7 +601,10 @@ namespace ESKD.MaterialSync.Sw
             _lastWarnings.Clear();
             _lastWarnings.AddRange(report.Warnings);
             // Материал по геометрии (Р-8): назначать и спрашивать — только в простое, документ сейчас занят SolidWorks.
-            if (report.StockNeedsWork && doc != null)
+            // Не из собственного пересохранения: подбор к нему либо уже поставлен в очередь (после «Сохранить как»),
+            // либо только что выполнен. Иначе замена, которая не прижилась (материал тела перекрывает материал детали),
+            // ставила себя в очередь бесконечно — T05, 23.09.2026.
+            if (report.StockNeedsWork && doc != null && !_resaving)
                 _idle.Enqueue(new IdleTask { Doc = doc, Kind = "stock" });
             if (report.Warnings.Count > 0 && doc != null)
                 _idle.Enqueue(new IdleTask { Doc = doc, Kind = "status", Text = report.StatusLine() });
