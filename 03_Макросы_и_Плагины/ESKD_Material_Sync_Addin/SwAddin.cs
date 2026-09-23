@@ -131,7 +131,7 @@ namespace ESKD.MaterialSync
             int settings = group.AddCommandItem2("Настройки ЕСКД", -1, "Фамилии, организация, масса, флаги синхронизации",
                 "Настройки ЕСКД", 0, "ShowSettings", "EnableCommand", CommandUserIds[1], buttons);
             int sync = group.AddCommandItem2("Синхронизировать", -1,
-                "Обновить реквизиты, материал и массу активной детали (на чертеже — его модели); на сборке — «Проверить изделие»",
+                "Деталь: окно — что обновится само, вопросы о материале и обозначении, сохранить; чертёж — реквизиты его модели; сборка — «Проверить изделие»",
                 "Синхронизировать", 1, "SyncCurrentDoc", "EnableCommand", CommandUserIds[2], buttons);
             int bch = group.AddCommandItem2("Деталь БЧ", -1, "Установить или снять признак безчертёжной детали (ГОСТ Р 2.109-2023)",
                 "Деталь БЧ", 2, "ToggleDrawingless", "EnableBchCommand", CommandUserIds[3], buttons);
@@ -362,6 +362,16 @@ namespace ESKD.MaterialSync
                 CheckService.Run(_app, CheckMode.Interactive);
                 return;
             }
+            // Деталь — то же окно, что у «Проверить изделие», для одной детали (решение владельца 23.09.2026, З-27).
+            if (ActiveDocType() == (int)swDocumentTypes_e.swDocPART)
+            {
+                string done = ReviewActivePart(true);
+                if (done != null)
+                {
+                    StatusText(done);
+                    return;
+                }
+            }
             SyncReport report = RunExplicitSync();
             if (report == null || report.Skipped) return;
             try
@@ -374,6 +384,31 @@ namespace ESKD.MaterialSync
             catch (Exception ex)
             {
                 Core.Log.Error("SyncCurrentDoc: итог", ex);
+            }
+        }
+
+        /// <summary>
+        /// «Синхронизировать» в детали без окна — ответы как без конструктора (единственный подходящий материал вместо
+        /// неподходящего; выбор из нескольких и обозначение — без ответа), изменённая деталь без несохранённых правок
+        /// сохраняется. Для автотестов. Строка итога; пусто — активный документ не деталь или не сохранён в файл.
+        /// </summary>
+        public string ReviewActivePartSilent()
+        {
+            if (ActiveDocType() != (int)swDocumentTypes_e.swDocPART) return "";
+            return ReviewActivePart(false) ?? "";
+        }
+
+        private string ReviewActivePart(bool interactive)
+        {
+            try
+            {
+                ModelDoc2 doc = _app.ActiveDoc as ModelDoc2;
+                return doc != null ? PartReviewService.Run(_app, doc, interactive) : null;
+            }
+            catch (Exception ex)
+            {
+                Core.Log.Error("Синхронизировать (деталь)", ex);
+                return "ЕСКД: синхронизация не выполнена — " + ex.Message;
             }
         }
 

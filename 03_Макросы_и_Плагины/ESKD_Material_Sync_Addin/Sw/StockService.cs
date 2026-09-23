@@ -106,28 +106,8 @@ namespace ESKD.MaterialSync.Sw
 
         public const string SheetFolderName = "листовой металл";
 
-        /// <summary>
-        /// Детали, по которым конструктор нажал «Позже». Сохранение детали снова заводит задачу подбора,
-        /// и без этой памяти окно выбора всплывало бы после каждого сохранения. Память живёт до конца сеанса
-        /// SolidWorks и сбрасывается, как только материал у детали появился.
-        /// </summary>
-        private static readonly HashSet<string> PostponedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        public static void Postpone(string path)
-        {
-            if (!string.IsNullOrEmpty(path)) lock (PostponedPaths) { PostponedPaths.Add(path); }
-        }
-
-        public static bool IsPostponed(string path)
-        {
-            if (string.IsNullOrEmpty(path)) return false;
-            lock (PostponedPaths) { return PostponedPaths.Contains(path); }
-        }
-
-        public static void Resume(string path)
-        {
-            if (!string.IsNullOrEmpty(path)) lock (PostponedPaths) { PostponedPaths.Remove(path); }
-        }
+        /// <summary>Где конструктор отвечает на вопрос о материале (решение владельца 23.09.2026, журнал З-27).</summary>
+        public const string WhereToAnswer = "кнопка «Синхронизировать» (в сборке — «Проверить изделие»)";
 
         /// <summary>
         /// Позиции, по которым конструктор ответил «оставить как есть»: путь|типоразмер|ГОСТ|стоящий материал. Живёт до
@@ -203,14 +183,14 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>
-        /// Конструктор не ответил («Позже» или окно не показано при включённом вопросе): замена его материала отменяется —
-        /// назначается только то, где материала не было вовсе (Assign).
+        /// Конструктор ещё не ответил (сохранение детали — не ответ): замена его материала и выбор из нескольких
+        /// отменяются — назначается только то, где материала не было, а подходящий один (Assign).
         /// </summary>
         public static void Decline(IEnumerable<StockFinding> findings)
         {
             if (findings == null) return;
             foreach (StockFinding f in findings)
-                if (f != null && f.Verdict == StockVerdict.Replace) f.Chosen = null;
+                if (f != null && f.NeedsDecision) f.Chosen = null;
         }
 
         /// <summary>Что деталь показывает про себя: только чтение, без отката и перестроения.</summary>
@@ -482,10 +462,16 @@ namespace ESKD.MaterialSync.Sw
                         finding.Request.Gost.Length > 0 ? " " + finding.Request.Gost : "");
                 case StockVerdict.Choose:
                     return string.IsNullOrWhiteSpace(finding.CurrentMaterial)
-                        ? string.Format("{0}: типоразмеру «{1}» соответствуют {2} материала — материал не назначен, выберите его",
-                            where, finding.Request.Size, finding.Match.Candidates.Count)
+                        ? string.Format("{0}: типоразмеру «{1}» соответствуют {2} материала — материал не назначен, выберите его: {3}",
+                            where, finding.Request.Size, finding.Match.Candidates.Count, WhereToAnswer)
                         : string.Format("{0}: материал «{1}» не соответствует геометрии, а типоразмеру «{2}» соответствуют {3} материала — " +
-                            "выберите нужный", where, finding.CurrentMaterial, finding.Request.Size, finding.Match.Candidates.Count);
+                            "выберите нужный: {4}", where, finding.CurrentMaterial, finding.Request.Size, finding.Match.Candidates.Count,
+                            WhereToAnswer);
+                case StockVerdict.Replace:
+                    // Сохранение детали материал конструктора не меняет (З-27): заменить или оставить — его ответ в окне.
+                    return string.Format("{0}: материал «{1}» не соответствует геометрии, типоразмеру «{2}» подходит «{3}» — " +
+                        "заменить или оставить: {4}", where, finding.CurrentMaterial, finding.Request.Size,
+                        StockText.Describe(finding.Match.First), WhereToAnswer);
                 default:
                     return "";
             }

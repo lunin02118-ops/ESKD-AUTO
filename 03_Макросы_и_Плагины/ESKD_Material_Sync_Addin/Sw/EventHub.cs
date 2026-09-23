@@ -383,10 +383,11 @@ namespace ESKD.MaterialSync.Sw
         /// этого сохранения снова заводило подбор. Теперь назначенный материал и свойства остаются в открытой детали —
         /// её сохраняет конструктор.
         ///
-        /// Кто решает: пустой материал с единственным кандидатом (Assign) подставляется молча — правило 20.09.2026;
-        /// замена стоящего материала (Replace) и выбор из нескольких (Choose) — только ответом в окне «оставить /
-        /// исправить». Окно выключено (StockAskOnSave = 0, автотесты) — однозначное применяется молча, как раньше.
-        /// «Позже» — до конца сеанса не спрашиваем и материал конструктора не заменяем.
+        /// Кто решает: пустой материал с единственным кандидатом (Assign) подставляется молча — правило 20.09.2026.
+        /// Замена стоящего материала (Replace) и выбор из нескольких (Choose) — только ответом в окне «Синхронизировать»
+        /// (деталь) или «Проверить изделие» (сборка), где есть и «Оставить как есть». Ctrl+S ничего не спрашивает, в
+        /// строке состояния — подсказка (решение владельца 23.09.2026, журнал З-27); прежнее окно выбора материала
+        /// после сохранения убрано.
         /// </summary>
         private void ApplyStock(ModelDoc2 doc)
         {
@@ -396,38 +397,18 @@ namespace ESKD.MaterialSync.Sw
                 string path = SafePath(doc);
                 List<StockFinding> findings = StockService.Inspect(_app, doc);
                 List<StockFinding> pending = StockService.PendingDecisions(path, findings, StockService.Accepted(doc));
-                if (pending.Count > 0 && Settings.Read().StockAskOnSave)
-                {
-                    if (StockService.IsPostponed(path))
-                    {
-                        StockService.Decline(pending);
-                    }
-                    else
-                    {
-                        using (StockPickForm form = new StockPickForm(DocInfo.TitleOf(doc), pending))
-                        {
-                            if (form.ShowDialog(Owner()) == DialogResult.OK)
-                            {
-                                StockService.Resume(path);
-                                form.ApplyTo(pending);
-                                StockService.RememberKept(path, pending);
-                            }
-                            else
-                            {
-                                StockService.Postpone(path);
-                                StockService.Decline(pending);
-                            }
-                        }
-                        // Пока окно было открыто, документ могли закрыть: назначать материал закрытому — падение (R01).
-                        if (!Alive(doc)) return;
-                    }
-                }
+                StockService.Decline(pending);
+                string ask = pending.Count > 0 ? "материал к профилю ждёт вашего ответа (" + pending.Count + ") — " + StockService.WhereToAnswer : "";
 
                 SyncReport applied = new SyncReport();
                 int changed = StockService.Apply(_app, doc, findings, applied);
                 foreach (string warning in applied.Warnings) Log.Warn(warning);
                 foreach (string operation in applied.Operations) Log.Info(operation);
-                if (changed == 0) return;
+                if (changed == 0)
+                {
+                    if (ask.Length > 0) Status("ЕСКД: " + ask);
+                    return;
+                }
 
                 // Свойства и масса — сразу в открытую деталь, иначе графа 3 и книга ЛЗК разошлись бы с телом.
                 // Перестроение без сохранения: смена материала и списка вырезов оставляет модель неперестроенной, и
@@ -439,7 +420,8 @@ namespace ESKD.MaterialSync.Sw
                 doc.EditRebuild3();
                 _lastWarnings.Clear();
                 _lastWarnings.AddRange(report.Warnings);
-                string text = "ЕСКД: материал назначен по типоразмеру (" + changed + ") — деталь изменена, сохраните её";
+                string text = "ЕСКД: материал назначен по типоразмеру (" + changed + ") — деталь изменена, сохраните её" +
+                    (ask.Length > 0 ? "; " + ask : "");
                 Log.Info(text + ": " + path);
                 Status(text);
             }

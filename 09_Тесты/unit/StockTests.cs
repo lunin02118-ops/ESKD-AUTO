@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Windows.Forms;
@@ -148,49 +148,15 @@ namespace ESKD.Tests
             Assert.IsTrue(StockCatalog.NameAgreesWithGost(m.First), "имя не спорит со свойствами");
         }
 
-        // ----------------------------------------------------------------- окно выбора
-        /// <summary>
-        /// Окно выбора: один типоразмер — одна строка, даже если позиций с ним в детали несколько, а в списке
-        /// стоят обозначения материала, а не имена файлов библиотеки. Показывать окно тесту нельзя (прогон
-        /// остановился бы на модальном окне), поэтому проверяется его состав и то, что выбрано.
-        /// </summary>
-        public static void Test_Pick_form_asks_once_per_size_and_keeps_the_choice()
-        {
-            List<MaterialInfo> library = Library();
-            StockFinding first = Finding("Элемент списка вырезов1", Sheet(library, "6,0"), "6,0");
-            StockFinding same = Finding("Элемент списка вырезов2", Sheet(library, "6,0"), "6,0");
-            StockFinding other = Finding("листовой металл", Sheet(library, "10,0"), "10,0");
-
-            using (StockPickForm form = new StockPickForm("ПРТИ.301111.001 Пластина",
-                                                          new List<StockFinding> { first, same, other }))
-            {
-                ComboBox[] lists = form.Lists();
-                Assert.AreEqual(2, lists.Length, "две строки: 6,0 спрашивается один раз на обе позиции");
-                Assert.AreEqual(first.Match.Candidates.Count, lists[0].Items.Count, "варианты листа 6 мм");
-                Assert.AreEqual(StockPickForm.Describe(first.Match.First), (string)lists[0].Items[0],
-                                "в списке обозначение материала, а не имя файла библиотеки");
-
-                Assert.AreEqual(-1, lists[0].SelectedIndex, "заранее ничего не выбрано: вопрос с готовым ответом — не вопрос");
-
-                lists[0].SelectedIndex = 1;   // конструктор выбрал вторую марку
-                form.ReadChoices();
-
-                MaterialInfo picked;
-                Assert.IsTrue(form.Chosen.TryGetValue(StockService.DecisionKey(first), out picked), "выбор по листу 6 мм запомнен");
-                Assert.AreEqual(first.Match.Candidates[1].Name, picked.Name, "запомнено именно выбранное");
-
-                form.ApplyTo(new[] { first, same, other });
-                Assert.AreEqual(first.Match.Candidates[1].Name, first.Chosen.Name, "выбор дошёл до первой позиции");
-                Assert.AreEqual(first.Match.Candidates[1].Name, same.Chosen.Name, "и до второй позиции того же листа");
-                Assert.IsNull(other.Chosen, "лист 10 мм не выбран — назначать нечего");
-            }
-        }
+        // ----------------------------------------------------------------- ответ конструктора
+        // Окно выбора материала после сохранения убрано (решение владельца 23.09.2026, З-27): о материале спрашивает окно
+        // «Синхронизировать» / «Проверить изделие» (ReviewTests). Здесь — что до ответа и после него происходит с позицией.
 
         /// <summary>
-        /// Материал стоит, но с профилем не сходится, а подходящий один (Replace): заменить выбор конструктора можно
-        /// только с его согласия — в списке есть «Оставить как есть», и ответ «оставить» снимает замену (23.09.2026).
+        /// Сохранение детали — не ответ: замена материала конструктора и выбор из нескольких отменяются, назначается только
+        /// то, где материала не было, а подходящий один. «Оставить» помнится по детали до конца сеанса.
         /// </summary>
-        public static void Test_Pick_form_offers_to_keep_a_material_that_disagrees_with_geometry()
+        public static void Test_Unanswered_question_keeps_the_designer_material()
         {
             List<MaterialInfo> library = Library();
             StockMatch eight = Sheet(library, "8,0");
@@ -199,36 +165,21 @@ namespace ESKD.Tests
             replace.CurrentMaterial = "Сталь 3";
             replace.Chosen = eight.First;
             Assert.IsTrue(replace.NeedsDecision, "замена материала конструктора — это вопрос, а не молчаливое действие");
-
-            using (StockPickForm form = new StockPickForm("ПРТИ.301111.005 Косынка", new List<StockFinding> { replace }))
-            {
-                ComboBox list = form.Lists()[0];
-                Assert.AreEqual(eight.Candidates.Count + 1, list.Items.Count, "кандидаты и пункт «оставить»");
-                Assert.AreEqual(StockPickForm.KeepCaption("Сталь 3"), (string)list.Items[list.Items.Count - 1], "последний пункт — оставить");
-                Assert.IsTrue(form.Captions()[0].Contains("сейчас «Сталь 3»"), "в строке виден стоящий материал: " + form.Captions()[0]);
-                Assert.AreEqual(-1, list.SelectedIndex, "заранее ничего не выбрано");
-
-                list.SelectedIndex = list.Items.Count - 1;
-                form.ReadChoices();
-                form.ApplyTo(new[] { replace });
-                Assert.IsTrue(replace.Kept, "ответ «оставить» запомнен в позиции");
-                Assert.IsNull(replace.Chosen, "замены не будет");
-                Assert.IsFalse(replace.NeedsAssign, "назначать нечего");
-            }
-
-            // Окно закрыто без ответа («Позже»): замена тоже отменяется, назначается только то, где материала не было.
-            StockFinding later = Finding("листовой металл", eight, "8,0");
-            later.Verdict = StockVerdict.Replace;
-            later.CurrentMaterial = "Сталь 3";
-            later.Chosen = eight.First;
+            StockFinding choose = Finding("Элемент списка вырезов2", Sheet(library, "6,0"), "6,0");
+            choose.Chosen = choose.Match.First;
             StockFinding empty = Finding("Элемент списка вырезов1", eight, "8,0");
             empty.Verdict = StockVerdict.Assign;
             empty.Chosen = eight.First;
-            StockService.Decline(new[] { later, empty });
-            Assert.IsNull(later.Chosen, "«Позже» — материал конструктора не заменён");
-            Assert.IsTrue(empty.NeedsAssign, "пустой материал по-прежнему подставляется");
+            StockService.Decline(new[] { replace, choose, empty });
+            Assert.IsNull(replace.Chosen, "материал конструктора не заменён");
+            Assert.IsNull(choose.Chosen, "из нескольких за конструктора не выбрано");
+            Assert.IsTrue(empty.NeedsAssign, "пустой материал с одним подходящим подставляется");
+            Assert.IsTrue(StockService.Message(replace).Contains(StockService.WhereToAnswer),
+                "в строке состояния — где ответить: " + StockService.Message(replace));
+            Assert.IsTrue(StockService.Message(replace).Contains(StockText.Describe(eight.First)), "и что подходит");
 
             // «Оставить» помнится до конца сеанса по детали: при следующем сохранении вопрос не повторяется.
+            replace.Kept = true;
             string path = @"D:\И\01_3D\ПРТИ.301111.005 Косынка.sldprt";
             StockService.RememberKept(path, new[] { replace });
             StockFinding again = Finding("листовой металл", eight, "8,0");
@@ -236,7 +187,8 @@ namespace ESKD.Tests
             again.CurrentMaterial = "Сталь 3";
             again.Chosen = eight.First;
             Assert.AreEqual(0, StockService.PendingDecisions(path, new[] { again }).Count, "вопрос не повторяется");
-            Assert.IsTrue(again.Kept && again.Chosen == null, "и замены нет");
+            Assert.IsTrue(again.Kept, "позиция оставлена");
+            Assert.IsNull(again.Chosen, "и замены нет");
             StockFinding changed = Finding("листовой металл", eight, "8,0");
             changed.Verdict = StockVerdict.Replace;
             changed.CurrentMaterial = "Сталь 20";
@@ -248,57 +200,18 @@ namespace ESKD.Tests
         /// Один типоразмер разных сортаментов — разные вопросы: выбор для трубы одного ГОСТа не уходит позиции того же
         /// размера другого ГОСТа (ключ ответа раньше был только по размеру).
         /// </summary>
-        public static void Test_Pick_form_keys_the_answer_by_size_and_gost()
+        public static void Test_Answer_key_is_size_gost_and_current_material()
         {
             List<MaterialInfo> library = Library();
             StockFinding a = Finding("Элемент списка вырезов1", Sheet(library, "6,0"), "6,0");
             StockFinding b = Finding("Элемент списка вырезов2", Sheet(library, "6,0"), "6,0");
             b.Request.Gost = "ГОСТ 19281-2014";
             Assert.IsTrue(StockService.DecisionKey(a) != StockService.DecisionKey(b), "ключи разные");
-            using (StockPickForm form = new StockPickForm("", new List<StockFinding> { a, b }))
-            {
-                Assert.AreEqual(2, form.Lists().Length, "две строки — по сортаменту");
-                form.Lists()[0].SelectedIndex = 0;
-                form.ReadChoices();
-                form.ApplyTo(new[] { a, b });
-                Assert.NotNull(a.Chosen, "первая строка выбрана");
-                Assert.IsNull(b.Chosen, "вторая строка не получила чужой выбор");
-            }
-        }
-
-        /// <summary>Кнопка «Позже» ничего не выбирает: молча подставить материал за конструктора нельзя.</summary>
-        public static void Test_Pick_form_keeps_nothing_until_the_choice_is_read()
-        {
-            List<MaterialInfo> library = Library();
-            StockFinding finding = Finding("листовой металл", Sheet(library, "6,0"), "6,0");
-            using (StockPickForm form = new StockPickForm("", new List<StockFinding> { finding }))
-            {
-                Assert.AreEqual(0, form.Chosen.Count, "пока выбор не подтверждён, назначать нечего");
-            }
-        }
-
-        /// <summary>
-        /// При обходе изделия в одном окне сходятся позиции разных деталей. По именам папок списка вырезов
-        /// («Элемент списка вырезов2») не понять, где они, поэтому в строке стоит деталь.
-        /// </summary>
-        public static void Test_Pick_form_names_the_parts_when_walking_a_product()
-        {
-            List<MaterialInfo> library = Library();
-            StockMatch six = Sheet(library, "6,0");
-            StockFinding first = Finding("Элемент списка вырезов2", six, "6,0");
-            StockFinding second = Finding("Элемент списка вырезов2", six, "6,0");
-            first.Owner = "ПРТИ.301111.001 Стойка";
-            second.Owner = "ПРТИ.301111.002 Полка";
-
-            using (StockPickForm form = new StockPickForm("Изделие ПРТИ.301111.000 СБ Рама",
-                                                          new List<StockFinding> { first, second }))
-            {
-                Assert.AreEqual(1, form.Lists().Length, "один типоразмер — один вопрос на обе детали");
-                string caption = form.Captions()[0];
-                Assert.IsTrue(caption.IndexOf("Стойка", StringComparison.Ordinal) >= 0 &&
-                              caption.IndexOf("Полка", StringComparison.Ordinal) >= 0,
-                              "в строке названы обе детали: " + caption);
-            }
+            StockFinding c = Finding("Элемент списка вырезов3", Sheet(library, "6,0"), "6,0");
+            Assert.AreEqual(StockService.DecisionKey(a), StockService.DecisionKey(c), "та же позиция в другой папке — тот же вопрос");
+            MaterialInfo sheet = new MaterialInfo { Name = "Лист 6 Ст3сп", LineDesignation = "Лист Б-ПН-НО-6,0 ГОСТ 19903-2015 / Ст3сп" };
+            Assert.AreEqual(sheet.LineDesignation, StockText.Describe(sheet), "в ответах — обозначение материала, а не имя файла библиотеки");
+            Assert.AreEqual("Лист 6 Ст3сп", StockText.Describe(new MaterialInfo { Name = "Лист 6 Ст3сп" }), "обозначения нет — имя");
         }
 
         private static StockFinding Finding(string folder, StockMatch match, string size)
@@ -373,19 +286,23 @@ namespace ESKD.Tests
         }
 
         /// <summary>
-        /// Материал стоит и геометрии не соответствует, подходящий один — заменяем молча (решение владельца 22.09.2026:
-        /// «он должен менять, предупреждение — только если вариантов несколько»). Случай с экрана владельца: профиль
-        /// 80х80х4, а материал от трубы 40х40х2.
+        /// Материал стоит и геометрии не соответствует, подходящий один (случай с экрана владельца: профиль 80х80х4, а
+        /// материал от трубы 40х40х2). Замена готова, но это выбор конструктора: сохранение его не переписывает, в строке
+        /// состояния — что подходит и где ответить; заменяет ответ в окне «Синхронизировать» / «Проверить изделие», где
+        /// этот вариант первый (решения владельца 23.09.2026, З-25 и З-27; до них, 22.09.2026, менялось молча).
         /// </summary>
-        public static void Test_Wrong_material_with_single_candidate_is_replaced()
+        public static void Test_Wrong_material_with_single_candidate_is_offered()
         {
             StockFinding f = Finding(new StockRequest { Kind = StockKind.Profile, Size = "30х15х1,5", Gost = "ГОСТ 8644-68" },
                                      "Лист 8,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97");
             Assert.AreEqual(StockVerdict.Replace, f.Verdict, "вердикт");
             Assert.NotNull(f.Chosen, "на что заменить");
-            Assert.IsTrue(f.NeedsAssign, "позиция идёт в назначение");
-            Assert.IsFalse(f.NeedsChoice, "не спрашиваем");
-            Assert.AreEqual("", StockService.Message(f), "без предупреждения");
+            Assert.IsTrue(f.NeedsDecision, "решает конструктор");
+            Assert.IsFalse(f.NeedsChoice, "вариант один — выбирать из нескольких не нужно");
+            string message = StockService.Message(f);
+            Assert.IsTrue(message.Contains("не соответствует геометрии") && message.Contains(StockText.Describe(f.Chosen)),
+                "в строке состояния — что подходит: " + message);
+            Assert.IsTrue(message.Contains(StockService.WhereToAnswer), "и где ответить: " + message);
         }
 
         /// <summary>Материал не соответствует, подходящих несколько — спрашиваем, сами не выбираем.</summary>

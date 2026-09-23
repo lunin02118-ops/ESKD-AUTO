@@ -107,9 +107,14 @@ class Stock(SwTestCase):
         self.s.save(doc)
         self.s.wait_addin_idle(timeout=60.0)
         self.assertEqual(("", ""), build.material_of(doc, ""), "за конструктора материал не выбран")
+        warnings = str(com.call(self.s.eskd(), "LastSyncWarnings") or "")
+        self.assertIn("«Синхронизировать»", warnings, f"подсказка, где выбрать: {warnings}")
 
         self.assertEqual(0, int(com.call(self.s.eskd(), "ApplyStockMaterialSilent")),
                          "без выбора назначать нечего")
+        status = str(com.call(self.s.eskd(), "ReviewActivePartSilent") or "")
+        self.assertNotIn("материалов назначено 1", status, f"и «Синхронизировать» без ответа не выбирает: {status}")
+        self.assertEqual(("", ""), build.material_of(doc, ""), "материал по-прежнему не выбран")
 
     # ------------------------------------------------------------------ нет в библиотеке
     def test_T04_size_outside_library_is_reported_not_guessed(self):
@@ -128,23 +133,37 @@ class Stock(SwTestCase):
         self.assertIn("не найден в библиотеке", warnings, warnings)
 
     # ------------------------------------------------------------------ расхождение
-    def test_T05_wrong_material_is_replaced_by_single_candidate(self):
-        """T05: конструктор выбрал материал, потом сменил профиль. Подходящий материал один — надстройка меняет
-        его сама и без предупреждения (решение владельца 22.09.2026; до этого только уведомляла)."""
+    def test_T05_wrong_material_waits_for_designer_answer(self):
+        """T05: конструктор выбрал материал, потом сменил профиль; подходящий материал один. Ctrl+S его материал не
+        меняет и ничего не спрашивает — в строке состояния подсказка, где ответить (решение владельца 23.09.2026, З-25 и
+        З-27; до этого, по решению 22.09.2026, сохранение меняло материал само). «Синхронизировать» в детали — окно;
+        без окна (ответ как без конструктора) единственный подходящий заменяет неподходящий, и деталь сохраняется."""
         doc = build.structural_tube(self.s, 400, FLAT_OVAL, SHEET8)
-        # Вердикт — до сохранения: после него надстройка в простое уже меняет материал (как у «Assign» в T02).
         rows = self._report()
         self.assertEqual(1, len(rows), rows)
         self.assertEqual("Replace", rows[0][1], f"расхождение материала и профиля: {rows[0]}")
         self.assertEqual(SHEET8, rows[0][4], "виден материал, который стоит сейчас")
-        self._save(doc, "ПРТИ.301111.005 Стойка.sldprt", None)
+        path = self._save(doc, "ПРТИ.301111.005 Стойка.sldprt", None)
         self.s.wait_addin_idle(timeout=60.0)
         self.s.save(doc)
         self.s.wait_addin_idle(timeout=60.0)
         name, _ = build.material_of(doc, "")
-        self.assertEqual(TUBE_MATERIAL, name, "материал заменён на подходящий профилю")
+        self.assertEqual(SHEET8, name, "сохранение материал конструктора не меняет")
         warnings = str(com.call(self.s.eskd(), "LastSyncWarnings") or "")
-        self.assertNotIn("не соответствует геометрии", warnings, warnings)
+        self.assertIn("не соответствует геометрии", warnings, warnings)
+        self.assertIn("«Синхронизировать»", warnings, "подсказка, где ответить")
+        self.assertFalse(bool(com.dyn(doc).GetSaveFlag), "деталь сохранена и не изменена после сохранения")
+
+        status = str(com.call(self.s.eskd(), "ReviewActivePartSilent") or "")
+        self.path("outcome.txt").write_text(status + "\n" + warnings, encoding="utf-8")
+        self.assertIn("материалов назначено 1", status, status)
+        self.assertIn("сохранено 1", status, status)
+        name, _ = build.material_of(doc, "")
+        self.assertEqual(TUBE_MATERIAL, name, "материал заменён на подходящий профилю")
+        self.assertFalse(bool(com.dyn(doc).GetSaveFlag), "«Синхронизировать» сохранила деталь сама")
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertEqual(TUBE_LINE, V(disk, "Материал_Строка", "00") or V(disk, "Материал_Строка"), "в файле — новый материал")
 
     # ------------------------------------------------------------------ всё сходится
     def test_T06_matching_material_causes_no_changes(self):

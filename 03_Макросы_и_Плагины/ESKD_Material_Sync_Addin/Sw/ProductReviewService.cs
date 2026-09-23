@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -332,7 +332,7 @@ namespace ESKD.MaterialSync.Sw
             foreach (StockFinding f in findings)
             {
                 if (f.Verdict == StockVerdict.Assign && f.Chosen != null)
-                    file.Changes.Add("материал «" + StockPickForm.Describe(f.Chosen) + "» — по типоразмеру «" + f.Request.Size + "»" +
+                    file.Changes.Add("материал «" + StockText.Describe(f.Chosen) + "» — по типоразмеру «" + f.Request.Size + "»" +
                         (f.Folder.Length > 0 && f.Folder != StockService.SheetFolderName ? " («" + f.Folder + "»)" : ""));
                 else if (f.Verdict == StockVerdict.NotInLibrary)
                     target.StockNotes.Add(StockService.Message(f));
@@ -356,12 +356,12 @@ namespace ESKD.MaterialSync.Sw
                     foreach (MaterialInfo info in f.Match.Candidates)
                     {
                         q.Materials.Add(info);
-                        q.Options.Add(StockPickForm.Describe(info));
+                        q.Options.Add(StockText.Describe(info));
                     }
                     if (current.Length > 0)
                     {
                         q.KeepIndex = q.Options.Count;
-                        q.Options.Add(StockPickForm.KeepCaption(current));
+                        q.Options.Add(StockText.KeepCaption(current));
                     }
                     materials.Add(key, q);
                     session.Plan.Questions.Add(q);
@@ -440,7 +440,8 @@ namespace ESKD.MaterialSync.Sw
                         continue;
                     }
                     if (!Save(t, batch)) continue;
-                    if (t.Node.IsTop) batch.AssemblySaved = true;
+                    // Главный документ — деталь у «Синхронизировать» в детали: он считается среди сохранённых деталей.
+                    if (t.Node.IsTop && t.Node.IsAssembly) batch.AssemblySaved = true;
                     else batch.Saved++;
                 }
             }
@@ -469,7 +470,7 @@ namespace ESKD.MaterialSync.Sw
                 batch.Failed += sync.Failures;
                 bool units = sync.Warnings.Any(IsUnits);
                 if (sync.Changes > 0 || units) t.Touched = true;
-                if (t.Node.IsTop) batch.AssemblyChanges += sync.Changes;
+                if (t.Node.IsTop && t.Node.IsAssembly) batch.AssemblyChanges += sync.Changes;
                 else if (sync.Changes > 0) batch.Changed++;
                 if (fromFile) batch.Renamed++;
             }

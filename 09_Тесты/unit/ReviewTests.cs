@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Forms;
@@ -50,7 +50,7 @@ namespace ESKD.Tests
                 material.Options.Add(name);
             }
             material.KeepIndex = material.Options.Count;
-            material.Options.Add(StockPickForm.KeepCaption("Сталь 3"));
+            material.Options.Add(StockText.KeepCaption("Сталь 3"));
             plan.Questions.Add(material);
 
             ReviewQuestion designation = new ReviewQuestion
@@ -136,7 +136,7 @@ namespace ESKD.Tests
             single.Materials.Add(Material("Лист 6 Ст3сп"));
             single.Options.Add("Лист 6 Ст3сп");
             single.KeepIndex = 1;
-            single.Options.Add(StockPickForm.KeepCaption("Сталь 3"));
+            single.Options.Add(StockText.KeepCaption("Сталь 3"));
             plan.Questions.Add(single);
 
             plan.AnswerSilently();
@@ -155,7 +155,7 @@ namespace ESKD.Tests
                 Assert.AreEqual(2, lists.Length, "два вопроса — два списка");
                 Assert.AreEqual(ProductReviewForm.Later, (string)lists[0].Items[0], "первый пункт — решить позже");
                 Assert.AreEqual(0, lists[0].SelectedIndex, "материал заранее не выбран");
-                Assert.AreEqual(StockPickForm.KeepCaption("Сталь 3"), (string)lists[0].Items[lists[0].Items.Count - 1], "последний — оставить");
+                Assert.AreEqual(StockText.KeepCaption("Сталь 3"), (string)lists[0].Items[lists[0].Items.Count - 1], "последний — оставить");
                 Assert.AreEqual(1, lists[1].SelectedIndex, "«Тело5» — явная случайность: имя файла предложено заранее");
 
                 CheckedListBox save = form.SaveList;
