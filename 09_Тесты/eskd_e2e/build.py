@@ -159,16 +159,24 @@ def square_tube(session, outer_mm, wall_mm, length_mm, material):
     return doc, feat
 
 
-def sheet_metal_plate(session, length_mm, width_mm, thickness_mm, material):
-    """Листовая деталь — базовая кромка из прямоугольника: есть SheetMetal и развёртка (выгрузка DXF, Т-28).
-    Merge = False: с объединением SolidWorks кромку на пустой детали не строит."""
-    doc = session.new_doc(paths.PART_TEMPLATE)
-    sketch_rectangles(doc, [(-length_mm / 2000, -width_mm / 2000, length_mm / 2000, width_mm / 2000)])
+def sheet_metal_flange(doc, rect_mm, thickness_mm, tab=False):
+    """Прямоугольник листа (x1, y1, x2, y2, мм) на фронтальной плоскости: на детали без тел — базовая кромка (SheetMetal
+    и развёртка, выгрузка DXF, Т-28), на уже листовой детали (tab=True) — язычок, слитый с листом: так конструктор
+    удлиняет лист в исполнении. Merge = False у базовой кромки: с объединением SolidWorks кромку на пустой детали не строит."""
+    x1, y1, x2, y2 = rect_mm
+    sketch_rectangles(doc, [(x1 / 1000.0, y1 / 1000.0, x2 / 1000.0, y2 / 1000.0)])
     t = thickness_mm / 1000.0
     feat = doc.FeatureManager.InsertSheetMetalBaseFlange2(t, False, t, 0.0254, 0.01, False, 0, 0, 1, com.null_dispatch(),
-                                                           False, 0, 0.0001, 0.0001, 0.5, True, False, True, True)
+                                                           False, 0, 0.0001, 0.0001, 0.5, True, tab, True, True)
     if feat is None:
-        raise RuntimeError("Базовая кромка листовой детали не построена")
+        raise RuntimeError("Язычок листовой детали не построен" if tab else "Базовая кромка листовой детали не построена")
+    return com.dyn(feat)
+
+
+def sheet_metal_plate(session, length_mm, width_mm, thickness_mm, material):
+    """Листовая деталь — базовая кромка из прямоугольника: есть SheetMetal и развёртка (выгрузка DXF, Т-28)."""
+    doc = session.new_doc(paths.PART_TEMPLATE)
+    sheet_metal_flange(doc, (-length_mm / 2, -width_mm / 2, length_mm / 2, width_mm / 2), thickness_mm)
     set_material(doc, material)
     doc.ForceRebuild3(False)
     return doc
@@ -243,6 +251,63 @@ def sheet_metal_outline(session, outline, thickness_mm, material):
     set_material(doc, material)
     doc.ForceRebuild3(False)
     return doc
+
+
+def features_of_type(doc, type_name):
+    """Элементы дерева верхнего уровня с GetTypeName2 == type_name, по порядку дерева."""
+    out = []
+    feat = doc.FirstFeature
+    while feat is not None:
+        feat = com.dyn(feat)
+        if str(feat.GetTypeName2) == type_name:
+            out.append(feat)
+        feat = feat.GetNextFeature
+    return out
+
+
+def sheet_thickness_mm(doc):
+    """Толщина листовой детали по элементу «Листовой металл», мм; None — деталь не листовая. Так её читает надстройка."""
+    for feat in features_of_type(doc, "SheetMetal"):
+        data = com.dyn(feat.GetDefinition)
+        if data is not None:
+            return round(float(data.Thickness) * 1000.0, 4)
+    return None
+
+
+def _delete_feature(doc, feat):
+    """DeleteSelection2(swDelete_Children | swDelete_Absorbed) — без вопросов."""
+    doc.ClearSelection2(True)
+    name = str(feat.Name)
+    if not feat.Select2(False, 0) or not doc.Extension.DeleteSelection2(1 | 2):
+        raise RuntimeError(f"Элемент «{name}» не удалён")
+    doc.ClearSelection2(True)
+
+
+def delete_extrusions(doc):
+    """Снять с детали все вытягивания и их эскизы — с последнего: тел не остаётся, а сам документ, его конфигурации,
+    свойства и материал те же, поэтому сборки и чертежи, которые на него ссылаются, остаются с ним связаны.
+    Эскиз SolidWorks 2025 оставляет в дереве и с флагом «поглощённые» — он удаляется отдельно (в фикстурах других
+    эскизов нет)."""
+    extrusions = features_of_type(doc, "Extrusion")
+    if not extrusions:
+        raise RuntimeError("В детали нет вытягиваний")
+    for feat in reversed(extrusions):
+        _delete_feature(doc, feat)
+    for sketch in reversed(features_of_type(doc, "ProfileFeature")):
+        _delete_feature(doc, sketch)
+    if features_of_type(doc, "Extrusion") or features_of_type(doc, "ProfileFeature") or com.as_list(doc.GetBodies2(0, True)):
+        raise RuntimeError("После удаления вытягиваний в детали остались эскизы или тела")
+
+
+def fold_sheet_metal(doc):
+    """Лист согнут во всех конфигурациях: «Развёртка» (FlatPattern) погашена в каждой явно — и в исполнениях, созданных
+    раньше листа (деталь перестроена на месте). IsSuppressed2 по чужой конфигурации отвечает для развёртки неверно;
+    состояние видно по IsSuppressed, когда конфигурация активна."""
+    names = com.str_array([str(c) for c in com.as_list(doc.GetConfigurationNames)])
+    for flat in features_of_type(doc, "FlatPattern"):
+        if not flat.SetSuppression2(0, 3, names):
+            raise RuntimeError("Развёртка не погашена во всех конфигурациях")
+    doc.ForceRebuild3(False)
 
 
 def sheet_metal_angle(session, leg_mm, flange_mm, depth_mm, thickness_mm, material):

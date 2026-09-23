@@ -9,6 +9,7 @@
 Запуск (SolidWorks должен быть закрыт):  python 09_Тесты/fixtures/build_fixtures.py
 Исправление материалов болта и двигателя без пересборки корпуса:  python 09_Тесты/fixtures/build_fixtures.py --fix-materials
 Добавление корпуса ред. 4 (A-15…A-20) без пересборки:  python 09_Тесты/fixtures/build_fixtures.py --add-corpus-r4
+Детали из листа — листовым металлом на месте, без пересборки корпуса:  python 09_Тесты/fixtures/build_fixtures.py --sheet-metal
 """
 import hashlib
 import json
@@ -19,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from eskd_e2e import build, com, paths  # noqa: E402
+from eskd_e2e import build, com, oracles, paths  # noqa: E402
 from eskd_e2e.session import SwSession  # noqa: E402
 
 SHEET4 = "Лист 4,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89"
@@ -42,6 +43,76 @@ A09 = "ПРТИ.468211.100 СБ Кондуктор сварочный.sldasm"
 A10 = "ПРТИ.468211.101 Пластина опорная.slddrw"
 A11 = "ПРТИ.468211.100 СБ Кондуктор сварочный.slddrw"
 A13 = "ПРТИ.468211.106 Крышка.sldprt"
+A14_ASSEMBLY = "ПРТИ.468211.108 СБ Узел.sldasm"
+
+# Детали из листа строятся листовым металлом, как их строит конструктор (23.09.2026): у детали из «Лист …», построенной
+# вытягиванием, нет развёртки — выгрузка не делает DXF и пишет об этом (6fad331), проверка изделия даёт «ЗАМЕЧАНИЯ»,
+# и «Готово к производству» недостижимо (G05). Прямоугольники листа, мм: первый — базовая кромка, следующие — язычки
+# исполнений (каждое следующее исполнение длиннее на язычок). Толщина — из сортамента.
+SHEET_PARTS = {
+    "A-01": (4, [(-100, -50, 100, 50)]),
+    "A-03": (4, [(-50, -20, 50, 20), (50, -20, 100, 20), (100, -20, 150, 20)]),
+    "A-06": (6, [(-75, -30, 75, 30)]),
+    "A-13": (3, [(-60, -40, 60, 40)]),
+    "A-16": (3, [(-150, -100, 150, 100)]),
+    "A-17": (4, [(-15, -10, 15, 10)]),
+    "A-18": (4, [(-20, -20, 20, 20), (20, -20, 120, 20)]),
+    "A-19": (6, [(-90, -45, 90, 45)]),
+    "A-20": (4, [(-30, -20, 30, 20)]),
+}
+SHEET_NOTE = ("23.09.2026: лист построен листовым металлом (базовая кромка, язычки исполнений) на месте прежнего "
+              "вытягивания — build_fixtures.py --sheet-metal, без надстройки")
+
+
+def sheet_features(doc, fid):
+    """Лист детали по SHEET_PARTS: базовая кромка и язычки; возвращает язычки по порядку."""
+    thickness, rects = SHEET_PARTS[fid]
+    build.sheet_metal_flange(doc, rects[0], thickness)
+    tabs = [build.sheet_metal_flange(doc, rect, thickness, tab=True) for rect in rects[1:]]
+    doc.ForceRebuild3(False)
+    return tabs
+
+
+def suppress_tabs(doc, tabs, configs):
+    """Исполнения по порядку конфигураций, каждое длиннее на язычок: язычок i погашен в первых i конфигурациях.
+    SetSuppression2(погасить=0, в указанных конфигурациях=3, [имена]). Гасятся с последнего: язычок, оставшийся без
+    предыдущего, SolidWorks перестраивает отдельным телом и так и запоминает — в длинном исполнении его потом нет.
+    Лист во всех конфигурациях согнут."""
+    for i, tab in reversed(list(enumerate(tabs, start=1))):
+        if not tab.SetSuppression2(0, 3, com.str_array(configs[:i])):
+            raise RuntimeError(f"Гашение язычка {i} по конфигурациям {configs[:i]} не выполнено")
+    build.fold_sheet_metal(doc)
+
+
+def sheet_part(session, fid, material, executions=()):
+    """Новая деталь из листа: лист, материал из библиотеки, исполнения (конфигурации после основной)."""
+    doc = session.new_doc(paths.PART_TEMPLATE)
+    tabs = sheet_features(doc, fid)
+    build.set_material(doc, material)
+    base_cfg = str(doc.GetActiveConfiguration.Name)
+    for name in executions:
+        build.add_configuration(doc, name)
+    suppress_tabs(doc, tabs, [base_cfg, *executions])
+    return doc, base_cfg
+
+
+def config_masses(doc, configs):
+    """Масса по конфигурациям, кг; активной остаётся первая. Деталь в каждой конфигурации — одно тело, пустых элементов
+    списка вырезов нет."""
+    masses = {}
+    for cfg in configs:
+        build.show_configuration(doc, cfg)
+        doc.ForceRebuild3(False)
+        bodies = len(com.as_list(doc.GetBodies2(0, True)))
+        if bodies != 1:
+            raise RuntimeError(f"Конфигурация «{cfg}»: тел {bodies}, ожидалось одно")
+        empty = [str(f.Name) for f in build.features_of_type(doc, "CutListFolder")
+                 if not com.dyn(f.GetSpecificFeature2).GetBodyCount]
+        if empty:
+            raise RuntimeError(f"Конфигурация «{cfg}»: пустые элементы списка вырезов {empty}")
+        masses[cfg] = round(build.mass_kg(doc), 4)
+    build.show_configuration(doc, configs[0])
+    return masses
 
 
 def sha256(path):
@@ -64,8 +135,8 @@ def build_all(session, manifest):
     items = manifest["fixtures"]
 
     # A-01 — пластина из листа 4 мм
-    doc, _ = build.plate(session, 200, 100, 4, SHEET4)
-    items["A-01"] = {"file": A01, "kind": "part", "material": SHEET4, "designation": "ПРТИ.468211.101",
+    doc, _ = sheet_part(session, "A-01", SHEET4)
+    items["A-01"] = {"file": A01, "kind": "part", "material": SHEET4, "sheet_metal": True, "designation": "ПРТИ.468211.101",
                      "title": "Пластина опорная", "configs": ["00"],
                      "mass_kg": round(build.analytic_mass_plate(200, 100, 4, SHEET4), 4),
                      "sw_mass_kg": round(build.mass_kg(doc), 4)}
@@ -82,28 +153,11 @@ def build_all(session, manifest):
     session.close(doc)
 
     # A-03 — планка с исполнениями: конфигурации 00/01/02 длиной 100/150/200 мм.
-    # Длина набирается тремя вытягиваниями; лишние гасятся в конфигурации.
-    doc, _ = build.plate(session, 100, 40, 4, SHEET4)
-    base_cfg = str(doc.GetActiveConfiguration.Name)
-    build.sketch_rectangles(doc, [(0.05, -0.02, 0.10, 0.02)])
-    ext150 = build.extrude(doc, 0.004)
-    build.sketch_rectangles(doc, [(0.10, -0.02, 0.15, 0.02)])
-    ext200 = build.extrude(doc, 0.004)
-    build.add_configuration(doc, "01")
-    build.add_configuration(doc, "02")
-    # SetSuppression2(погасить=0, в указанных конфигурациях=3, [имена])
-    r1 = ext150.SetSuppression2(0, 3, com.str_array([base_cfg]))
-    r2 = ext200.SetSuppression2(0, 3, com.str_array([base_cfg, "01"]))
-    if not (r1 and r2):
-        raise RuntimeError(f"Гашение по конфигурациям не выполнено: {r1}, {r2}")
+    # Длина набирается листом 100 мм и двумя язычками по 50 мм; лишние гасятся в конфигурации.
+    doc, base_cfg = sheet_part(session, "A-03", SHEET4, ("01", "02"))
     lengths = {base_cfg: 100, "01": 150, "02": 200}
-    masses = {}
-    for cfg in lengths:
-        build.show_configuration(doc, cfg)
-        doc.ForceRebuild3(False)
-        masses[cfg] = round(build.mass_kg(doc), 4)
-    build.show_configuration(doc, base_cfg)
-    items["A-03"] = {"file": A03, "kind": "part", "material": SHEET4, "designation": "ПРТИ.468211.103",
+    masses = config_masses(doc, list(lengths))
+    items["A-03"] = {"file": A03, "kind": "part", "material": SHEET4, "sheet_metal": True, "designation": "ПРТИ.468211.103",
                      "title": "Планка", "configs": list(lengths),
                      "execution_designations": {base_cfg: "ПРТИ.468211.103", "01": "ПРТИ.468211.103-01",
                                                 "02": "ПРТИ.468211.103-02"},
@@ -131,8 +185,8 @@ def build_all(session, manifest):
     session.close(doc)
 
     # A-06 — длинное наименование
-    doc, _ = build.plate(session, 150, 60, 6, SHEET6)
-    items["A-06"] = {"file": A06, "kind": "part", "material": SHEET6, "designation": "ПРТИ.468211.104",
+    doc, _ = sheet_part(session, "A-06", SHEET6)
+    items["A-06"] = {"file": A06, "kind": "part", "material": SHEET6, "sheet_metal": True, "designation": "ПРТИ.468211.104",
                      "title": "Кронштейн направляющий удлинённый", "configs": ["00"],
                      "mass_kg": round(build.analytic_mass_plate(150, 60, 6, SHEET6), 4),
                      "sw_mass_kg": round(build.mass_kg(doc), 4)}
@@ -205,17 +259,34 @@ def build_all(session, manifest):
     session.close(model)
 
     # A-13 — «чужая» деталь: подписи и ручное обозначение по правилам MProp
-    doc, _ = build.plate(session, 120, 80, 3, SHEET3)
-    cfg = str(doc.GetActiveConfiguration.Name)
+    doc, cfg = sheet_part(session, "A-13", SHEET3)
     build.props(doc, {"Обозначение": "ПРТИ.468211.199", "Наименование": "Крышка", "Конструктор": "Петров П.П.",
                       "RenameSWP": "1"})
     build.props(doc, {"Обозначение": "ПРТИ.468211.199", "Контора": "ООО «Вектор»", "Проверил": "Сидоров С.С."},
                 config=cfg)
-    items["A-13"] = {"file": A13, "kind": "foreign", "designation": "ПРТИ.468211.199", "title": "Крышка",
+    items["A-13"] = {"file": A13, "kind": "foreign", "material": SHEET3, "sheet_metal": True,
+                     "designation": "ПРТИ.468211.199", "title": "Крышка",
                      "signatures": {"Конструктор": "Петров П.П.", "Контора": "ООО «Вектор»", "Проверил": "Сидоров С.С."}}
     save_new(session, doc, A13)
     session.close(doc)
     build_corpus_r4(session, items)
+
+
+def raw_props(doc):
+    """Сырые значения свойств: общие — под «», конфигураций — под их именами."""
+    dump = oracles.dump_properties(doc)
+    levels = {"": dump["general"], **dump["configs"]}
+    return {level: {name: v["raw"] for name, v in props.items()} for level, props in levels.items()}
+
+
+def assert_props_kept(name, doc, before):
+    """Пересохранение не меняет свойств: сборщик перестраивает геометрию, свойства пишет только надстройка."""
+    after = raw_props(doc)
+    changed = sorted((level, prop) for level in set(before) | set(after)
+                     for prop in set(before.get(level, {})) | set(after.get(level, {}))
+                     if before.get(level, {}).get(prop) != after.get(level, {}).get(prop))
+    if changed:
+        raise RuntimeError(f"{name}: свойства изменились при пересохранении: {changed[:10]}")
 
 
 def check_masses(manifest):
@@ -331,10 +402,9 @@ def build_corpus_r4(session, items):
     session.close(doc)
 
     # A-16 — деталь раздела «ЭМ-Детали» (раздел в конфигурации, как пишет MProp)
-    doc, _ = build.plate(session, 300, 200, 3, SHEET3)
-    cfg = str(doc.GetActiveConfiguration.Name)
+    doc, cfg = sheet_part(session, "A-16", SHEET3)
     build.props(doc, {"Раздел": "ЭМ-Детали"}, config=cfg)
-    items["A-16"] = {"file": A16, "kind": "part", "section": "ЭМ-Детали", "material": SHEET3,
+    items["A-16"] = {"file": A16, "kind": "part", "section": "ЭМ-Детали", "material": SHEET3, "sheet_metal": True,
                      "designation": "ПРТИ.468211.112", "title": "Панель монтажная", "configs": [cfg], "provenance": note,
                      "mass_kg": round(build.analytic_mass_plate(300, 200, 3, SHEET3), 4),
                      "sw_mass_kg": round(build.mass_kg(doc), 4)}
@@ -342,8 +412,8 @@ def build_corpus_r4(session, items):
     session.close(doc)
 
     # A-17 — деталь легче 100 г: масса в граммах по правилу MProp
-    doc, _ = build.plate(session, 30, 20, 4, SHEET4)
-    items["A-17"] = {"file": A17, "kind": "part", "material": SHEET4, "designation": "ПРТИ.468211.113",
+    doc, _ = sheet_part(session, "A-17", SHEET4)
+    items["A-17"] = {"file": A17, "kind": "part", "material": SHEET4, "sheet_metal": True, "designation": "ПРТИ.468211.113",
                      "title": "Прокладка", "configs": ["00"], "light": True, "provenance": note,
                      "mass_kg": round(build.analytic_mass_plate(30, 20, 4, SHEET4), 4),
                      "sw_mass_kg": round(build.mass_kg(doc), 4)}
@@ -351,21 +421,10 @@ def build_corpus_r4(session, items):
     session.close(doc)
 
     # A-18 — исполнения по обе стороны порога 100 г: «00» 40 мм (≈ 50 г), «01» 140 мм (≈ 176 г)
-    doc, _ = build.plate(session, 40, 40, 4, SHEET4)
-    base_cfg = str(doc.GetActiveConfiguration.Name)
-    build.sketch_rectangles(doc, [(0.02, -0.02, 0.12, 0.02)])
-    ext = build.extrude(doc, 0.004)
-    build.add_configuration(doc, "01")
-    if not ext.SetSuppression2(0, 3, com.str_array([base_cfg])):
-        raise RuntimeError("A-18: гашение по конфигурации не выполнено")
+    doc, base_cfg = sheet_part(session, "A-18", SHEET4, ("01",))
     lengths = {base_cfg: 40, "01": 140}
-    masses = {}
-    for c in lengths:
-        build.show_configuration(doc, c)
-        doc.ForceRebuild3(False)
-        masses[c] = round(build.mass_kg(doc), 4)
-    build.show_configuration(doc, base_cfg)
-    items["A-18"] = {"file": A18, "kind": "part", "material": SHEET4, "designation": "ПРТИ.468211.114",
+    masses = config_masses(doc, list(lengths))
+    items["A-18"] = {"file": A18, "kind": "part", "material": SHEET4, "sheet_metal": True, "designation": "ПРТИ.468211.114",
                      "title": "Планка регулировочная", "configs": list(lengths), "mass_threshold_kg": 0.1,
                      "execution_designations": {base_cfg: "ПРТИ.468211.114", "01": "ПРТИ.468211.114-01"},
                      "provenance": note,
@@ -375,8 +434,8 @@ def build_corpus_r4(session, items):
     session.close(doc)
 
     # A-19 — длинное наименование: в графе 1 не помещается в одну строку и в две строки по 22 знака
-    doc, _ = build.plate(session, 180, 90, 6, SHEET6)
-    items["A-19"] = {"file": A19, "kind": "part", "material": SHEET6, "designation": "ПРТИ.468211.115",
+    doc, _ = sheet_part(session, "A-19", SHEET6)
+    items["A-19"] = {"file": A19, "kind": "part", "material": SHEET6, "sheet_metal": True, "designation": "ПРТИ.468211.115",
                      "title": "Кронштейн крепления направляющей рамы сварочного кондуктора", "configs": ["00"],
                      "provenance": note,
                      "mass_kg": round(build.analytic_mass_plate(180, 90, 6, SHEET6), 4),
@@ -385,8 +444,8 @@ def build_corpus_r4(session, items):
     session.close(doc)
 
     # A-20 — исполнение в имени файла
-    doc, _ = build.plate(session, 60, 40, 4, SHEET4)
-    items["A-20"] = {"file": A20, "kind": "part", "material": SHEET4, "designation": "ПРТИ.468211.116-01",
+    doc, _ = sheet_part(session, "A-20", SHEET4)
+    items["A-20"] = {"file": A20, "kind": "part", "material": SHEET4, "sheet_metal": True, "designation": "ПРТИ.468211.116-01",
                      "base_designation": "ПРТИ.468211.116", "title": "Упор", "configs": ["00"], "provenance": note,
                      "mass_kg": round(build.analytic_mass_plate(60, 40, 4, SHEET4), 4),
                      "sw_mass_kg": round(build.mass_kg(doc), 4)}
@@ -416,11 +475,111 @@ def add_corpus_r4():
     print(json.dumps(items, ensure_ascii=False, indent=2))
 
 
+def sheet_metal_in_place():
+    """Детали корпуса А из листа — листовым металлом без пересборки корпуса (23.09.2026, G05).
+
+    Корпус собран 13.09.2026 из шаблонов до нормализации, и полная пересборка его бы изменила (T0, Д-18, I03). Поэтому
+    каждая деталь из SHEET_PARTS открывается и перестраивается на месте: вытягивания снимаются, лист строится базовой
+    кромкой с язычками исполнений, как в build_all. Документ тот же — сборки A-08, A-09, A-14 и чертежи A-10, A-11
+    остаются связаны с деталями; они пересохраняются, чтобы в них не осталось прежней геометрии. Материалы, конфигурации
+    и свойства не трогаются — свойства каждого файла сверяются до и после; служба надстройки выключена (она
+    поднимается из автозагрузки SolidWorks), открываются только копии в каталоге прогона.
+    """
+    run_dir = paths.RUNS / ("fixtures_sheet_metal_" + time.strftime("%Y%m%d_%H%M%S"))
+    manifest = json.loads(paths.FIXTURE_MANIFEST.read_text(encoding="utf-8"))
+    items = manifest["fixtures"]
+    names = sorted({p.name for p in paths.FIXTURES_A.iterdir() if p.suffix.lower() in (".sldprt", ".sldasm", ".slddrw")})
+    dependents = [A08, A14_ASSEMBLY, A09, A10, A11]
+    materials = {"A-13": SHEET3}
+    with SwSession(run_dir, load_eskd=False) as session:
+        for name in names:
+            session.workspace_copy(paths.FIXTURES_A / name)
+        for fid in SHEET_PARTS:
+            item = items[fid]
+            material = item.get("material") or materials[fid]
+            doc = session.open(session.run_dir / item["file"])
+            props = raw_props(doc)
+            configs = [str(c) for c in com.as_list(doc.GetConfigurationNames)]
+            active = str(doc.GetActiveConfiguration.Name)
+            order = item.get("configs") or [active]
+            if sorted(order) != sorted(configs) or order[0] != active:
+                raise RuntimeError(f"{fid}: конфигурации {configs}, активная «{active}», в манифесте {order}")
+            build.delete_extrusions(doc)
+            suppress_tabs(doc, sheet_features(doc, fid), order)
+            masses = config_masses(doc, order)
+            thickness = build.sheet_thickness_mm(doc)
+            if thickness != SHEET_PARTS[fid][0]:
+                raise RuntimeError(f"{fid}: толщина листа {thickness} мм, по сортаменту {SHEET_PARTS[fid][0]} мм")
+            wrong = {c: build.material_of(doc, c)[0] for c in order if build.material_of(doc, c)[0] != material}
+            if wrong:
+                raise RuntimeError(f"{fid}: материал изменился: {wrong}")
+            ok, err, warn = session.save(doc)
+            if not ok:
+                raise RuntimeError(f"{fid}: сохранение не удалось: err={err} warn={warn}")
+            assert_props_kept(fid, doc, props)
+            session.close(doc)
+            if "sw_mass_kg" in item:
+                item["sw_mass_kg"] = masses if isinstance(item["sw_mass_kg"], dict) else masses[order[0]]
+            item["material"] = material
+            item["sheet_metal"] = True
+            item["provenance"] = "; ".join(p for p in (item.get("provenance"), SHEET_NOTE) if p)
+        for name in dependents:
+            doc = session.open(session.run_dir / name)
+            props = raw_props(doc)
+            # Детали должны подгрузиться из каталога прогона — по сохранённому пути SolidWorks мог бы найти старую копию.
+            loaded = [str(com.dyn(d).GetPathName) for d in com.as_list(session.sw.GetDocuments)]
+            outside = [p for p in loaded if Path(p).parent != session.run_dir]
+            if outside:
+                raise RuntimeError(f"{name}: документы подгружены не из каталога прогона: {outside}")
+            if name.lower().endswith(".slddrw"):
+                # Вид неактивного листа обновляется, только когда лист активен: иначе он обновился бы при первом открытии.
+                current = str(com.dyn(doc.GetCurrentSheet).GetName)
+                for sheet in com.as_list(doc.GetSheetNames):
+                    doc.ActivateSheet(str(sheet))
+                    doc.ForceRebuild3(False)
+                doc.ActivateSheet(current)
+            # Сборка перестраивается только сама: с деталями (ForceRebuild3(False)) они менялись бы лишь в памяти —
+            # сохраняется одна сборка, и при открытии она оказывалась изменённой (P09, 23.09.2026).
+            doc.ForceRebuild3(name.lower().endswith(".sldasm"))
+            ok, err, warn = session.save(doc)
+            if not ok:
+                raise RuntimeError(f"{name}: пересохранение не удалось: err={err} warn={warn}")
+            assert_props_kept(name, doc, props)
+            session.close_all()
+            doc = session.open(session.run_dir / name)
+            if com.call(doc, "GetSaveFlag"):
+                raise RuntimeError(f"{name}: после пересохранения открывается изменённым")
+            session.close_all()
+        unexpected = session.watchdog.pop_unexpected()
+        if unexpected:
+            raise RuntimeError(f"Неожиданные диалоги: {unexpected}")
+        if session.violations():
+            raise RuntimeError("Зонд зафиксировал сохранение вне каталога прогона")
+    check_masses(manifest)
+    changed = [items[fid]["file"] for fid in SHEET_PARTS] + dependents
+    for name in changed:
+        shutil.copy2(session.run_dir / name, paths.FIXTURES_A / name)
+    for item in items.values():
+        if isinstance(item.get("sha256"), dict):
+            item["sha256"] = {n: sha256(paths.FIXTURES_A / n) for n in item["sha256"]}
+        elif item.get("file") in changed:
+            item["sha256"] = sha256(paths.FIXTURES_A / item["file"])
+    legacy = items["A-14"]
+    legacy["provenance"] += "; " + A14_ASSEMBLY + " пересохранена 23.09.2026 без надстройки (лист A-01 — листовым металлом)"
+    paths.FIXTURE_MANIFEST.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Сборки и чертежи хранят пути к деталям в этом каталоге. Пока он есть, SolidWorks берёт детали отсюда, а не из копий
+    # теста рядом со сборкой: P09 видел сборку изменённой, N05 не находил компонент (23.09.2026).
+    shutil.rmtree(run_dir)
+    print("перестроены листовым металлом и пересохранены:", changed)
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")
     if "--fix-materials" in sys.argv:
         fix_materials()
     elif "--add-corpus-r4" in sys.argv:
         add_corpus_r4()
+    elif "--sheet-metal" in sys.argv:
+        sheet_metal_in_place()
     else:
         main()

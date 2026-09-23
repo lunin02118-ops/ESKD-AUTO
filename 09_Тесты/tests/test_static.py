@@ -1087,7 +1087,8 @@ class StaticRepository(StaticTestCase):
     def test_T0_fixture_materials_follow_library(self):
         """T0: по манифесту фикстур у деталей из проката корпуса А и у копий корпуса Б — сортамент из корпоративной библиотеки,
         у стандартных и покупных изделий сортамента нет; копии корпуса Б сделаны из текущих исходных файлов и не изменены
-        (решение владельца 13.09.2026; материалы в самих файлах проверяет I07)."""
+        (решение владельца 13.09.2026; материалы в самих файлах проверяет I07). Детали из листа построены листовым металлом:
+        вытянутая пластина из «Лист …» не даёт DXF развёртки, и изделие с ней не проходит проверку (23.09.2026, G05)."""
         from eskd_e2e import build
 
         def digest(path):
@@ -1100,6 +1101,8 @@ class StaticRepository(StaticTestCase):
             kind = item.get("kind")
             if kind in ("part", "weldment") and item.get("material") not in library:
                 wrong.append(f"{fid}: у детали из проката «{item.get('material')}» — не сортамент библиотеки")
+            if str(item.get("material") or "").startswith("Лист ") and not item.get("sheet_metal"):
+                wrong.append(f"{fid}: деталь из листа построена не листовым металлом — fixtures/build_fixtures.py --sheet-metal")
             if kind in ("standard", "purchased"):
                 if "material_sw" not in item:
                     wrong.append(f"{fid}: материал изделия не записан в манифест")
