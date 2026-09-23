@@ -215,6 +215,9 @@ namespace ESKD.MaterialSync.Sw
                     {
                         Reason = "пакет изделия (материал по типоразмеру)", Names = false, Signatures = false, Stock = false
                     });
+                    // Перестроение без сохранения: деталь может остаться несохранённой (правки конструктора или «Нет» в
+                    // окне сохранения), и SolidWorks спросил бы «перестроить?» при её сохранении (X05, как в EventHub.ApplyStock).
+                    part.EditRebuild3();
                     touched.Add(SafePath(part));
                 }
                 catch (Exception ex)

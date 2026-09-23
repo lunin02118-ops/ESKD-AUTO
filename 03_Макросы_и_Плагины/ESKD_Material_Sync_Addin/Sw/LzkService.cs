@@ -229,7 +229,9 @@ namespace ESKD.MaterialSync.Sw
             // Операции отмечаются и пишутся в свои модели изделия, где бы они ни лежали: детали сборки бывают и в другой
             // папке (замечание владельца 19.09.2026 — иначе у них «?» и участки пустые). Не правятся только покупные и
             // модели базы эталонов и библиотеки, общие для всех заказов.
+            // Модели другого заказа в окне есть (их операции нужны книге), но в их файлы ничего не пишется — ModelsToWrite.
             List<LzkItem> editable = _items.Where(i => !i.IsPurchased && (!i.InBase || (_inOrder && i.InProduct))).ToList();
+            HashSet<string> bookOnly = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (interactive && editable.Count > 0)
             {
                 Dictionary<string, string> chosen;
@@ -237,6 +239,7 @@ namespace ESKD.MaterialSync.Sw
                 {
                     if (form.ShowDialog(Owner()) != DialogResult.OK) return false;
                     chosen = form.Result;
+                    bookOnly.UnionWith(form.BookOnly);
                 }
                 foreach (LzkItem i in editable)
                 {
@@ -259,7 +262,7 @@ namespace ESKD.MaterialSync.Sw
                     "модель базы: операции предложены по модели и записаны только в книгу, файл базы не изменён"));
             }
 
-            WriteProperties(editable, models);
+            WriteProperties(ModelsToWrite(editable, bookOnly), models);
             MarkPaintedUnits(instances, top);
             PaintedAssemblyAreas(instances, top, byKey, traits);
 
@@ -376,6 +379,7 @@ namespace ESKD.MaterialSync.Sw
                 IsAssembly = assembly,
                 InProduct = LzkNaming.IsInside(path, _productFolder),
                 InBase = ProductLocator.Locate(path).InBase,
+                Place = LzkNaming.Place(path, _productFolder, _assemblyPath),
                 IsPurchased = ComponentKind.IsPurchased(w, model, path, "Ведомость ЛЗК", _cipher),
                 Designation = Prop(w, active, "Обозначение"),
                 Name = Prop(w, active, "Наименование"),
@@ -403,13 +407,15 @@ namespace ESKD.MaterialSync.Sw
             // Размер, развёртка, плотность и площадь — той конфигурации, что стоит в изделии: у «Укосины» 00 и 01 разные
             // длины, а SolidWorks меряет активную (аудит 21.09.2026, Л-1). Модель базы и библиотеки не переключаем —
             // её файл не правится и не сохраняется; её исполнение меряется по активной конфигурации с пометкой «оценка».
-            bool mayMeasure = !item.InBase || (_inOrder && item.InProduct);
+            // Модель другого заказа — так же (решение владельца 23.09.2026): ни исполнение, ни развёртка в ней не
+            // переключаются, иначе SolidWorks пометил бы её изменённой, и её сохранили бы вместе со сборкой.
+            bool mayMeasure = (!item.InBase || (_inOrder && item.InProduct)) && item.Place != LzkPlace.OtherOrder;
             bool otherConfig = cfg.Length > 0 && !string.Equals(cfg, w.ActiveConfigurationName(), StringComparison.OrdinalIgnoreCase) &&
                 w.ConfigurationNames().Contains(cfg);
             using (ConfigScope scope = new ConfigScope(model, otherConfig && mayMeasure ? cfg : ""))
             {
                 if (!assembly) t.DensityKgM3 = Density(model);
-                Size(model, assembly, t, item);
+                Size(model, assembly, t, item, mayMeasure);
                 // Деталь — наружная поверхность (у трубы без внутренней стенки); сборка — ниже, по её деталям (З-7).
                 item.AreaM2 = assembly || comp == null ? double.NaN : PaintArea.Outer(Area(model, comp), item.Material);
                 scope.Restore();
@@ -419,9 +425,39 @@ namespace ESKD.MaterialSync.Sw
             {
                 item.SizeIsEstimate = true;
                 _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(path),
-                    "исполнение «" + cfg + "» модели базы измерено по активной конфигурации — уточните размер заготовки"));
+                    "исполнение «" + cfg + "» " + (item.Place == LzkPlace.OtherOrder ? "модели другого заказа" : "модели базы") +
+                    " измерено по активной конфигурации — уточните размер заготовки"));
             }
             return item;
+        }
+
+        /// <summary>
+        /// Модели, в которые пишутся «Операции» и «Габарит» (решение владельца 23.09.2026): модели изделия — всегда;
+        /// другой папки заказа и вне заказов — если в окне операций не снята галочка «В модель»; другого заказа — никогда.
+        /// Книга получает операции всех; файл другого заказа не меняется — иначе книга одного заказа переписала бы другой
+        /// (его выданные файлы, его операции). Про каждую модель, оставшуюся без записи, — строка в замечаниях.
+        /// </summary>
+        private List<LzkItem> ModelsToWrite(List<LzkItem> editable, HashSet<string> bookOnly)
+        {
+            List<LzkItem> write = new List<LzkItem>();
+            HashSet<string> told = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (LzkItem item in editable)
+            {
+                bool other = item.Place == LzkPlace.OtherOrder;
+                if (!other && !bookOnly.Contains(item.Path))
+                {
+                    write.Add(item);
+                    continue;
+                }
+                if (!told.Add(item.Path)) continue;
+                string reason = other
+                    ? "модель другого заказа («" + Path.GetFileName(ProductLocator.OrderOf(item.Path)) + "»): операции и габарит — только в книге, файл не изменён"
+                    : "запись в модель снята в окне операций: операции и габарит — только в книге";
+                if (_dirtiedBySwitch.Contains(item.Path))
+                    reason += "; SolidWorks считает её изменённой (для замера переключалось исполнение) — сохранять её не нужно";
+                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(item.Path), reason));
+            }
+            return write;
         }
 
         /// <summary>
@@ -546,13 +582,15 @@ namespace ESKD.MaterialSync.Sw
         /// листовая деталь — развёртка Д×Ш×S (замечание владельца 21.09.2026: у гнутых деталей в ведомость уходил
         /// габарит готовой детали, а заготовка — это развёртка); прочее — Д×Ш×В.
         /// </summary>
-        private static void Size(ModelDoc2 model, bool assembly, ModelTraits t, LzkItem item)
+        /// <param name="mayChange">Можно временно включить развёртку (модель своего заказа, не база); нельзя — развёртка
+        /// только из свойств списка вырезов, иначе габарит согнутой детали с пометкой «оценка».</param>
+        private static void Size(ModelDoc2 model, bool assembly, ModelTraits t, LzkItem item, bool mayChange)
         {
             try
             {
                 if (t.IsSheetMetal && !assembly)
                 {
-                    double[] flat = FlatPatternSides((PartDoc)model, model);
+                    double[] flat = FlatPatternSides((PartDoc)model, model, mayChange);
                     if (flat != null)
                     {
                         item.Size = LzkOperations.FormatSize(flat[0], flat[1], flat[2]);
@@ -620,9 +658,10 @@ namespace ESKD.MaterialSync.Sw
         /// Развёртка листовой детали {длина, ширина, толщина} в мм: из свойств «граничной рамки» списка вырезов; их нет
         /// (список не обновляли — так в боевом заказе NC3-7R) — включается элемент «Развёртка» (FlatPattern), деталь
         /// меряется по габаритному ящику, элемент гасится обратно (SetBendState в SolidWorks 2025 ничего не делает,
-        /// проверено 21.09.2026). null — измерить не удалось.
+        /// проверено 21.09.2026). mayToggle = false (база, другой заказ) — развёртка не включается: это пометило бы модель
+        /// изменённой. null — измерить не удалось.
         /// </summary>
-        private static double[] FlatPatternSides(PartDoc part, ModelDoc2 model)
+        private static double[] FlatPatternSides(PartDoc part, ModelDoc2 model, bool mayToggle)
         {
             double thickness = StockService.SheetThicknessMm(model);
             double length = double.NaN, width = double.NaN;
@@ -643,7 +682,7 @@ namespace ESKD.MaterialSync.Sw
                     if (double.IsNaN(length) || l * w > length * width) { length = l; width = w; }
                 }
             }
-            if (double.IsNaN(length))
+            if (double.IsNaN(length) && mayToggle)
             {
                 Feature flat = null;
                 for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)

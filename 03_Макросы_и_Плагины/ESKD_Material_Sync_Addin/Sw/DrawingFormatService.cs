@@ -33,6 +33,14 @@ namespace ESKD.MaterialSync.Sw
         /// </summary>
         public static bool Busy { get; private set; }
 
+        /// <summary>
+        /// Форматы листов закрытых чертежей, прочитанные «Синхронизировать» за сеанс: путь → (время файла, форматы).
+        /// Чертёж, сохранённый позже модели, так и остаётся новее (модель при совпадении не меняется и не сохраняется),
+        /// и без запоминания каждое нажатие заново открывало бы все такие чертежи. Изменился файл — читается снова.
+        /// </summary>
+        private static readonly Dictionary<string, KeyValuePair<DateTime, List<string>>> SheetsRead =
+            new Dictionary<string, KeyValuePair<DateTime, List<string>>>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>Форматы листов чертежа по порядку; лист не формата ГОСТ — пустая строка.</summary>
         public static List<string> SheetFormats(DrawingDoc drw)
         {
@@ -175,6 +183,19 @@ namespace ESKD.MaterialSync.Sw
             ModelDoc2 drawing = app.GetOpenDocumentByName(drawingPath) as ModelDoc2;
             if (drawing == null && !FormatMissing(probe, dict) && !DrawingNewer(drawingPath, modelPath)) return 0;
 
+            DateTime stamp = DateTime.MinValue;
+            try
+            {
+                stamp = File.GetLastWriteTimeUtc(drawingPath);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Формат: время файла " + Path.GetFileName(drawingPath) + " не прочитано (" + ex.Message + ")");
+            }
+            KeyValuePair<DateTime, List<string>> known;
+            if (drawing == null && stamp != DateTime.MinValue && SheetsRead.TryGetValue(drawingPath, out known) && known.Key == stamp)
+                return known.Value.Count == 0 || known.Value.Contains("") ? 0 : Write(model, known.Value);
+
             List<string> sheets;
             bool opened = false;
             Busy = true;
@@ -202,6 +223,8 @@ namespace ESKD.MaterialSync.Sw
                     return 0;
                 }
                 sheets = SheetFormats((DrawingDoc)drawing);
+                // Запоминаются только листы файла: открытый конструктором чертёж может быть изменён и не сохранён.
+                if (opened && stamp != DateTime.MinValue) SheetsRead[drawingPath] = new KeyValuePair<DateTime, List<string>>(stamp, sheets);
             }
             finally
             {

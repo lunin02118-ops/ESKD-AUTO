@@ -149,6 +149,19 @@ namespace ESKD.MaterialSync.Core
             return full.StartsWith(root, StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>
+        /// Где лежит модель относительно изделия, для которого строится книга (решение владельца 23.09.2026): в папке
+        /// изделия; в другом заказе (модель в заказе, и это не заказ сборки — в том числе когда сборка вне заказов);
+        /// иначе — в другой папке того же заказа или вне заказов.
+        /// </summary>
+        public static LzkPlace Place(string modelPath, string productFolder, string assemblyPath)
+        {
+            if (IsInside(modelPath, productFolder)) return LzkPlace.Product;
+            string order = ProductLocator.OrderOf(modelPath);
+            if (order.Length > 0 && !ProductLocator.SameOrder(order, ProductLocator.OrderOf(assemblyPath))) return LzkPlace.OtherOrder;
+            return LzkPlace.Elsewhere;
+        }
+
         public static string SafeFileName(string value)
         {
             StringBuilder sb = new StringBuilder();
@@ -393,6 +406,20 @@ namespace ESKD.MaterialSync.Core
         }
     }
 
+    /// <summary>
+    /// Куда ЛЗК пишет «Операции» и «Габарит» модели (решение владельца 23.09.2026: книга одного заказа не меняет модели
+    /// другого). Книга получает операции всех моделей в любом случае.
+    /// </summary>
+    public enum LzkPlace
+    {
+        /// <summary>Папка изделия — пишется в модель всегда.</summary>
+        Product = 0,
+        /// <summary>Другая папка того же заказа или вне заказов — пишется, если в окне операций стоит галочка «В модель».</summary>
+        Elsewhere = 1,
+        /// <summary>Другой заказ — только в книгу: файл не меняется ни на диске, ни в памяти.</summary>
+        OtherOrder = 2
+    }
+
     /// <summary>Компонент изделия для ведомости: одна модель (путь + конфигурация) с количеством на 1 шт.</summary>
     public sealed class LzkItem
     {
@@ -405,6 +432,8 @@ namespace ESKD.MaterialSync.Core
         public bool InProduct;
         /// <summary>Модель базы эталонов или библиотеки («02_БАЗА», «_Библиотека проектирования»): её файл не правится.</summary>
         public bool InBase;
+        /// <summary>Где лежит модель: изделие, другая папка, другой заказ — от этого зависит запись в модель.</summary>
+        public LzkPlace Place;
         public string Operations = "";
         public int Quantity;
         public double AreaM2 = double.NaN;
@@ -538,7 +567,12 @@ namespace ESKD.MaterialSync.Core
                     Fill(main, col["Обозначение"], row, item.Designation, true);
                     Fill(main, col["Наименование"], row, item.Name, true);
                     if (!item.IsAssembly) Fill(main, col["Материал_Строка"], row, item.Material, false);
-                    Fill(main, col["Операции"], row, item.Operations, false);
+                    // «Операции» — выбранные в окне (item.Operations), а не из ячейки SWTools: модель без записи (другой
+                    // заказ, снятая «В модель», только для чтения) SWTools прочёл со старым свойством, и «Ведомость» спорила
+                    // бы с участками (решение владельца 23.09.2026). Операции сняты все — пусто, дальше пометка «?».
+                    string ops = (item.Operations ?? "").Trim();
+                    if (ops.Length > 0) Fill(main, col["Операции"], row, ops, true);
+                    else if (main.Get(col["Операции"], row).Trim().Length > 0) main.SetText(XlsxBook.CellName(col["Операции"], row), "");
                     designation = main.Get(col["Обозначение"], row).Trim();
                     label = "Строка " + main.Get(col["Номер"], row).Trim() + " (" +
                         (designation.Length > 0 ? designation : main.Get(col["Наименование"], row).Trim()) + ")";
@@ -560,8 +594,9 @@ namespace ESKD.MaterialSync.Core
                 }
                 Require(main, col["Операции"], row, label, "Операции", result);
 
+                // Габарит: измеренный — главнее ячейки (у модели без записи там старое значение); оценка — только в пустую.
                 string size = main.Get(col["Габарит"], row).Trim();
-                if (size.Length == 0 && item != null && item.Size.Length > 0)
+                if (item != null && item.Size.Length > 0 && (size.Length == 0 || (!item.SizeIsEstimate && size != item.Size)))
                 {
                     size = item.Size + (item.SizeIsEstimate ? "*" : "");
                     main.SetText(XlsxBook.CellName(col["Габарит"], row), size);

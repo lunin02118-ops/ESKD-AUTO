@@ -39,6 +39,25 @@ namespace ESKD.Tests
             Assert.AreEqual(Order, location.OrderFolder, "папка заказа");
         }
 
+        public static void Test_OrderOf_names_the_order_folder()
+        {
+            // Решение владельца 23.09.2026: ЛЗК не пишет в модели других заказов — заказ файла узнаётся по пути.
+            Assert.AreEqual(Order, ProductLocator.OrderOf(Order + @"\02_Металл\И01_ТС-52_Стол\01_3D\ТС-52.00.00.000 Стол.sldasm"), "UNC, «_Заявки»");
+            Assert.AreEqual(@"Z:\03_ЗАКАЗЫ\778_Школа", ProductLocator.OrderOf(@"Z:\03_ЗАКАЗЫ\778_Школа\Общие детали\Кронштейн.sldprt"),
+                "любая папка заказа, не только изделие");
+            Assert.AreEqual(@"Z:\03_ЗАКАЗЫ\_Сдано\250-АСТ_Школа12",
+                ProductLocator.OrderOf(@"Z:\03_ЗАКАЗЫ\_Сдано\250-АСТ_Школа12\02_Металл\И01_Стол\01_3D\Стол.sldasm"), "«_Сдано» — полка, заказ под ней");
+            Assert.AreEqual(@"O:\778_Школа", ProductLocator.OrderOf(@"O:\778_Школа\02_Металл\И01_Стол\01_3D\Стол.sldasm"),
+                "диск подключён к папке заказов: заказ — над «02_Металл»");
+            Assert.AreEqual("", ProductLocator.OrderOf(@"D:\Черновики\Проба\Деталь.sldprt"), "вне заказов");
+            Assert.AreEqual("", ProductLocator.OrderOf(@"Z:\03_ЗАКАЗЫ\Деталь.sldprt"), "файл прямо в корне заказов — не в заказе");
+            Assert.AreEqual("", ProductLocator.OrderOf(""), "несохранённый документ");
+            Assert.IsTrue(ProductLocator.SameOrder(@"Z:\03_ЗАКАЗЫ\778_Школа", @"\\Synology_TR\Конструкторский отдел\03_ЗАКАЗЫ\778_Школа"),
+                "один заказ по диску и по сетевому пути");
+            Assert.IsFalse(ProductLocator.SameOrder(@"Z:\03_ЗАКАЗЫ\778_Школа", @"Z:\03_ЗАКАЗЫ\775_Стол"), "разные заказы");
+            Assert.IsFalse(ProductLocator.SameOrder("", ""), "вне заказов — не «тот же заказ»");
+        }
+
         public static void Test_Locate_finds_product_for_nested_document()
         {
             // Чертёж лежит в 02_PDF, а не в 01_3D: изделие всё равно то же.

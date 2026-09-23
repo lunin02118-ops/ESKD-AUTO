@@ -542,7 +542,13 @@ class StaticRepository(StaticTestCase):
         self.assertEqual(["PSModulePath"], keys, "один ключ пути модулей")
         self.assertNotIn("PowerShell\\7", env["PSModulePath"])
         self.assertEqual("1", env["OTHER"], "прочее окружение сохраняется")
-        self.assertTrue(configurator.build_command("S.ps1", "И", "", "Skip")[0].lower().endswith("powershell.exe"))
+        ps51 = os.path.join(os.environ.get("SYSTEMROOT", r"C:\Windows"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+        if os.path.isfile(ps51):
+            self.assertEqual(os.path.normcase(ps51), os.path.normcase(configurator.build_command("S.ps1", "И", "", "Skip")[0]),
+                             "окно запускает powershell из PATH, а не 5.1 по полному пути")
+        import inspect
+        self.assertRegex(inspect.getsource(configurator), r"Popen\([^)]*env=engine_env\(\)",
+                         "окно передаёт движку PSModulePath PowerShell 7")
         with tempfile.TemporaryDirectory() as tmp:
             (Path(tmp) / configurator.ENGINE).write_text("old", encoding="utf-8")
             (Path(tmp) / "_Служебное").mkdir()

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using ESKD.MaterialSync.Core;
+using ESKD.MaterialSync.Sw;
 
 namespace ESKD.Tests
 {
@@ -511,7 +512,8 @@ namespace ESKD.Tests
                 Assert.AreEqual("Лист 3 ГОСТ 19903", main.Get("E7"), "материал в пустую ячейку");
                 Assert.AreEqual("Лазерная резка листа", main.Get("I7"), "операции в пустую ячейку");
                 Assert.AreEqual("Лист 2", main.Get("E8"), "материал из выгрузки не заменяется");
-                Assert.AreEqual("Гибка", main.Get("I8"), "операции из выгрузки не заменяются");
+                // Операции — выбранные в окне: у модели, оставшейся без записи, в выгрузке старые (решение владельца 23.09.2026).
+                Assert.AreEqual("Лазерная резка листа", main.Get("I8"), "операции окна заменяют старые из выгрузки");
                 string issues = string.Join("\n", r.Issues.ToArray());
                 Assert.IsFalse(issues.Contains("нет изготавливаемых"), "главная сборка не считается пропущенной: " + issues);
                 Assert.IsFalse(issues.Contains("Материал"), issues);
@@ -520,6 +522,58 @@ namespace ESKD.Tests
             finally
             {
                 File.Delete(path);
+            }
+        }
+
+        public static void Test_Place_keeps_other_orders_out_of_models()
+        {
+            // Решение владельца 23.09.2026: книга ЛЗК одного заказа не меняет модели другого.
+            string asm = @"Z:\03_ЗАКАЗЫ\778_Школа\02_Металл\И01_778.КРВ_Кровать\01_3D\778.КРВ.00.000 Кровать.sldasm";
+            string product = LzkNaming.ProductFolder(asm);
+            Assert.AreEqual(LzkPlace.Product,
+                LzkNaming.Place(@"Z:\03_ЗАКАЗЫ\778_Школа\02_Металл\И01_778.КРВ_Кровать\01_3D\Рама.sldprt", product, asm), "папка изделия");
+            Assert.AreEqual(LzkPlace.Elsewhere,
+                LzkNaming.Place(@"Z:\03_ЗАКАЗЫ\778_Школа\02_Металл\И02_778.ТМБ_Тумба\01_3D\Полка.sldprt", product, asm), "другое изделие заказа");
+            Assert.AreEqual(LzkPlace.Elsewhere,
+                LzkNaming.Place(@"\\Synology_TR\Конструкторский отдел\03_ЗАКАЗЫ\778_Школа\Общие\Косынка.sldprt", product, asm),
+                "тот же заказ по сетевому пути");
+            Assert.AreEqual(LzkPlace.OtherOrder,
+                LzkNaming.Place(@"Z:\03_ЗАКАЗЫ\775_Стол\02_Металл\И01_775.СТЛ_Стол\01_3D\Кронштейн.sldprt", product, asm), "другой заказ");
+            Assert.AreEqual(LzkPlace.Elsewhere, LzkNaming.Place(@"D:\Черновики\Уголок.sldprt", product, asm), "вне заказов");
+            string loose = @"D:\Черновики\Стол\Стол.sldasm";
+            Assert.AreEqual(LzkPlace.OtherOrder,
+                LzkNaming.Place(@"Z:\03_ЗАКАЗЫ\775_Стол\02_Металл\И01_775.СТЛ_Стол\01_3D\Кронштейн.sldprt", LzkNaming.ProductFolder(loose), loose),
+                "сборка вне заказов, деталь из заказа — заказ не трогаем");
+            Assert.AreEqual(LzkPlace.Product, LzkNaming.Place(@"D:\Черновики\Стол\Ножка.sldprt", LzkNaming.ProductFolder(loose), loose),
+                "сборка вне заказов: её папка — изделие");
+        }
+
+        public static void Test_Operations_window_writes_only_to_own_order_models()
+        {
+            LzkItem own = new LzkItem
+            {
+                Path = @"Z:\03_ЗАКАЗЫ\778_Школа\02_Металл\И01_778.КРВ_Кровать\01_3D\778.КРВ.00.001 Рама.sldprt",
+                Designation = "778.КРВ.00.001", Name = "Рама", Place = LzkPlace.Product
+            };
+            LzkItem near = new LzkItem
+            {
+                Path = @"Z:\03_ЗАКАЗЫ\778_Школа\02_Металл\И02_778.ТМБ_Тумба\01_3D\778.ТМБ.00.002 Полка.sldprt",
+                Designation = "778.ТМБ.00.002", Name = "Полка", Place = LzkPlace.Elsewhere
+            };
+            LzkItem foreign = new LzkItem
+            {
+                Path = @"Z:\03_ЗАКАЗЫ\775_Стол\02_Металл\И01_775.СТЛ_Стол\01_3D\775.СТЛ.00.005 Кронштейн.sldprt",
+                Designation = "775.СТЛ.00.005", Name = "Кронштейн", Place = LzkPlace.OtherOrder
+            };
+            using (LzkOperationsForm form = new LzkOperationsForm(new List<LzkItem> { own, near, foreign }, new Dictionary<string, ModelTraits>()))
+            {
+                Assert.IsTrue(form.WritesToModel(own.Path), "модель изделия — в модель");
+                Assert.IsFalse(form.CanChooseWrite(own.Path), "модель изделия — без выбора");
+                Assert.IsTrue(form.WritesToModel(near.Path), "другая папка своего заказа — по умолчанию в модель");
+                Assert.IsTrue(form.CanChooseWrite(near.Path), "у другой папки заказа галочку можно снять");
+                Assert.IsFalse(form.WritesToModel(foreign.Path), "другой заказ — только книга");
+                Assert.IsFalse(form.CanChooseWrite(foreign.Path), "у другого заказа включить нельзя");
+                Assert.AreEqual("В модели: 2.  Только в книгу: 1 (другой заказ — 1)", form.Summary, "итог под таблицей");
             }
         }
 
@@ -548,6 +602,44 @@ namespace ESKD.Tests
                 XlsxSheet main = XlsxBook.Open(path).Sheet("Ведомость");
                 Assert.AreEqual("И.301", main.Get("C7"), "первая строка — исполнение 00");
                 Assert.AreEqual("И.301-01", main.Get("C8"), "лишняя строка не получает реквизиты чужого исполнения");
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        }
+
+        public static void Test_Complete_takes_window_operations_for_models_left_unwritten()
+        {
+            // Решение владельца 23.09.2026: модель другого заказа в файл не пишется, и SWTools читает её старые «Операции» и
+            // «Габарит». В «Ведомости» — выбранное в окне и измеренное, иначе она спорила бы с участками.
+            string path = CopyTemplate();
+            try
+            {
+                string bracket = @"Z:\03_ЗАКАЗЫ\775_Стол\02_Металл\И01\01_3D\775.СТЛ.00.005 Кронштейн.sldprt";
+                string strip = @"Z:\03_ЗАКАЗЫ\775_Стол\02_Металл\И01\01_3D\775.СТЛ.00.006 Планка.sldprt";
+                XlsxBook export = XlsxBook.Open(path);
+                XlsxSheet s = export.Sheet("Ведомость");
+                Row(s, 7, "1", "775.СТЛ.00.005", "Кронштейн", "Лист 3", "40×40×3", "0,2", "1", LzkOperations.SheetCutting, bracket);
+                Row(s, 8, "2", "775.СТЛ.00.006", "Планка", "Лист 3", "", "0,1", "1", LzkOperations.Bending, strip);
+                export.Save();
+                string chosen = LzkOperations.Join(new[] { LzkOperations.SheetCutting, LzkOperations.Painting });
+                List<LzkItem> items = new List<LzkItem>
+                {
+                    new LzkItem { Path = bracket, Designation = "775.СТЛ.00.005", Name = "Кронштейн", Place = LzkPlace.OtherOrder,
+                        Quantity = 1, Material = "Лист 3 ГОСТ 19903", Operations = chosen, Size = "50×50×3" },
+                    new LzkItem { Path = strip, Designation = "775.СТЛ.00.006", Name = "Планка", Place = LzkPlace.OtherOrder,
+                        Quantity = 1, Material = "Лист 3 ГОСТ 19903", Operations = "", Size = "20×10×3", SizeIsEstimate = true }
+                };
+                LzkResult r = LzkWorkbook.Complete(path, null, items);
+                Assert.AreEqual(0, r.Errors.Count, string.Join("; ", r.Errors.ToArray()));
+                XlsxSheet main = XlsxBook.Open(path).Sheet("Ведомость");
+                Assert.AreEqual(chosen, main.Get("I7"), "операции окна, а не старые из файла");
+                Assert.AreEqual("50×50×3", main.Get("F7"), "измеренный габарит, а не старый из файла");
+                Assert.AreEqual("?", main.Get("I8"), "операции сняты в окне — «?», а не старая «Гибка»");
+                Assert.AreEqual("20×10×3*", main.Get("F8"), "оценка — в пустую ячейку, со звёздочкой");
+                string issues = string.Join("\n", r.Issues.ToArray());
+                Assert.IsTrue(issues.Contains("Строка 2 (775.СТЛ.00.006): не заполнено «Операции»"), issues);
             }
             finally
             {

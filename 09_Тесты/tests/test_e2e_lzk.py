@@ -111,6 +111,45 @@ class Lzk(SwTestCase):
             with self.subTest(disk=designation):
                 self.assertEqual(ops[designation], V(self.persisted(path), "Операции"), "операции записаны в модель")
 
+    def test_L12_other_order_models_get_operations_only_in_book(self):
+        """L12 (решение владельца 23.09.2026): книга ЛЗК одного заказа не меняет модели другого. Деталь другого заказа
+        получает операции в книге, её файл не меняется и в SolidWorks не помечен изменённым; деталь из другой папки того
+        же заказа записывается (без окна — как с галочкой «В модель», которая стоит по умолчанию)."""
+        from eskd_e2e import build
+
+        case = self._case_name()
+        product = self.case_dir / "03_ЗАКАЗЫ" / "778_Тест" / "02_Металл" / PRODUCT
+        (product / "01_3D").mkdir(parents=True, exist_ok=True)
+        for name in ("Нормативы_производства.xlsx", "ЛЗК_бланки.xlsx"):
+            ref = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / name
+            (self.case_dir / ref.name).write_bytes(ref.read_bytes())
+        foreign = self.s.workspace_copy(Path(paths.FIXTURES_A) / SHEET_PART,
+                                        subdir=f"{case}/03_ЗАКАЗЫ/775_Другой/02_Металл/И01_775_Стол/01_3D")
+        same = self.s.workspace_copy(Path(paths.FIXTURES_A) / "ПРТИ.468211.111 Стойка трубная.sldprt",
+                                     subdir=f"{case}/03_ЗАКАЗЫ/778_Тест/Общие детали")
+        before = foreign.read_bytes()
+        asm, opened = build.assembly(self.s, [(foreign, 0, 0, 0), (same, 0, 0.15, 0)])
+        self.s.save_as(asm, product / "01_3D" / ASM)
+        for doc in opened:
+            self.s.close(doc)
+        self.s.activate(asm)
+        status = self._build()
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.path("outcome.txt").write_text(status + "\n\n" + notices, encoding="utf-8")
+        self.assertTrue(status.startswith("ok|"), f"{status}\n{notices}")
+        ops, on_sections = self._sections(product / DOCS / BOOK)
+        for designation in ("ПРТИ.468211.101", "ПРТИ.468211.111"):
+            with self.subTest(book=designation):
+                self.assertNotIn(ops.get(designation) or "?", ("?", ""), f"операции в книге: {ops}\n{notices}")
+                self.assertIn(designation, on_sections, f"на участках: {on_sections}")
+        self.assertIn("модель другого заказа («775_Другой»)", notices, "замечание: операции другого заказа — только в книге")
+        loaded = self.s.sw.GetOpenDocumentByName(str(foreign))
+        self.assertIsNotNone(loaded, "деталь другого заказа загружена сборкой")
+        self.assertFalse(bool(com.dyn(loaded).GetSaveFlag), "деталь другого заказа не помечена изменённой")
+        self.s.close_all()
+        self.assertEqual(before, foreign.read_bytes(), "файл другого заказа не изменён")
+        self.assertEqual(ops["ПРТИ.468211.111"], V(self.persisted(same), "Операции"), "деталь своего заказа — записана")
+
     def test_L06_assembly_in_any_folder(self):
         """L06 (замечание владельца 19.09.2026): главная сборка — в любой папке, вне заказа и без «01_3D»; детали — рядом и
         в другой папке. Книга ЛЗК — прямо рядом со сборкой, новых папок нет; повторный запуск заменяет книгу."""
