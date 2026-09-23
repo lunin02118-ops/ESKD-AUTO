@@ -42,6 +42,8 @@ namespace ESKD.MaterialSync.Core
         public string Assembly = "";
         public string User = "";
         public DateTime Time = DateTime.Now;
+        /// <summary>Версия изделия (<see cref="ProductStamp"/>): по ней книга ЛЗК и выгрузка сверяются с проверкой.</summary>
+        public string Version = "";
         public readonly List<CheckFinding> Findings = new List<CheckFinding>();
         /// <summary>Файл → SHA-256, в порядке обхода.</summary>
         public readonly List<KeyValuePair<string, string>> Checksums = new List<KeyValuePair<string, string>>();
@@ -133,6 +135,7 @@ namespace ESKD.MaterialSync.Core
             sb.AppendLine("Изделие:  " + report.Product);
             sb.AppendLine("Сборка:   " + report.Assembly);
             sb.AppendLine("Проверил: " + report.User + ", " + report.Time.ToString("dd.MM.yyyy HH:mm", CultureInfo.GetCultureInfo("ru-RU")));
+            if (report.Version.Length > 0) sb.AppendLine(ProductStamp.VersionLabel + "   " + report.Version);
             sb.AppendLine("Итог:     " + OutcomeName(report.Outcome) +
                 (report.Findings.Count > 0
                     ? " (брак: " + report.Count(CheckLevel.Defect) + ", замечаний: " + report.Count(CheckLevel.Issue) + ")"
@@ -145,7 +148,7 @@ namespace ESKD.MaterialSync.Core
             if (report.Checksums.Count > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine("Контрольные суммы (SHA-256):");
+                sb.AppendLine(ProductStamp.ChecksumTitle);
                 foreach (KeyValuePair<string, string> pair in report.Checksums)
                     sb.AppendLine("  " + pair.Value + "  " + pair.Key);
             }

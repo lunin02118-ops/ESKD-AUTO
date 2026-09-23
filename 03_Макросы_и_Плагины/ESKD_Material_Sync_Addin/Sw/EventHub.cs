@@ -524,8 +524,9 @@ namespace ESKD.MaterialSync.Sw
                 Settings settings = Settings.Read();
                 if (!settings.ServiceEnabled || !settings.SyncOnSave) return 0;
                 if (s.Type == (int)swDocumentTypes_e.swDocDRAWING) return 0;
-                // «Проверить изделие» сохраняет документы сам и уже всё записал — второй круг не нужен.
-                if (ProductReviewService.Running || DrawingFormatService.Busy) return 0;
+                // «Проверить изделие» сохраняет документы сам и уже всё записал — второй круг не нужен. ЛЗК и выгрузка
+                // сохраняют только своё (ToolSaves): не спрошенное у конструктора при их сохранении не пишется.
+                if (ProductReviewService.Running || DrawingFormatService.Busy || ToolSaves.Busy) return 0;
                 Remember(s.Doc, SyncService.SyncModel(_app, s.Doc, new SyncRequest
                 {
                     Reason = _resaving ? "пересохранение" : "сохранение",
@@ -552,7 +553,7 @@ namespace ESKD.MaterialSync.Sw
                     s.LastPath = fileName ?? s.LastPath;
                 }
                 if (!settings.ServiceEnabled || !settings.SyncOnSave) return 0;
-                if (ProductReviewService.Running || DrawingFormatService.Busy) return 0;
+                if (ProductReviewService.Running || DrawingFormatService.Busy || ToolSaves.Busy) return 0;
                 if (s.Type == (int)swDocumentTypes_e.swDocDRAWING)
                 {
                     // З-1: формат листов — в «Формат» модели. Листы читаются сейчас, пока чертёж открыт; запись в модель —

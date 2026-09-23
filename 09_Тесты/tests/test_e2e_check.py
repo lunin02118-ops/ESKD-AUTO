@@ -25,8 +25,10 @@ class Check(SwTestCase):
         short = self._case_name().split("_")[1]
         subdir = f"{short}/_Заявки/2026-001/02_Металл/{PRODUCT}/01_3D"
         models = self.s.run_dir / subdir
-        if models.exists():
-            shutil.rmtree(models, ignore_errors=True)
+        # Каталог теста — целиком: отчёт прежнего прогона в папке изделия (_Проверка.txt) иначе остаётся, и K05
+        # «проверки ещё не было» падает при повторном прогоне в том же ESKD_RUN_DIR.
+        if (self.s.run_dir / short).exists():
+            shutil.rmtree(self.s.run_dir / short, ignore_errors=True)
         for src in sorted(Path(paths.FIXTURES_A).iterdir()):
             if src.suffix.lower() in (".sldprt", ".sldasm"):
                 self.s.workspace_copy(src, subdir=subdir)

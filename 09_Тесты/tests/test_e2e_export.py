@@ -36,8 +36,10 @@ class Export(SwTestCase):
         short = self._case_name().split("_")[1]
         subdir = f"{short}/_Заявки/2026-001/02_Металл/{PRODUCT}/01_3D"
         models = self.s.run_dir / subdir
-        if models.exists():
-            shutil.rmtree(models, ignore_errors=True)
+        # Каталог теста — целиком: отчёты прежнего прогона в папке изделия (_Проверка.txt, _Экспорт.txt, _Выдано_…)
+        # иначе остаются при повторном прогоне в том же ESKD_RUN_DIR.
+        if (self.s.run_dir / short).exists():
+            shutil.rmtree(self.s.run_dir / short, ignore_errors=True)
         for src in sorted(Path(paths.FIXTURES_A).iterdir()):
             if src.suffix.lower() in (".sldprt", ".sldasm", ".slddrw"):
                 self.s.workspace_copy(src, subdir=subdir)
@@ -127,7 +129,10 @@ class Export(SwTestCase):
         text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
         for path in dxfs + igs:
             self.assertIn(path.name, text, f"{path.name} в отчёте")
-        self.assertNotIn("Замечания:", text, "СК по оси построена — замечаний нет")
+        # Изделие здесь не проверялось — об этом одно замечание (решение владельца 23.09.2026, З-27); других нет.
+        remarks = [line.strip() for line in text.split("Замечания:", 1)[-1].splitlines()[1:] if line.startswith("  ")] \
+            if "Замечания:" in text else []
+        self.assertEqual([], [r for r in remarks if "непроверенному изделию" not in r], f"СК по оси построена — замечаний нет:\n{text}")
 
         self.s.close_all()
         part = self.s.open(tube)
@@ -138,6 +143,61 @@ class Export(SwTestCase):
             feat = com.call(feat, "GetNextFeature")
         self.assertNotIn("_ЕСКД_ось_трубы", names, "временная СК удалена")
         self.assertEqual("", str(part.Extension.GetUserPreferenceString(16, 0) or ""), "СК вывода возвращена")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_X09_export_own_saves_keep_version(self):
+        """X09 (решение владельца 23.09.2026, З-27): выгрузка проверенного изделия сама сохраняет трубу — временная СК по оси
+        убрана, деталь сохранена снова. Это сохранение версию изделия не меняет: новая сумма трубы вписана в отчёт
+        проверки («Суммы обновлены: выгрузка для производства»), повторная проверка оставляет прежнюю версию и не находит
+        выгрузку «по другой версии»."""
+        import re
+        from eskd_e2e import build
+        short = self._case_name().split("_")[1]
+        models = self.s.run_dir / f"{short}/_Заявки/2026-001/02_Металл/И01_ПРТИ.468211.190/01_3D"
+        if models.exists():
+            shutil.rmtree(models.parent, ignore_errors=True)
+        models.mkdir(parents=True)
+        sheet = models / "ПРТИ.468211.191 Лист опорный.sldprt"
+        tube = models / "ПРТИ.468211.192 Стойка трубная.sldprt"
+        doc = build.sheet_metal_plate(self.s, 200, 100, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97")
+        self.s.save_as(doc, sheet)
+        doc = build.structural_tube(self.s, 500, build.tube_profile(), "Труба 30х30х1,5 ГОСТ 8639-82 / 08пс ГОСТ 13663-86",
+                                    angle_deg=53.13)
+        self.s.save_as(doc, tube)
+        asm, _ = build.assembly(self.s, [(sheet, 0, 0, 0), (tube, 0, 0.2, 0)])
+        asm_path = models / "ПРТИ.468211.190 СБ Рама.sldasm"
+        self.s.save_as(asm, asm_path)
+        self.s.close_all()
+        doc = self.s.open(asm_path)
+        self.s.activate(doc)
+        product = models.parent
+
+        def checked():
+            com.call(self.s.eskd(), "CheckProductSilent")
+            status = str(com.call(self.s.eskd(), "CheckStatus"))
+            self.assertTrue(status.startswith("ok|"), status)
+            text = (product / "_Проверка.txt").read_text(encoding="utf-8-sig")
+            found = re.search(r"^Версия:\s+(.+)$", text, re.M)
+            self.assertIsNotNone(found, text)
+            return text, found.group(1).strip()
+
+        _, version = checked()
+        before = tube.read_bytes()
+        status = self._export()
+        self.assertTrue(status.startswith("ok|"), status)
+        exported = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
+        self.path("export.txt").write_text(exported, encoding="utf-8")
+        self.assertIn("Версия:   " + version, exported, "изделие проверено и не менялось — выгрузка помнит версию")
+        self.assertNotIn("не убрана", exported, "временная СК трубы убрана")
+        self.assertNotEqual(before, tube.read_bytes(), "труба сохранена выгрузкой (СК по оси построена и убрана)")
+        report = (product / "_Проверка.txt").read_text(encoding="utf-8-sig")
+        self.assertIn("Суммы обновлены: выгрузка для производства", report, report)
+
+        text, again = checked()
+        self.path("check2.txt").write_text(text, encoding="utf-8")
+        self.assertEqual(version, again, "сохранение самой выгрузки версию не меняет")
+        self.assertNotIn("другой версии", text, text)
+        self.assertNotIn("непроверенному", text, text)
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_X06_tube_without_weldment_goes_to_igs_by_material(self):

@@ -309,6 +309,15 @@ namespace ESKD.MaterialSync.Core
             return list.Count == 0 ? autoTube : list.Contains(TubeCutting);
         }
 
+        /// <summary>
+        /// Новые «Операции» могут изменить решение выгрузки о файле трубы (IGS): при любом признаке профиля в модели.
+        /// Тогда прежняя выгрузка изделия устарела, хотя версия изделия от записи операций не меняется.
+        /// </summary>
+        public static bool TubeDecisionMayDiffer(string before, string after)
+        {
+            return WantsTubeFile(before, true) != WantsTubeFile(after, true) || WantsTubeFile(before, false) != WantsTubeFile(after, false);
+        }
+
         public static List<string> Parse(string value)
         {
             List<string> result = new List<string>();
@@ -470,6 +479,8 @@ namespace ESKD.MaterialSync.Core
         public string Model = "";
         public string Date = "";
         public string Checksum = "";
+        /// <summary>Версия изделия, по которой собрана книга (<see cref="ProductStamp"/>); пусто — изделие не проверено.</summary>
+        public string Version = "";
     }
 
     public sealed class LzkResult

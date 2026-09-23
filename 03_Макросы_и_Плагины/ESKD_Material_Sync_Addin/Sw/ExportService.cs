@@ -16,7 +16,10 @@ namespace ESKD.MaterialSync.Sw
 {
     /// <summary>
     /// Кнопка К-2 «Экспорт для производства» (ТЗ-02 Т-25…Т-31): PDF чертежей, DXF развёрток и IGS профиля
-    /// в папки изделия, отчёт `_Экспорт.txt` с контрольными суммами. Модели не меняются (Т-6).
+    /// в папки изделия, отчёт `_Экспорт.txt` с контрольными суммами и версией изделия. Изделие сначала сверяется с
+    /// проверкой (изменено после неё — вопрос «Проверить сейчас / Продолжить как есть», З-27). Модели не меняются (Т-6):
+    /// переключённое исполнение и временная СК возвращаются, и сохранённая до выгрузки деталь сохраняется снова — только
+    /// если возврат удался; иначе замечание в отчёте, и деталь остаётся несохранённой.
     /// </summary>
     public static class ExportService
     {
@@ -65,6 +68,8 @@ namespace ESKD.MaterialSync.Sw
         {
             LastOutcome = "";
             ModelDoc2 doc = null;
+            ToolSaves saves = null;
+            string productFolder = "";
             try
             {
                 doc = app.ActiveDoc as ModelDoc2;
@@ -81,8 +86,29 @@ namespace ESKD.MaterialSync.Sw
                     return false;
                 }
                 ProductLocation location = ProductLocator.Locate(path);
-                string productFolder = location.ProductFolder.Length > 0
+                productFolder = location.ProductFolder.Length > 0
                     ? location.ProductFolder : LzkNaming.ProductFolder(path);
+                bool assembly = type == (int)swDocumentTypes_e.swDocASSEMBLY;
+                // Деталь с несохранёнными правками выгружается из открытого, а не из файла: такую выгрузку версия изделия
+                // не покрывает. Флаг — до переключений исполнений.
+                bool partEdited = !assembly && DocumentGuard.HasUserEdits(doc);
+                // Изделие выгружается по проверенному и с тех пор не менявшемуся состоянию (З-27); деталь — сама по себе,
+                // версия изделия в отчёте остаётся прежней.
+                ProductFreshness freshness = null;
+                if (assembly)
+                {
+                    bool cancelled;
+                    freshness = ProductFreshness.Ensure(app, doc, "Выгрузка для производства",
+                        "файлы выгрузятся по моделям как есть, в отчёте выгрузки будет «" + ProductStamp.Unchecked + "»: «Готово к " +
+                        "производству» такую выгрузку не примет, пока изделие не проверят и не выгрузят заново.", interactive, out cancelled);
+                    if (cancelled)
+                    {
+                        LastOutcome = "error|отменено";
+                        Status(app, "");
+                        return false;
+                    }
+                }
+                saves = new ToolSaves();
 
                 Status(app, "ЕСКД: выгрузка для производства — состав…");
                 List<Item> items = Collect(app, doc, path, productFolder);
@@ -91,8 +117,12 @@ namespace ESKD.MaterialSync.Sw
                 {
                     Product = LzkNaming.Cipher(productFolder, path),
                     User = Settings.AuthorOrUser(),
-                    Time = DateTime.Now
+                    Time = DateTime.Now,
+                    Version = freshness != null ? freshness.Version : null
                 };
+                if (freshness != null && !freshness.Fresh)
+                    log.Warn(Path.GetFileName(path), "выгрузка по непроверенному изделию — " + string.Join("; ", freshness.Reasons.ToArray()) +
+                        ": нажмите «Проверить изделие» и выгрузите изделие заново");
                 foreach (Item item in items)
                 {
                     Status(app, "ЕСКД: выгрузка — " + Path.GetFileName(item.Path));
@@ -121,13 +151,20 @@ namespace ESKD.MaterialSync.Sw
                     }
                     if (!item.IsAssembly)
                     {
-                        Dxf(app, item, productFolder, log);
-                        Igs(app, item, productFolder, log);
+                        Dxf(app, item, productFolder, log, saves);
+                        Igs(app, item, productFolder, log, saves);
                     }
                 }
                 // Экспорт переключал окна: конструктор должен увидеть ту же сборку, с которой начал.
                 Activate(app, path);
-                string reportPath = Write(productFolder, log, type == (int)swDocumentTypes_e.swDocPART, items);
+                // Свои сохранения кнопки — в отчёт проверки: изделие для следующей кнопки остаётся проверенным.
+                ProductFreshness.Restamp(productFolder, saves.Changes, "выгрузка для производства");
+                bool keepVersion = !partEdited && (assembly || SameAsChecked(path));
+                if (!assembly && !keepVersion)
+                    log.Warn(Path.GetFileName(path), (partEdited ? "деталь выгружена с несохранёнными правками"
+                        : "деталь изменена после проверки изделия") + " — выгрузка изделия теперь «" + ProductStamp.Unchecked +
+                        "»: сохраните деталь, проверьте изделие и выгрузите его заново");
+                string reportPath = Write(productFolder, log, !assembly, items, keepVersion);
                 LastOutcome = string.Join("|", new[]
                 {
                     "ok", log.Files.Count.ToString(CultureInfo.InvariantCulture),
@@ -144,6 +181,22 @@ namespace ESKD.MaterialSync.Sw
                 Fail(app, interactive, "Выгрузка не выполнена: " + ex.Message);
                 return false;
             }
+            finally
+            {
+                // Сорвалась выгрузка после своих сохранений — их суммы всё равно в отчёт проверки (повторная запись пустая).
+                if (saves != null) ProductFreshness.Restamp(productFolder, saves.Changes, "выгрузка для производства");
+            }
+        }
+
+        /// <summary>Файл детали — ровно тот, что в отчёте последней проверки изделия (с поправкой на сохранения кнопок).</summary>
+        private static bool SameAsChecked(string path)
+        {
+            ProductStamp stamp = ProductStamp.Read(CheckRules.ReportPath(ProductReviewService.ProductFolderOf(path)));
+            if (stamp == null || stamp.Version.Length == 0) return false;
+            string sum = ProductFreshness.Checksum(path);
+            string name = Path.GetFileName(path);
+            return sum.Length > 0 && stamp.Checksums.Any(c =>
+                string.Equals(c.Key, name, StringComparison.OrdinalIgnoreCase) && string.Equals(c.Value, sum, StringComparison.OrdinalIgnoreCase));
         }
 
         // ------------------------------------------------------------------ состав
@@ -360,7 +413,7 @@ namespace ESKD.MaterialSync.Sw
         /// выгружалась бы только активная конфигурация). Развёртку SolidWorks отдаёт по активной конфигурации, поэтому
         /// исполнения по очереди делаются активными; прежняя конфигурация возвращается.
         /// </summary>
-        private static void Dxf(ISldWorks app, Item item, string productFolder, ExportLog log)
+        private static void Dxf(ISldWorks app, Item item, string productFolder, ExportLog log, ToolSaves saves)
         {
             if (!(item.Model is PartDoc)) return;
             if (item.Executions.Count == 0)
@@ -395,27 +448,39 @@ namespace ESKD.MaterialSync.Sw
             }
             finally
             {
-                if (switched) RestoreConfiguration(item, original, wasDirty);
+                if (switched) RestoreConfiguration(item, original, wasDirty, log, saves);
             }
         }
 
-        /// <summary>Вернуть конфигурацию, с которой деталь пришла. Переключение исполнений — не правка: сохранённая до выгрузки
-        /// деталь остаётся сохранённой.</summary>
-        private static void RestoreConfiguration(Item item, string original, bool wasDirty)
+        /// <summary>
+        /// Вернуть конфигурацию, с которой деталь пришла. Переключение исполнений — не правка: сохранённая до выгрузки деталь
+        /// сохраняется снова, но только если исполнение действительно вернулось — иначе в файл ушла бы чужая активная
+        /// конфигурация. Не вернулось или не сохранилось — замечание в отчёте выгрузки; деталь с правками конструктора не
+        /// сохраняется никогда (З-25).
+        /// </summary>
+        private static void RestoreConfiguration(Item item, string original, bool wasDirty, ExportLog log, ToolSaves saves)
         {
+            string file = Path.GetFileName(item.Path);
             try
             {
                 if (original.Length > 0 && !string.Equals(original, ActiveConfiguration(item.Model), StringComparison.Ordinal))
                     item.Model.ShowConfiguration2(original);
-                if (!wasDirty && item.Model.GetSaveFlag())
+                if (original.Length == 0 || !string.Equals(original, ActiveConfiguration(item.Model), StringComparison.Ordinal))
                 {
-                    int errors = 0, warnings = 0;
-                    item.Model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings);
+                    log.Warn(file, "прежнее исполнение" + (original.Length > 0 ? " «" + original + "»" : "") +
+                        " не вернулось активным — деталь не сохранена: верните его и сохраните деталь сами");
+                    return;
                 }
+                if (wasDirty || !item.Model.GetSaveFlag()) return;
+                int errors;
+                if (!saves.Save(item.Model, out errors))
+                    log.Warn(file, "после переключения исполнений деталь не сохранена (код " + errors +
+                        "): SolidWorks спросит о сохранении — ответьте «Да»");
             }
             catch (COMException ex)
             {
                 Log.Error("Выгрузка: возврат конфигурации " + item.Path, ex);
+                log.Warn(file, "прежнее исполнение не возвращено (" + ex.Message.Trim() + ") — деталь не сохранена: проверьте её");
             }
         }
 
@@ -601,7 +666,7 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ IGS профиля (Т-29)
-        private static void Igs(ISldWorks app, Item item, string productFolder, ExportLog log)
+        private static void Igs(ISldWorks app, Item item, string productFolder, ExportLog log, ToolSaves saves)
         {
             // Решает галочка «Лазерная резка трубы» в операциях; без операций — признак профиля в модели.
             if (!LzkOperations.WantsTubeFile(item.Operations, IsStructuralMember(item.Model) || IsTubeByMaterial(item.Model))) return;
@@ -630,13 +695,19 @@ namespace ESKD.MaterialSync.Sw
                 }
                 int errors = 0, warnings = 0;
                 bool ok;
-                using (TubeAxis axis = TubeAxis.Create(app, item.Model, item.Path))
+                TubeAxis axis = TubeAxis.Create(app, item.Model, item.Path, saves);
+                try
                 {
                     ok = item.Model.Extension.SaveAs(target, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
                         (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref errors, ref warnings);
                     if (ok && !axis.Applied)
                         log.Warn(Path.GetFileName(target), "IGS в глобальной системе координат: " + axis.Reason);
                 }
+                finally
+                {
+                    axis.Dispose();
+                }
+                if (axis.Leftover.Length > 0) log.Warn(Path.GetFileName(item.Path), axis.Leftover);
                 if (ok) log.Add(target);
                 else log.Skip(Path.GetFileName(item.Path), "IGS не сохранён (код " + errors + ")");
             }
@@ -719,21 +790,26 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ отчёт
-        private static string Write(string productFolder, ExportLog log, bool partial, IEnumerable<Item> items)
+        private static string Write(string productFolder, ExportLog log, bool partial, IEnumerable<Item> items, bool keepVersion)
         {
             foreach (string file in log.Files) log.Checksums[file] = Checksum(file);
             string path = ExportNaming.ReportPath(productFolder);
             // Выгрузка одной детали (и «Новая ревизия») дописывает отчёт изделия, а не заменяет его: иначе проверка
             // изделия сочла бы все остальные детали невыгруженными. Прежние файлы остаются, если лежат на месте
             // и не переписаны сейчас; прежние пропуски — если документ сейчас не выгружался.
-            if (partial && File.Exists(path)) Merge(productFolder, log, ExportLog.Parse(File.ReadAllText(path, Encoding.UTF8)), items);
+            if (partial && File.Exists(path)) Merge(productFolder, log, ExportLog.Parse(File.ReadAllText(path, Encoding.UTF8)), items, keepVersion);
+            else if (partial) log.Version = "";
             Directory.CreateDirectory(productFolder);
             File.WriteAllText(path, log.Text(), new UTF8Encoding(true));
             return path;
         }
 
-        private static void Merge(string productFolder, ExportLog log, ExportLog previous, IEnumerable<Item> items)
+        private static void Merge(string productFolder, ExportLog log, ExportLog previous, IEnumerable<Item> items, bool keepVersion)
         {
+            // Деталь выгружается сама по себе: версия изделия — та, по которой выгружено изделие, если деталь ровно как при
+            // проверке. Выгружена с несохранёнными правками или изменена после проверки — «не проверено»: правки могут и
+            // не сохранить, и тогда файлы цеха не совпали бы ни с одной проверенной версией.
+            log.Version = keepVersion ? previous.Version : "";
             HashSet<string> now = new HashSet<string>(log.Files.Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
             HashSet<string> documents = new HashSet<string>(
                 items.Select(i => Path.GetFileNameWithoutExtension(i.Path)), StringComparer.OrdinalIgnoreCase);

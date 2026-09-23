@@ -151,9 +151,14 @@ class Issue(SwTestCase):
         (order / norms.name).write_bytes(norms.read_bytes())
         doc = self.s.open(asm)
         self.s.activate(doc)
-        self.assertTrue(self._wait("ExportProductSilent", "ExportStatus", running="").startswith("ok|"), "выгрузка")
+        # Порядок работы (решение владельца 23.09.2026, З-27): проверка → ЛЗК → выгрузка → «Готово». Книга и выгрузка
+        # помнят версию изделия, по которой сделаны; «Готово» требует, чтобы она была текущей.
+        # Первая проверка — как у конструктора, «Применить и сохранить»: она дописывает реквизиты сборки. Сохранения ЛЗК
+        # и выгрузки синхронизацию при сохранении не запускают.
+        self.assertTrue(self._wait("CheckProductApplySilent", "CheckStatus", running="").startswith("ok|"), "проверка")
         lzk = self._wait("BuildLzkSilent", "LzkStatus")
         self.assertTrue(lzk.startswith("ok|"), lzk)
+        self.assertTrue(self._wait("ExportProductSilent", "ExportStatus", running="").startswith("ok|"), "выгрузка")
         check = self._wait("CheckProductSilent", "CheckStatus", running="")
         report = product / "_Проверка.txt"
         self.assertTrue(check.startswith("ok|ГОТОВО|"),

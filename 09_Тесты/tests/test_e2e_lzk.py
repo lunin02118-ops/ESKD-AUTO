@@ -284,7 +284,10 @@ class Lzk(SwTestCase):
         self.assertTrue(workbook.is_file(), "файл ведомости")
         self.assertFalse((product / "_Ведомость.txt").exists(), "отчёта-текстовика больше нет — замечания в окне")
         notices = str(com.call(self.s.eskd(), "LastNotices"))
-        self.assertEqual(int(issues), notices.count("ЗАМЕЧАНИЕ — "), f"пометки «?» — замечания окна: {notices}")
+        # Изделие здесь не проверялось: одно замечание — «книга собрана по непроверенному изделию» (З-27); пометки «?»
+        # книги — замечания по строкам. Замечание о старой версии SWTools зависит от рабочего места и не считается.
+        self.assertEqual(1, notices.count("непроверенному изделию"), f"книга без проверки — сказано: {notices}")
+        self.assertEqual(int(issues), notices.count("ЗАМЕЧАНИЕ — Строка "), f"пометки «?» — замечания окна: {notices}")
         self.assertGreater(int(row_count), 5, "строк в ведомости")
 
         wb = openpyxl.load_workbook(workbook)
@@ -506,6 +509,109 @@ class Lzk(SwTestCase):
         kitted = [str(kit.cell(r, 2).value or "") for r in range(6, kit.max_row + 1)]
         self.assertFalse(any(v.startswith("ПРТИ.468211.100") for v in kitted), f"главная сборка не комплектуется: {kitted}")
         self.s.close_all()
+
+    # ------------------------------------------------------------------ версия изделия (З-27)
+    def _checked(self):
+        """Проверка изделия без окна; возвращает (итог, текст отчёта, версия)."""
+        import re
+
+        com.call(self.s.eskd(), "CheckProductSilent")
+        status = str(com.call(self.s.eskd(), "CheckStatus"))
+        self.assertTrue(status.startswith("ok|"), status)
+        text = Path(status.split("|")[4]).read_text(encoding="utf-8-sig")
+        found = re.search(r"^Версия:\s+(.+)$", text, re.M)
+        self.assertIsNotNone(found, f"в отчёте проверки есть версия изделия:\n{text}")
+        return status, text, found.group(1).strip()
+
+    @staticmethod
+    def _book_version(workbook):
+        import openpyxl
+        wb = openpyxl.load_workbook(workbook)
+        ws, cell = next(iter(wb.defined_names["Паспорт_Версия"].destinations))
+        return str(wb[ws][cell.replace("$", "")].value or "").strip()
+
+    def test_L13_version_lzk_export(self):
+        """L13 (решение владельца 23.09.2026, З-27): проверка пишет версию изделия; ЛЗК и выгрузка после неё ничего не
+        спрашивают и запоминают эту версию; собственные сохранения ЛЗК (записанные «Операции») версию не меняют —
+        повторная проверка оставляет прежнюю, и замечаний о версии книги и выгрузки нет (сохранения выгрузки — X09).
+        Несохранённая правка версию не меняет, а даёт замечание проверки. Деталь изменили и сохранили — новая версия,
+        книга и выгрузка «по другой версии изделия». Имя теста короткое: у фикстуры есть файл с именем в 82 знака, и с
+        длинным каталогом путь переваливает за 260."""
+        product, asm = self._product()
+        doc = self.s.open(asm)
+        self.s.activate(doc)
+        _, _, version = self._checked()
+
+        lzk = self._build()
+        self.assertTrue(lzk.startswith("ok|"), lzk)
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.assertNotIn("непроверенному изделию", notices, f"изделие проверено и не менялось: {notices}")
+        self.assertEqual(version, self._book_version(product / DOCS / BOOK), "книга помнит версию проверки")
+        report = (product / "_Проверка.txt").read_text(encoding="utf-8-sig")
+        self.assertIn("Версия:   " + version, report, "версия в отчёте проверки прежняя")
+        self.assertIn("Суммы обновлены: ведомость ЛЗК", report, "ЛЗК вписала суммы моделей, которые сохранила сама")
+        self.assertFalse(bool(doc.GetSaveFlag), "сборка после ЛЗК не помечена изменённой")
+
+        com.call(self.s.eskd(), "ExportProductSilent")
+        export = str(com.call(self.s.eskd(), "ExportStatus"))
+        self.assertTrue(export.startswith("ok|"), export)
+        exported = Path(export.split("|")[3]).read_text(encoding="utf-8-sig")
+        self.path("export.txt").write_text(exported, encoding="utf-8")
+        self.assertIn("Версия:   " + version, exported, "выгрузка помнит версию проверки")
+        self.assertNotIn("непроверенному изделию", exported, exported)
+
+        status, text, again = self._checked()
+        self.path("check2.txt").write_text(text, encoding="utf-8")
+        self.assertEqual(version, again, "свои сохранения ЛЗК и выгрузки версию не меняют")
+        self.assertNotIn("другой версии", text, text)
+        self.assertNotIn("непроверенному", text, text)
+        self.assertNotIn("без отметки версии", text, text)
+
+        # Деталь уже загружена сборкой: берётся открытая модель компонента.
+        part = com.dyn(self.s.sw.GetOpenDocumentByName(str(asm.parent / SHEET_PART)))
+        from eskd_e2e import build
+        build.props(part, {"Примечание": "изменено после проверки"})
+        part.SetSaveFlag()
+        # Несохранённая правка: файлы прежние — версия прежняя (правку могут закрыть без сохранения), но проверка говорит
+        # о ней, и «Готово к производству» не пройдёт, пока её не сохранят.
+        _, text, same = self._checked()
+        self.path("check3.txt").write_text(text, encoding="utf-8")
+        self.assertEqual(version, same, "несохранённая правка версию не меняет")
+        self.assertIn(SHEET_PART.lower().rsplit(".", 1)[0], text.lower(), text)
+        self.assertIn("несохранённые правки", text, text)
+        self.assertNotIn("другой версии", text, text)
+
+        self.assertTrue(self.s.save(part)[0], "деталь сохранена")
+        self.s.wait_addin_idle(timeout=60.0)
+        _, text, changed = self._checked()
+        self.path("check4.txt").write_text(text, encoding="utf-8")
+        self.assertNotEqual(version, changed, "деталь изменили — новая версия")
+        self.assertIn("книга собрана по другой версии изделия", text, text)
+        self.assertIn("выгрузка сделана по другой версии изделия", text, text)
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_L14_edited_models_not_saved(self):
+        """L14 (решение владельца 23.09.2026, З-25, З-27): у детали несохранённые правки конструктора — ЛЗК пишет в неё
+        «Операции», но не сохраняет; изделие не проверено — книга собирается «как есть» с отметкой «не проверено»."""
+        product, asm = self._product()
+        doc = self.s.open(asm)
+        part = com.dyn(self.s.sw.GetOpenDocumentByName(str(asm.parent / SHEET_PART)))
+        from eskd_e2e import build
+        build.props(part, {"Примечание": "правка конструктора"})
+        part.SetSaveFlag()
+        self.assertTrue(bool(part.GetSaveFlag), "у детали несохранённые правки")
+        before = (asm.parent / SHEET_PART).read_bytes()
+        self.s.activate(doc)
+        status = self._build()
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.path("outcome.txt").write_text(status + "\n\n" + notices, encoding="utf-8")
+        self.assertTrue(status.startswith("ok|"), f"{status}\n{notices}")
+        self.assertEqual(before, (asm.parent / SHEET_PART).read_bytes(), "файл детали с правками конструктора не сохранён")
+        self.assertTrue(bool(part.GetSaveFlag), "правки конструктора по-прежнему несохранённые")
+        self.assertIn("несохранённые правки", notices, notices)
+        self.assertIn("непроверенному изделию", notices, "изделие не проверялось — сказано")
+        self.assertEqual("не проверено", self._book_version(product / DOCS / BOOK), "паспорт: книга по непроверенному изделию")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_L03_refuses_non_assembly(self):
         """L03: у детали кнопка отказывает без изменений файлов."""

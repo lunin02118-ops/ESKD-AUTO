@@ -11,6 +11,7 @@ namespace ESKD.MaterialSync.Sw
     /// поэтому на время выгрузки строится СК с началом в начале отрезка первого элемента конструкции (WeldMemberFeat)
     /// и осью X по нему, и назначается системой координат вывода документа. После выгрузки СК удаляется, прежняя
     /// настройка возвращается; модель, которая до выгрузки была сохранена, сохраняется снова — деталь остаётся как была.
+    /// Сохраняется только проверенно вернувшаяся деталь: СК удалена и СК вывода прежняя; иначе — <see cref="Leftover"/>.
     /// Нет элемента конструкции или отрезка — <see cref="Applied"/> = false, выгрузка идёт в глобальной СК.
     /// </summary>
     public sealed class TubeAxis : IDisposable
@@ -20,6 +21,7 @@ namespace ESKD.MaterialSync.Sw
         private const int DocumentLevel = (int)swUserPreferenceOption_e.swDetailingNoOptionSpecified;
 
         private readonly ModelDoc2 model;
+        private readonly ToolSaves saves;
         private readonly bool wasDirty;
         private string previousOutput = "";
         private Feature feature;
@@ -27,17 +29,21 @@ namespace ESKD.MaterialSync.Sw
         public bool Applied { get { return feature != null; } }
         /// <summary>Почему СК по оси не построена — для замечания в отчёте.</summary>
         public string Reason { get; private set; }
+        /// <summary>Временная СК не убралась или деталь после неё не сохранилась — замечание для отчёта; пусто — всё вернулось.</summary>
+        public string Leftover { get; private set; }
 
-        private TubeAxis(ModelDoc2 model)
+        private TubeAxis(ModelDoc2 model, ToolSaves saves)
         {
             this.model = model;
+            this.saves = saves;
             wasDirty = model.GetSaveFlag();
             Reason = "";
+            Leftover = "";
         }
 
-        public static TubeAxis Create(ISldWorks app, ModelDoc2 model, string path)
+        public static TubeAxis Create(ISldWorks app, ModelDoc2 model, string path, ToolSaves saves)
         {
-            TubeAxis axis = new TubeAxis(model);
+            TubeAxis axis = new TubeAxis(model, saves);
             try
             {
                 SketchLine line = FirstMemberLine(model);
@@ -122,12 +128,16 @@ namespace ESKD.MaterialSync.Sw
         private void Remove()
         {
             if (feature == null) return;
+            bool restored = false;
             try
             {
                 model.Extension.SetUserPreferenceString(OutputCoordinateSystem, DocumentLevel, previousOutput);
                 model.ClearSelection2(true);
                 if (feature.Select2(false, 0)) model.EditDelete();
                 model.ClearSelection2(true);
+                // Сохранять можно только вернувшуюся деталь: иначе временная СК или чужая СК вывода остались бы в файле.
+                restored = !Present() &&
+                    (model.Extension.GetUserPreferenceString(OutputCoordinateSystem, DocumentLevel) ?? "") == previousOutput;
             }
             catch (COMException ex)
             {
@@ -138,10 +148,27 @@ namespace ESKD.MaterialSync.Sw
                 Marshal.ReleaseComObject(feature);
                 feature = null;
             }
+            if (!restored)
+            {
+                Leftover = "временная СК «" + Name + "» не убрана — деталь не сохранена: удалите СК и сохраните деталь сами";
+                Log.Warn("Выгрузка: " + Leftover);
+                return;
+            }
             if (wasDirty) return;
-            int errors = 0, warnings = 0;
-            if (!model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
-                Log.Warn("Выгрузка: деталь после временной СК не сохранена (код " + errors + ")");
+            int errors;
+            if (!saves.Save(model, out errors))
+            {
+                Leftover = "деталь после временной СК не сохранена (код " + errors + "): SolidWorks спросит о сохранении — ответьте «Да»";
+                Log.Warn("Выгрузка: " + Leftover);
+            }
+        }
+
+        /// <summary>Временная СК ещё в дереве детали.</summary>
+        private bool Present()
+        {
+            for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+                if (string.Equals(f.Name, Name, StringComparison.Ordinal)) return true;
+            return false;
         }
 
         public void Dispose()

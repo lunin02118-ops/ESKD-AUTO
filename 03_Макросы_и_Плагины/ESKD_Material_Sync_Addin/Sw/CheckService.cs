@@ -117,8 +117,16 @@ namespace ESKD.MaterialSync.Sw
                         report = Recheck(app, nodes, productFolder, assemblyPath, session, report);
                     }
                 }
+                // Несохранённые правки в своих документах изделия (З-27): версия изделия считается по файлам, а проверено то,
+                // что открыто, — пока правки не сохранены, «Готово к производству» не пройдёт.
+                foreach (ProductNode node in nodes.Where(ProductFreshness.Own))
+                    if (DocumentGuard.HasUserEdits(node.Model))
+                        report.Add(CheckRules.Sync, CheckRules.LevelOf(CheckRules.Sync), Path.GetFileName(node.Path),
+                            "несохранённые правки: сохраните документ и проверьте изделие снова");
                 foreach (ProductNode node in nodes)
                     report.Checksums.Add(new KeyValuePair<string, string>(Path.GetFileName(node.Path), Checksum(node.Path)));
+                report.Version = VersionOf(productFolder, report);
+                SameVersion(productFolder, assemblyPath, report);
 
                 string path = Write(productFolder, report);
                 LastReport = report;
@@ -488,11 +496,19 @@ namespace ESKD.MaterialSync.Sw
                                 ": нажмите «Ведомость ЛЗК» — окно покажет, чего не хватает");
                         }
                     }
-                    if (!book.TryResolveName("Шапка_КонтрольнаяСумма", out sheet, out cell)) return;
-                    string written = (book.Sheet(sheet).Get(cell) ?? "").Trim();
-                    if (!CheckRules.WorkbookMatchesAssembly(written, Checksum(assemblyPath)))
+                    // С 23.09.2026 книга помнит версию изделия — сверка с ней в конце проверки (SameVersion), когда
+                    // версия известна. У прежних книг версии нет: сверка по сумме сборки, и такую книгу «Готово к
+                    // производству» не примет — изменённые после неё детали по сумме сборки не видны.
+                    string version;
+                    if (LzkInputs.TryReadVersion(book, out version)) return;
+                    if (book.TryResolveName("Шапка_КонтрольнаяСумма", out sheet, out cell) &&
+                        !CheckRules.WorkbookMatchesAssembly((book.Sheet(sheet).Get(cell) ?? "").Trim(), Checksum(assemblyPath)))
                         report.Add(CheckRules.Workbook, CheckRules.LevelOf(CheckRules.Workbook), name,
                             "ведомость сделана по другой версии сборки: сформируйте заново");
+                    else
+                        report.Add(CheckRules.Workbook, CheckRules.LevelOf(CheckRules.Workbook), name,
+                            "книга без отметки версии изделия (собрана до 23.09.2026): нажмите «Ведомость ЛЗК» — " +
+                            "«Готово к производству» примет только книгу с версией");
                 }
             }
             catch (Exception ex)
@@ -630,6 +646,65 @@ namespace ESKD.MaterialSync.Sw
         }
 
         // ------------------------------------------------------------------ отчёт
+        // ------------------------------------------------------------------ версия изделия
+        /// <summary>
+        /// Версия изделия этой проверки (решение владельца 23.09.2026, З-27) — по файлам. Прежняя остаётся, если файлы
+        /// изделия ровно те, что в прежнем отчёте (с поправкой на сохранения самих кнопок — ProductStamp.Restamp):
+        /// повторная проверка того же изделия книгу и выгрузку не «устаревает». Иначе — новая. Несохранённые правки версию
+        /// не меняют (их закроют без сохранения — файлы останутся прежними), а дают замечание проверки.
+        /// </summary>
+        private static string VersionOf(string productFolder, CheckReport report)
+        {
+            ProductStamp previous = ProductStamp.Read(CheckRules.ReportPath(productFolder));
+            if (previous != null && previous.Version.Length > 0 &&
+                string.Equals(previous.Assembly, report.Assembly, StringComparison.OrdinalIgnoreCase) &&
+                ProductStamp.Differences(previous.Checksums, report.Checksums).Count == 0)
+                return previous.Version;
+            return ProductStamp.NewVersion(report.Time, report.Checksums);
+        }
+
+        /// <summary>
+        /// Книга ЛЗК и выгрузка сделаны по этой же версии изделия? Иначе — замечание: «Готово к производству» идёт только
+        /// с книгой и выгрузкой по проверенному и с тех пор не менявшемуся изделию.
+        /// </summary>
+        private static void SameVersion(string productFolder, string assemblyPath, CheckReport report)
+        {
+            string cipher = LzkNaming.Cipher(productFolder, assemblyPath);
+            string book = LzkNaming.FindWorkbook(productFolder, cipher);
+            if (book.Length > 0 && !LzkNaming.IsLegacy(book))
+            {
+                try
+                {
+                    using (XlsxBook xlsx = XlsxBook.Open(book))
+                    {
+                        string version;
+                        if (LzkInputs.TryReadVersion(xlsx, out version) && version != report.Version)
+                            report.Add(CheckRules.Workbook, CheckRules.LevelOf(CheckRules.Workbook), Path.GetFileName(book),
+                                (version.Length == 0
+                                    ? "книга собрана по непроверенному изделию"
+                                    : "книга собрана по другой версии изделия (" + version + ")") +
+                                ": нажмите «Ведомость ЛЗК»");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Не прочиталась — об этом уже сказало правило книги.
+                    Log.Error("Проверка изделия: версия в книге ЛЗК", ex);
+                }
+            }
+            string export = Path.Combine(productFolder, CheckRules.ExportReportName);
+            if (!File.Exists(export)) return;
+            ExportLog log = ExportLog.Parse(File.ReadAllText(export, Encoding.UTF8));
+            if (log.Version == report.Version) return;
+            report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), CheckRules.ExportReportName,
+                (log.Version == null
+                    ? "выгрузка без отметки версии изделия (сделана до 23.09.2026)"
+                    : log.Version.Length == 0
+                        ? "выгрузка сделана по непроверенному изделию"
+                        : "выгрузка сделана по другой версии изделия (" + log.Version + ")") +
+                ": выгрузите изделие заново");
+        }
+
         private static string Write(string productFolder, CheckReport report)
         {
             string path = CheckRules.ReportPath(productFolder);
@@ -722,17 +797,7 @@ namespace ESKD.MaterialSync.Sw
 
         private static string Checksum(string path)
         {
-            try
-            {
-                using (SHA256 sha = SHA256.Create())
-                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                    return BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
-            }
-            catch (IOException ex)
-            {
-                Log.Error("Проверка изделия: контрольная сумма " + path, ex);
-                return "";
-            }
+            return ProductFreshness.Checksum(path);
         }
     }
 }

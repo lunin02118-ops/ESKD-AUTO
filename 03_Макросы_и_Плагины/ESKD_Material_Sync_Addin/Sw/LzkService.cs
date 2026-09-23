@@ -17,8 +17,10 @@ using SolidWorks.Interop.swconst;
 namespace ESKD.MaterialSync.Sw
 {
     /// <summary>
-    /// Кнопка К-4 «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37, ТЗ-04): окно «Операции» с тиражом, сроком и цветом → запись «Операции»
-    /// и «Габарит» в новые модели изделия → сохранение сборки → SWTools без окна по пресету «ЛЗК» → живая книга:
+    /// Кнопка К-4 «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37, ТЗ-04): сверка с проверкой изделия (изменено после неё — вопрос
+    /// «Проверить сейчас / Продолжить как есть», З-27) → окно «Операции» с тиражом, сроком и цветом → запись «Операции»
+    /// и «Габарит» в новые модели изделия → сохранение изменённого кнопкой (документы с несохранёнными правками
+    /// конструктора не сохраняются, З-25) → SWTools без окна по пресету «ЛЗК» → живая книга:
     /// паспорт, участки, расход, нормы → ЛЗК_&lt;шифр&gt;.xlsx: в структуре заказа — в «04_Сопроводительная документация»
     /// изделия (прежняя — в _Аннулировано), вне её — рядом со сборкой (прежняя — в резервную копию); введённое переносится.
     /// SWTools ждётся в потоке SolidWorks — таймером и в простое (опрос из постоянной подписки EventHub): синхронное
@@ -53,6 +55,15 @@ namespace ESKD.MaterialSync.Sw
         private Timer _timer;
         private DateTime _started;
         private LzkHeader _header;
+        /// <summary>Сверка с проверкой изделия: версия — в паспорт книги.</summary>
+        private ProductFreshness _freshness;
+        /// <summary>Сохранения самой кнопки: их суммы — в отчёт проверки, версия изделия от них не меняется.</summary>
+        private readonly ToolSaves _saves = new ToolSaves();
+        /// <summary>
+        /// Модели, в которых до кнопки были несохранённые правки конструктора: кнопка пишет в них «Операции» и «Габарит», но
+        /// не сохраняет — сохранять правки конструктора без его команды нельзя (решение владельца 23.09.2026, З-25).
+        /// </summary>
+        private readonly HashSet<string> _editedBefore = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _finishing;
         private bool _finished;
         private bool _exitedEarly;
@@ -98,6 +109,20 @@ namespace ESKD.MaterialSync.Sw
                 service.Cleanup();
                 Info("Ведомость ЛЗК не сформирована: " + ex.Message, MessageBoxIcon.Error);
             }
+            finally
+            {
+                // Отмена или ошибка после своих сохранений — их суммы всё равно в отчёт проверки (повторная запись пустая).
+                service.RecordSaves();
+            }
+        }
+
+        /// <summary>
+        /// Свои сохранения кнопки — в отчёт проверки: изделие для следующей кнопки остаётся проверенным. Повторный вызов
+        /// ничего не пишет: суммы в отчёте уже новые.
+        /// </summary>
+        private void RecordSaves()
+        {
+            if (_freshness != null) ProductFreshness.Restamp(_freshness.ProductFolder, _saves.Changes, "ведомость ЛЗК");
         }
 
         private static void Info(string text, MessageBoxIcon icon)
@@ -162,6 +187,23 @@ namespace ESKD.MaterialSync.Sw
                     Info("Файл " + Path.GetFileName(busy) + " открыт в Excel. Закройте его и повторите.", MessageBoxIcon.Information);
                     return false;
                 }
+            // Изделие проверено и с тех пор не менялось — без вопросов; иначе «Проверить сейчас / Продолжить как есть» (З-27).
+            bool cancelled;
+            _freshness = ProductFreshness.Ensure(_app, _doc, "Ведомость ЛЗК",
+                "книга соберётся по файлам как есть, в паспорте будет «" + ProductStamp.Unchecked + "»: «Готово к производству» " +
+                "её не примет, пока изделие не проверят и книгу не соберут заново.", interactive, out cancelled);
+            if (cancelled)
+            {
+                Log.Info("Ведомость ЛЗК: отменена в вопросе о проверке изделия");
+                return false;
+            }
+            if (!_freshness.Fresh)
+                _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_assemblyPath),
+                    "книга собрана по непроверенному изделию — " + string.Join("; ", _freshness.Reasons.ToArray()),
+                    "Нажмите «Проверить изделие», затем «Ведомость ЛЗК»: «Готово к производству» примет только такую книгу"));
+            // Правки конструктора — до любых действий кнопки: такие документы кнопка не сохраняет (З-25).
+            if (DocumentGuard.HasUserEdits(_doc)) _editedBefore.Add(_assemblyPath);
+
             // Введённое в прежней книге (тираж, срок, цвет, нормы, указания) переносится в новую.
             _inputs = LzkInputs.Read(File.Exists(_workbookPath) ? _workbookPath : "");
             if (_inputs.ReadError.Length > 0)
@@ -216,6 +258,8 @@ namespace ESKD.MaterialSync.Sw
                 LzkItem item;
                 if (!byKey.TryGetValue(key, out item))
                 {
+                    // Первая встреча файла — до замера, который может переключить исполнение.
+                    if (!models.ContainsKey(path) && DocumentGuard.HasUserEdits(model)) _editedBefore.Add(path);
                     item = Describe(model, path, cfg, model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, traits, comp);
                     byKey[key] = item;
                     models[path] = model;
@@ -237,7 +281,11 @@ namespace ESKD.MaterialSync.Sw
                 Dictionary<string, string> chosen;
                 using (LzkOperationsForm form = new LzkOperationsForm(editable, traits, path => ShellThumbnail.Get(path, 256), _inputs))
                 {
-                    if (form.ShowDialog(Owner()) != DialogResult.OK) return false;
+                    if (form.ShowDialog(Owner()) != DialogResult.OK)
+                    {
+                        SaveMeasured(models);
+                        return false;
+                    }
                     chosen = form.Result;
                     bookOnly.UnionWith(form.BookOnly);
                 }
@@ -263,19 +311,27 @@ namespace ESKD.MaterialSync.Sw
             }
 
             WriteProperties(ModelsToWrite(editable, bookOnly), models);
+            ExportOutdated();
             MarkPaintedUnits(instances, top);
             PaintedAssemblyAreas(instances, top, byKey, traits);
 
             Status("ЕСКД: ведомость ЛЗК — сохранение сборки…");
             // Сборку, которую не сохранить (только для чтения, чужая, защищённая папка), SWTools читает с диска как есть:
-            // книга собирается всё равно (замечание владельца 19.09.2026 — ЛЗК из любой папки).
-            int errors = 0, warnings = 0;
+            // книга собирается всё равно (замечание владельца 19.09.2026 — ЛЗК из любой папки). Сборка сохраняется, только
+            // если её изменила сама кнопка (записала «Операции»); с правками конструктора — нет (З-25).
+            int errors;
             if (_doc.IsOpenedReadOnly())
                 _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_assemblyPath),
                     "сборка открыта только для чтения: состав взят из сохранённого файла"));
-            else if (!_doc.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
+            else if (_editedBefore.Contains(_assemblyPath))
+                _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_assemblyPath),
+                    "в сборке ваши несохранённые правки — кнопка её не сохраняет: состав взят из сохранённого файла",
+                    "Сохраните сборку и пересоберите книгу"));
+            else if (DocumentGuard.HasUserEdits(_doc) && !_saves.Save(_doc, out errors))
                 _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_assemblyPath),
                     "сборка не сохранена (код " + errors + "): состав взят из сохранённого файла", "Сохраните сборку и пересоберите книгу"));
+            // Свои сохранения кнопки — в отчёт проверки: изделие для следующей кнопки остаётся проверенным.
+            RecordSaves();
 
             _header = new LzkHeader
             {
@@ -286,7 +342,8 @@ namespace ESKD.MaterialSync.Sw
                 Author = _settings.Author ?? "",
                 Model = Path.GetFileName(_assemblyPath),
                 Date = DateTime.Now.ToString("dd.MM.yyyy HH:mm"),
-                Checksum = Checksum(_assemblyPath)
+                Checksum = Checksum(_assemblyPath),
+                Version = _freshness.Version
             };
             return true;
         }
@@ -409,9 +466,12 @@ namespace ESKD.MaterialSync.Sw
             // её файл не правится и не сохраняется; её исполнение меряется по активной конфигурации с пометкой «оценка».
             // Модель другого заказа — так же (решение владельца 23.09.2026): ни исполнение, ни развёртка в ней не
             // переключаются, иначе SolidWorks пометил бы её изменённой, и её сохранили бы вместе со сборкой.
-            bool mayMeasure = (!item.InBase || (_inOrder && item.InProduct)) && item.Place != LzkPlace.OtherOrder;
+            // Модель только для чтения — так же: пометку «изменена» с неё не снять сохранением.
+            bool readOnly = ReadOnly(model);
+            bool mayMeasure = (!item.InBase || (_inOrder && item.InProduct)) && item.Place != LzkPlace.OtherOrder && !readOnly;
             bool otherConfig = cfg.Length > 0 && !string.Equals(cfg, w.ActiveConfigurationName(), StringComparison.OrdinalIgnoreCase) &&
                 w.ConfigurationNames().Contains(cfg);
+            bool wasDirty = DocumentGuard.HasUserEdits(model);
             using (ConfigScope scope = new ConfigScope(model, otherConfig && mayMeasure ? cfg : ""))
             {
                 if (!assembly) t.DensityKgM3 = Density(model);
@@ -419,13 +479,16 @@ namespace ESKD.MaterialSync.Sw
                 // Деталь — наружная поверхность (у трубы без внутренней стенки); сборка — ниже, по её деталям (З-7).
                 item.AreaM2 = assembly || comp == null ? double.NaN : PaintArea.Outer(Area(model, comp), item.Material);
                 scope.Restore();
-                if (scope.Dirtied) _dirtiedBySwitch.Add(path);
             }
+            // Замер переключал исполнение или включал развёртку — SolidWorks пометил модель изменённой, хотя в ней ничего не
+            // поменялось. Такие модели кнопка сохраняет сама (или говорит о них): иначе их сочли бы правками конструктора (З-27).
+            if (!wasDirty && DocumentGuard.HasUserEdits(model)) _dirtiedBySwitch.Add(path);
             if (otherConfig && !mayMeasure)
             {
                 item.SizeIsEstimate = true;
                 _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(path),
-                    "исполнение «" + cfg + "» " + (item.Place == LzkPlace.OtherOrder ? "модели другого заказа" : "модели базы") +
+                    "исполнение «" + cfg + "» " + (item.Place == LzkPlace.OtherOrder ? "модели другого заказа"
+                        : readOnly ? "модели, открытой только для чтения," : "модели базы") +
                     " измерено по активной конфигурации — уточните размер заготовки"));
             }
             return item;
@@ -454,17 +517,81 @@ namespace ESKD.MaterialSync.Sw
                     ? "модель другого заказа («" + Path.GetFileName(ProductLocator.OrderOf(item.Path)) + "»): операции и габарит — только в книге, файл не изменён"
                     : "запись в модель снята в окне операций: операции и габарит — только в книге";
                 if (_dirtiedBySwitch.Contains(item.Path))
-                    reason += "; SolidWorks считает её изменённой (для замера переключалось исполнение) — сохранять её не нужно";
+                    reason += "; SolidWorks считает её изменённой (для замера переключалось исполнение), но в ней ничего не " +
+                        "поменялось — закройте её без сохранения";
                 _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(item.Path), reason));
             }
             return write;
         }
 
         /// <summary>
-        /// Модели, у которых переключение конфигурации ради замера поставило признак «изменён» (SolidWorks хранит активную
-        /// конфигурацию в файле). Они сохраняются вместе с записью свойств, чтобы при закрытии не спрашивали «Сохранить?».
+        /// Модели, у которых замер поставил признак «изменён»: переключение конфигурации (SolidWorks хранит активную
+        /// конфигурацию в файле) или временно включённая развёртка. Они сохраняются вместе с записью свойств (и при «Отмене»
+        /// окна операций), чтобы при закрытии не спрашивали «Сохранить?», а проверка не сочла это правками конструктора.
         /// </summary>
         private readonly HashSet<string> _dirtiedBySwitch = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// «Отмена» в окне операций: модели, которые пометил изменёнными только замер кнопки, сохраняются — в них ничего не
+        /// поменялось, а несохранённые они считались бы правками конструктора (З-27). Модели с правками конструктора — нет.
+        /// </summary>
+        private void SaveMeasured(Dictionary<string, ModelDoc2> models)
+        {
+            foreach (string path in _dirtiedBySwitch)
+            {
+                ModelDoc2 model;
+                if (_editedBefore.Contains(path) || !models.TryGetValue(path, out model)) continue;
+                int errors;
+                if (!_saves.Save(model, out errors))
+                    Log.Warn("Ведомость ЛЗК: после замера модель не сохранена (код " + errors + ") — " + path);
+            }
+        }
+
+        private static bool ReadOnly(ModelDoc2 model)
+        {
+            try
+            {
+                return model.IsOpenedReadOnly();
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Ведомость ЛЗК: только для чтения?", ex);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Файлы с изменённой «Лазерной резкой трубы»: выгрузка решает по этой галочке, делать ли IGS. Версия изделия от
+        /// записи операций не меняется, поэтому прежняя выгрузка изделия отмечается «не проверено» — её нужно повторить.
+        /// </summary>
+        private readonly List<string> _tubeChanged = new List<string>();
+
+        private void ExportOutdated()
+        {
+            if (_tubeChanged.Count == 0 || _freshness == null) return;
+            string path = Path.Combine(_freshness.ProductFolder, CheckRules.ExportReportName);
+            try
+            {
+                if (!File.Exists(path)) return;
+                bool changed;
+                string text = ExportLog.MarkUnchecked(File.ReadAllText(path, Encoding.UTF8), out changed);
+                if (!changed) return;
+                File.WriteAllText(path, text, new UTF8Encoding(true));
+                _notes.Add(Notices.Of(NoticeLevel.Warning, CheckRules.ExportReportName,
+                    "изменена «Лазерная резка трубы» (" + string.Join(", ", _tubeChanged.Take(5).ToArray()) +
+                    (_tubeChanged.Count > 5 ? " и ещё " + (_tubeChanged.Count - 5) : "") +
+                    "): прежняя выгрузка изделия устарела, в её отчёте теперь «" + ProductStamp.Unchecked + "»",
+                    "Выгрузите изделие заново"));
+            }
+            catch (IOException ex)
+            {
+                Log.Error("Ведомость ЛЗК: отметка устаревшей выгрузки", ex);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Log.Error("Ведомость ЛЗК: отметка устаревшей выгрузки", ex);
+            }
+        }
 
         /// <summary>
         /// Состав покупной сборки (мотор-редуктор, готовый узел поставщика) — не наше: его детали не комплектуются
@@ -496,15 +623,12 @@ namespace ESKD.MaterialSync.Sw
 
         /// <summary>
         /// Временно делает активной конфигурацию исполнения; <see cref="Restore"/> (и <see cref="Dispose"/>) возвращает
-        /// прежнюю. Пустое имя — ничего не переключает. <see cref="Dirtied"/> — переключение поставило признак «изменён».
+        /// прежнюю. Пустое имя — ничего не переключает.
         /// </summary>
         private sealed class ConfigScope : IDisposable
         {
             private ModelDoc2 _model;
             private readonly string _previous;
-            private readonly bool _wasDirty;
-
-            public bool Dirtied { get; private set; }
 
             public ConfigScope(ModelDoc2 model, string cfg)
             {
@@ -514,7 +638,6 @@ namespace ESKD.MaterialSync.Sw
                     Configuration active = model.GetActiveConfiguration() as Configuration;
                     string previous = active != null ? active.Name : "";
                     if (previous.Length == 0) return;
-                    _wasDirty = model.GetSaveFlag();
                     if (!model.ShowConfiguration2(cfg)) return;
                     _model = model;
                     _previous = previous;
@@ -531,7 +654,6 @@ namespace ESKD.MaterialSync.Sw
                 try
                 {
                     _model.ShowConfiguration2(_previous);
-                    Dirtied = !_wasDirty && _model.GetSaveFlag();
                 }
                 catch (COMException ex)
                 {
@@ -992,6 +1114,7 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>
         /// «Операции» и «Габарит» — в модели (изменённые сохраняются молча, Т-3). Модель, которую не записать (только для
         /// чтения, не сохраняется), книге не мешает: её операции идут в книгу, а в замечаниях — какие модели остались без записи.
+        /// Модель с несохранёнными правками конструктора получает свойства в открытый документ, но не сохраняется (З-25).
         /// </summary>
         private void WriteProperties(List<LzkItem> editable, Dictionary<string, ModelDoc2> models)
         {
@@ -1035,6 +1158,9 @@ namespace ESKD.MaterialSync.Sw
                 PropertyWriter w = new PropertyWriter(model, false);
                 foreach (LzkItem item in changed[path])
                 {
+                    if (!item.IsAssembly && LzkOperations.TubeDecisionMayDiffer(Prop(w, "", LzkOperations.PropertyName), item.Operations ?? "") &&
+                        !_tubeChanged.Contains(Path.GetFileName(path)))
+                        _tubeChanged.Add(Path.GetFileName(path));
                     if (!string.IsNullOrEmpty(item.Operations)) w.Set("", LzkOperations.PropertyName, item.Operations);
                     else w.Delete("", LzkOperations.PropertyName);
                     if (!item.SizeIsEstimate && item.Size.Length > 0) w.Set(SizeLevel(w, item), LzkOperations.SizePropertyName, item.Size);
@@ -1045,9 +1171,17 @@ namespace ESKD.MaterialSync.Sw
                     continue;
                 }
                 if (object.ReferenceEquals(model, _doc)) continue;
+                if (_editedBefore.Contains(path))
+                {
+                    Log.Info("Ведомость ЛЗК: свойства записаны, модель с правками конструктора не сохранена — " + path);
+                    _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(path),
+                        "в модели ваши несохранённые правки — операции и габарит записаны в открытую модель, но кнопка её не сохранила",
+                        "Сохраните модель сами"));
+                    continue;
+                }
                 CleanPreview(model);
-                int errors = 0, warnings = 0;
-                if (!model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
+                int errors;
+                if (!_saves.Save(model, out errors))
                 {
                     NotWritten(Path.GetFileName(path), "модель не сохранена (код " + errors + ")");
                     continue;

@@ -16,6 +16,11 @@ namespace ESKD.MaterialSync.Core
         public string Product = "";
         public string User = "";
         public DateTime Time = DateTime.Now;
+        /// <summary>
+        /// Версия изделия, по которой сделана выгрузка (<see cref="ProductStamp"/>); пусто — изделие не проверено или
+        /// изменено после проверки; null — отчёт до 23.09.2026, без строки версии.
+        /// </summary>
+        public string Version;
         public readonly System.Collections.Generic.List<string> Files = new System.Collections.Generic.List<string>();
         public readonly System.Collections.Generic.List<string> Skipped = new System.Collections.Generic.List<string>();
         /// <summary>Выгружено, но с оговоркой: цеху стоит проверить файл (например, IGS не по оси трубы, Т-29).</summary>
@@ -45,6 +50,8 @@ namespace ESKD.MaterialSync.Core
             sb.AppendLine("Выгрузка для производства");
             sb.AppendLine("Изделие:  " + Product);
             sb.AppendLine("Выгрузил: " + User + ", " + Time.ToString("dd.MM.yyyy HH:mm", CultureInfo.GetCultureInfo("ru-RU")));
+            if (Version != null)
+                sb.AppendLine(ProductStamp.VersionLabel + "   " + (Version.Length > 0 ? Version : ProductStamp.Unchecked));
             sb.AppendLine("Файлов:   " + Files.Count + ", пропущено: " + Skipped.Count);
             sb.AppendLine();
             if (Files.Count == 0) sb.AppendLine("Ничего не выгружено.");
@@ -96,6 +103,11 @@ namespace ESKD.MaterialSync.Core
                 if (line.Length == 0) continue;
                 if (!line.StartsWith("  ", StringComparison.Ordinal))
                 {
+                    if (line.StartsWith(ProductStamp.VersionLabel, StringComparison.Ordinal))
+                    {
+                        string version = line.Substring(ProductStamp.VersionLabel.Length).Trim();
+                        log.Version = version == ProductStamp.Unchecked ? "" : version;
+                    }
                     block = line.StartsWith("Выгружено", StringComparison.Ordinal) ? "files"
                         : line.StartsWith("Пропущено", StringComparison.Ordinal) ? "skipped"
                         : line.StartsWith("Замечания", StringComparison.Ordinal) ? "warnings" : "";
@@ -115,6 +127,28 @@ namespace ESKD.MaterialSync.Core
                 else if (block == "warnings") log.Warnings.Add(body);
             }
             return log;
+        }
+
+        /// <summary>
+        /// Отчёт выгрузки больше не по проверенной версии изделия: строка «Версия:» становится «не проверено». changed —
+        /// строка была с версией. Прочее в тексте не трогается.
+        /// </summary>
+        public static string MarkUnchecked(string text, out bool changed)
+        {
+            changed = false;
+            string source = text ?? "";
+            string newline = source.Contains("\r\n") ? "\r\n" : "\n";
+            string[] lines = source.Replace("\r\n", "\n").Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (!lines[i].StartsWith(ProductStamp.VersionLabel, StringComparison.Ordinal)) continue;
+                string version = lines[i].Substring(ProductStamp.VersionLabel.Length).Trim();
+                if (version.Length == 0 || version == ProductStamp.Unchecked) return source;
+                lines[i] = ProductStamp.VersionLabel + "   " + ProductStamp.Unchecked;
+                changed = true;
+                return string.Join(newline, lines);
+            }
+            return source;
         }
 
         /// <summary>Документ и причина из строки пропуска «документ — причина».</summary>

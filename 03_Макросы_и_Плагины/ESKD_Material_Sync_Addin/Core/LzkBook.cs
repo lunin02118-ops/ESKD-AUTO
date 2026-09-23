@@ -280,6 +280,18 @@ namespace ESKD.MaterialSync.Core
             return inputs;
         }
 
+        /// <summary>
+        /// Версия изделия из паспорта книги. false — книга до 23.09.2026, без этой строки; пустая версия — книга собрана
+        /// по непроверенному изделию.
+        /// </summary>
+        public static bool TryReadVersion(XlsxBook book, out string version)
+        {
+            if (!Value(book, LzkBook.NameVersion, out version)) return false;
+            version = version.Trim();
+            if (version == ProductStamp.Unchecked) version = "";
+            return true;
+        }
+
         private static bool Value(XlsxBook book, string name, out string value)
         {
             value = "";
@@ -325,6 +337,8 @@ namespace ESKD.MaterialSync.Core
         private const string AllowanceBar = "ЗапасТруба";
         private const string AllowanceSheet = "ЗапасЛист";
         public const string NameIssued = "Выдано";
+        /// <summary>Версия изделия в паспорте: по ней проверка и «Готово к производству» сверяют книгу с изделием.</summary>
+        public const string NameVersion = "Паспорт_Версия";
         public const string NameOrder = "Паспорт_Заказ";
         public const string NameRequest = "Паспорт_Заявка";
         public const string NotesPrefix = "Указания_";
@@ -642,6 +656,8 @@ namespace ESKD.MaterialSync.Core
             Line(s, st, row++, "Составил", header.Author, st.Value);
             Line(s, st, row++, "Сформировано", header.Date, st.Value);
             Line(s, st, row++, "Контрольная сумма сборки", header.Checksum, st.Value);
+            Line(s, st, row, "Версия изделия (проверка)", header.Version.Length > 0 ? header.Version : ProductStamp.Unchecked, st.Value);
+            book.DefineName(NameVersion, PassportSheet, C(2, row++));
             Line(s, st, row, "Готово к производству", "", st.Value);
             book.DefineName(NameIssued, PassportSheet, C(2, row++));
             s.FitToWidth(false);
