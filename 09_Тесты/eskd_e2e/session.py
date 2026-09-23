@@ -100,6 +100,12 @@ class SwSession:
         self.addin_com = [RegistrySnapshot(key, settings_backup_path(prefix + "\\" + key), {"CodeBase": self.addin_uri},
                                            ("CodeBase",), hive) for hive, prefix, key in keys
                           if prefix == "HKCU" or ctypes.windll.shell32.IsUserAnAdmin()]
+        # SolidWorks при выходе записывает, была ли надстройка загружена: AddinsStartup\{CLSID} = 1 — запускать её вместе
+        # с SolidWorks. Тест выгрузил надстройку (I06) — при выходе записывался 0: у конструктора она переставала
+        # запускаться сама, а следующие прогоны не могли её загрузить (23.09.2026). На время прогона флаг — 1, после
+        # выхода SolidWorks возвращается прежний.
+        startup = "Software\\SolidWorks\\AddinsStartup\\" + paths.ADDIN_CLSID
+        self.addin_startup = RegistrySnapshot(startup, settings_backup_path("HKCU\\" + startup))
         self.eskd_loaded = False
         self._opened = []
         #: Вызывается для каждого открытого или созданного документа (SwTestCase снимает базовый дамп свойств).
@@ -117,17 +123,20 @@ class SwSession:
             self.registry.capture()
             for snapshot in self.addin_com:
                 snapshot.capture()
+            self.addin_startup.capture()
         except RegistryConflict as exc:
             raise SessionRefused(str(exc)) from exc
         if not any(snapshot.existed for snapshot in self.addin_com):
             self.registry.restore()
             for snapshot in self.addin_com:
                 snapshot.restore()
+            self.addin_startup.restore()
             raise SessionRefused("Надстройка ЕСКД не зарегистрирована: запустите окно установки или "
                                  "03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/register_eskd.ps1.")
         for snapshot in self.addin_com:
             if snapshot.existed:
                 snapshot.apply({"CodeBase": self.addin_uri})
+        self.addin_startup.apply({"": 1})
         if self.registry.recovered:
             print(f"ESKD_Settings восстановлены из {self.registry.backup_path}: предыдущий прогон был прерван "
                   "до восстановления настроек пользователя", file=sys.stderr)
@@ -248,6 +257,7 @@ class SwSession:
             self.registry.restore()
             for snapshot in self.addin_com:
                 snapshot.restore()
+            self.addin_startup.restore()
             if self._com_initialized:
                 pythoncom.CoUninitialize()
                 self._com_initialized = False
