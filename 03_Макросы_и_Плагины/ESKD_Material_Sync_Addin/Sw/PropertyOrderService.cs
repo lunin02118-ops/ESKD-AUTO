@@ -71,6 +71,7 @@ namespace ESKD.MaterialSync.Sw
             string path = DocInfo.PathOf(doc);
             string title = DocInfo.TitleOf(doc);
             List<string> master = PropertyOrder.Master(dict);
+            List<string> tail = PropertyOrder.Tail(dict);
             List<string> levels = new List<string> { "" };
             string active = w.ActiveConfigurationName();
             if (active.Length > 0) levels.Add(active);
@@ -90,7 +91,7 @@ namespace ESKD.MaterialSync.Sw
                 string shown = level.Length == 0 ? "общие" : level;
                 List<string> names = w.OrderedNames(level);
                 if (names == null) continue;
-                OrderPlan plan = PropertyOrder.Plan(names, master);
+                OrderPlan plan = PropertyOrder.Plan(names, master, tail);
                 if (plan.InOrder) continue;
                 // Отказ по документу — лениво, при первом уровне вне порядка: у документа в порядке он не нужен.
                 if (refusal == null) refusal = WhyNot(doc, path, orderFor);

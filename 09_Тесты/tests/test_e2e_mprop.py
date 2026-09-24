@@ -10,7 +10,7 @@ import json
 import unittest
 from pathlib import Path
 
-from eskd_e2e import build, com, mprop, paths
+from eskd_e2e import build, com, mprop, oracles, paths
 from eskd_e2e.testing import SwTestCase, known_defect
 
 A01 = "ПРТИ.468211.101 Пластина опорная.sldprt"
@@ -155,6 +155,63 @@ class MPropCompatibility(SwTestCase):
         ok = bool(self.s.sw.RunMacro2(str(macro), "DProp_top", "HWNDActiveWindow", 1, err))
         self.assertEqual([], self.s.watchdog.pop_unexpected(), "окна DProp")
         self.assertTrue(ok, f"DProp не выполнен: err={int(err.value)}")
+
+    def _designer_save(self, doc):
+        """Ctrl+S конструктора: сохранение, в котором надстройка наводит единый порядок свойств."""
+        doc.SetSaveFlag()
+        self.s.run_command(doc, 2)
+        self.assertTrue(self.s.wait_addin_idle(timeout=60.0), self.s.last_idle_state)
+
+    @staticmethod
+    def _orders(doc):
+        """{уровень: [имена в порядке SolidWorks]} — только GetNames, без пересчёта значений."""
+        out = {"": com.prop_names(doc.Extension.CustomPropertyManager(""))}
+        for cfg in com.as_list(doc.GetConfigurationNames):
+            out[str(cfg)] = com.prop_names(doc.Extension.CustomPropertyManager(str(cfg)))
+        return out
+
+    def _apply(self, doc, cfg):
+        doc.ShowConfiguration2(cfg)
+        run = mprop.apply_without_edits(self.s, doc)
+        self.assertEqual([], self.s.watchdog.pop_unexpected(), "окна MProp")
+        self.assertTrue(run.get("ok") and not run.get("timeout"), f"MProp не выполнен: {run}")
+
+    def _assert_mprop_and_save_keep_order(self, name, executions):
+        """«Применить» MProp и сохранение надстройки не переставляют свойства друг за другом: MProp удаляет и дописывает
+        в конец «Примечание», «Формат», «Раздел», а в едином порядке они и так последние. Один круг разогрева:
+        первое «Применить» дописывает служебные имена MProp, которых у файла ещё нет, и следующее сохранение ставит их
+        на место — это один раз."""
+        path, doc = self.open_copy(name)
+        master, tail = oracles.property_master(), oracles.property_tail()
+        self._designer_save(doc)
+        for cfg in executions:
+            self._apply(doc, cfg)
+        self._designer_save(doc)
+        stable = self._orders(doc)
+        for level, names in stable.items():
+            self.assertEqual(oracles.canonical(names, master, tail)[0], names, f"уровень «{level or 'общие'}» в едином порядке")
+        for cfg in executions:
+            self.assertEqual(tail, stable[cfg][-3:], f"в «{cfg}» последние — «Примечание», «Формат», «Раздел»")
+        for cycle in (1, 2):
+            for cfg in executions:
+                self._apply(doc, cfg)
+                self.assertEqual(stable, self._orders(doc), f"круг {cycle}: «Применить» MProp в «{cfg}» порядок не изменил")
+            self._designer_save(doc)
+            self.assertEqual(stable, self._orders(doc), f"круг {cycle}: сохранение после MProp ничего не переставило")
+        self.s.close(doc)
+        self.assertEqual(stable, oracles.property_orders(self.persisted(path)), "на диске тот же порядок")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_M23_mprop_and_save_keep_one_order_plate(self):
+        """M23 (решение владельца 24.09.2026, «чтобы один раз как было, и она не менялась»): пластина A-01 с одним
+        исполнением — «Применить» MProp и Ctrl+S по кругу не переставляют свойства ни в общих, ни в «00». Раньше
+        MProp уносил «Примечание», «Формат», «Раздел» в конец, а следующее сохранение возвращало их на строки словаря."""
+        self._assert_mprop_and_save_keep_order(A01, ("00",))
+
+    def test_M23_mprop_and_save_keep_one_order_executions(self):
+        """M23: планка A-03 с исполнениями 00/01/02 — «Применить» MProp в каждом исполнении и Ctrl+S по кругу порядок
+        не меняют ни на одном уровне."""
+        self._assert_mprop_and_save_keep_order(A03, ("00", "01", "02"))
 
     @known_defect("Д-50")
     def test_M19_save_after_mprop_writes_nothing(self):

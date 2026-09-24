@@ -11,6 +11,7 @@ namespace ESKD.Tests
     public static class PropertyOrderTests
     {
         private static readonly List<string> Master = PropertyOrder.Master(PropertyDictionary.Default());
+        private static readonly List<string> Tail = PropertyOrder.Tail(PropertyDictionary.Default());
 
         public static void Test_Master_groups_in_order()
         {
@@ -45,13 +46,53 @@ namespace ESKD.Tests
             }
         }
 
+        public static void Test_Tail_is_mprop_apply_order()
+        {
+            // «Применить» MProp удаляет «Примечание», «Формат», «Раздел» и дописывает их в конец в этом порядке
+            // (FrmMProp 3021–3053) — единый порядок ставит их туда же, и MProp с надстройкой не переставляют их друг
+            // за другом (решение владельца 24.09.2026).
+            Assert.AreEqual("Примечание|Формат|Раздел", string.Join("|", Tail.ToArray()));
+        }
+
+        public static void Test_Tail_follows_renamed_role()
+        {
+            // Хвост — роли словаря, как у MProp (prpRemark, prpFormat, prpSection): переименованная в ini роль уходит в
+            // конец под новым именем.
+            string ini = Path.Combine(Path.GetTempPath(), "eskd_order_" + Guid.NewGuid().ToString("N") + ".ini");
+            try
+            {
+                string[] lines = (string[])PropertyDictionary.DefaultNames.Clone();
+                lines[6] = "Формат_листа";
+                File.WriteAllLines(ini, lines.Concat(new[] { "", "", "", "", "1", " ", "1" }).ToArray(), Encoding.GetEncoding(1251));
+                Assert.AreEqual("Примечание|Формат_листа|Раздел", string.Join("|", PropertyOrder.Tail(PropertyDictionary.Load(ini)).ToArray()));
+            }
+            finally
+            {
+                File.Delete(ini);
+            }
+        }
+
+        public static void Test_Plan_stable_after_mprop_apply()
+        {
+            // «Применить» MProp на уровне в едином порядке: три последних удалены и дописаны заново — порядок тот же,
+            // следующему сохранению переносить нечего.
+            foreach (string[][] c in Cases())
+            {
+                List<string> canonical = PropertyOrder.Plan(c[0], Master, Tail).Canonical;
+                List<string> applied = canonical.Where(n => !Tail.Contains(n)).ToList();
+                applied.AddRange(Tail.Where(canonical.Contains));
+                Assert.IsTrue(PropertyOrder.Plan(applied, Master, Tail).InOrder, "после MProp порядок прежний: " + string.Join("|", c[0]));
+                Assert.AreEqual(string.Join("|", canonical.ToArray()), string.Join("|", applied.ToArray()), "MProp не переставил: " + string.Join("|", c[0]));
+            }
+        }
+
         public static void Test_Plan_cases()
         {
             int count = 0;
             foreach (string[][] c in Cases())
             {
                 count++;
-                OrderPlan plan = PropertyOrder.Plan(c[0], Master);
+                OrderPlan plan = PropertyOrder.Plan(c[0], Master, Tail);
                 string what = "случай " + count + " «" + string.Join("|", c[0]) + "»";
                 Assert.AreEqual(string.Join("|", c[1]), string.Join("|", plan.Canonical.ToArray()), what + ": канон");
                 Assert.AreEqual(string.Join("|", c[2]), string.Join("|", plan.Move.ToArray()), what + ": переносы");
@@ -64,8 +105,8 @@ namespace ESKD.Tests
         {
             foreach (string[][] c in Cases())
             {
-                OrderPlan plan = PropertyOrder.Plan(c[0], Master);
-                OrderPlan again = PropertyOrder.Plan(plan.Canonical, Master);
+                OrderPlan plan = PropertyOrder.Plan(c[0], Master, Tail);
+                OrderPlan again = PropertyOrder.Plan(plan.Canonical, Master, Tail);
                 Assert.IsTrue(again.InOrder, "канон уже в порядке: " + string.Join("|", c[0]));
                 Assert.AreEqual(string.Join("|", plan.Canonical.ToArray()), string.Join("|", again.Canonical.ToArray()), "канон канона");
             }
@@ -79,7 +120,7 @@ namespace ESKD.Tests
             int checkedCount = 0;
             foreach (List<string> perm in Permutations(names.ToList()))
             {
-                OrderPlan plan = PropertyOrder.Plan(perm, Master);
+                OrderPlan plan = PropertyOrder.Plan(perm, Master, Tail);
                 Assert.AreEqual(string.Join("|", plan.Canonical.ToArray()), string.Join("|", Simulate(perm.ToArray(), plan.Move).ToArray()),
                     "переносы дают канон: " + string.Join("|", perm.ToArray()));
                 Assert.AreEqual(Shortest(perm, plan.Canonical), plan.Move.Count, "наименьшее число переносов: " + string.Join("|", perm.ToArray()));

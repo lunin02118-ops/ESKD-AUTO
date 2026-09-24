@@ -25,7 +25,7 @@ namespace ESKD.MaterialSync.Core
     /// Единый порядок пользовательских свойств (решение владельца 24.09.2026, сверка SW API №23: «порядок свойств должен быть
     /// всегда одинаковый универсальный»). Уровень — общие свойства или одно исполнение; у каждого уровня порядок наводится
     /// отдельно. Сначала известные имена в порядке мастер-списка, затем свойства конструктора — в том порядке, в каком он
-    /// их завёл. Свойства не добавляются и не удаляются.
+    /// их завёл, последними — «Примечание», «Формат», «Раздел» (<see cref="Tail"/>). Свойства не добавляются и не удаляются.
     /// </summary>
     public static class PropertyOrder
     {
@@ -50,27 +50,46 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>
+        /// Последние в едином порядке: «Примечание», «Формат», «Раздел» — именно так «Применить» MProp удаляет их и
+        /// дописывает в конец (FrmMProp 3021–3053), и так же «Перезагрузка форматки» DProp (FrmDProp 550). Стоят они там
+        /// всегда — и MProp, и сохранение надстройки порядок не меняют: раньше MProp уносил их в конец, а следующее
+        /// сохранение возвращало на строки словаря, и так по кругу (решение владельца 24.09.2026: «чтобы один раз как
+        /// было, и она не менялась»). Роли, а не имена: переименованная в словаре роль уходит в конец, как у MProp.
+        /// </summary>
+        public static List<string> Tail(PropertyDictionary dict)
+        {
+            return new List<string> { dict[Role.Remark], dict[Role.Format], dict[Role.Section] };
+        }
+
+        /// <summary>
         /// Канонический порядок уровня и наименьший набор переносов в конец. SolidWorks умеет только дописать свойство в
         /// конец списка, поэтому на месте остаётся самое длинное начало канонического списка, которое уже стоит в текущем
-        /// в том же порядке, а остальное по одному уходит в конец — это минимум переносов.
+        /// в том же порядке, а остальное по одному уходит в конец — это минимум переносов. Имена <paramref name="tail"/> —
+        /// последними, в своём порядке.
         /// </summary>
-        public static OrderPlan Plan(IList<string> current, IList<string> master)
+        public static OrderPlan Plan(IList<string> current, IList<string> master, IList<string> tail)
         {
+            Dictionary<string, int> last = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < tail.Count; i++)
+                if (tail[i] != null && !last.ContainsKey(tail[i])) last.Add(tail[i], i);
             Dictionary<string, int> rank = new Dictionary<string, int>(StringComparer.Ordinal);
             for (int i = 0; i < master.Count; i++)
-                if (master[i] != null && !rank.ContainsKey(master[i])) rank.Add(master[i], i);
-            List<string> known = new List<string>(), own = new List<string>(), present = new List<string>();
+                if (master[i] != null && !rank.ContainsKey(master[i]) && !last.ContainsKey(master[i])) rank.Add(master[i], i);
+            List<string> known = new List<string>(), own = new List<string>(), ends = new List<string>(), present = new List<string>();
             HashSet<string> seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (string name in current)
             {
                 if (name == null || !seen.Add(name)) continue;
                 present.Add(name);
-                if (rank.ContainsKey(name)) known.Add(name);
+                if (last.ContainsKey(name)) ends.Add(name);
+                else if (rank.ContainsKey(name)) known.Add(name);
                 else own.Add(name);
             }
             known.Sort(delegate(string a, string b) { return rank[a].CompareTo(rank[b]); });
+            ends.Sort(delegate(string a, string b) { return last[a].CompareTo(last[b]); });
             List<string> canonical = new List<string>(known);
             canonical.AddRange(own);
+            canonical.AddRange(ends);
             int kept = 0;
             foreach (string name in present)
                 if (kept < canonical.Count && string.Equals(name, canonical[kept], StringComparison.Ordinal)) kept++;
