@@ -9,6 +9,8 @@
     материал выбран и совпадает         -> ничего;
     материал выбран и не совпадает      -> уведомление, выбор конструктора не переписывать.
 """
+import shutil
+import time
 import unittest
 
 from eskd_e2e import build, com, oracles, paths
@@ -620,6 +622,84 @@ class Stock(SwTestCase):
         self.assertIn("материалов назначено 1", status, f"деталь третьего уровня обойдена: {status}")
         self.assertEqual(TUBE_LINE, V(self.persisted(deep), "Материал_Строка", "00"),
                          "материал записан детали на третьем уровне дерева")
+
+
+    def _check_product(self):
+        """«Проверить изделие» без окна; статус «ok|…» или «error|…» — когда проверка закончилась."""
+        com.call(self.s.eskd(), "CheckProductSilent")
+        deadline = time.time() + 600
+        status = ""
+        while time.time() < deadline:
+            status = str(com.call(self.s.eskd(), "CheckStatus") or "")
+            if status:
+                break
+            time.sleep(1)
+        return status
+
+    def test_T20_execution_in_product_is_checked_and_active_outside_is_not_asked(self):
+        """T20 (№36; решение владельца 24.09.2026): «Укосина» — в «00» плоскоовальная труба 30х15х1,5, в «01» квадратная
+        40х40х2. Файл сохранён активным в «00», а в изделии стоит только «01». У «01» материал плоскоовальной трубы — не
+        по профилю: проверка изделия пишет замечание «исполнение «01» … сделайте «01» активным и нажмите
+        «Синхронизировать»». У «00» материал листа — тоже не по профилю, но «00» в изделии нет: про него ни вопроса, ни
+        замечания. Исполнения не переключаются, материалы не меняются, деталь не помечается изменённой. Раньше сверялось
+        только активное «00»: вопрос про лист, а про «01» — ни слова."""
+        short = self._case_name().split("_")[1]
+        models = self.s.run_dir / f"{short}/_Заявки/2026-001/02_Металл/И01_ПРТИ.301111.110/01_3D"
+        if (self.s.run_dir / short).exists():
+            shutil.rmtree(self.s.run_dir / short, ignore_errors=True)
+        models.mkdir(parents=True)
+        part = models / "ПРТИ.301111.111 Укосина.sldprt"
+        asm_path = models / "ПРТИ.301111.110 СБ Рама.sldasm"
+        self.s.set_settings(AutoStockMaterial=0)
+        try:
+            doc, (base, other) = build.structural_tube_executions(
+                self.s, [(400, 0, (0, 0), FLAT_OVAL), (300, 90, (-100, 0), SQUARE_40)], FLAT_OVAL, TUBE_MATERIAL)
+            build.set_material(doc, SHEET8, base)
+            build.set_material(doc, TUBE_MATERIAL, other)
+            self.assertEqual(SHEET8, build.material_of(doc, base)[0], "у «00» — лист")
+            self.assertEqual(TUBE_MATERIAL, build.material_of(doc, other)[0], "у «01» — плоскоовальная труба")
+            self.assertEqual(base, str(doc.GetActiveConfiguration.Name), "активно «00»")
+            self.s.save_as(doc, part)
+            self.s.wait_addin_idle(timeout=60.0)
+            self.s.close_all()
+            asm, _ = build.assembly(self.s, [(part, 0, 0, 0)])
+            comp = com.as_list(asm.GetComponents(True))[0]
+            com.dyn(comp).ReferencedConfiguration = other
+            asm.ForceRebuild3(False)
+            self.s.save_as(asm, asm_path)
+            self.s.close_all()
+        finally:
+            self.s.set_settings(AutoStockMaterial=1)
+
+        asm = self.s.open(asm_path)
+        self.s.activate(asm)
+        part_doc = com.call(self.s.sw, "GetOpenDocumentByName", str(part))
+        self.assertIsNotNone(part_doc, "деталь открыта со сборкой")
+        pd = com.dyn(part_doc)
+        # Сборку, где деталь стоит не в активном исполнении файла, SolidWorks при открытии перестраивает и помечает
+        # изменённой — это не проверка (как в K08): такие документы сохраняются до неё.
+        for opened in (asm, part_doc):
+            if bool(com.dyn(opened).GetSaveFlag):
+                self.s.save(com.dyn(opened))
+                self.s.wait_addin_idle(timeout=60.0)
+            self.assertFalse(bool(com.dyn(opened).GetSaveFlag), "документ без изменений перед проверкой")
+        self.assertEqual(base, str(pd.GetActiveConfiguration.Name), "в файле активно «00»")
+
+        status = self._check_product()
+        self.assertTrue(status.startswith("ok|"), status)
+        text = (models.parent / "_Проверка.txt").read_text(encoding="utf-8-sig")
+        self.path("check.txt").write_text(text, encoding="utf-8")
+        lines = [line for line in text.splitlines() if "ПРТИ.301111.111" in line]
+        self.assertTrue(any("исполнение «01»" in line and TUBE_MATERIAL in line and "40х40х2" in line and "«01» активным" in line
+                            for line in lines), f"замечание по «01», стоящему в изделии:\n{text}")
+        self.assertFalse(any("30х15х1,5" in line and SHEET8 in line for line in lines),
+                         f"про «00», которого в изделии нет, — ни вопроса, ни замечания:\n{text}")
+        self.assertFalse(bool(pd.GetSaveFlag), "деталь не помечена изменённой")
+        self.assertEqual(base, str(pd.GetActiveConfiguration.Name), "исполнение не переключено")
+        self.assertEqual(SHEET8, build.material_of(pd, base)[0], "материал «00» не тронут")
+        self.assertEqual(TUBE_MATERIAL, build.material_of(pd, other)[0], "материал «01» не тронут")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+        self.s.close_all()
 
 
 if __name__ == "__main__":

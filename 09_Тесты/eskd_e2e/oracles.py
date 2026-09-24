@@ -95,6 +95,57 @@ def all_names(dump):
     return out
 
 
+# --------------------------------------------------------------------------- единый порядок свойств (№23)
+MASTER_GROUPS = ("TemplateNames", "AddinNames", "SwPlusServiceNames", "LegacyExtraNames", "LateNames")
+
+
+def property_master():
+    """Мастер-список единого порядка свойств, собранный независимо от надстройки: 43 строки словаря SWPlus
+    (MyProperties_1.ini), затем массивы PropertyDictionary.cs в порядке групп PropertyOrder.Master(). Повтор не
+    добавляется — первое вхождение побеждает."""
+    core = paths.ADDIN_DIR / "Core"
+    consts = {}
+    for src in core.glob("*.cs"):
+        consts.update(re.findall(r'const string (\w+) = "([^"]*)"', src.read_text(encoding="utf-8-sig")))
+    text = (core / "PropertyDictionary.cs").read_text(encoding="utf-8-sig")
+
+    def array(name):
+        m = re.search(r"public static readonly string\[\] %s = new string\[\]\s*\{(.*?)\};" % name, text, flags=re.S)
+        return [lit or consts[ref] for lit, ref in re.findall(r'"([^"]+)"|\b[A-Z]\w*\.(\w+)', m.group(1))]
+
+    defaults = array("DefaultNames")
+    lines = paths.SWPLUS_DICTIONARY.read_text(encoding="cp1251").splitlines()
+    ini = [(lines[i].strip() if i < len(lines) else "") or defaults[i] for i in range(43)]
+    master, seen = [], set()
+    for name in ini + [n for group in MASTER_GROUPS for n in array(group)]:
+        if name and name not in seen:
+            seen.add(name)
+            master.append(name)
+    return master
+
+
+def canonical(names, master):
+    """(канонический порядок уровня, что перенести в конец): известные имена — в порядке мастер-списка, свои — в
+    прежнем порядке; на месте остаётся самое длинное начало канона, уже стоящее в том же порядке."""
+    rank = {n: i for i, n in reversed(list(enumerate(master)))}
+    present = list(dict.fromkeys(n for n in names if n is not None))
+    known = sorted((n for n in present if n in rank), key=rank.get)
+    order = known + [n for n in present if n not in rank]
+    kept = 0
+    for n in present:
+        if kept < len(order) and n == order[kept]:
+            kept += 1
+    return order, order[kept:]
+
+
+def property_orders(dump):
+    """{уровень: [имена в порядке файла]} из dump_properties: «» — общие, дальше исполнения."""
+    out = {"": list(dump["general"])}
+    for cfg, level in dump["configs"].items():
+        out[cfg] = list(level)
+    return out
+
+
 # --------------------------------------------------------------------------- чертёж
 def sheet_views(drw):
     """[(имя листа, вид листа, [виды модели])] для всех листов."""

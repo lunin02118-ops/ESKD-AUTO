@@ -188,6 +188,119 @@ class ContractOpenEvents(SwTestCase):
         self.s.close_all()
 
 
+class ContractPropertyOrder(SwTestCase):
+    """Сверка SW API 23.09.2026, №23 (решение владельца 24.09.2026 — единый порядок свойств): на этом контракте стоят
+    запись свойства «на месте» и перенос свойства в конец без потерь. Запись — при выключенной службе надстройки: иначе
+    порядок наводила бы она сама."""
+    load_eskd = False
+
+    @staticmethod
+    def _raw_type(cpm, name):
+        val, res, was, linked = com.ref_str(""), com.ref_str(""), com.ref_bool(False), com.ref_bool(False)
+        cpm.Get6(name, True, val, res, was, linked)
+        return str(val.value or "").replace("\r\n", "\n"), int(cpm.GetType2(name)), str(res.value or "")
+
+    def test_C09_replace_value_keeps_position_and_type(self):
+        """C09: Add3 с ReplaceValue меняет значение текстового свойства на месте — индекс в GetNames прежний, и порядок
+        переживает сохранение и повторное открытие. У свойства другого типа ReplaceValue не отказывает (код 0), но
+        свойство пропадает из списка — тип 0, сырое пустое (прогон r34, 24.09.2026). Поэтому надстройка пишет на месте
+        только текстовое, а число — с заменой (PropertyWriter.Set)."""
+        path = self.copy_fixture("ПРТИ.468211.101 Пластина опорная.sldprt")
+        with self.s.eskd_muted():
+            doc = self.s.open(path)
+            cpm = doc.Extension.CustomPropertyManager("")
+            for name, kind, value in (("C09_а", 30, "1"), ("C09_б", 30, "2"), ("C09_в", 30, "3"), ("C09_число", 3, "5")):
+                self.assertEqual(0, int(cpm.Add3(name, kind, value, com.PROP_DELETE_AND_ADD)), name)
+            before = com.prop_names(cpm)
+            self.assertEqual(0, int(cpm.Add3("C09_б", 30, "новое", com.PROP_ADD_REPLACE)), "ReplaceValue текста")
+            self.assertEqual(before, com.prop_names(cpm), "ReplaceValue — на месте")
+            self.assertEqual("новое", self._raw_type(cpm, "C09_б")[0], "значение записано")
+            rc = int(cpm.Add3("C09_число", 30, "текст", com.PROP_ADD_REPLACE))
+            raw, kind, resolved = self._raw_type(cpm, "C09_число")
+            self.path("C09.txt").write_text(f"ReplaceValue текста в число: код {rc}, стало тип {kind} «{raw}» → «{resolved}»\n",
+                                            encoding="utf-8")
+            self.assertEqual(0, rc, "SolidWorks не отказывает")
+            self.assertEqual((0, ""), (kind, raw), "а свойство теряет тип и значение")
+            kept = [n for n in before if n != "C09_число"]
+            self.assertEqual(kept, com.prop_names(cpm), "и пропадает из списка — так писать нельзя")
+            doc.SetSaveFlag()
+            ok, err, _ = self.s.save(doc)
+            self.assertTrue(ok, f"Save3 err={err}")
+            self.s.close(doc)
+            doc = self.s.open(path, readonly=True)
+            self.assertEqual(kept, com.prop_names(doc.Extension.CustomPropertyManager("")), "порядок на диске")
+            self.s.close(doc)
+
+    def test_C10_delete_and_add_moves_to_end_without_loss(self):
+        """C10: перенос в конец — одно Add3 с DeleteAndAdd с типом из GetType2 и сырым значением из Get6 (UseCached) —
+        сохраняет тип и значение у целого числа, да/нет, текста, многострочного текста, даты и выражения массы
+        («SW-Mass@@00@…» остаётся выражением, вычисленное — масса). Дробное так не переносится — см. конец теста."""
+        path = self.copy_fixture("ПРТИ.468211.101 Пластина опорная.sldprt")
+        with self.s.eskd_muted():
+            doc = self.s.open(path)
+            cpm = doc.Extension.CustomPropertyManager("00")
+            probes = (("C10_число", 3, "7"), ("C10_да", 11, "Yes"), ("C10_текст", 30, "текст"),
+                      ("C10_строки", 30, "а\nб"), ("C10_дата", 64, "24.09.2026"),
+                      ("C10_масса", 30, f'"SW-Mass@@00@{path.name}"'))
+            for name, kind, value in probes:
+                self.assertEqual(0, int(cpm.Add3(name, kind, value, com.PROP_DELETE_AND_ADD)), name)
+            report = []
+            for name, _, _ in probes:
+                raw, kind, resolved = self._raw_type(cpm, name)
+                rc = int(cpm.Add3(name, kind, raw, com.PROP_DELETE_AND_ADD))
+                after = self._raw_type(cpm, name)
+                report.append(f"{name}: код {rc}, было {kind} «{raw}» → «{resolved}», стало {after[1]} «{after[0]}» → «{after[2]}»")
+                with self.subTest(name=name):
+                    self.assertEqual(0, rc)
+                    self.assertEqual(name, com.prop_names(cpm)[-1], "в конце списка")
+                    self.assertEqual((raw, kind, resolved), after, "тип, сырое и вычисленное прежние")
+            # Дробное SolidWorks отдаёт числом (3) со значением «2.500000» и обратно такое не принимает (прогон r33): такое
+            # свойство надстройка не переносит (MoveRefusal), а свойство при отказе остаётся на месте.
+            self.assertEqual(0, int(cpm.Add3("C10_дробное", 5, "2.5", com.PROP_DELETE_AND_ADD)))
+            raw, kind, resolved = self._raw_type(cpm, "C10_дробное")
+            rc = int(cpm.Add3("C10_дробное", kind, raw, com.PROP_DELETE_AND_ADD))
+            report.append(f"C10_дробное: тип {kind} «{raw}» → «{resolved}», повторное Add3 — код {rc}")
+            self.path("C10.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+            self.assertEqual((3, "2.500000"), (kind, raw), "дробное читается числом")
+            self.assertNotEqual(0, rc, "и обратно не принимается")
+            self.assertEqual((raw, kind), self._raw_type(cpm, "C10_дробное")[:2], "после отказа свойство цело")
+            self.assertIn("SW-Mass@@00@", self._raw_type(cpm, "C10_масса")[0], "выражение массы осталось выражением")
+            self.s.close(doc)
+
+
+class ContractRawValue(SwTestCase):
+    """Сверка SW API 23.09.2026, №24 (проба P20 24.09.2026): сырое значение свойства надстройка читает ModelDoc2.CustomInfo2,
+    как MProp, — Get4/Get6 и с UseCached = true при первом чтении после открытия пересчитывают массу «SW-Mass@@…»."""
+    load_eskd = False
+
+    def test_C11_custom_info2_returns_raw_value_like_get6(self):
+        """C11: CustomInfo2 отдаёт то же сырое значение, что Get6, — у текста, многострочного текста, целого числа, да/нет,
+        даты, выражения массы и ссылки $PRP — на общем уровне и у исполнения; у отсутствующего свойства — пустую строку.
+        Выражение массы остаётся выражением (не вычисляется)."""
+        path = self.copy_fixture("ПРТИ.468211.101 Пластина опорная.sldprt")
+        with self.s.eskd_muted():
+            doc = self.s.open(path)
+            probes = (("C11_текст", 30, "текст"), ("C11_строки", 30, "а\nб"), ("C11_число", 3, "7"), ("C11_да", 11, "Yes"),
+                      ("C11_дата", 64, "24.09.2026"), ("C11_масса", 30, f'"SW-Mass@@00@{path.name}"'),
+                      ("C11_ссылка", 30, '$PRP:"SW-File Name"'))
+            report = []
+            for level in ("", "00"):
+                cpm = doc.Extension.CustomPropertyManager(level)
+                for name, kind, value in probes:
+                    self.assertEqual(0, int(cpm.Add3(name, kind, value, com.PROP_DELETE_AND_ADD)), name)
+                for name, _, _ in probes:
+                    val, res, was, linked = com.ref_str(""), com.ref_str(""), com.ref_bool(False), com.ref_bool(False)
+                    cpm.Get6(name, True, val, res, was, linked)
+                    info = str(com.dyn(doc).CustomInfo2(level, name) or "")
+                    report.append(f"[{level or 'общие'}] {name}: Get6 «{val.value}», CustomInfo2 «{info}»")
+                    with self.subTest(level=level, name=name):
+                        self.assertEqual(str(val.value or "").replace("\r\n", "\n"), info.replace("\r\n", "\n"))
+                self.assertEqual("", str(com.dyn(doc).CustomInfo2(level, "C11_нет_такого") or ""), "нет свойства — пусто")
+            self.path("C11.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+            self.assertIn("SW-Mass@@00@", str(com.dyn(doc).CustomInfo2("00", "C11_масса")), "выражение, не масса")
+            self.s.close(doc)
+
+
 class ContractMassExpression(SwTestCase):
     """Спайки S-3 и S-4 (13.09.2026): на этом контракте стоит масса по конфигурациям (Д-36)."""
     load_eskd = False

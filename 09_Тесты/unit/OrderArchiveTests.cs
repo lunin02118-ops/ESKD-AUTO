@@ -26,6 +26,29 @@ namespace ESKD.Tests
                 "другое имя и документ без пути — не мешают");
         }
 
+        public static void Test_Kit_takes_assembly_named_by_product_folder()
+        {
+            // Прогон r34 24.09.2026 (e2e Y06): у изделия «И01_ПРТИ.468211.100» три сборки, и «Закрыть заказ» брало в комплект
+            // самую короткую по пути — подсборку «108 СБ Узел», а не само изделие: главной считалась только сборка с
+            // обозначением «….00.000». Главная — та, чьё обозначение совпадает с шифром в имени папки изделия.
+            string models = OrderA + @"\02_Металл\И01_ПРТИ.468211.100\01_3D\";
+            string[] assemblies =
+            {
+                models + "ПРТИ.468211.108 СБ Узел.sldasm", models + "ПРТИ.468211.100 СБ Кондуктор сварочный.sldasm",
+                models + "ПРТИ.468211.110 СБ Узел опоры.sldasm"
+            };
+            Assert.AreEqual(models + "ПРТИ.468211.100 СБ Кондуктор сварочный.sldasm",
+                ProductLocator.MainAssembly(OrderA + @"\02_Металл\И01_ПРТИ.468211.100", assemblies), "по шифру папки изделия");
+            string table = OrderA + @"\02_Металл\И02_ТС-52_Стол\01_3D\";
+            Assert.AreEqual(table + "ТС-52.00.00.000 СБ Стол.sldasm",
+                ProductLocator.MainAssembly(OrderA + @"\02_Металл\И02_ТС-52_Стол",
+                    new[] { table + "ТС-52.01.00.000 СБ Рама.sldasm", table + "ТС-52.00.00.000 СБ Стол.sldasm" }),
+                "шифр «ТС-52» — сборка «ТС-52.00.00.000»");
+            Assert.AreEqual(table + "Рама.sldasm", ProductLocator.MainAssembly(OrderA + @"\02_Металл\И02_Стол",
+                new[] { table + "Рама сварная.sldasm", table + "Рама.sldasm" }), "без обозначений — самая короткая, как раньше");
+            Assert.AreEqual(null, ProductLocator.MainAssembly(OrderA + @"\02_Металл\И03", new string[0]), "сборок нет");
+        }
+
         public static void Test_Order_prefix_does_not_swallow_neighbour_order()
         {
             // Заказ «85_Т» не должен считать своими документы заказа «85_Т2».
@@ -65,6 +88,59 @@ namespace ESKD.Tests
                 path => path == AsmA);
             Assert.AreEqual(1, missing.Count, "ссылка на несуществующий файл");
             Assert.IsTrue(missing[0].Contains("нет файла"), "причина названа");
+        }
+
+        /// <summary>
+        /// №16, решение владельца 24.09.2026: проверка, выгрузка и ЛЗК узнают компонент, который SolidWorks взял из другой
+        /// папки при своём одноимённом файле изделия.
+        /// </summary>
+        public static void Test_Swapped_component_of_open_assembly_is_found()
+        {
+            List<string> swapped = OrderArchive.Swapped(new[] { PartB, PartB, @"Z:\Библиотека\Болт М8.sldprt", PartA.ToUpperInvariant() },
+                new[] { AsmA, PartA });
+            Assert.AreEqual(1, swapped.Count, "чужая Стойка — один раз; своя (в другом регистре) и библиотечный болт — не подмена");
+            Assert.AreEqual(PartB, swapped[0], "назван путь подменённого компонента");
+            string text = OrderArchive.SwappedText(swapped, 5);
+            Assert.IsTrue(text.Contains("одноимённ") && text.Contains(PartB), "отказ называет причину и файл");
+            Assert.AreEqual(0, OrderArchive.Swapped(null, new[] { AsmA }).Count, "нет состава — нет подмены");
+        }
+
+        /// <summary>
+        /// e2e Y06, 24.09.2026: Pack and Go SolidWorks 2025 SP3 перечислил только сборку и её чертёж — без деталей и
+        /// подсборок (и у образцовых сборок из поставки). Комплект уехал в архив одной сборкой, и она открывалась без
+        /// компонентов. Состав комплекта берётся из зависимостей сборки, недостающее добавляется явно и сверяется.
+        /// </summary>
+        public static void Test_Kit_adds_models_missing_from_pack_and_go()
+        {
+            string product = OrderA + @"\02_Металл\И01_ПРТИ.468211.100";
+            string drawing = product + @"\01_3D\ПРТИ.468211.100 СБ Кондуктор.slddrw";
+            string sub = product + @"\01_3D\ПРТИ.468211.110 СБ Узел.sldasm";
+            string bolt = @"Z:\Библиотека\Болт М8.sldprt";
+            string inner = product + @"\01_3D\Деталь1^ПРТИ.468211.100 СБ Кондуктор.sldprt";
+
+            List<string> missing = OrderArchive.KitMissing(new[] { sub, PartA, bolt, PartA.ToUpperInvariant(), inner, "" },
+                new[] { AsmA, drawing });
+            Assert.AreEqual(3, missing.Count, "подсборка, деталь и библиотечный болт — по разу: " + string.Join("; ", missing.ToArray()));
+            Assert.IsFalse(missing.Contains(inner), "виртуальная деталь живёт внутри сборки — файла у неё нет");
+            Assert.AreEqual(0, OrderArchive.KitMissing(new[] { PartA }, new[] { AsmA, PartA.ToUpperInvariant() }).Count,
+                "то, что Pack and Go перечислил сам, не добавляется второй раз");
+
+            string foreign = @"Z:\Библиотека\ПРТИ.468211.102 Стойка.sldprt";
+            List<string> clash = OrderArchive.KitCollisions(new[] { AsmA, PartA, foreign, PartA.ToUpperInvariant() });
+            Assert.AreEqual(1, clash.Count, "два разных файла с одним именем не поместятся в одну папку комплекта");
+            Assert.IsTrue(clash[0].Contains(PartA) && clash[0].Contains(foreign), "названы оба: " + clash[0]);
+
+            string kit = @"Z:\_tmp\2026-010 Стенд\Комплекты\ПРТИ.468211.100\";
+            List<string> absent = OrderArchive.KitAbsent(new[] { AsmA, PartA, bolt },
+                new[] { kit + "ПРТИ.468211.100 СБ Кондуктор.SLDASM", kit + "Болт М8.sldprt" });
+            Assert.AreEqual(1, absent.Count, "после Pack and Go в папке комплекта нет Стойки");
+            Assert.AreEqual(PartA, absent[0], "названа недостающая модель");
+
+            List<string> folders = OrderArchive.KitDrawingFolders(new[] { AsmA, PartA, bolt, sub }, product);
+            Assert.AreEqual(1, folders.Count, "чертежи ищутся только в папках изделия: " + string.Join("; ", folders.ToArray()));
+            Assert.AreEqual(product + @"\01_3D", folders[0], "папка моделей изделия");
+            Assert.AreEqual(0, OrderArchive.KitDrawingFolders(new[] { OrderA + @"\02_Металл\И01_ПРТИ.468211.1000\01_3D\А.sldprt" },
+                product).Count, "соседнее изделие с тем же началом имени — не своя папка");
         }
     }
 }

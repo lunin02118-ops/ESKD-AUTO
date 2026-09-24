@@ -190,6 +190,13 @@ namespace ESKD.MaterialSync.Sw
                     Info("Файл " + Path.GetFileName(busy) + " открыт в Excel. Закройте его и повторите.", MessageBoxIcon.Information);
                     return false;
                 }
+            // Подменённый одноимённый компонент другого заказа — книга собралась бы по чужой детали (№16).
+            List<string> swapped = ProductNamesakes.Swapped(_doc, _productFolder);
+            if (swapped.Count > 0)
+            {
+                Info(OrderArchive.SwappedText(swapped, 20), MessageBoxIcon.Warning);
+                return false;
+            }
             // Изделие проверено и с тех пор не менялось — без вопросов; иначе «Проверить сейчас / Продолжить как есть» (З-27).
             bool cancelled;
             _freshness = ProductFreshness.Ensure(_app, _doc, "Ведомость ЛЗК",
@@ -332,7 +339,8 @@ namespace ESKD.MaterialSync.Sw
                     "сборка открыта только для чтения: состав взят из сохранённого файла"));
             else if (_editedBefore.Contains(_assemblyPath))
                 _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_assemblyPath),
-                    "в сборке ваши несохранённые правки — кнопка её не сохраняет: состав взят из сохранённого файла",
+                    (DocumentGuard.OlderVersion(_app, _assemblyPath) ? SwFileVersion.OlderNote : "в сборке ваши несохранённые правки") +
+                    " — кнопка её не сохраняет: состав взят из сохранённого файла",
                     "Сохраните сборку и пересоберите книгу"));
             else if (DocumentGuard.HasUserEdits(_doc) && !_saves.Save(_doc, out errors))
                 _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_assemblyPath),
@@ -757,10 +765,12 @@ namespace ESKD.MaterialSync.Sw
             {
                 if (t.IsSheetMetal && !assembly)
                 {
-                    double[] flat = FlatPatternSides((PartDoc)model, model, mayChange);
+                    bool estimate;
+                    double[] flat = FlatPatternSides((PartDoc)model, model, mayChange, out estimate);
                     if (flat != null)
                     {
                         item.Size = LzkOperations.FormatSize(flat[0], flat[1], flat[2]);
+                        item.SizeIsEstimate = estimate;
                         return;
                     }
                     // Развёртку не измерить — габарит согнутой детали с пометкой «оценка».
@@ -826,9 +836,9 @@ namespace ESKD.MaterialSync.Sw
         /// (список не обновляли — так в боевом заказе NC3-7R) — включается элемент «Развёртка» (FlatPattern), деталь
         /// меряется по габаритному ящику, элемент гасится обратно (SetBendState в SolidWorks 2025 ничего не делает,
         /// проверено 21.09.2026). mayToggle = false (база, другой заказ) — развёртка не включается: это пометило бы модель
-        /// изменённой. null — измерить не удалось.
+        /// изменённой. null — измерить не удалось. estimate — размер с пометкой «оценка» (<see cref="FlatSize.Choose"/>).
         /// </summary>
-        private static double[] FlatPatternSides(PartDoc part, ModelDoc2 model, bool mayToggle)
+        private static double[] FlatPatternSides(PartDoc part, ModelDoc2 model, bool mayToggle, out bool estimate)
         {
             double thickness = StockService.SheetThicknessMm(model);
             double length = double.NaN, width = double.NaN;
@@ -847,20 +857,15 @@ namespace ESKD.MaterialSync.Sw
             }
             // Своя модель меряется по телу всегда: свойства списка вырезов SolidWorks пересчитывает только при его обновлении,
             // и после правки детали в них оставалась прежняя рамка, а имя DXF — уже по новой (ревью 23.09.2026). Замер —
-            // та же наименьшая рамка, что в имени DXF. Не измерить — свойства, как раньше.
-            if (mayToggle)
-            {
-                double[] measured = MeasureUnfolded(part, model, thickness);
-                if (measured != null)
-                {
-                    length = measured[0];
-                    width = measured[1];
-                    if (double.IsNaN(thickness)) thickness = measured[2];
-                }
-            }
-            if (double.IsNaN(length) || double.IsNaN(width) || length <= 0 || width <= 0) return null;
-            if (double.IsNaN(thickness) || thickness <= 0) thickness = 0;
-            return new[] { length, width, thickness };
+            // та же наименьшая рамка, что в имени DXF. Не измерить — свойства с пометкой «оценка» (FlatSize.Choose).
+            double[] fromProperties = double.IsNaN(length) || double.IsNaN(width) || length <= 0 || width <= 0
+                ? null : new[] { length, width, thickness };
+            double[] measured = mayToggle ? MeasureUnfolded(part, model, thickness) : null;
+            double[] size = FlatSize.Choose(fromProperties, measured, mayToggle, out estimate);
+            if (size == null) return null;
+            double sheet = !double.IsNaN(thickness) ? thickness : size[2];
+            if (double.IsNaN(sheet) || sheet <= 0) sheet = 0;
+            return new[] { size[0], size[1], sheet };
         }
 
         /// <summary>
@@ -1446,7 +1451,9 @@ namespace ESKD.MaterialSync.Sw
         private void NotSaved(string path, string refusal, string tail)
         {
             Log.Info("Ведомость ЛЗК: модель не сохранена (" + refusal + ") — " + path);
-            _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(path), refusal + tail,
+            // Файл прежней версии SolidWorks сам «изменён» после открытия — называется своим текстом (№26).
+            string text = refusal == EditedRefusal && DocumentGuard.OlderVersion(_app, path) ? SwFileVersion.OlderNote : refusal;
+            _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(path), text + tail,
                 refusal == EditedRefusal ? "Сохраните модель сами"
                     : "Сделайте исполнение «" + Before(path) + "» активным и сохраните модель сами"));
         }

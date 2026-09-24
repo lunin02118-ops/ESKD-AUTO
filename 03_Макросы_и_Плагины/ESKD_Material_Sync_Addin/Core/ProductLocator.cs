@@ -210,6 +210,36 @@ namespace ESKD.MaterialSync.Core
             return "";
         }
 
+        /// <summary>
+        /// Главная сборка изделия среди его сборок: обозначение совпадает с шифром в имени папки изделия
+        /// («И01_ПРТИ.468211.100» — «ПРТИ.468211.100 СБ …», «И02_ТС-52_Стол» — «ТС-52.00.00.000 СБ …»); нет такой — сборка
+        /// с нулевыми группами (<see cref="IsMainAssembly"/>), затем самая короткая по пути. Раньше шифр не смотрелся, и у
+        /// изделия «ПРТИ.468211.100» в комплект уходила подсборка «108 СБ Узел» (e2e Y06, 24.09.2026). null — сборок нет.
+        /// </summary>
+        public static string MainAssembly(string productFolder, IEnumerable<string> assemblies)
+        {
+            List<string> list = (assemblies ?? new string[0])
+                .Where(f => !string.IsNullOrEmpty(f) && !Path.GetFileName(f).StartsWith("~$", StringComparison.Ordinal))
+                .OrderBy(f => f.Length).ToList();
+            if (list.Count == 0) return null;
+            string cipher = "";
+            Match m = Regex.Match(Path.GetFileName((productFolder ?? "").TrimEnd('\\', '/')) ?? "", @"^И\d{2,}_([^_]+)(?:_|$)");
+            if (m.Success && Regex.IsMatch(m.Groups[1].Value, @"[\d.]")) cipher = m.Groups[1].Value;
+            if (cipher.Length > 0)
+            {
+                string named = list.FirstOrDefault(f =>
+                {
+                    ParsedName parsed = DesignationParser.Parse(f, " ");
+                    if (!parsed.HasDesignation) return false;
+                    Match zeros = Regex.Match(parsed.Root, @"^(.+?)(?:\.00)*\.000$");
+                    return string.Equals(parsed.Root, cipher, StringComparison.OrdinalIgnoreCase) ||
+                        (zeros.Success && string.Equals(zeros.Groups[1].Value, cipher, StringComparison.OrdinalIgnoreCase));
+                });
+                if (named != null) return named;
+            }
+            return list.FirstOrDefault(IsMainAssembly) ?? list[0];
+        }
+
         /// <summary>Обозначение главной сборки изделия: код с нулевыми группами, например ТС-52.00.00.000.</summary>
         public static bool IsMainAssembly(string path)
         {

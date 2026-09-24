@@ -433,6 +433,27 @@ namespace ESKD.Tests
             Assert.IsTrue(f.NeedsDecision, "решает конструктор");
         }
 
+        /// <summary>
+        /// №36 (решение владельца 24.09.2026): исполнение из изделия, не активное в файле, получает замечание «сделайте его
+        /// активным и нажмите «Синхронизировать»» — ответить в окне можно только за активное исполнение.
+        /// </summary>
+        public static void Test_Execution_outside_active_gets_note_not_question()
+        {
+            const string tube = "Труба ПО 30х15х1,5 ГОСТ 8644-68 / 08пс ГОСТ 13663-86";
+            const string sheet = "Лист 8,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97";
+            StockRequest profile = new StockRequest { Kind = StockKind.Profile, Size = "30х15х1,5", Gost = "ГОСТ 8644-68" };
+            string note = StockService.ExecutionMessage("01", Finding(profile, sheet));
+            Assert.IsTrue(note.Contains("исполнение «01»") && note.Contains("«" + sheet + "»") && note.Contains("«30х15х1,5» ГОСТ 8644-68") &&
+                          note.Contains("«01» активным") && note.Contains("«Синхронизировать»"), note);
+            Assert.AreEqual("", StockService.ExecutionMessage("01", Finding(profile, tube)), "материал подходит — молчим");
+            Assert.AreEqual("", StockService.ExecutionMessage("01", Finding(profile, "")), "не назначен — брак находки 14, не повтор");
+            string outside = StockService.ExecutionMessage("01", Finding(new StockRequest
+            {
+                Kind = StockKind.Profile, Size = "999х999х9", Gost = "ГОСТ 8644-68"
+            }, ""));
+            Assert.IsTrue(outside.Contains("исполнение «01»") && outside.Contains("не найден в библиотеке"), outside);
+        }
+
         /// <summary>Позиция папки списка вырезов: вердикт Assign, материал chosen, bodies тел (заглушки — счёт, не геометрия).</summary>
         private static StockFinding CutListPosition(MaterialInfo chosen, int bodies)
         {

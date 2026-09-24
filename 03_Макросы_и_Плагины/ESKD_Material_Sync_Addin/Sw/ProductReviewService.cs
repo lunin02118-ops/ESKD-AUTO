@@ -148,6 +148,8 @@ namespace ESKD.MaterialSync.Sw
             }
             object[] comps = asm.GetComponents(false) as object[] ?? new object[0];
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { assemblyPath };
+            // Свои файлы изделия — узнать одноимённый компонент, взятый из другой папки (№16). Только для отчёта проверки.
+            string[] own = report != null ? ProductNamesakes.OwnFiles(productFolder) : new string[0];
             Dictionary<string, ProductNode> byPath = new Dictionary<string, ProductNode>(StringComparer.OrdinalIgnoreCase);
             foreach (object o in comps)
             {
@@ -181,7 +183,11 @@ namespace ESKD.MaterialSync.Sw
                         continue;
                     }
                     bool inProduct = LzkNaming.IsInside(path, productFolder);
-                    if (!inProduct && report != null && !Allowed(path, assemblyPath))
+                    if (!inProduct && report != null && OrderArchive.Swapped(new[] { path }, own).Count > 0)
+                        report.Add(CheckRules.References, CheckRules.LevelOf(CheckRules.References), name,
+                            "SolidWorks взял одноимённый файл из другой папки вместо своего (открыт документ с тем же именем, " +
+                            "другой заказ): " + path + " — закройте его, откройте сборку изделия заново и проверьте снова");
+                    else if (!inProduct && report != null && !Allowed(path, assemblyPath))
                         report.Add(CheckRules.References, CheckRules.LevelOf(CheckRules.References), name,
                             "ссылка за пределами заказа и базы (или на другой заказ): " + path);
                     ProductNode node = new ProductNode
@@ -285,6 +291,7 @@ namespace ESKD.MaterialSync.Sw
                     if (!node.IsAssembly) session.Report.Parts++;
 
                     ReviewFile file = session.Plan.Add(node.Path, target.Title, node.Edited);
+                    if (node.Edited) file.Older = DocumentGuard.OlderVersion(app, node.Path);
                     foreach (string operation in planned.Operations) file.Changes.Add(Change(operation, target.Title));
                     if (planned.Warnings.Any(IsUnits)) file.Changes.Add(UnitsChange);
                     if (planned.Designation != null) AskDesignation(session.Plan, node, target.Title, planned.Designation);
@@ -352,9 +359,80 @@ namespace ESKD.MaterialSync.Sw
             plan.Questions.Add(q);
         }
 
-        /// <summary>Материал по профилю и толщине (Р-8): один подходящий — само; спорный — вопрос на всё изделие.</summary>
+        /// <summary>
+        /// Материал по профилю и толщине (Р-8): один подходящий — само; спорный — вопрос на всё изделие. Сверяются
+        /// исполнения, стоящие в изделии (№36; решение владельца 24.09.2026): активное в файле — как раньше, остальные — без
+        /// переключения, спорное замечанием. Активное исполнение, которого в изделии нет, не спрашивается и не меняется.
+        /// </summary>
         private static void PlanStock(ISldWorks app, ReviewSession session, ReviewSession.Target target, ReviewFile file,
             Dictionary<string, ReviewQuestion> materials)
+        {
+            string active = ActiveName(target.Node.Model);
+            // Типоразмеры вне библиотеки: замечание одно на деталь, даже если профиль стоит в нескольких исполнениях.
+            HashSet<string> outside = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (CheckRules.UsesExecution(target.Node.Configurations, active))
+                PlanActiveStock(app, session, target, file, materials, outside);
+            else
+                Log.Info("Проверка изделия: " + target.Title + " — активное исполнение «" + active + "» в изделии не стоит, " +
+                         "материал по профилю для него не подбирается");
+            PlanOtherExecutions(app, target, active, outside);
+        }
+
+        /// <summary>
+        /// Исполнения детали из изделия, кроме активного в файле (№36): материал сверяется с профилем без переключения
+        /// исполнения, спорное — замечанием «сделайте активным и нажмите «Синхронизировать»»: ответить в окне можно только за
+        /// активное. Ответ «Оставить как есть», сохранённый в модели, действует и здесь.
+        /// </summary>
+        private static void PlanOtherExecutions(ISldWorks app, ReviewSession.Target target, string active, HashSet<string> outside)
+        {
+            ModelDoc2 model = target.Node.Model;
+            List<string> others = CheckRules.OtherExecutions(target.Node.Configurations, active, ConfigurationNames(model));
+            if (others.Count == 0) return;
+            string accepted = StockService.Accepted(model);
+            foreach (string cfg in others)
+                foreach (StockFinding f in StockService.InspectExecution(app, model, cfg))
+                {
+                    if (f.NeedsDecision && StockService.PendingDecisions(target.Node.Path, new[] { f }, accepted).Count == 0) continue;
+                    if (f.Verdict == StockVerdict.NotInLibrary && !outside.Add(OutsideKey(f))) continue;
+                    string note = StockService.ExecutionMessage(cfg, f);
+                    if (note.Length > 0) target.StockNotes.Add(note);
+                }
+        }
+
+        private static string OutsideKey(StockFinding f)
+        {
+            return f.Request.Size + "|" + f.Request.Gost;
+        }
+
+        private static string ActiveName(ModelDoc2 model)
+        {
+            try
+            {
+                Configuration c = model.GetActiveConfiguration() as Configuration;
+                return c != null ? c.Name ?? "" : "";
+            }
+            catch (COMException)
+            {
+                return "";
+            }
+        }
+
+        private static string[] ConfigurationNames(ModelDoc2 model)
+        {
+            try
+            {
+                return model.GetConfigurationNames() as string[] ?? new string[0];
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Проверка изделия: исполнения " + DocInfo.TitleOf(model), ex);
+                return new string[0];
+            }
+        }
+
+        /// <summary>Активное в файле исполнение: подстановка — в план, спорное — вопрос на всё изделие.</summary>
+        private static void PlanActiveStock(ISldWorks app, ReviewSession session, ReviewSession.Target target, ReviewFile file,
+            Dictionary<string, ReviewQuestion> materials, HashSet<string> outside)
         {
             ModelDoc2 model = target.Node.Model;
             List<StockFinding> findings = StockService.Inspect(app, model);
@@ -367,7 +445,10 @@ namespace ESKD.MaterialSync.Sw
                     file.Changes.Add("материал «" + StockText.Describe(f.Chosen) + "» — по типоразмеру «" + f.Request.Size + "»" +
                         (f.Folder.Length > 0 && f.Folder != StockService.SheetFolderName ? " («" + f.Folder + "»)" : ""));
                 else if (f.Verdict == StockVerdict.NotInLibrary || f.Verdict == StockVerdict.Unclear)
+                {
                     target.StockNotes.Add(StockService.Message(f));
+                    if (f.Verdict == StockVerdict.NotInLibrary) outside.Add(OutsideKey(f));
+                }
             }
             foreach (StockFinding f in pending)
             {
@@ -470,6 +551,15 @@ namespace ESKD.MaterialSync.Sw
                     {
                         batch.Unsaved++;
                         continue;
+                    }
+                    // Сохранение по команде конструктора — и единый порядок свойств (№23). Окно его не планирует: порядок сам
+                    // по себе не повод сохранять, он наводится только у документа, который и так сохраняется.
+                    Settings settings = Settings.Read();
+                    PropertyWriter order = new PropertyWriter(t.Node.Model, settings.DryRun);
+                    if (!SyncService.IsProtected(order, t.Node.Model))
+                    {
+                        PropertyOrderService.Restore(order, SyncService.Dictionary(settings), t.Node.Path);
+                        batch.Failed += order.Failures;
                     }
                     if (!Save(t, batch)) continue;
                     // Главный документ — деталь у «Синхронизировать» в детали: он считается среди сохранённых деталей.

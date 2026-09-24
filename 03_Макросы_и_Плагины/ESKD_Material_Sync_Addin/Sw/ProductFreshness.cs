@@ -78,11 +78,18 @@ namespace ESKD.MaterialSync.Sw
             bool topEdited = DocumentGuard.HasUserEdits(assembly);
             List<ProductNode> nodes = ProductReviewService.Collect(app, assembly, path, f.ProductFolder, null);
             nodes[0].Edited = topEdited;
-            List<string> edited = nodes.Where(n => n.Edited && Own(n)).Select(n => Path.GetFileName(n.Path)).ToList();
+            List<ProductNode> editedNodes = nodes.Where(n => n.Edited && Own(n)).ToList();
+            // Файл прежней версии SolidWorks сам «изменён» после открытия — называется своим текстом (№26).
+            List<string> older = editedNodes.Where(n => DocumentGuard.OlderVersion(app, n.Path))
+                .Select(n => Path.GetFileName(n.Path)).ToList();
+            List<string> edited = editedNodes.Select(n => Path.GetFileName(n.Path)).ToList();
             List<KeyValuePair<string, string>> now = nodes
                 .Select(n => new KeyValuePair<string, string>(Path.GetFileName(n.Path), Checksum(n.Path))).ToList();
             List<string> changed = ProductStamp.Differences(stamp.Checksums, now);
-            if (edited.Count > 0) f.Reasons.Add("есть несохранённые правки: " + Names(edited));
+            if (edited.Count > older.Count)
+                f.Reasons.Add("есть несохранённые правки: " + Names(edited.Where(n => !older.Contains(n)).ToList()));
+            if (older.Count > 0)
+                f.Reasons.Add("файлы сохранены в прежней версии SolidWorks (или в них несохранённые правки): " + Names(older));
             if (changed.Count > 0) f.Reasons.Add("изменены после проверки (или добавлены, убраны): " + Names(changed));
             f.OnlyUnsaved = edited.Count > 0 && changed.Count == 0;
             if (f.Reasons.Count == 0) f.Version = stamp.Version;

@@ -122,7 +122,7 @@ namespace ESKD.MaterialSync.Sw
                 foreach (ProductNode node in nodes.Where(ProductFreshness.Own))
                     if (DocumentGuard.HasUserEdits(node.Model))
                         report.Add(CheckRules.Sync, CheckRules.LevelOf(CheckRules.Sync), Path.GetFileName(node.Path),
-                            "несохранённые правки: сохраните документ и проверьте изделие снова");
+                            DocumentGuard.EditsNote(app, node.Path) + ": сохраните документ и проверьте изделие снова");
                 foreach (ProductNode node in nodes)
                     report.Checksums.Add(new KeyValuePair<string, string>(Path.GetFileName(node.Path), Checksum(node.Path)));
                 Status(app, "ЕСКД: проверка изделия — выданные документы…");
@@ -358,25 +358,13 @@ namespace ESKD.MaterialSync.Sw
         private static void Thickness(ProductNode node, CheckReport report, string name)
         {
             if (node.IsAssembly) return;
-            try
-            {
-                for (Feature f = node.Model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
-                {
-                    if (f.GetTypeName2() != "SheetMetal") continue;
-                    SheetMetalFeatureData data = f.GetDefinition() as SheetMetalFeatureData;
-                    if (data == null) continue;
-                    double mm = data.Thickness * 1000.0;
-                    if (mm > MaxSheetThicknessMm)
-                        report.Add(CheckRules.Attributes, CheckRules.LevelOf(CheckRules.Attributes), name,
-                            "толщина листовой детали " + mm.ToString("0.#", CultureInfo.GetCultureInfo("ru-RU")) +
-                            " мм — больше " + MaxSheetThicknessMm + " мм: проверьте модель");
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Проверка изделия: толщина " + name, ex);
-            }
+            // Толщина — там же, где её берут материал и выгрузка (StockService): у многотельной детали после переоткрытия
+            // SolidWorks отдаёт 0 у элемента тела (X21, 24.09.2026).
+            double mm = StockService.SheetThicknessMm(node.Model);
+            if (mm > MaxSheetThicknessMm)
+                report.Add(CheckRules.Attributes, CheckRules.LevelOf(CheckRules.Attributes), name,
+                    "толщина листовой детали " + mm.ToString("0.#", CultureInfo.GetCultureInfo("ru-RU")) +
+                    " мм — больше " + MaxSheetThicknessMm + " мм: проверьте модель");
         }
 
         /// <summary>

@@ -213,7 +213,8 @@ class FailedConnect(SwTestCase):
 
         try:
             own.start()
-            self.assertIsNone(own.sw.GetAddInObject(paths.ADDIN_PROGID), "надстройка не загрузилась")
+            # GetAddInObject здесь не судья: объект надстройки SolidWorks отдаёт и после ConnectToSW = false (прогоны r29 и
+            # r32, 24.09.2026). Проверяется поведение — после сбоя надстройка ничего не делает.
             doc, _ = build.plate(own, 100, 50, 3, None)
             own.save_as(doc, path)
             idle(3.0)

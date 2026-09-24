@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using ESKD.MaterialSync.Core;
@@ -30,6 +31,13 @@ namespace ESKD.MaterialSync.Sw
         /// «Проверить изделие» (замечание владельца 22.09.2026: «Тело5» у тел, выделенных из многотельной детали).
         /// </summary>
         public bool DesignationFromFile;
+
+        /// <summary>
+        /// Путь документа, по чьей команде идёт сохранение (он сам или активная сборка, с которой сохраняется скрытая
+        /// деталь), — тогда после записи наводится единый порядок свойств (№23). null — порядок не трогается: открытие,
+        /// простой, кнопка «Синхронизировать», пробные прогоны.
+        /// </summary>
+        public string OrderFor;
     }
 
     /// <summary>Обозначение в свойствах расходится с именем файла — вопрос конструктору в окне «Проверить изделие».</summary>
@@ -129,6 +137,9 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
+        /// <summary>С какой длительности синхронизация пишет в журнал свои этапы, мс.</summary>
+        private const long SlowSyncMs = 1000;
+
         public static SyncReport SyncModel(ISldWorks app, ModelDoc2 doc, SyncRequest req)
         {
             SyncReport report = new SyncReport();
@@ -140,11 +151,24 @@ namespace ESKD.MaterialSync.Sw
                 report.SkipReason = "не деталь и не сборка";
                 return report;
             }
+            // Долгая синхронизация называет свои этапы в журнале: по ним видно, что именно тормозит сохранение
+            // (P20, 24.09.2026: библиотечная деталь из сотни исполнений).
+            Stopwatch clock = Stopwatch.StartNew();
+            List<string> stages = new List<string>();
+            long last = 0;
+            Action<string> stage = delegate(string name)
+            {
+                long now = clock.ElapsedMilliseconds;
+                stages.Add(name + " " + (now - last));
+                last = now;
+            };
             Settings settings = Settings.Read();
             PropertyDictionary dict = Dictionary(settings);
             PropertyWriter w = new PropertyWriter(doc, req.DryRun || settings.DryRun);
 
-            if (IsProtected(w, doc))
+            bool protectedDoc = IsProtected(w, doc);
+            stage("защита");
+            if (protectedDoc)
             {
                 report.Skipped = true;
                 report.SkipReason = "стандартное или покупное изделие";
@@ -156,17 +180,28 @@ namespace ESKD.MaterialSync.Sw
             {
                 if (req.Names && settings.AutoSplitName && dict.FileNameSplit)
                     SyncNames(w, doc, dict, settings, req, isAssembly, report);
+                stage("имена");
                 if (req.Signatures)
                     SyncSignatures(w, dict, settings);
                 if (req.Materials && !isAssembly && settings.AutoSyncMaterials)
                     SyncMaterials(w, app, (PartDoc)doc, dict, report);
+                stage("материал");
                 if (req.Stock && !isAssembly && settings.AutoStockMaterial && !req.DryRun && !settings.DryRun)
                     InspectStock(app, doc, report);
+                stage("сортамент");
                 if (!isAssembly)
                     BchService.UpdateOnSave(w, app, doc, dict);
+                stage("БЧ");
                 if (req.Mass && settings.AutoMass)
                     SyncMass(w, doc, dict, report);
+                stage("масса");
                 SyncLevels(w, dict, isAssembly);
+                stage("уровни");
+                if (!string.IsNullOrEmpty(req.OrderFor) && !req.DryRun)
+                {
+                    PropertyOrderService.Restore(w, dict, req.OrderFor);
+                    stage("порядок");
+                }
             }
             catch (Exception ex)
             {
@@ -180,6 +215,9 @@ namespace ESKD.MaterialSync.Sw
             if (w.Operations.Count > 0)
                 Log.Info(string.Format("Синхронизация ({0}): {1}{2}", req.Reason, report,
                     w.Operations.Count > 0 ? "\r\n    " + string.Join("\r\n    ", w.Operations.ToArray()) : ""));
+            if (clock.ElapsedMilliseconds >= SlowSyncMs)
+                Log.Info(string.Format("Синхронизация ({0}) «{1}»: {2} мс — {3}", req.Reason, DocInfo.TitleOf(doc),
+                    clock.ElapsedMilliseconds, string.Join(", ", stages.ToArray())));
             return report;
         }
 

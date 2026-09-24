@@ -70,6 +70,31 @@ namespace ESKD.MaterialSync.Sw
             return why == OutsideProduct || why == PurchasedByFolder || why == PurchasedByProperties;
         }
 
+        /// <summary>
+        /// Файл сохранён в прежней версии SolidWorks (сверка SW API 23.09.2026, №26): такой документ SolidWorks сразу после
+        /// открытия помечает изменённым. Правило то же — надстройка его не сохраняет; меняется только текст сообщения
+        /// (<see cref="EditsNote"/>). История читается с диска; не прочитать — нет.
+        /// </summary>
+        public static bool OlderVersion(ISldWorks app, string path)
+        {
+            if (app == null || string.IsNullOrEmpty(path)) return false;
+            try
+            {
+                return SwFileVersion.Older(app.VersionHistory(path) as string[], app.GetLatestSupportedFileVersion());
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Версия файла SolidWorks: " + path, ex);
+                return false;
+            }
+        }
+
+        /// <summary>«несохранённые правки» или, у файла прежней версии SolidWorks, <see cref="SwFileVersion.OlderNote"/>.</summary>
+        public static string EditsNote(ISldWorks app, string path)
+        {
+            return OlderVersion(app, path) ? SwFileVersion.OlderNote : "несохранённые правки";
+        }
+
         /// <summary>В документе есть несохранённые правки. Не удалось спросить — считаем, что есть: сохранять нельзя.</summary>
         public static bool HasUserEdits(ModelDoc2 doc)
         {

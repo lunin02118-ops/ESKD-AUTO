@@ -146,10 +146,12 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>
-        /// Сырое и вычисленное значение одним вызовом Get4; null — свойства нет или чтение не удалось. fresh — вычисленное
-        /// пересчитать (UseCached = false); иначе SolidWorks отдаёт его из кэша. Сырому значению пересчёт не нужен, а
-        /// пересчёт «SW-Mass@@исполнение@…» каждого из сотни исполнений библиотечной детали занимал при Ctrl+S ~28 с
-        /// против 0,15 с без надстройки (сверка SW API 23.09.2026, №24; e2e P20). pair[2] = "1" — вычисленное свежее.
+        /// Сырое значение (fresh = false) или сырое и вычисленное (fresh = true); null — свойства нет или чтение не удалось.
+        /// Сырое читается CustomInfo2, как у MProp: Get4 и с UseCached = true при первом чтении выражения
+        /// «SW-Mass@@исполнение@…» после открытия файла пересчитывает массу исполнения — у библиотечной детали с 79
+        /// исполнениями этап «масса» занимал при Ctrl+S 4,5 с, с UseCached = false — ~31 с, против 0,17 с без надстройки
+        /// (сверка SW API 23.09.2026, №24; проба 24.09.2026; e2e P20, контракт C11). Вычисленное — Get4 с пересчётом.
+        /// pair[2] = "1" — вычисленное прочитано.
         /// </summary>
         private string[] Values(string cfg, string name, bool fresh)
         {
@@ -157,11 +159,18 @@ namespace ESKD.MaterialSync.Sw
             string key = (cfg ?? "") + "\0" + name;
             string[] pair;
             if (_values.TryGetValue(key, out pair) && (!fresh || pair[2].Length > 0)) return pair;
-            string val, resolved;
             try
             {
-                Manager(cfg).Get4(name, !fresh, out val, out resolved);
-                pair = new[] { val ?? "", resolved ?? "", fresh ? "1" : "" };
+                if (fresh)
+                {
+                    string val, resolved;
+                    Manager(cfg).Get4(name, false, out val, out resolved);
+                    pair = new[] { val ?? "", resolved ?? "", "1" };
+                }
+                else
+                {
+                    pair = new[] { RawValue(cfg, name), "", "" };
+                }
             }
             catch (Exception ex)
             {
@@ -170,6 +179,12 @@ namespace ESKD.MaterialSync.Sw
             }
             _values[key] = pair;
             return pair;
+        }
+
+        /// <summary>Сырое значение без пересчёта — ModelDoc2.CustomInfo2, как читает MProp (контракт C11).</summary>
+        private string RawValue(string cfg, string name)
+        {
+            return _doc.get_CustomInfo2(cfg ?? "", name) ?? "";
         }
 
         private HashSet<string> Names(string cfg)
@@ -243,8 +258,21 @@ namespace ESKD.MaterialSync.Sw
             _values.Clear();
             try
             {
+                // Существующее текстовое свойство — на своей строке «Свойств файла», как CustomInfo2 у MProp: DeleteAndAdd
+                // уносил его в конец списка, и порядок в каждом файле выходил свой (сверка SW API 23.09.2026, №23).
+                // ReplaceValue типа не меняет и у свойства другого типа не отказывает (контракт C09), поэтому нетекстовое
+                // пишется, как раньше, с заменой — текстом.
+                bool inPlace = current != null &&
+                    Manager(cfg).GetType2(name) == (int)swCustomInfoType_e.swCustomInfoText;
                 int rc = Manager(cfg).Add3(name, (int)swCustomInfoType_e.swCustomInfoText, value,
-                    (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                    inPlace ? (int)swCustomPropertyAddOption_e.swCustomPropertyReplaceValue
+                            : (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                if (rc != (int)swCustomInfoAddResult_e.swCustomInfoAddResult_AddedOrChanged && inPlace)
+                {
+                    Log.Info(string.Format("Add3 ReplaceValue код {0}: {1} [{2}] {3} — запись с заменой свойства", rc, _docTitle, level, name));
+                    rc = Manager(cfg).Add3(name, (int)swCustomInfoType_e.swCustomInfoText, value,
+                        (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                }
                 if (rc != (int)swCustomInfoAddResult_e.swCustomInfoAddResult_AddedOrChanged)
                 {
                     Failures++;
@@ -298,6 +326,126 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Delete2 " + name + " " + _docTitle + " [" + level + "]", ex);
                 return false;
             }
+        }
+
+        // ------------------------------------------------------------------ единый порядок (№23)
+
+        /// <summary>
+        /// Типы свойств, которые перенос в конец пересоздаёт без потерь (swCustomInfoType_e: число, да/нет, текст, дата;
+        /// контракт C10). Дробное SolidWorks отдаёт числом (3) со значением «2.500000» и такое обратно не принимает — оно,
+        /// уравнение (105) и неизвестные не трогаются: уровень с ними пропускается целиком.
+        /// </summary>
+        private static readonly int[] MovableTypes = { 3, 11, 30, 64 };
+
+        /// <summary>Имена уровня в порядке «Свойств файла» (свежий GetNames); null — не прочитано.</summary>
+        public List<string> OrderedNames(string cfg)
+        {
+            try
+            {
+                List<string> list = new List<string>();
+                object[] raw = Manager(cfg).GetNames() as object[];
+                if (raw != null)
+                    foreach (object o in raw)
+                        if (o != null) list.Add(o.ToString());
+                return list;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Порядок свойств: GetNames " + _docTitle + " [" + (cfg ?? "") + "]", ex);
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Почему свойство нельзя перенести в конец: связано с родителем, управляется таблицей параметров, тип вне
+        /// проверенных. Пусто — можно.
+        /// </summary>
+        public string MoveRefusal(string cfg, string name)
+        {
+            CustomPropertyManager m = Manager(cfg);
+            try
+            {
+                // Связь с родителем бывает только у производной конфигурации. У общих свойств и у обычной конфигурации
+                // SolidWorks тоже отвечает LinkAll = true (прогон 24.09.2026: пропущены общие свойства новой пластины).
+                bool derived = false;
+                if (!string.IsNullOrEmpty(cfg))
+                {
+                    Configuration c = _doc.GetConfigurationByName(cfg) as Configuration;
+                    derived = c != null && c.IsDerived();
+                }
+                if (derived && m.LinkAll) return "свойства уровня связаны с родителем";
+                if (derived)
+                {
+                    string raw, resolved;
+                    bool wasResolved, linked;
+                    m.Get6(name, true, out raw, out resolved, out wasResolved, out linked);
+                    if (linked) return "«" + name + "» связано с родителем";
+                }
+                string val = RawValue(cfg, name);
+                if (!m.IsCustomPropertyEditable(name, cfg ?? "")) return "«" + name + "» не редактируется (таблица параметров)";
+                int type = m.GetType2(name);
+                if (Array.IndexOf(MovableTypes, type) < 0) return "«" + name + "»: тип " + type;
+                long whole;
+                if (type == (int)swCustomInfoType_e.swCustomInfoNumber &&
+                    !long.TryParse((val ?? "").Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out whole))
+                    return "«" + name + "»: дробное число «" + val + "»";
+                return "";
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Порядок свойств: " + name + " " + _docTitle + " [" + (cfg ?? "") + "]", ex);
+                return "«" + name + "» не прочитано";
+            }
+        }
+
+        /// <summary>
+        /// Перенести свойство в конец списка уровня: одно Add3 с заменой — тем же типом и тем же сырым значением (выражение
+        /// массы остаётся выражением). После — сверка типа и значения; расхождение — ошибка в журнале.
+        /// </summary>
+        public bool MoveToEnd(string cfg, string name)
+        {
+            if (_dryRun) return false;
+            string level = string.IsNullOrEmpty(cfg) ? "общие" : cfg;
+            CustomPropertyManager m = Manager(cfg);
+            try
+            {
+                // Сырое значение — без пересчёта «SW-Mass@@…» (№24, контракт C11).
+                string raw = RawValue(cfg, name);
+                int type = m.GetType2(name);
+                string value = MaterialRecord.Normalize(raw);
+                _values.Clear();
+                int rc = m.Add3(name, type, value, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                if (rc != (int)swCustomInfoAddResult_e.swCustomInfoAddResult_AddedOrChanged)
+                {
+                    Failures++;
+                    Log.Error(string.Format("Порядок свойств: Add3 код {0}: {1} [{2}] {3}, тип {4}, значение «{5}»",
+                        rc, _docTitle, level, name, type, value));
+                    return false;
+                }
+                string after = RawValue(cfg, name);
+                int typeAfter = m.GetType2(name);
+                if (typeAfter != type || !string.Equals(MaterialRecord.Normalize(after ?? ""), value, StringComparison.Ordinal))
+                {
+                    Failures++;
+                    Log.Error(string.Format("Порядок свойств: {0} [{1}] {2} было тип {3} «{4}», стало тип {5} «{6}»",
+                        _docTitle, level, name, type, value, typeAfter, after));
+                }
+                Changes++;
+                Dirty();
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Failures++;
+                Log.Error("Порядок свойств: перенос " + name + " " + _docTitle + " [" + level + "]", ex);
+                return false;
+            }
+        }
+
+        /// <summary>Строка в журнал операций синхронизации.</summary>
+        public void Note(string text)
+        {
+            Operations.Add(_docTitle + ": " + text);
         }
 
         private static string Short(string s)

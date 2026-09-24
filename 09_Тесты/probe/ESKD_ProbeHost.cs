@@ -324,7 +324,11 @@ namespace ESKD.TestProbe
         {
             ModelDoc2 d = null;
             try { d = _app.ActiveDoc as ModelDoc2; } catch { }
-            Write("ActiveDocChangeNotify", d, null);
+            // Документ, открытый без окна (DocumentVisible = false), SolidWorks тоже делает «активным» на время открытия —
+            // событие приходит и для него (проба 23.09.2026). Видимость отличает его от окна, которое увидит конструктор.
+            string visible = "null";
+            try { if (d != null) visible = d.Visible ? "true" : "false"; } catch { }
+            Write("ActiveDocChangeNotify", d, "\"visible\":" + visible);
             return 0;
         }
 

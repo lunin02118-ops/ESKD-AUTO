@@ -311,10 +311,147 @@ class Performance(SwTestCase):
         with_addin = self._median(self._reopen_save_times(path, 3))
         with self.s.eskd_muted():
             without = self._median(self._reopen_save_times(path, 3))
-        report = {"reopen_save_with_addin_s": round(with_addin, 3), "reopen_save_without_s": round(without, 3)}
+        # Этапы долгих синхронизаций (надстройка пишет их от 1 с) — чтобы при провале было видно, что тормозит.
+        slow = [ln for ln in self.addin_log.new_lines() if " мс — " in ln]
+        report = {"reopen_save_with_addin_s": round(with_addin, 3), "reopen_save_without_s": round(without, 3),
+                  "slow_sync": slow[-8:]}
         self.path("performance_b01.json").write_text(__import__("json").dumps(report, ensure_ascii=False, indent=1),
                                                      encoding="utf-8")
         self.assertLessEqual(with_addin - without, 3.0, f"сохранение B-01 после открытия: {report}")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+
+class PropertyOrderOnSave(SwTestCase):
+    """Единый порядок пользовательских свойств (сверка SW API 23.09.2026, №23; решение владельца 24.09.2026): при
+    сохранении по команде конструктора — словарь SWPlus по порядку строк, затем служебные, в конце свои свойства
+    конструктора в прежнем порядке. Кнопки и открытие порядок не трогают; покупные и файлы других заказов — тоже."""
+
+    def assertCanonical(self, dump, what):
+        master = oracles.property_master()
+        for level, names in oracles.property_orders(dump).items():
+            self.assertEqual(oracles.canonical(names, master)[0], names, f"{what}: уровень «{level or 'общие'}»")
+
+    def _types(self, path, level, names):
+        with self.s.eskd_muted():
+            doc = self.s.open(path, readonly=True)
+            try:
+                cpm = doc.Extension.CustomPropertyManager(level)
+                return {n: (int(cpm.GetType2(n)), (com.prop_get(cpm, n)[0] or "").replace("\r\n", "\n")) for n in names}
+            finally:
+                self.s.close(doc)
+
+    @staticmethod
+    def _to_end(cpm, name):
+        """Перенести свойство в конец, как это делает MProp: удалить и добавить заново тем же текстом."""
+        raw, _ = com.prop_get(cpm, name)
+        rc = com.prop_set(cpm, name, raw)
+        if rc != 0:
+            raise RuntimeError(f"Add3({name}) вернул {rc}")
+
+    def test_P21_sync_button_writes_in_place(self):
+        """P21: кнопка «Синхронизировать» пишет существующее свойство на его строке. Раньше каждое записанное свойство
+        уезжало в конец списка «Свойств файла» (Add3 DeleteAndAdd) — «Масса_Таблица» вставала за свойство конструктора.
+        Сама кнопка порядок не наводит: без сохранения это лишняя правка."""
+        path, doc = self.open_copy(A01)
+        self.s.activate(doc)
+        cpm = doc.Extension.CustomPropertyManager("00")
+        self.assertEqual(0, com.prop_set(cpm, "Я_P21_проба", "x"), "своё свойство — в конец")
+        self.assertEqual(0, int(cpm.Add3("Масса_Таблица", com.CUSTOM_INFO_TEXT, "", com.PROP_ADD_REPLACE)), "масса стёрта на месте")
+        levels = {"00": cpm, "": doc.Extension.CustomPropertyManager("")}
+        before = {level: com.prop_names(m) for level, m in levels.items()}
+        self.assertGreater(int(com.call(self.s.eskd(), "SyncActiveDocumentSilent")), 0, "кнопка записала массу")
+        for level, m in levels.items():
+            after = com.prop_names(m)
+            # Кнопка вправе удалить прежнюю общую копию (как MProp) и дописать новое в конец; остальное — на своих строках.
+            kept = [n for n in before[level] if n in after]
+            self.assertEqual(kept, after[:len(kept)], f"уровень «{level or 'общие'}»: записанное — на своих строках, новое — в конце")
+        self.assertIn("SW-Mass@@", com.prop_get(cpm, "Масса_Таблица")[0] or "", "масса записана")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_P22_ctrl_s_puts_properties_in_single_order(self):
+        """P22: «Обозначение» (общие) и первое свойство исполнения «00» перенесены в конец, как это делает MProp, и
+        добавлены свои свойства конструктора трёх типов. После Ctrl+S каждый уровень на диске в едином порядке, свои
+        свойства — в конце в прежнем порядке, с прежними типом и значением; масса осталась выражением."""
+        path, doc = self.open_copy(A01)
+        general = doc.Extension.CustomPropertyManager("")
+        execution = doc.Extension.CustomPropertyManager("00")
+        self._to_end(general, "Обозначение")
+        self._to_end(execution, com.prop_names(execution)[0])
+        own = (("P22_моё", 30, "а\nб"), ("P22_дата", 64, "24.09.2026"), ("P22_число", 3, "7"))
+        for name, kind, value in own:
+            self.assertEqual(0, int(general.Add3(name, kind, value, com.PROP_DELETE_AND_ADD)), name)
+        types = {n: (int(general.GetType2(n)), (com.prop_get(general, n)[0] or "").replace("\r\n", "\n")) for n, _, _ in own}
+        doc.SetSaveFlag()
+        self.s.run_command(doc, 2)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.s.close(doc)
+        disk = self.persisted(path)
+        self.assertCanonical(disk, "после Ctrl+S")
+        self.assertEqual(["P22_моё", "P22_дата", "P22_число"], list(disk["general"])[-3:], "свои — в конце, как завёл конструктор")
+        self.assertEqual(types, self._types(path, "", [n for n, _, _ in own]), "тип и значение своих свойств")
+        self.assertIn("SW-Mass@@00@", V(disk, "Масса_Таблица", "00") or "", "масса — выражение")
+        self.assertRegex(re.sub(r"<[^>]*>", "", V(disk, "Масса_Таблица", "00", resolved=True) or ""), r"^\s*0\.\d+", "масса — число")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_P23_new_part_is_saved_in_single_order(self):
+        """P23: новая деталь из шаблона после «Сохранить как» (пересохранение надстройки) — все уровни на диске в едином
+        порядке. Раньше свойства шли в порядке записи: шаблон «Материал, Масса, Формат», «Масса_Таблица» раньше «Масса_ФБ»."""
+        doc, _ = build.plate(self.s, 200, 100, 4, SHEET4)
+        target = self.path("ПРТИ.468211.141 Пластина порядок.sldprt")
+        self.s.save_as(doc, target)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.s.close(doc)
+        self.assertCanonical(self.persisted(target), "новая деталь")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_P24_purchased_and_foreign_order_keep_their_order(self):
+        """P24: покупное изделие (свойства ВП) и скрытая деталь другого заказа, сохранённая вместе со сборкой, порядок
+        свойств не получают: надстройка не переставляет то, что ей не принадлежит. Своя скрытая деталь той же сборки —
+        получает."""
+        path, doc = self.open_copy("Электродвигатель АИР71А4.sldprt")
+        general = doc.Extension.CustomPropertyManager("")
+        self._to_end(general, com.prop_names(general)[0])
+        before = com.prop_names(general)
+        doc.SetSaveFlag()
+        self.s.run_command(doc, 2)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.s.close(doc)
+        self.assertEqual(before, list(self.persisted(path)["general"]), "покупное — порядок прежний")
+
+        root = self.path("_Заявки")
+        own_path = root / "111 Свой" / "02_Металл" / "И01_ПРТИ.468211.150" / "01_3D" / "ПРТИ.468211.151 Пластина своя.sldprt"
+        foreign_path = root / "222 Чужой" / "02_Металл" / "И01_ПРТИ.468211.160" / "01_3D" / "ПРТИ.468211.161 Пластина чужая.sldprt"
+        parts = []
+        for part_path in (own_path, foreign_path):
+            part, _ = build.plate(self.s, 120, 60, 3, None)
+            self.s.save_as(part, part_path)
+            self.s.wait_addin_idle(timeout=60.0)
+            parts.append(part)
+        asm, _ = build.assembly(self.s, [(own_path, 0, 0, 0), (foreign_path, 0.3, 0, 0)])
+        asm_path = own_path.parent / "ПРТИ.468211.150 СБ Узел.sldasm"
+        self.s.save_as(asm, asm_path)
+        self.s.wait_addin_idle(timeout=60.0)
+        for part in parts:
+            self.s.sw.CloseDoc(part.GetTitle)
+        self.s._opened[:] = [d for d in self.s._opened if all(d is not p for p in parts)]
+        self.wait_idle(2.0)
+        orders = {}
+        for part_path in (own_path, foreign_path):
+            hidden = self.s.sw.GetOpenDocumentByName(str(part_path))
+            self.assertIsNotNone(hidden, f"деталь в памяти сборки: {part_path.name}")
+            cpm = hidden.Extension.CustomPropertyManager("")
+            self._to_end(cpm, "Обозначение")
+            orders[part_path] = com.prop_names(cpm)
+            hidden.SetSaveFlag()
+        self.s.activate(asm)
+        err, warn = com.ref_int(), com.ref_int()
+        asm.Save3(com.SAVE_SILENT | 4, err, warn)  # swSaveAsOptions_SaveReferenced
+        self.s.wait_addin_idle(timeout=60.0)
+        self.s.close_all()
+        own = self.persisted(own_path)
+        self.assertCanonical(own, "своя скрытая деталь")
+        foreign = list(self.persisted(foreign_path)["general"])
+        self.assertEqual(orders[foreign_path], foreign[:len(orders[foreign_path])], "деталь другого заказа — порядок прежний")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
 

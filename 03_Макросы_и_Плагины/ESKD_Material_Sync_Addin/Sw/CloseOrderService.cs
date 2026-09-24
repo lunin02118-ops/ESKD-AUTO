@@ -270,11 +270,10 @@ namespace ESKD.MaterialSync.Sw
             {
                 string models = Path.Combine(folder, LzkNaming.ModelsFolder);
                 if (!Directory.Exists(models)) continue;
-                string assembly = Directory.GetFiles(models, "*.sldasm", SearchOption.AllDirectories)
-                    .Where(f => !Path.GetFileName(f).StartsWith("~$", StringComparison.Ordinal))
-                    .OrderBy(f => f.Length).FirstOrDefault(ProductLocator.IsMainAssembly)
-                    ?? Directory.GetFiles(models, "*.sldasm").Where(f => !Path.GetFileName(f).StartsWith("~$", StringComparison.Ordinal))
-                        .OrderBy(f => f.Length).FirstOrDefault();
+                // Главная сборка — по шифру папки изделия; прежний выбор «….00.000, иначе самая короткая» отдавал комплекту
+                // изделия «ПРТИ.468211.100» подсборку «108 СБ Узел» (e2e Y06, 24.09.2026).
+                string assembly = ProductLocator.MainAssembly(folder,
+                    Directory.GetFiles(models, "*.sldasm", SearchOption.AllDirectories));
                 if (assembly == null) continue;
                 string cipher = LzkNaming.Cipher(folder, assembly);
                 string product = folder;
@@ -326,25 +325,42 @@ namespace ESKD.MaterialSync.Sw
                 // (боевой прогон 18.09.2026 — 20 моделей и 0 чертежей).
                 object names = null;
                 pack.GetDocumentNames(out names);
+                string[] listed = (names as string[]) ?? new string[0];
+                // Pack and Go SolidWorks 2025 SP3 перечисляет только сборку и чертежи, без деталей и подсборок: состав
+                // комплекта — зависимости сборки, недостающее добавляется явно (e2e Y06, 24.09.2026).
+                string[] models = Dependencies(doc);
                 // Компонент мог прийти из другой папки при своём одноимённом файле (открытый документ другого заказа
-                // подменяет свой) или не найтись вовсе: такой комплект в архив не идёт (№16).
-                List<string> swapped = OrderArchive.Substituted((names as string[]) ?? new string[0],
+                // подменяет свой) или не найтись вовсе: такой комплект в архив не идёт (№16). KitMissing(…, null) —
+                // весь состав без повторов и без виртуальных деталей.
+                List<string> swapped = OrderArchive.Substituted(OrderArchive.KitMissing(listed.Concat(models), null),
                     Directory.GetFiles(product, "*.sld*", SearchOption.AllDirectories), File.Exists);
                 if (swapped.Count > 0) return string.Join("; ", swapped.Take(10).ToArray());
+                List<string> missing = OrderArchive.KitMissing(models, listed);
+                List<string> drawings = Drawings(listed.Concat(missing), product);
+                List<string> wanted = OrderArchive.KitMissing(listed.Concat(missing).Concat(drawings), null);
+                List<string> clash = OrderArchive.KitCollisions(wanted);
+                if (clash.Count > 0)
+                    return "разные файлы с одним именем, в одну папку комплекта не поместятся — " + string.Join("; ", clash.Take(5).ToArray());
+                List<string> extra = missing.Concat(drawings).ToList();
+                // Один вызов: повторный AddExternalDocuments не обещает дописать к прежнему списку.
+                if (extra.Count > 0 && !pack.AddExternalDocuments(extra.ToArray()))
+                    return "Pack and Go не принял модели и чертежи комплекта (" + extra.Count + ")";
                 pack.SetSaveToName(true, kit);
-                string[] wanted = Drawings(pack, names as string[]);
-                // В журнал — из чего собирается комплект: по этой строке видно, нашёл ли SolidWorks чертежи.
+                // В журнал — из чего собирается комплект: по этой строке видно, что SolidWorks нашёл сам.
                 Log.Info("Комплект «" + Path.GetFileName(kit) + "»: Pack and Go насчитал " +
-                    (wanted == null ? "?" : wanted.Length.ToString(CultureInfo.InvariantCulture)) + " документов, из них чертежей " +
-                    (wanted == null ? "?" : wanted.Count(n => (n ?? "").EndsWith(".slddrw", StringComparison.OrdinalIgnoreCase))
-                        .ToString(CultureInfo.InvariantCulture)));
+                    listed.Length.ToString(CultureInfo.InvariantCulture) + " документов, зависимостей сборки " +
+                    models.Length.ToString(CultureInfo.InvariantCulture) + ", добавлено моделей " +
+                    missing.Count.ToString(CultureInfo.InvariantCulture) + " и чертежей " +
+                    drawings.Count.ToString(CultureInfo.InvariantCulture));
                 doc.Extension.SavePackAndGo(pack);
                 string[] written = Directory.GetFiles(kit);
                 if (written.Length == 0) return "Pack and Go не записал ни одного файла";
                 if (!written.Any(f => f.EndsWith(".sldasm", StringComparison.OrdinalIgnoreCase)))
                     return "в комплекте нет сборки";
-                if (wanted != null && written.Length < wanted.Length)
-                    return "в комплекте " + written.Length + " файлов из " + wanted.Length;
+                List<string> absent = OrderArchive.KitAbsent(wanted, written);
+                if (absent.Count > 0)
+                    return "в комплекте нет " + absent.Count + " из " + wanted.Count + " файлов: " +
+                        string.Join("; ", absent.Take(10).Select(Path.GetFileName).ToArray());
                 return "";
             }
             catch (Exception ex)
@@ -363,39 +379,40 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>
-        /// Чертежи комплекта. `IncludeDrawings` полагается на поисковые пути SolidWorks, а на боевом
-        /// заказе они не настроены: Pack and Go насчитал 20 моделей и ни одного чертежа. Поэтому чертежи
-        /// ищем сами — все `.slddrw` в папках моделей комплекта — и добавляем в комплект явно.
+        /// Чертежи комплекта, которых нет в <paramref name="documents"/>. `IncludeDrawings` полагается на поисковые пути
+        /// SolidWorks, а на боевом заказе они не настроены: Pack and Go насчитал 20 моделей и ни одного чертежа. Поэтому
+        /// чертежи ищем сами — все `.slddrw` в папках моделей комплекта внутри папки изделия.
         /// </summary>
-        private static string[] Drawings(PackAndGo pack, string[] models)
+        private static List<string> Drawings(IEnumerable<string> documents, string product)
         {
-            if (models == null) return null;
-            List<string> all = new List<string>(models);
-            HashSet<string> folders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            HashSet<string> known = new HashSet<string>(models, StringComparer.OrdinalIgnoreCase);
-            foreach (string model in models)
-            {
-                string folder = Path.GetDirectoryName(model ?? "") ?? "";
-                if (folder.Length > 0 && Directory.Exists(folder)) folders.Add(folder);
-            }
+            List<string> known = documents.ToList();
+            HashSet<string> seen = new HashSet<string>(known, StringComparer.OrdinalIgnoreCase);
             List<string> drawings = new List<string>();
-            foreach (string folder in folders)
+            foreach (string folder in OrderArchive.KitDrawingFolders(known, product))
+            {
+                if (!Directory.Exists(folder)) continue;
                 foreach (string drawing in Directory.GetFiles(folder, "*.slddrw"))
                 {
                     if (Path.GetFileName(drawing).StartsWith("~$", StringComparison.Ordinal)) continue;
-                    if (known.Add(drawing)) drawings.Add(drawing);
+                    if (seen.Add(drawing)) drawings.Add(drawing);
                 }
-            if (drawings.Count == 0) return all.ToArray();
-            try
-            {
-                pack.AddExternalDocuments(drawings.ToArray());
-                all.AddRange(drawings);
             }
-            catch (Exception ex)
+            return drawings;
+        }
+
+        /// <summary>Файлы, от которых зависит сборка (со вложенными), по текущим правилам поиска SolidWorks.</summary>
+        private static string[] Dependencies(ModelDoc2 doc)
+        {
+            object[] pairs = doc.GetDependencies2(true, true, false) as object[];
+            if (pairs == null) return new string[0];
+            List<string> paths = new List<string>();
+            // Пары «имя, путь».
+            for (int i = 1; i < pairs.Length; i += 2)
             {
-                Log.Error("Закрытие заказа: чертежи в комплект", ex);
+                string path = pairs[i] as string;
+                if (!string.IsNullOrEmpty(path)) paths.Add(path);
             }
-            return all.ToArray();
+            return paths.ToArray();
         }
 
         // ------------------------------------------------------------------ копия, сверка, перенос

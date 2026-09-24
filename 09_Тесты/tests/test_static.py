@@ -553,14 +553,67 @@ class StaticRepository(StaticTestCase):
         self.assertIn("IsLoaded()", state, "незагруженный — не погашенный")
 
     def test_T0_raw_property_read_without_recalculation(self):
-        """T0 (сверка SW API 23.09.2026, №24; e2e P20): сырое значение свойства читается без пересчёта (Get4 с
-        UseCached = true) — пересчёт «SW-Mass» каждого исполнения библиотечной детали растягивал Ctrl+S до ~28 с;
-        с пересчётом читается только вычисленное."""
+        """T0 (сверка SW API 23.09.2026, №24; e2e P20): сырое значение свойства читается без пересчёта. Get4 с
+        UseCached = false пересчитывал «SW-Mass» каждого исполнения библиотечной детали — Ctrl+S ~31 с; но и с
+        UseCached = true первое чтение выражения массы после открытия файла пересчитывает её (проба 24.09.2026: 79
+        исполнений — 8,8 с, этап «масса» — 4,5 с при Ctrl+S). Сырое значение отдаёт без пересчёта CustomInfo2 — так
+        читает и пишет MProp (79 исполнений — 0,17 с; контракт C11). Get4/Get6 — только для вычисленного и для признака
+        связи с родителем у производной конфигурации."""
         code = re.sub(r"//[^\n]*", "", (ADDIN / "Sw" / "PropertyWriter.cs").read_text(encoding="utf-8-sig"))
-        self.assertIn("Get4(name, !fresh,", code, "пересчёт только по запросу")
         self.assertRegex(code, r"public string Raw\([^)]*\)\s*\{\s*string\[\] pair = Values\(cfg, name, false\);", "сырое — из кэша")
         self.assertRegex(code, r"public string Resolved\([^)]*\)\s*\{\s*string\[\] pair = Values\(cfg, name, true\);",
                          "вычисленное — свежее")
+        self.assertRegex(code, r"private string RawValue\(string cfg, string name\)\s*\{[^}]*get_CustomInfo2\(",
+                         "сырое — CustomInfo2")
+        self.assertEqual(["Get4(name, false,"], re.findall(r"Get4\(name, [^,]+,", code), "Get4 — только вычисленное, свежее")
+        m = re.search(r"public string MoveRefusal\(", code)
+        refusal = code[m.start():matching_brace(code, code.index("{", m.start()))]
+        self.assertEqual(1, code.count(".Get6("), "Get6 — только признак связи в MoveRefusal")
+        self.assertRegex(refusal, r"if \(derived\)\s*\{[^}]*\.Get6\(", "и только у производной конфигурации")
+        self.assertEqual(4, len(re.findall(r"\bRawValue\(", code)) - 1,
+                         "RawValue: Values, MoveRefusal, перенос — до и после записи")
+
+    def test_T0_property_order_only_inside_commanded_saves(self):
+        """T0 (сверка SW API 23.09.2026, №23; решение владельца 24.09.2026): существующее свойство пишется на своей строке
+        (Add3 ReplaceValue), с заменой — только новое, запасной путь и перенос в конец. Единый порядок наводится только в
+        сохранении по команде конструктора: OrderFor задают лишь OnDocSave и SyncAndResave, Restore зовут лишь SyncModel и
+        «Применить и сохранить» окна «Проверить изделие»."""
+        writer = re.sub(r"//[^\n]*", "", (ADDIN / "Sw" / "PropertyWriter.cs").read_text(encoding="utf-8-sig"))
+        m = re.search(r"public bool Set\(string cfg, string name, string value\)\s*\{", writer)
+        body = writer[m.end():matching_brace(writer, m.end() - 1)]
+        self.assertLess(body.index("swCustomPropertyReplaceValue"), body.index("swCustomPropertyDeleteAndAdd"),
+                        "Set: сначала запись на месте")
+        self.assertEqual(3, writer.count("swCustomPropertyDeleteAndAdd"),
+                         "DeleteAndAdd — новое свойство, запасной путь Set и перенос в конец")
+        order_for, restore = {}, {}
+        for src in addin_sources():
+            code = re.sub(r"//[^\n]*", "", src.read_text(encoding="utf-8-sig"))
+            for m in re.finditer(r"\bOrderFor\s*=\s*(\w+)", code):
+                order_for.setdefault(src.name, []).append(m.group(1))
+            n = len(re.findall(r"PropertyOrderService\.Restore\(", code))
+            if n:
+                restore[src.name] = n
+        self.assertEqual({"EventHub.cs": ["targetPath", "by"]}, order_for, "кто просит порядок: SyncAndResave, OnDocSave")
+        self.assertEqual({"SyncService.cs": 1, "ProductReviewService.cs": 1}, restore, "где наводится порядок")
+
+    def test_T0_property_order_oracle_matches_addin(self):
+        """T0 (№23): независимый оракул порядка (Python) совпадает с надстройкой — группы мастер-списка в том же порядке,
+        случаи property_order_cases.txt проходит так же, как юнит-тест PropertyOrderTests."""
+        from eskd_e2e import oracles
+
+        code = (ADDIN / "Core" / "PropertyOrder.cs").read_text(encoding="utf-8-sig")
+        m = re.search(r"IEnumerable<string>\[\] groups =\s*\{(.*?)\};", code, flags=re.S)
+        self.assertEqual(["Names", *oracles.MASTER_GROUPS], re.findall(r"\.(\w+)", m.group(1)), "группы мастер-списка")
+        master = oracles.property_master()
+        self.assertEqual(93, len(master), master)
+        self.assertEqual(["Операции", "Ревизия", "Габарит", "ЕСКД_Принято"], master[-4:], "поздние имена — последние")
+        text = (paths.TESTS / "unit" / "data" / "property_order_cases.txt").read_text(encoding="utf-8")
+        cases = re.findall(r"^current=(.*)\ncanonical=(.*)\nmove=(.*)$", text, flags=re.M)
+        self.assertGreaterEqual(len(cases), 10)
+        split = lambda v: v.split("|") if v else []  # noqa: E731
+        for current, want, move in cases:
+            with self.subTest(current=current):
+                self.assertEqual((split(want), split(move)), oracles.canonical(split(current), master))
 
     def test_T0_export_opens_drawings_without_window(self):
         """T0 (сверка SW API 23.09.2026, №28, шаг 2; e2e X20): выгрузка открывает чертёж без окна и возвращает прежнюю
@@ -642,6 +695,18 @@ class StaticRepository(StaticTestCase):
         self.assertIn("до выполнения отложенной задачи", (ADDIN / "Sw" / "EventHub.cs").read_text(encoding="utf-8-sig"),
                       "снятые задачи — в журнале")
         self.assertIn("public static void Abort(string reason)", lzk, "ведомость ЛЗК можно прервать снаружи")
+
+    def test_T0_export_returns_to_product_after_closing_its_windows(self):
+        """T0 (сверка SW API 23.09.2026, №15, №28; e2e X19, X20): выгрузка сначала закрывает окна, которые открыла сама,
+        и только потом делает изделие активным — закрытое окно SolidWorks сменяет следующим по порядку, окном
+        конструктора (прогон r34 24.09.2026). Чертёж без окна показывается только на время записи PDF и скрывается
+        в finally: SolidWorks 2025 не пишет PDF из невидимого чертежа (проба 24.09.2026)."""
+        code = re.sub(r"//[^\n]*", "", (ADDIN / "Sw" / "ExportService.cs").read_text(encoding="utf-8-sig"))
+        self.assertRegex(code, r"CloseOwnWindows\(app, items\);\s*Activate\(app, path\);", "сначала закрыть, потом активировать")
+        m = re.search(r"private static void Pdf\(", code)
+        pdf = code[m.start():matching_brace(code, code.index("{", m.start()))]
+        self.assertLess(pdf.index("drawing.Visible = true"), pdf.index("drawing.Extension.SaveAs("), "показать до записи PDF")
+        self.assertRegex(pdf, r"finally\s*\{\s*if \(shown\)[\s\S]*drawing\.Visible = false", "скрыть в finally")
 
     def test_T0_export_survives_one_bad_document(self):
         """T0 (сверка SW API 23.09.2026, №29 и №20): сбой одного документа не обрывает выгрузку. Вызовы SolidWorks и
@@ -993,7 +1058,7 @@ class StaticRepository(StaticTestCase):
             return set(re.findall(r'"([^"]+)"', body)) | {consts[ref.split(".")[-1]] for ref in re.findall(r"\b[A-Z]\w*\.\w+", body)}
 
         groups = {a: declared(a) for a in ("DefaultNames", "SwPlusServiceNames", "LegacyExtraNames", "AddinNames",
-                                           "TemplateNames", "ExtraNames", "CutListNames")}
+                                           "TemplateNames", "ExtraNames", "CutListNames", "LateNames")}
         self.assertEqual({"Материал_Строка", "Формат_до_БЧ", "Примечание_до_БЧ", "Запись_БЧ"}, groups["AddinNames"])
         known = set().union(*groups.values())
 

@@ -290,7 +290,8 @@ namespace ESKD.MaterialSync.Sw
             for (int i = 0; i < _files.Count; i++)
             {
                 ReviewFile f = _files[i];
-                _save.Items.Add(f.FileName + (f.Edited ? "   — в файле ваши несохранённые правки: галочка снята, сохраните его сами" : ""), _checked[i]);
+                _save.Items.Add(f.FileName + (f.Edited ? "   — " + (f.Older ? SwFileVersion.OlderNote : "в файле ваши несохранённые правки") +
+                    ": галочка снята, сохраните его сами" : ""), _checked[i]);
             }
             _save.ItemCheck += (s, e) =>
             {

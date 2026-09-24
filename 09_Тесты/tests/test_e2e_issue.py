@@ -189,7 +189,9 @@ class Issue(SwTestCase):
 
     # ------------------------------------------------------------------ Y: закрытие заказа
     def test_Y01_close_packs_order_and_moves_it_to_archive(self):
-        """Y01: комплекты Pack and Go, сверка, архив Y:\\<год>\\<заказ> и папка в _Сдано с _Архив.txt (Т-45…Т-47)."""
+        """Y01: комплекты Pack and Go, сверка, архив Y:\\<год>\\<заказ> и папка в _Сдано с _Архив.txt (Т-45…Т-47).
+        Сборка комплекта открывается из архива сама: все её компоненты лежат рядом. 24.09.2026 Pack and Go
+        SolidWorks 2025 SP3 перечислял только сборку и чертежи, и комплект уезжал в архив без единой детали."""
         order, product, asm = self._order(issued=True)
         archive = self.s.run_dir / self._case_name() / "archive"
         archive.mkdir(parents=True, exist_ok=True)
@@ -209,6 +211,16 @@ class Issue(SwTestCase):
         self.assertTrue(any(p.lower().endswith(".sldasm") for p in packed), f"сборка в комплекте: {packed}")
         self.assertTrue(any(p.lower().endswith(".slddrw") for p in packed), f"чертежи в комплекте: {packed}")
         self.assertTrue((target / "02_Металл" / PRODUCT / "01_3D" / ASM).is_file(), "файлы заказа скопированы")
+        # Папка заказа уже в «_Сдано»: записанный в сборке путь компонентов не существует, и SolidWorks найдёт их
+        # только рядом со сборкой комплекта.
+        top = self.s.open(kit / ASM, readonly=True)
+        try:
+            deps = [str(p) for p in com.as_list(com.call(top, "GetDependencies2", True, True, False))[1::2]]
+        finally:
+            self.s.close(top)
+        self.assertGreaterEqual(len(deps), 8, f"компоненты сборки комплекта: {deps}")
+        outside = [p for p in deps if Path(p).parent != kit]
+        self.assertEqual([], outside, f"сборка комплекта берёт компоненты не из комплекта; в комплекте: {packed}")
 
         done = Path(done)
         self.assertFalse(order.exists(), "папка заказа убрана из рабочего каталога")
@@ -263,7 +275,8 @@ class Issue(SwTestCase):
         status = self._close(order, archive)
         self.assertTrue(status.startswith("error|"), status)
         self.assertIn("одноимённ", status, status)
-        self.assertIn(stand, status, status)
+        # Путь документа SolidWorks отдаёт в регистре файла на диске («.SLDPRT»), а не как его назвали в тесте.
+        self.assertIn(stand.lower(), status.lower(), status)
         self.assertTrue(order.is_dir(), "папка заказа на месте")
         self.assertEqual([], list(archive.iterdir()), "в архиве пусто")
         self.assertFalse((order.parent / "_tmp" / ORDER).exists(), "временная папка не заведена")
@@ -274,6 +287,54 @@ class Issue(SwTestCase):
         kit = Path(status.split("|")[1]) / "Комплекты" / CIPHER
         self.assertIsNone(oracles.value(oracles.read_persisted(self.s, kit / stand), "Заказ"), "в архив ушла своя Стойка")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_Y07_namesake_from_other_order_stops_check_export_and_lzk(self):
+        """Y07 (№16, решение владельца 24.09.2026 — «как правильно»): открыта деталь другого заказа с тем же именем, и
+        сборка заказа А взяла её вместо своей. Раньше проверка писала общее «ссылка на другой заказ», выгрузка молча
+        пропускала «чужую» деталь, а ЛЗК брала в книгу её размеры. Теперь проверка называет подмену и что сделать,
+        выгрузка и ЛЗК останавливаются до записи файлов."""
+        from eskd_e2e import build
+
+        _, product, asm = self._order(issued=False)
+        short = self._case_name().split("_")[1]
+        other = f"{short}/_Заявки/2026-011 Другой/02_Металл/{PRODUCT}/01_3D"
+        for src in sorted(Path(paths.FIXTURES_A).iterdir()):
+            if src.suffix.lower() in (".sldprt", ".sldasm"):
+                self.s.workspace_copy(src, subdir=other)
+        stand = "ПРТИ.468211.102 Стойка.sldprt"
+        part = self.s.open(self.s.run_dir / other / stand)
+        build.props(part, {"Заказ": "Б"})
+        self.s.save(part)
+        doc = self.s.open(asm)
+        self.s.activate(doc)
+        comps = [str(com.call(c, "GetPathName")) for c in com.as_list(com.dyn(doc).GetComponents(False)) or []]
+        self.assertTrue(any(p.lower() == str(self.s.run_dir / other / stand).lower() for p in comps),
+                        f"предусловие: сборка А взяла Стойку заказа Б: {comps}")
+
+        com.call(self.s.eskd(), "CheckProductSilent")
+        text = (product / "_Проверка.txt").read_text(encoding="utf-8-sig")
+        self.assertIn("одноимённый файл из другой папки", text, text[-2000:])
+        # Имена — в регистре файла на диске («.SLDPRT»).
+        self.assertIn(stand.lower(), text.lower(), text[-2000:])
+
+        before = {p for p in product.rglob("*") if p.is_file()}
+        com.call(self.s.eskd(), "ExportProductSilent")
+        status = str(com.call(self.s.eskd(), "ExportStatus"))
+        self.assertTrue(status.startswith("error|") and "одноимённ" in status, status)
+        self.assertIn(stand.lower(), status.lower(), status)
+
+        com.call(self.s.eskd(), "BuildLzkSilent")
+        deadline = time.time() + 120
+        status = "running"
+        while time.time() < deadline and status == "running":
+            time.sleep(1)
+            status = str(com.call(self.s.eskd(), "LzkStatus"))
+        self.assertTrue(status.startswith("error|") and "одноимённ" in status, status)
+        after = {p for p in product.rglob("*") if p.is_file()}
+        self.assertEqual(sorted(str(p) for p in after - before if p.name != "_Проверка.txt"), [],
+                         "выгрузка и ЛЗК файлов не писали")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+        self.s.close_all()
 
     def test_Y03_unavailable_archive_keeps_order_untouched(self):
         """Y03: архивный диск недоступен — заказ не тронут, объяснение понятное (Т-46)."""
