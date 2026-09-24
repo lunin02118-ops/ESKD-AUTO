@@ -26,6 +26,8 @@ namespace ESKD.Tests
             Assert.AreEqual("1", DesignationParser.ExecutionFlag("02 Покраска", "02", true), "первое слово имени — номер");
             Assert.AreEqual("2", DesignationParser.ExecutionFlag("Покраска", "01", true), "номер у родителя — вписан");
             Assert.AreEqual("2", DesignationParser.ExecutionFlag("1", "01", true), "MProp дал бы «-1», а нужно «-01»");
+            Assert.AreEqual("2", DesignationParser.ExecutionFlag("001", "001", true), "SaveDRW при «1» взял бы «-00» — два первых знака");
+            Assert.AreEqual("2", DesignationParser.ExecutionFlag("101 Покраска", "101", true), "трёхзначный номер — вписан");
             Assert.AreEqual("0", DesignationParser.ExecutionFlag("00", "", false), "базовое");
             Assert.AreEqual("0", DesignationParser.ExecutionFlag("01", "01", false), "номер уже в имени файла");
         }
