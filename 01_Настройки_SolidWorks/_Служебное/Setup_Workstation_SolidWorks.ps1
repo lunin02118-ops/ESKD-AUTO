@@ -36,6 +36,12 @@
     Auto — аппаратный конвейер графики включается только на дискретной видеокарте NVIDIA или AMD Radeon Pro
     (по умолчанию); Safe — конвейер выключен, предупреждение о программном OpenGL остаётся: этот режим нужен, когда
     после настройки SolidWorks не запускается или окно чёрное; Hardware — включить конвейер на любой видеокарте.
+.PARAMETER Language
+    Язык интерфейса SolidWorks и Drew: Russian или English. По умолчанию — прежний выбор (ESKD_Install\Language),
+    иначе русский. SolidWorks берёт язык из регионального формата пользователя Windows: для русского на ПК с другим
+    форматом установщик переключает формат пользователя на «Русский (Россия)» (Set-Culture, без прав администратора),
+    если в SolidWorks установлен русский язык. Системную кодовую страницу для макросов SWPlus только проверяет.
+    -DrewRussian — прежний синоним -Language Russian.
 .PARAMETER LocalRoot
     Локальная копия (по умолчанию %LOCALAPPDATA%\ESKD\Toolkit).
 .PARAMETER RegistryRoot
@@ -66,6 +72,7 @@ param (
     [switch]$AllowUnpublished,
     [switch]$SwInternetBlock,
     [switch]$DrewRussian,
+    [ValidateSet("Russian", "English", "")][string]$Language = "",
     [switch]$Utf8Output,
     [ValidateSet("Auto", "Safe", "Hardware")][string]$Graphics = "Auto",
     [string]$LocalRoot = "",
@@ -352,8 +359,13 @@ if (-not $Firm) {
     Write-Fail "Не указана организация (-Firm)."
     exit 1
 }
+# Язык интерфейса: ключ, иначе прежний выбор, иначе русский (решение владельца 25.09.2026). В переменную с ValidateSet —
+# только допустимые значения.
+if (-not $Language -and $DrewRussian) { $Language = "Russian" }
+if (-not $Language) { $Language = if ([string](Get-RegValue $install "Language") -eq "English") { "English" } else { "Russian" } }
 Write-Host "Конструктор:          $Author" -ForegroundColor White
 Write-Host "Организация:          $Firm" -ForegroundColor White
+Write-Host "Язык интерфейса:      $(if ($Language -eq 'English') { 'английский' } else { 'русский' })" -ForegroundColor White
 
 $failures = 0
 
@@ -1036,14 +1048,66 @@ if ($SwInternetBlock) {
     Write-Info "Пропущено (галочка снята)."
 }
 
-# 9. Русский интерфейс Drew (опция, галочка в окне)
-Write-Step "[9/9] Русский интерфейс Drew..."
-if ($DrewRussian) {
-    [Environment]::SetEnvironmentVariable('DREW_LANG', 'ru', 'User')
-    Write-Ok "DREW_LANG=ru для пользователя $env:USERNAME (действует со следующего запуска SolidWorks)."
+# 9. Язык интерфейса SolidWorks и Drew (выбор в окне; решение владельца 25.09.2026). После профиля [3/9]: сброс и .reg
+# ставят «Use English language» = 0, здесь пишется итоговое значение. Правило выбора языка — Get-EskdLanguagePlan.
+Write-Step "[9/9] Язык интерфейса SolidWorks и Drew: $(if ($Language -eq 'English') { 'английский' } else { 'русский' })..."
+$swFolder = [string](Get-RegValue "HKLM:\SOFTWARE\SolidWorks\$SwVersion\Setup" "SolidWorks Folder")
+$ruLangDir = if ($swFolder) { Join-Path $swFolder "lang\russian" } else { "" }
+$ruPack = [bool]$ruLangDir -and @(Get-ChildItem -LiteralPath $ruLangDir -Filter "*.dll" -File -ErrorAction SilentlyContinue).Count -gt 0
+$culture = Get-Culture
+$acp = [string](Get-RegValue "HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage" "ACP")
+$plan = Get-EskdLanguagePlan -Language $Language -UserLcid $culture.LCID -RussianPack $ruPack -Acp $acp
+Set-Reg "$swRoot\General" "Use English language" $plan.UseEnglish "DWord"
+if ($Language -eq "English") {
+    Write-Ok "SolidWorks: английский интерфейс («Use English language» = 1). Формат Windows не меняется."
+} elseif (-not $swFolder -or -not (Test-Path -LiteralPath $swFolder)) {
+    # Папка из реестра может остаться после удаления SolidWorks: тогда это не «нет русского пакета».
+    Write-Warn ("SolidWorks $SwVersion не найден на этом ПК (HKLM\SOFTWARE\SolidWorks\$SwVersion\Setup, " +
+                "«SolidWorks Folder» = «$swFolder») - русский язык не проверен, формат Windows не меняется.")
+} elseif (-not $ruPack) {
+    Write-Warn ("В SolidWorks не установлен русский язык (нет $ruLangDir): интерфейс останется английским, формат Windows " +
+                "не меняется. Администратору: Панель управления -> Программы и компоненты -> SOLIDWORKS -> Изменить -> " +
+                "Языки SOLIDWORKS -> Русский (нужен дистрибутив той же версии).")
+} elseif ($plan.RussianFormat) {
+    Write-Ok "SolidWorks: русский интерфейс (формат Windows «$($culture.Name)» русский, «Use English language» = 0)."
+} elseif ($sandbox) {
+    Write-Info "Тестовый корень реестра: формат Windows не меняется (сейчас «$($culture.Name)»)."
 } else {
-    Write-Info "Пропущено (галочка снята)."
+    # SolidWorks берёт язык из регионального формата пользователя, а не из языка Windows: без смены формата меню
+    # останется английским. Set-Culture меняет формат только у этого пользователя, права администратора не нужны.
+    try {
+        Set-Culture -CultureInfo ru-RU -ErrorAction Stop
+        Write-Ok ("Формат Windows: «$($culture.Name)» -> «ru-RU» (Русский, Россия) - SolidWorks будет на русском. " +
+                  "Во всех программах пользователя теперь десятичная запятая, даты ДД.ММ.ГГГГ, рубль в денежном формате.")
+        $ps51 = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+        $lcid = "$(& $ps51 -NoProfile -Command '[Globalization.CultureInfo]::CurrentCulture.LCID' 2>$null)".Trim()
+        if ($lcid -ne "1049") { Write-Warn "Новые программы формат ещё не видят - выйдите из учётной записи Windows и войдите снова." }
+    } catch {
+        Write-Warn ("Формат Windows не переключён: $($_.Exception.Message) Вручную (Windows 10 и 11): Win+R -> intl.cpl -> " +
+                    "вкладка «Форматы» -> Русский (Россия) -> ОК, затем перезапустить SolidWorks.")
+    }
 }
+if ($sandbox) {
+    Write-Info "Тестовый корень реестра: DREW_LANG не меняется."
+} else {
+    [Environment]::SetEnvironmentVariable('DREW_LANG', $plan.DrewLang, 'User')
+    Write-Ok "Drew: DREW_LANG=$($plan.DrewLang) для пользователя $env:USERNAME."
+}
+if (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
+    Write-Warn "SolidWorks открыт: язык сменится после его перезапуска."
+}
+# Макросы SWPlus — VBA с русскими строками в кодовой странице 1251: при другой системной кодовой странице они показывают и
+# пишут в свойства «кракозябры». Системную локаль меняет только администратор с перезагрузкой — здесь проверка.
+$acpNote = ""
+if (-not $plan.AcpOk) {
+    $acpNote = ("Язык программ, не поддерживающих Юникод, - не русский (кодовая страница $(if ($acp) { $acp } else { 'не прочитана' })): " +
+                "макросы SWPlus (MProp, DProp, SpecEditor) покажут и запишут в свойства нечитаемые символы вместо русских букв. " +
+                "Администратору: Панель управления -> Региональные стандарты -> Дополнительно -> Изменить язык системы -> " +
+                "Русский (Россия), флажок «Бета-версия: Юникод (UTF-8)» снять, перезагрузить ПК.")
+} elseif ([System.Text.Encoding]::Default.CodePage -ne 1251) {
+    $acpNote = "Язык системы уже русский, но ПК после смены не перезагружен: перезагрузите ПК, иначе макросы SWPlus покажут нечитаемые символы."
+}
+if ($acpNote) { Write-Warn $acpNote } else { Write-Info "Язык программ без Юникода - русский (1251): макросы SWPlus работают." }
 
 # Сведения об установке
 Set-Reg $install "SourceRoot" $SourceRoot
@@ -1052,11 +1116,14 @@ Set-Reg $install "ReleaseVersion" $release.Version
 Set-Reg $install "ReleaseCommit" $release.Commit
 Set-Reg $install "SwVersion" $SwVersion
 Set-Reg $install "Author" $Author
+Set-Reg $install "Language" $Language
 Set-Reg $install "InstalledAt" (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Set-Reg $install "LastResult" $(if ($failures) { "FAILED" } else { "OK" })
 Set-Reg $install "LastLog" $logPath
 
 Write-Host ""
+# Предупреждение о языке системы повторяется перед итогом: в середине журнала его легко пропустить.
+if ($acpNote) { Write-Warn $acpNote }
 if ($failures) {
     Write-Host "=================================================================" -ForegroundColor Red
     Write-Host " НАСТРОЙКА ЗАВЕРШЕНА С ОШИБКАМИ: $failures. Сообщения выше." -ForegroundColor Red
