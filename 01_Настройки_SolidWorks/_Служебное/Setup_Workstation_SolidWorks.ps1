@@ -993,8 +993,9 @@ if ($SwInternetBlock) {
     if (-not (Test-Path -LiteralPath $sb)) {
         Write-Warn "Пакет SwInternetBlock не найден: $sb"
     } elseif ($machine) {
-        foreach ($mode in "apply", "hosts-apply") {
-            $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sb -Mode $mode 2>&1
+        # Не $mode: переменные PowerShell без учёта регистра, а у параметра $Mode ValidateSet Install/Check/Uninstall.
+        foreach ($sbMode in "apply", "hosts-apply") {
+            $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sb -Mode $sbMode 2>&1
             foreach ($l in $out) { if ("$l".Trim()) { Write-Info "  $l" } }
         }
         $cnt = @(Get-NetFirewallRule -DisplayName 'Block SW Internet*' -ErrorAction SilentlyContinue).Count

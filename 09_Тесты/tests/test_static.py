@@ -195,6 +195,22 @@ class StaticRepository(StaticTestCase):
             with self.subTest(value=name):
                 self.assertNotIn('"%s"=' % name, reg, "настройка конкретного ПК в корпоративном профиле")
 
+    def test_T0_setup_loop_variables_do_not_shadow_parameters(self):
+        """23.09.2026: шаг 8 «Отучение SolidWorks от сети» падал с ошибкой ValidateSet — цикл `foreach ($mode …)`
+        писал в параметр сценария `$Mode` (у PowerShell имена переменных без учёта регистра, атрибут ValidateSet
+        остаётся на переменной). Переменная цикла не должна совпадать с параметром сценария."""
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        start = re.search(r"(?im)^param\s*\(", setup).end()
+        depth, i = 1, start
+        while depth:
+            depth += {"(": 1, ")": -1}.get(setup[i], 0)
+            i += 1
+        params = {m.lower() for m in re.findall(r"\$(\w+)\s*(?:=|,|\)|$)", setup[start:i - 1], re.M)}
+        self.assertIn("mode", params, "не разобран блок параметров сценария")
+        for loop_var in re.findall(r"(?i)foreach\s*\(\s*\$(\w+)\s+in\b", setup[i:]):
+            with self.subTest(loop=loop_var):
+                self.assertNotIn(loop_var.lower(), params, "переменная цикла совпадает с параметром сценария")
+
     def test_T0_export_paths_follow_order_structure(self):
         """ТЗ-03 ред. 8 §4.3, регламент §7.2: выгрузки из чертежа в папке 01_3D ложатся в папки изделия —
         PDF в 02_PDF (только из чертежей, без листов развёртки), DXF в 03_ЧПУ\\Лазер_Лист; линии сгиба в DXF не удаляются;
