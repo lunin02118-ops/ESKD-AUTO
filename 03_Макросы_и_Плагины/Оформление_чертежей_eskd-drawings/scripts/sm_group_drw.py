@@ -310,7 +310,17 @@ def sheet_content(drw, sheet, cfg, designation, bend_r):
 
 
 def run(final=False):
-    sw.SetUserPreferenceToggle(10, False)        # swInputDimValOnCreate — не показывать окно «Изменить»
+    # swInputDimValOnCreate — окно «Изменить» при создании размера вешает скрипт. Настройка пользовательская и живёт в
+    # реестре: после работы вернуть как было (аудит 24.09.2026).
+    was = sw.GetUserPreferenceToggle(10)
+    sw.SetUserPreferenceToggle(10, False)
+    try:
+        return build(final)
+    finally:
+        sw.SetUserPreferenceToggle(10, was)
+
+
+def build(final):
     sw.OpenDoc6(PART, 1, 0, "", 0, 0)
     radii, r_text, k_text = bend_params(PART)
     bend_r = radii[0] if radii else 2.5
@@ -328,6 +338,8 @@ def run(final=False):
     drw.d.ActivateSheet("DRW1")
     out_dir = os.path.dirname(PART) if final else os.path.dirname(os.path.abspath(__file__))
     out = os.path.join(out_dir, ("" if final else "proto_") + "778.КРВ.03.005 Кронштейн.SLDDRW")
+    if final:
+        T.archive_existing(out)
     log("   сохранение:", out, drw.m.Extension.SaveAs(out, 0, 1, None, 0, 0))
     for name in drw.d.GetSheetNames():
         drw.d.ActivateSheet(name)

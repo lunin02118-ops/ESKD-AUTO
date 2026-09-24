@@ -12,10 +12,70 @@ import pythoncom
 import win32com.client as w
 sys.stdout.reconfigure(encoding="utf-8")
 SW = w.gencache.EnsureModule("{83A33D31-27C5-11CE-BFD4-00400513BB57}", 0, 33, 0)
-# папка 01_3D изделия: переменная ESKD_DRW_ROOT или текущая папка
-ROOT = os.environ.get("ESKD_DRW_ROOT") or os.getcwd()
-FMT_DIR = r"D:\Work\_Инструменты_Конструктора\02_Шаблоны_и_Форматки\Основные надписи"
-TT_DIR = r"D:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\ТТ"
+# папка 01_3D изделия — только из ESKD_DRW_ROOT: текущая папка может оказаться чужим заказом (аудит 24.09.2026)
+ROOT = os.environ.get("ESKD_DRW_ROOT", "")
+
+
+def toolkit_dir(rel):
+    """Папка инструментария: ESKD_TOOLKIT, локальная копия установщика, общая папка NAS, копия разработчика."""
+    roots = [os.environ.get("ESKD_TOOLKIT", ""),
+             os.path.join(os.environ.get("LOCALAPPDATA", ""), "ESKD", "Toolkit"),
+             r"\\Synology_TR\Конструкторский отдел\_Библиотека проектирования\_инструменты_конструктора",
+             r"D:\Work\_Инструменты_Конструктора"]
+    for r in roots:
+        if r and os.path.isdir(os.path.join(r, rel)):
+            return os.path.join(r, rel)
+    return os.path.join(roots[-1], rel)
+
+
+FMT_DIR = toolkit_dir(r"02_Шаблоны_и_Форматки\Основные надписи")
+SWPLUS_DIR = toolkit_dir(r"03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0")
+TT_DIR = os.path.join(SWPLUS_DIR, "ТТ")
+
+
+def find_model(part, ext):
+    """Единственная модель в ESKD_DRW_ROOT, в имени которой есть part. Несколько совпадений — отказ: иначе чертёж
+    ляжет не на ту деталь (аудит 24.09.2026). Возвращает путь без расширения, относительно ROOT."""
+    if not ROOT or not os.path.isdir(ROOT):
+        raise SystemExit("Задайте ESKD_DRW_ROOT — папку 01_3D изделия (сейчас: %r)" % ROOT)
+    cand = [p for p in glob.glob(os.path.join(ROOT, "**", "*" + ext), recursive=True)
+            if part in os.path.basename(p) and not os.path.basename(p).startswith("~$")]
+    exact = [p for p in cand if os.path.splitext(os.path.basename(p))[0] == part]
+    cand = exact or cand
+    if len(cand) != 1:
+        raise SystemExit("«%s»: %s — уточните имя" % (part, "нет модели" if not cand else
+                                                      "несколько моделей: " + "; ".join(os.path.basename(p) for p in cand)))
+    return os.path.splitext(cand[0][len(ROOT.rstrip("\\/")) + 1:])[0]
+
+
+def archive_existing(out, copy=False):
+    """Прежний чертёж с тем же именем — в _Аннулировано изделия (рядом с папкой 01_3D), не перезаписывать молча.
+    copy=True — оставить файл на месте и положить копию (чертёж перестраивается в том же файле)."""
+    if not os.path.exists(out):
+        return None
+    d, top = os.path.dirname(out), None
+    while d and os.path.dirname(d) != d:
+        if os.path.basename(d) == "01_3D":
+            top = os.path.dirname(d)
+            break
+        d = os.path.dirname(d)
+    dest_dir = os.path.join(top or os.path.dirname(out), "_Аннулировано")
+    os.makedirs(dest_dir, exist_ok=True)
+    stem, ext = os.path.splitext(os.path.basename(out))
+    dest = os.path.join(dest_dir, "%s_%s%s" % (stem, time.strftime("%Y%m%d_%H%M%S"), ext))
+    n = 1
+    while os.path.exists(dest):   # прежняя копия в _Аннулировано не затирается
+        n += 1
+        dest = os.path.join(dest_dir, "%s_%s_%d%s" % (stem, time.strftime("%Y%m%d_%H%M%S"), n, ext))
+    if copy:
+        import shutil
+        shutil.copy2(out, dest)
+    else:
+        os.replace(out, dest)   # чертёж открыт в SolidWorks — ошибка, сохранение не выполняется
+    log("   прежний чертёж %s:" % ("скопирован" if copy else "перенесён"), dest)
+    return dest
+
+
 FORMATS = {
     "A4-P-1": dict(paper=7, w=0.210, h=0.297, area=(28, 68, 202, 268)),
     "A3-A-1": dict(paper=8, w=0.420, h=0.297, area=(28, 68, 412, 268)),
@@ -124,7 +184,8 @@ class Tube:
 def ok_dialog_watcher():
     import subprocess
     ps = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ok_sheet_dialog.ps1")
-    return subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps, "-Minutes", "3"],
+    return subprocess.Popen(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ps, "-Minutes", "3",
+                             "-WatchPid", str(os.getpid())],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -789,6 +850,8 @@ def run(stem, keep=False, out_dir=None, fmt="A4-P-1"):
     out_dir = os.path.dirname(path) if out_dir == "model" else (out_dir or SNAP)
     name = os.path.basename(stem) + ".SLDDRW"
     out = os.path.join(out_dir, name if out_dir == os.path.dirname(path) else "proto_" + name)
+    if out_dir == os.path.dirname(path):
+        archive_existing(out)
     res = drw.m.Extension.SaveAs(out, 0, 1, None, 0, 0)
     log("   сохранён:", out, res)
     drw.m.ViewZoomtofit2()
@@ -804,9 +867,8 @@ if __name__ == "__main__":
     sw.CommandInProgress = True
     try:
         for s in args:
-            cand = [os.path.splitext(p[len(ROOT) + 1:])[0] for p in glob.glob(ROOT + r"\**\*.SLDPRT", recursive=True)
-                    if s in os.path.basename(p) and not os.path.basename(p).startswith("~$")]
-            log("  → ", cand)
-            run(cand[0], "--keep" in sys.argv, OUT_DIR)
+            stem = find_model(s, ".SLDPRT")
+            log("  → ", stem)
+            run(stem, "--keep" in sys.argv, OUT_DIR)
     finally:
         sw.CommandInProgress = False

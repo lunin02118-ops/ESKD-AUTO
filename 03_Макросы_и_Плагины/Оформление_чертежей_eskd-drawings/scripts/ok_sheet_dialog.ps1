@@ -1,5 +1,6 @@
-﻿param([int]$Minutes = 20)
+﻿param([int]$Minutes = 20, [int]$WatchPid = 0)
 # Нажимает «ОК» в окне SolidWorks «Формат листа/Размер», пока идёт создание заготовок чертежей.
+# Работает, пока жив процесс -WatchPid (скрипт, создающий чертежи): любой python на машине — не признак (аудит 24.09.2026).
 Add-Type @'
 using System; using System.Runtime.InteropServices;
 public static class Dlg {
@@ -18,6 +19,7 @@ while ((Get-Date) -lt $end) {
         Start-Sleep -Milliseconds 1500
     }
     Start-Sleep -Milliseconds 500
-    if (-not (Get-Process python -ErrorAction SilentlyContinue)) { break }
+    if ($WatchPid -and -not (Get-Process -Id $WatchPid -ErrorAction SilentlyContinue)) { break }
+    if (-not $WatchPid -and -not (Get-Process python -ErrorAction SilentlyContinue)) { break }
 }
 "готово, нажатий: $n"

@@ -40,7 +40,8 @@ class Open(T.Drw):
         log("чертёж", os.path.basename(path), "лист %s %.0f×%.0f %g:%g" % (self.sheet, self.W, self.H, p[2], p[3]))
 
     def clear(self):
-        """Убрать виды и заметки листа (ТТ, швы) — всё, что ставит этот скрипт."""
+        """Очистить первый лист целиком: виды, заметки, таблицы, линии эскиза листа — и поставленное скриптом, и ручные
+        правки конструктора. Лист перестраивается заново (SKILL.md, шаг 6); с --save прежний чертёж уходит в _Аннулировано."""
         m, d = self.m, self.d
         sheet_view = SW.IView(d.GetFirstView()._oleobj_)
         names = []
@@ -198,6 +199,8 @@ def rebuild(stem, save=False):
     asm_path = os.path.join(T.ROOT, stem + ".SLDASM")
     model = SW.IModelDoc2((sw.GetOpenDocumentByName(asm_path) or sw.OpenDoc6(asm_path, 2, 1, "", 0, 0)[0])._oleobj_)
     cfg = model.ConfigurationManager.ActiveConfiguration.Name
+    if save:
+        T.archive_existing(os.path.join(T.ROOT, stem + ".SLDDRW"), copy=True)
     drw = Open(os.path.join(T.ROOT, stem + ".SLDDRW"))
     drw.clear()
     b = SW.IAssemblyDoc(model._oleobj_).GetBox(0)
@@ -255,8 +258,6 @@ if __name__ == "__main__":
     sw.CommandInProgress = True
     try:
         for s in [x for x in ARGS if not x.startswith("--")]:
-            cand = [os.path.splitext(p[len(T.ROOT) + 1:])[0] for p in glob.glob(T.ROOT + r"\**\*.SLDASM", recursive=True)
-                    if s in os.path.basename(p) and not os.path.basename(p).startswith("~$")]
-            rebuild(cand[0], "--save" in ARGS)
+            rebuild(T.find_model(s, ".SLDASM"), "--save" in ARGS)
     finally:
         sw.CommandInProgress = False
