@@ -1235,15 +1235,20 @@ namespace ESKD.MaterialSync.Sw
             try
             {
                 if (body == null || !body.IsSheetMetal()) return double.NaN;
-                object[] features = body.GetFeatures() as object[];
-                if (features == null) return double.NaN;
-                foreach (object o in features)
+                // Фоновая перестройка дерева после открытия окна — обход повторяется (FeatureWalk).
+                return FeatureWalk.Retry(() =>
                 {
-                    Feature f = o as Feature;
-                    if (f == null || f.GetTypeName2() != "SheetMetal") continue;
-                    double mm = FeatureThicknessMm(f, model);
-                    if (!double.IsNaN(mm)) return mm;
-                }
+                    object[] features = body.GetFeatures() as object[];
+                    if (features == null) return double.NaN;
+                    foreach (object o in features)
+                    {
+                        Feature f = o as Feature;
+                        if (f == null || f.GetTypeName2() != "SheetMetal") continue;
+                        double mm = FeatureThicknessMm(f, model);
+                        if (!double.IsNaN(mm)) return mm;
+                    }
+                    return double.NaN;
+                }, "толщина листового тела");
             }
             catch (COMException ex)
             {
@@ -1280,12 +1285,17 @@ namespace ESKD.MaterialSync.Sw
         {
             try
             {
-                for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+                // Сразу после открытия окна документа SolidWorks перестраивает дерево в фоне — обход повторяется (FeatureWalk).
+                return FeatureWalk.Retry(() =>
                 {
-                    if (f.GetTypeName2() != "SheetMetal") continue;
-                    double mm = FeatureThicknessMm(f, model);
-                    if (!double.IsNaN(mm)) return mm;
-                }
+                    for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+                    {
+                        if (f.GetTypeName2() != "SheetMetal") continue;
+                        double mm = FeatureThicknessMm(f, model);
+                        if (!double.IsNaN(mm)) return mm;
+                    }
+                    return double.NaN;
+                }, "толщина листа");
             }
             catch (COMException ex)
             {

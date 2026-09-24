@@ -79,6 +79,12 @@ namespace ESKD.MaterialSync.Sw
 
         private static SketchLine FirstMemberLine(ModelDoc2 model)
         {
+            // Деталь только что стала активной — SolidWorks перестраивает дерево в фоне, обход повторяется (FeatureWalk).
+            return FeatureWalk.Retry(() => MemberLine(model), "ось трубы");
+        }
+
+        private static SketchLine MemberLine(ModelDoc2 model)
+        {
             for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
             {
                 // Погашенный в активном исполнении элемент — чужого исполнения: ось по нему легла бы поперёк трубы
@@ -172,9 +178,12 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Временная СК ещё в дереве детали.</summary>
         private bool Present()
         {
-            for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
-                if (string.Equals(f.Name, Name, StringComparison.Ordinal)) return true;
-            return false;
+            return FeatureWalk.Retry(() =>
+            {
+                for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+                    if (string.Equals(f.Name, Name, StringComparison.Ordinal)) return true;
+                return false;
+            }, "временная СК");
         }
 
         public void Dispose()

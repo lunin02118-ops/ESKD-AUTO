@@ -472,6 +472,10 @@ namespace ESKD.MaterialSync.Sw
                 item.Name = parsed.Title.Length > 0 ? parsed.Title : parsed.BaseName;
             ModelTraits t = Traits(model, assembly, active);
             t.Material = item.Material;
+            // «Материал_Строка» ещё не записан (заказ не оформлен по ЕСКД) — резка предлагается по материалу SolidWorks,
+            // как у выгрузки: иначе труба, построенная телом, получала одну «Покраску», и после записи «Операций»
+            // выгрузка не делала ей IGS (замечание владельца 24.09.2026).
+            if (!assembly && t.Material.Length == 0) t.Material = SwMaterial(model, active);
             t.IsPurchased = item.IsPurchased;
             traits[path] = t;
             item.IsProfile = t.IsStructuralMember;
@@ -1192,6 +1196,23 @@ namespace ESKD.MaterialSync.Sw
             string raw, resolved;
             m.Get4(name, false, out raw, out resolved);
             return CutListProperties.Number(raw, resolved);
+        }
+
+        /// <summary>Материал SolidWorks исполнения cfg («Труба 80х80х4,0 …»); «» — не задан или не узнать.</summary>
+        private static string SwMaterial(ModelDoc2 model, string cfg)
+        {
+            PartDoc part = model as PartDoc;
+            if (part == null) return "";
+            try
+            {
+                string db;
+                return (SyncService.ActualMaterial(part, model, cfg, out db, null) ?? "").Trim();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Ведомость ЛЗК: материал детали", ex);
+                return "";
+            }
         }
 
         /// <summary>Плотность материала детали, кг/м³; 0 — не определена.</summary>

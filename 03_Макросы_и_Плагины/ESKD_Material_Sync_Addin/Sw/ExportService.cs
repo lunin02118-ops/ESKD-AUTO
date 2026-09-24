@@ -901,31 +901,36 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Листовые тела детали — у многотельной у каждого своя «Развёртка» и свой «Листовой металл».</summary>
         private static List<SheetBody> SheetBodies(PartDoc part)
         {
-            List<SheetBody> list = new List<SheetBody>();
             try
             {
-                object[] bodies = part.GetBodies2((int)swBodyType_e.swSolidBody, true) as object[];
-                if (bodies == null) return list;
-                foreach (object o in bodies)
+                // Фоновая перестройка дерева после открытия окна — обход повторяется целиком (FeatureWalk).
+                return FeatureWalk.Retry(() =>
                 {
-                    Body2 body = o as Body2;
-                    if (body == null || !body.IsSheetMetal()) continue;
-                    SheetBody sheet = new SheetBody { ThicknessMm = StockService.BodySheetThicknessMm(body, (ModelDoc2)part) };
-                    object[] features = body.GetFeatures() as object[];
-                    if (features != null)
-                        foreach (object fo in features)
-                        {
-                            Feature f = fo as Feature;
-                            if (f != null && f.GetTypeName2() == "FlatPattern" && sheet.Flat == null) sheet.Flat = f;
-                        }
-                    list.Add(sheet);
-                }
+                    List<SheetBody> list = new List<SheetBody>();
+                    object[] bodies = part.GetBodies2((int)swBodyType_e.swSolidBody, true) as object[];
+                    if (bodies == null) return list;
+                    foreach (object o in bodies)
+                    {
+                        Body2 body = o as Body2;
+                        if (body == null || !body.IsSheetMetal()) continue;
+                        SheetBody sheet = new SheetBody { ThicknessMm = StockService.BodySheetThicknessMm(body, (ModelDoc2)part) };
+                        object[] features = body.GetFeatures() as object[];
+                        if (features != null)
+                            foreach (object fo in features)
+                            {
+                                Feature f = fo as Feature;
+                                if (f != null && f.GetTypeName2() == "FlatPattern" && sheet.Flat == null) sheet.Flat = f;
+                            }
+                        list.Add(sheet);
+                    }
+                    return list;
+                }, "листовые тела");
             }
             catch (COMException ex)
             {
                 Log.Error("Выгрузка: листовые тела", ex);
             }
-            return list;
+            return new List<SheetBody>();
         }
 
         /// <summary>
@@ -1025,11 +1030,12 @@ namespace ESKD.MaterialSync.Sw
 
 
         /// <summary>
-        /// Сделать документ активным — развёртку (ExportToDWG2), построение СК оси трубы и переключение исполнения
-        /// SolidWorks делает только в активном окне; сам IGS (SaveAs) пишется и из фоновой модели — X06 (сверка SW API
-        /// 23.09.2026, находка 21). false — не стал активным: занятый SolidWorks отвечает отказом, и выгрузка пошла бы по
-        /// чужому документу, но с отметкой «ok» (аудит 20.09.2026). Проверяется не код возврата, а сам активный документ:
-        /// он и есть признак успеха.
+        /// Сделать документ активным — развёртку (ExportToDWG2), IGS, построение СК оси трубы и переключение исполнения
+        /// SolidWorks делает только с активным документом. IGS из фоновой модели SolidWorks пишет по активному документу:
+        /// в «&lt;деталь&gt;.igs» уходила вся сборка или соседняя деталь, а заголовок называл деталь (замечание владельца
+        /// 24.09.2026; находку 21 сверки SW API 23.09.2026 X06 не опроверг — он смотрел только размер файла). false — не
+        /// стал активным: занятый SolidWorks отвечает отказом, и выгрузка пошла бы по чужому документу, но с отметкой
+        /// «ok» (аудит 20.09.2026). Проверяется не код возврата, а сам активный документ: он и есть признак успеха.
         /// </summary>
         private static bool Activate(ISldWorks app, string path)
         {
@@ -1037,8 +1043,7 @@ namespace ESKD.MaterialSync.Sw
             {
                 int errors = 0;
                 app.ActivateDoc3(path, false, (int)swRebuildOnActivation_e.swDontRebuildActiveDoc, ref errors);
-                ModelDoc2 active = app.ActiveDoc as ModelDoc2;
-                string now = active != null ? active.GetPathName() ?? "" : "";
+                string now = ActivePath(app);
                 if (string.Equals(now, path, StringComparison.OrdinalIgnoreCase)) return true;
                 Log.Warn("Выгрузка: документ не стал активным (код " + errors + "), активен «" + now + "» вместо «" + path + "»");
                 return false;
@@ -1048,6 +1053,13 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Выгрузка: активация " + path, ex);
                 return false;
             }
+        }
+
+        /// <summary>Путь активного документа SolidWorks; пусто — активного нет или он не сохранён.</summary>
+        private static string ActivePath(ISldWorks app)
+        {
+            ModelDoc2 active = app.ActiveDoc as ModelDoc2;
+            return active != null ? active.GetPathName() ?? "" : "";
         }
 
         // ------------------------------------------------------------------ IGS профиля (Т-29)
@@ -1060,7 +1072,16 @@ namespace ESKD.MaterialSync.Sw
         {
             // Решает галочка «Лазерная резка трубы» в операциях; без операций — признак профиля в модели. Материал —
             // активного исполнения: у исполнений он может быть разный (решение владельца 23.09.2026).
-            if (!LzkOperations.WantsTubeFile(operations, IsStructuralMember(item.Model) || IsTubeByMaterial(item.Model))) return true;
+            bool tube = IsStructuralMember(item.Model) || IsTubeByMaterial(item.Model);
+            if (!LzkOperations.WantsTubeFile(operations, tube))
+            {
+                // Галочку снял конструктор — или «Операции» записала ЛЗК до 24.09.2026, не узнав трубу по материалу
+                // SolidWorks. Молча пропускать нельзя: в «Труборез» не попала бы труба, и никто бы не заметил.
+                if (tube)
+                    log.Warn(label, "деталь из трубы, а в «Операциях» нет «" + LzkOperations.TubeCutting +
+                        "»: IGS не сделан — если он нужен, поставьте эту операцию в ведомости ЛЗК и выгрузите заново");
+                return true;
+            }
             string target = ExportNaming.IgsPath(productFolder, designation, name, item.Path, item.Revision);
             if (ExportNaming.TooLong(target).Length > 0)
             {
@@ -1088,14 +1109,27 @@ namespace ESKD.MaterialSync.Sw
             {
                 // Папка — внутри try, как у DXF (№29).
                 Directory.CreateDirectory(Path.GetDirectoryName(target) ?? "");
+                // SolidWorks пишет в IGS активный документ, а не модель, у которой вызван SaveAs: труба без элемента
+                // конструкции получала IGS всей сборки или соседней пластины (замечание владельца 24.09.2026).
+                if (!Activate(app, item.Path))
+                {
+                    log.Skip(label, "SolidWorks не сделал деталь активной: IGS не сделан");
+                    return true;
+                }
                 iges = Numbers(app, prefs, wanted, "Выгрузка: восстановление настройки IGES");
                 int errors = 0, warnings = 0;
-                bool ok;
+                bool ok = false;
+                string other = "";
                 TubeAxis axis = TubeAxis.Create(app, item.Model, item.Path, saves);
                 try
                 {
-                    ok = item.Model.Extension.SaveAs(target, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
-                        (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref errors, ref warnings);
+                    other = ActivePath(app);
+                    if (string.Equals(other, item.Path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        other = "";
+                        ok = item.Model.Extension.SaveAs(target, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
+                            (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref errors, ref warnings);
+                    }
                     if (ok && !axis.Applied)
                         log.Warn(Path.GetFileName(target), "IGS в глобальной системе координат: " + axis.Reason);
                 }
@@ -1105,8 +1139,23 @@ namespace ESKD.MaterialSync.Sw
                     clean = axis.Leftover.Length == 0;
                 }
                 if (!clean) log.Warn(label, axis.Leftover);
-                if (ok) log.Add(target);
-                else log.Skip(label, "IGS не сохранён (код " + errors + ")");
+                // Записанный файл проверяется сам: заголовок IGS называет деталь, даже когда внутри сборка.
+                string foreign = ok ? IgesContent.Foreign(File.ReadLines(target, IgesContent.Cyrillic)) : "";
+                if (other.Length > 0)
+                    log.Skip(label, "активным стал другой документ («" + Path.GetFileName(other) + "»): IGS не сделан");
+                else if (!ok)
+                    log.Skip(label, "IGS не сохранён (код " + errors + ")");
+                else if (foreign.Length > 0)
+                {
+                    File.Delete(target);
+                    Log.Warn("Выгрузка: " + target + " — " + foreign + "; файл удалён");
+                    log.Skip(label, "в IGS попала не эта деталь (" + foreign + "): файл удалён, IGS не сделан");
+                }
+                else
+                {
+                    log.Add(target);
+                    Log.Info("Выгрузка: IGS «" + Path.GetFileName(target) + "» — из «" + Path.GetFileName(item.Path) + "»");
+                }
             }
             catch (Exception ex)
             {
@@ -1156,9 +1205,15 @@ namespace ESKD.MaterialSync.Sw
             {
                 // Погашенный в активном исполнении элемент — чужого исполнения: выгрузка идёт по исполнениям, и
                 // исполнение-пластина получала бы IGS (критик сверки SW API 23.09.2026). Так же — папка списка вырезов без
-                // тел: её тела погашены в этом исполнении (CutListFolders).
-                for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
-                    if ((f.GetTypeName2() ?? "") == "WeldMemberFeat" && !f.IsSuppressed()) return true;
+                // тел: её тела погашены в этом исполнении (CutListFolders). Обход переживает фоновую перестройку дерева
+                // после открытия окна (FeatureWalk): сбой в нём был «не труба».
+                bool member = FeatureWalk.Retry(() =>
+                {
+                    for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+                        if ((f.GetTypeName2() ?? "") == "WeldMemberFeat" && !f.IsSuppressed()) return true;
+                    return false;
+                }, "признак профиля");
+                if (member) return true;
                 foreach (Feature sub in CutListFolders.Active(model))
                 {
                     CustomPropertyManager m = sub.CustomPropertyManager;
