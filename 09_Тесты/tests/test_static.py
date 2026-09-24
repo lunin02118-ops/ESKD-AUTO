@@ -346,8 +346,11 @@ class StaticRepository(StaticTestCase):
             self.assertFalse((drew / absent).exists(), f"артефакт классического издания не должен входить: {absent}")
         self.assertTrue((drew / "1_УСТАНОВКА.txt").exists(), "нет инструкции 1_УСТАНОВКА.txt")
         setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
-        self.assertIn("645654CF9055FDA11EF16CF131952F9BF235CBD3841AFDE6B5663DCC16C18F15", setup,
+        # замер 24.09.2026: установщик без слёта лицензии (SHA-256 6BD50418…), чистая установка на ПК владельца
+        self.assertIn("0D31E06D6AC7F6F560745E8797BF09004BAC6FC576C937E36072AAC88831F365", setup,
                       "движок сверяет сборку Drew по контрольному хэшу")
+        self.assertIn("$licItem.CreationTime -ge $startedAt", setup,
+                      "установщик Windows оставляет файлу дату сборки: свежую установку Drew видно по дате создания")
         self.assertIn("AddMinutes(6)", setup, "движок ждёт завершения установщика Drew с таймаутом")
         self.assertIn("Лицензия Drew: встроенная", setup, "активация больше не требуется — сообщается прямо")
         # решение владельца 15.09.2026: Drew другой сборки той же версии удаляется штатно и ставится заново —

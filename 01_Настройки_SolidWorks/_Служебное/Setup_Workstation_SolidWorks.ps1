@@ -757,9 +757,10 @@ if ($sandbox -or $SkipDrew) {
     $drewCandidates = @((Join-Path $env:ProgramFiles "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"),
                         (Join-Path $env:LOCALAPPDATA "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"))
     $licDll = Join-Path $env:ProgramFiles "CAD Booster\Drew\CADBooster.Common.Licensing.dll"
-    # Хэш CADBooster.Common.Licensing.dll, которую ставит УСТАНОВЩИК_Drew_AUTO.exe инструментария (замер 15.09.2026: удаление
-    # прежнего Drew, чистая установка этим установщиком). Новый установщик в Drw_System_Automation — новый замер и этот хэш.
-    $licHash = "645654CF9055FDA11EF16CF131952F9BF235CBD3841AFDE6B5663DCC16C18F15"
+    # Хэш CADBooster.Common.Licensing.dll, которую ставит УСТАНОВЩИК_Drew_AUTO.exe инструментария (замер 24.09.2026, установщик
+    # без слёта лицензии, SHA-256 6BD50418…: удаление прежнего Drew, чистая установка этим установщиком). Новый установщик
+    # в Drw_System_Automation — новый замер и этот хэш.
+    $licHash = "0D31E06D6AC7F6F560745E8797BF09004BAC6FC576C937E36072AAC88831F365"
     # Какой установщик ставил Drew на этом ПК: отпечаток файла AUTO.exe после удачной установки. Пока в инструментарии тот же
     # установщик, Drew не переустанавливается, даже если хэш лицензионной сборки не совпал с замером (другая ОС, новый
     # установщик без обновления замера) — иначе удаление и установка с запросом прав повторялись бы при каждом обновлении.
@@ -842,12 +843,16 @@ if ($sandbox -or $SkipDrew) {
                             if (-not $exitedAt) { $exitedAt = Get-Date } elseif (((Get-Date) - $exitedAt).TotalSeconds -gt 20) { break }
                         }
                     }
-                    $fresh = (Test-Path -LiteralPath $licDll) -and ((Get-Item -LiteralPath $licDll).LastWriteTime -ge $startedAt.AddMinutes(-1) -or $installed)
+                    # Установщик Windows оставляет файлу дату сборки, а не установки: свежесть — и по дате создания
+                    # (24.09.2026: Drew поставлен, а итог сообщал «файлы Drew не обновлены»).
+                    $licItem = if (Test-Path -LiteralPath $licDll) { Get-Item -LiteralPath $licDll } else { $null }
+                    $fresh = $licItem -and ($installed -or $licItem.LastWriteTime -ge $startedAt.AddMinutes(-1) -or
+                                            $licItem.CreationTime -ge $startedAt.AddMinutes(-1))
                     if ($installed -or ($setup.HasExited -and $fresh)) {
                         Set-Reg $drewInstallKey "DrewInstaller" $autoHash
                         $drewOk = $true
                         if ($installed) { Write-Ok "Drew установлен (контроль хэша пройден)." }
-                        else { Write-Ok "Drew установлен. Хэш лицензионной сборки отличается от замера 15.09.2026 — установщик новее; повторно ставиться не будет." }
+                        else { Write-Ok "Drew установлен. Хэш лицензионной сборки отличается от замера в инструментарии — установщик новее; повторно ставиться не будет." }
                     }
                     elseif ($setup.HasExited) { $failures++; Write-Fail "Установщик Drew завершился (код $($setup.ExitCode)), а файлы Drew не обновлены - запустите $($drewExe[0].Name) вручную." }
                     else { $failures++; Write-Fail "Drew не установился за 6 минут - проверьте окно установщика." }
