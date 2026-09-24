@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """T1 — юнит-тесты ядра надстройки на настоящей сборке (ESKD.Tests.exe, вывод TAP)."""
+import os
 import re
 import shutil
 import subprocess
 import unittest
 
-from eskd_e2e import paths
+from eskd_e2e import paths, testing
 
 UNIT_DIR = paths.TESTS / "unit"
 BIN = UNIT_DIR / "bin"
@@ -35,7 +36,13 @@ class UnitTests(unittest.TestCase):
     def test_T1_core_unit_tests(self):
         """T1: юнит-тесты чистых модулей ядра (разбор имён, происхождение, разметка, БЧ, словарь, материалы)."""
         build()
-        proc = subprocess.run([str(EXE)], capture_output=True, cwd=str(BIN), timeout=120)
+        # Личный %TEMP% прогона: тесты нарочно пишут ERROR в журнал надстройки, а e2e соседних сессий
+        # читают %TEMP%\eskd_material_sync.log (addin_log_errors). Журнал юнит-тестов остаётся в unit_tmp.
+        temp = testing.run_dir() / "unit_tmp"
+        shutil.rmtree(temp, ignore_errors=True)
+        temp.mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ, TEMP=str(temp), TMP=str(temp), ESKD_UNIT_TEMP=str(temp))
+        proc = subprocess.run([str(EXE)], capture_output=True, cwd=str(BIN), timeout=120, env=env)
         out = proc.stdout.decode("utf-8", errors="replace")
         lines = [ln for ln in out.splitlines() if re.match(r"^(ok|not ok) \d+", ln)]
         failed = [ln for ln in lines if ln.startswith("not ok")]
