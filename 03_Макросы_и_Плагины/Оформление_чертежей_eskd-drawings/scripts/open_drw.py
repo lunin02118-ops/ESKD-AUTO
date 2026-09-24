@@ -14,4 +14,6 @@ for x in sw.GetDocuments() or []:
         break
 else:
     m = sw.OpenDoc6(p, 3, 0, "", 0, 0)   # 3 = swDocDRAWING
+    if isinstance(m, tuple):             # typed-обёртка pywin32 возвращает (документ, ошибки, предупреждения)
+        m = m[0]
     print("открыт:", SW.IModelDoc2(m._oleobj_).GetPathName() if m else None)

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 Сборочный чертёж подсборки 778 (сварная рама из труб) по ЕСКД через SolidWorks API, как у Кровати владельца:
 лист DRW1 A3-A-1 — главный вид в плоскости рамы и вид слева, габаритные и присоединительные размеры, позиции (AutoBalloon5),
@@ -12,7 +12,7 @@ _argv = sys.argv; sys.argv = sys.argv[:1]
 import tube_drw as T
 sys.argv = _argv
 SW, sw, MM, log = T.SW, T.sw, T.MM, T.log
-SPEC_DIR = r"D:\Work\_Инструменты_Конструктора\03_Макросы_и_Плагины\Макросы_SW_ZTool\SWPlusMacro_v_2018_SP0.0\SpecEditor"
+SPEC_DIR = os.path.join(T.SWPLUS_DIR, "SpecEditor")
 SCALES = [(1, 2), (1, 2.5), (1, 4), (1, 5), (1, 10), (1, 15), (1, 20)]
 TT_WELD = ["*Размеры для справок.",
            "Сварка - полуавтоматическая в среде CO2 по ГОСТ 14771-76,",
@@ -465,6 +465,8 @@ def run(stem, keep=False, final=False):
     T.add_tt(TT_WELD)
     out_dir = os.path.dirname(path) if final else os.path.dirname(os.path.abspath(__file__))
     out = os.path.join(out_dir, ("" if final else "proto_") + os.path.basename(stem) + ".SLDDRW")
+    if final:
+        T.archive_existing(out)
     res = drw.m.Extension.SaveAs(out, 0, 1, None, 0, 0)
     log("   сохранён:", out, res)
     for name in drw.d.GetSheetNames():
@@ -482,8 +484,6 @@ if __name__ == "__main__":
     sw.CommandInProgress = True
     try:
         for s in args:
-            cand = [os.path.splitext(p[len(T.ROOT) + 1:])[0] for p in glob.glob(T.ROOT + r"\**\*.SLDASM", recursive=True)
-                    if s in os.path.basename(p) and not os.path.basename(p).startswith("~$")]
-            run(cand[0], "--keep" in sys.argv, "--final" in sys.argv)
+            run(T.find_model(s, ".SLDASM"), "--keep" in sys.argv, "--final" in sys.argv)
     finally:
         sw.CommandInProgress = False
