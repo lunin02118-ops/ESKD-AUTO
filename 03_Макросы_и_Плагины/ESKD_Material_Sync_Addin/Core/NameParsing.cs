@@ -186,6 +186,9 @@ namespace ESKD.MaterialSync.Core
         /// «1» — «Исполнение» и «Из»: номер — первое слово имени конфигурации («01» → «-01»); «2» — «Исполнение» без «Из»:
         /// номер вписан (конфигурация «Покраска» под «01» берёт номер у родителя, из её имени его не взять); «0» — без исполнения
         /// (базовая конфигурация, или номер уже в имени файла — иначе MProp удвоит суффикс).
+        /// «1» — только у двузначного номера: SaveDRW и SaveAsPDF при «1» берут номер из двух первых знаков имени конфигурации
+        /// (SaveDRW_run:344–348, SaveAsPDF:408–412), и чертёж исполнения «001» (ГОСТ 2.201-80, разд. 3) они сохранили бы
+        /// с «-00»; при «2» номер берётся из обозначения — у MProp и у них одинаково.
         /// </summary>
         public static string ExecutionFlag(string configName, string execution, bool fromConfiguration)
         {
@@ -193,7 +196,7 @@ namespace ESKD.MaterialSync.Core
             string name = (configName ?? "").Trim();
             int space = name.IndexOf(' ');
             string first = space > 0 ? name.Substring(0, space) : name;
-            return string.Equals(first, execution, StringComparison.Ordinal) ? "1" : "2";
+            return execution.Length == 2 && string.Equals(first, execution, StringComparison.Ordinal) ? "1" : "2";
         }
 
         public static string Build(string root, string execution, string docCode)
