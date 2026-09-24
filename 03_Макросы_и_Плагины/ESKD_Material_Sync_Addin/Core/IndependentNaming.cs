@@ -122,14 +122,17 @@ namespace ESKD.MaterialSync.Core
     {
         /// <summary>
         /// Новый файл модели: «&lt;Обозначение&gt; &lt;Наименование&gt;» в «01_3D» изделия с расширением исходного.
-        /// Имя занято — к нему добавляется «_2», «_3»…: терять чужую работу молчаливой перезаписью нельзя.
+        /// Имя занято — к нему добавляется «_2», «_3»…: терять чужую работу молчаливой перезаписью нельзя. Занято и тогда,
+        /// когда модели нет, а её чертёж остался (модель удалили или переименовали): копия чертежа эталона легла бы поверх
+        /// него (сверка SW API 23.09.2026, №27).
         /// </summary>
         public static string TargetPath(string modelsFolder, string designation, string name, string sourcePath)
         {
             string stem = ExportNaming.Stem(designation, name, sourcePath);
             string extension = Path.GetExtension(sourcePath ?? "");
             string path = Path.Combine(modelsFolder ?? "", stem + extension);
-            for (int i = 2; File.Exists(path); i++) path = Path.Combine(modelsFolder ?? "", stem + "_" + i + extension);
+            for (int i = 2; File.Exists(path) || File.Exists(DrawingOf(path)); i++)
+                path = Path.Combine(modelsFolder ?? "", stem + "_" + i + extension);
             return path;
         }
 

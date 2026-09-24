@@ -43,6 +43,7 @@ param(
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent  # сценарий в 01_Настройки_SolidWorks\_Служебное
 Import-Module (Join-Path $PSScriptRoot "EskdDeploy.psm1") -Force -DisableNameChecking
+[void](Reset-EskdPowerShellEnvironment)  # запуск из PowerShell 7: его пути модулей не для 5.1 и не для дочерних процессов
 
 function Say($text)  { Write-Host $text -ForegroundColor Gray }
 function Ok($text)   { Write-Host "  [OK] $text" -ForegroundColor Green }
@@ -179,7 +180,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
     $staging, $zip, [System.IO.Compression.CompressionLevel]::Optimal, $true, [System.Text.Encoding]::UTF8)
 
 $size = [Math]::Round((Get-Item -LiteralPath $zip).Length / 1MB, 1)
-$hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+$hash = Get-EskdFileSha256 -Path $zip
 [System.IO.File]::WriteAllText("$zip.sha256", "$hash *$name.zip`r`n", (New-Object System.Text.UTF8Encoding($false)))
 Ok "$name.zip — $size МБ"
 Info "SHA-256: $hash"

@@ -18,8 +18,12 @@ namespace ESKD.MaterialSync.Sw
     /// Замечание владельца 21.09.2026: «формат в спецификацию не попадает». Чертёж обычно сохраняют и сразу закрывают,
     /// а запись формата ждала простоя вместе с документом чертежа — закрытие её отменяло («Документ закрыт до выполнения
     /// отложенной задачи „drawingformat“»). Теперь форматы листов читаются в момент сохранения, пока чертёж открыт, а
-    /// модель находится в простое по пути: выгружена вместе с чертежом — открывается скрыто, записывается, сохраняется
-    /// и закрывается. Для чертежей, сохранённых до исправления, формат дозаполняет «Синхронизировать» на сборке (Backfill).
+    /// модель находится в простое по пути. Для чертежей, сохранённых до исправления, формат дозаполняет
+    /// «Проверить изделие» (Backfill).
+    ///
+    /// Сохранение модели — только по настройке FormatSavesModel (решение владельца 23.09.2026: деталь без команды
+    /// конструктора не сохраняется). По умолчанию открытая модель получает свойство и остаётся несохранённой, закрытая
+    /// не открывается.
     /// </summary>
     public static class DrawingFormatService
     {
@@ -28,6 +32,14 @@ namespace ESKD.MaterialSync.Sw
         /// синхронизацию и задачи простоя: документ закроется сразу после Save3 (урок R01).
         /// </summary>
         public static bool Busy { get; private set; }
+
+        /// <summary>
+        /// Форматы листов закрытых чертежей, прочитанные «Проверить изделие» за сеанс: путь → (время файла, форматы).
+        /// Чертёж, сохранённый позже модели, так и остаётся новее (модель при совпадении не меняется и не сохраняется),
+        /// и без запоминания каждое нажатие заново открывало бы все такие чертежи. Изменился файл — читается снова.
+        /// </summary>
+        private static readonly Dictionary<string, KeyValuePair<DateTime, List<string>>> SheetsRead =
+            new Dictionary<string, KeyValuePair<DateTime, List<string>>>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>Форматы листов чертежа по порядку; лист не формата ГОСТ — пустая строка.</summary>
         public static List<string> SheetFormats(DrawingDoc drw)
@@ -62,7 +74,7 @@ namespace ESKD.MaterialSync.Sw
 
         /// <summary>
         /// Снять форматы листов и путь модели, пока чертёж открыт (событие сохранения). Только чтение.
-        /// false — модели нет или лист не формата ГОСТ 2.301.
+        /// false — модели нет, лист не формата ГОСТ 2.301 или «Формат» модели уже такой: задача простоя не нужна.
         /// </summary>
         public static bool Capture(DrawingDoc drw, out string modelPath, out List<string> sheets)
         {
@@ -80,18 +92,29 @@ namespace ESKD.MaterialSync.Sw
                     Path.GetFileName(modelPath) + " не меняется");
                 return false;
             }
-            return true;
+            // Модель, пока чертёж открыт, загружена: сверка без записи. Совпадает — ни задачи, ни сообщения.
+            return Write(model, sheets, true, null) > 0;
         }
 
         /// <summary>
-        /// Записать формат в модель по пути (в простое). Модель открыта — пишется в неё и сохраняется, если в ней нет других
-        /// несохранённых правок; выгружена — открывается скрыто, записывается, сохраняется и закрывается.
+        /// Записать формат в модель по пути (в простое). Возвращает текст для строки состояния; "" — сказать нечего.
+        /// FormatSavesModel выключена (по умолчанию): открытая модель получает свойство без сохранения, закрытая не
+        /// трогается. Включена: открытая без других правок сохраняется, закрытая открывается скрыто, записывается,
+        /// сохраняется и закрывается.
         /// </summary>
-        public static void ApplyToModel(ISldWorks app, string modelPath, List<string> sheets)
+        public static string ApplyToModel(ISldWorks app, string modelPath, List<string> sheets)
         {
-            if (string.IsNullOrEmpty(modelPath) || sheets == null || sheets.Count == 0) return;
+            if (string.IsNullOrEmpty(modelPath) || sheets == null || sheets.Count == 0) return "";
+            bool save = Settings.Read().FormatSavesModel;
             ModelDoc2 model = app.GetOpenDocumentByName(modelPath) as ModelDoc2;
             bool opened = false;
+            if (model == null && !save)
+            {
+                string closed = "ЕСКД: формат чертежа не записан в модель " + Path.GetFileName(modelPath) +
+                    " — она закрыта. Нажмите «Проверить изделие» на сборке или откройте модель и сохраните чертёж ещё раз";
+                Log.Warn(closed);
+                return closed;
+            }
             Busy = true;
             try
             {
@@ -103,26 +126,35 @@ namespace ESKD.MaterialSync.Sw
                     if (model == null)
                     {
                         Log.Warn("Формат чертежа: модель " + modelPath + " не открылась — «Формат» не записан");
-                        return;
+                        return "";
                     }
                 }
                 string title = DocInfo.TitleOf(model);
-                if (model.IsOpenedReadOnly())
+                // Общее правило надстройки: покупное и стандартное (по свойствам) и открытое только для чтения не пишется.
+                string why = DocumentGuard.DocVerdict(model);
+                if (why.Length > 0)
                 {
-                    Log.Warn("Модель " + title + " открыта только для чтения: «Формат» не записан");
-                    return;
+                    Log.Warn("Модель " + title + ": " + why + " — «Формат» не записан");
+                    return "";
                 }
                 bool wasDirty = !opened && model.GetSaveFlag();
                 int changes = Write(model, sheets);
-                if (changes == 0) return;
+                if (changes == 0) return "";
+                if (!save)
+                {
+                    string told = "ЕСКД: формат чертежа записан в модель " + title + " — сохраните её";
+                    Log.Info(told);
+                    return told;
+                }
                 if (wasDirty)
                 {
                     Log.Info("Модель " + title + " не сохранена: в ней есть и другие несохранённые правки — формат запишется с ними");
-                    return;
+                    return "";
                 }
                 int errors = 0, warnings = 0;
                 if (!model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
                     Log.Error(string.Format("Модель {0} не сохранена после записи формата (errors={1}, warnings={2})", title, errors, warnings));
+                return "";
             }
             finally
             {
@@ -132,11 +164,22 @@ namespace ESKD.MaterialSync.Sw
         }
 
         /// <summary>
-        /// Дозаполнить пустой «Формат» модели по её чертежу рядом (тот же путь, .slddrw) — для чертежей, сохранённых до
-        /// исправления 21.09.2026. Чертёж открывается скрыто только для чтения и закрывается. Модель не сохраняется —
-        /// это делает вызывающий. Возвращает число изменений.
+        /// Привести «Формат» модели к её чертежу рядом (тот же путь, .slddrw). Сверяется, когда «Формат» пуст (чертежи,
+        /// сохранённые до исправления 21.09.2026), когда чертёж открыт и когда файл чертежа новее файла модели: с
+        /// 23.09.2026 сохранение чертежа не открывает закрытую модель, и её прежний формат остаётся до этой команды.
+        /// Чертёж открывается скрыто только для чтения и закрывается. Модель не сохраняется — это делает вызывающий.
+        /// Возвращает число изменений.
         /// </summary>
         public static int Backfill(ISldWorks app, ModelDoc2 model)
+        {
+            return Backfill(app, model, false, null);
+        }
+
+        /// <summary>
+        /// dryRun — только сверка для окна «Проверить изделие»: число свойств, которые запись изменила бы, строки журнала —
+        /// в operations (null — не нужны); модель не меняется.
+        /// </summary>
+        public static int Backfill(ISldWorks app, ModelDoc2 model, bool dryRun, List<string> operations)
         {
             string modelPath = model.GetPathName() ?? "";
             if (modelPath.Length == 0) return 0;
@@ -146,11 +189,24 @@ namespace ESKD.MaterialSync.Sw
             PropertyDictionary dict = SyncService.Dictionary(settings);
             PropertyWriter probe = new PropertyWriter(model, true);
             if (BchService.IsBch(probe, dict)) return 0;
-            if (!FormatMissing(probe, dict)) return 0;
+            ModelDoc2 drawing = app.GetOpenDocumentByName(drawingPath) as ModelDoc2;
+            if (drawing == null && !FormatMissing(probe, dict) && !DrawingNewer(drawingPath, modelPath)) return 0;
+
+            DateTime stamp = DateTime.MinValue;
+            try
+            {
+                stamp = File.GetLastWriteTimeUtc(drawingPath);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Формат: время файла " + Path.GetFileName(drawingPath) + " не прочитано (" + ex.Message + ")");
+            }
+            KeyValuePair<DateTime, List<string>> known;
+            if (drawing == null && stamp != DateTime.MinValue && SheetsRead.TryGetValue(drawingPath, out known) && known.Key == stamp)
+                return known.Value.Count == 0 || known.Value.Contains("") ? 0 : Write(model, known.Value, dryRun, operations);
 
             List<string> sheets;
             bool opened = false;
-            ModelDoc2 drawing = app.GetOpenDocumentByName(drawingPath) as ModelDoc2;
             Busy = true;
             try
             {
@@ -176,6 +232,8 @@ namespace ESKD.MaterialSync.Sw
                     return 0;
                 }
                 sheets = SheetFormats((DrawingDoc)drawing);
+                // Запоминаются только листы файла: открытый конструктором чертёж может быть изменён и не сохранён.
+                if (opened && stamp != DateTime.MinValue) SheetsRead[drawingPath] = new KeyValuePair<DateTime, List<string>>(stamp, sheets);
             }
             finally
             {
@@ -183,7 +241,21 @@ namespace ESKD.MaterialSync.Sw
                 Busy = false;
             }
             if (sheets.Count == 0 || sheets.Contains("")) return 0;
-            return Write(model, sheets);
+            return Write(model, sheets, dryRun, operations);
+        }
+
+        /// <summary>Чертёж сохранён позже модели: её «Формат» мог отстать от листов.</summary>
+        private static bool DrawingNewer(string drawingPath, string modelPath)
+        {
+            try
+            {
+                return File.GetLastWriteTimeUtc(drawingPath) > File.GetLastWriteTimeUtc(modelPath);
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("Формат: время файлов " + Path.GetFileName(modelPath) + " не прочитано (" + ex.Message + ") — сверяю по чертежу");
+                return true;
+            }
         }
 
         /// <summary>«Формат» пуст (или шаблонный) и в общих свойствах, и во всех конфигурациях.</summary>
@@ -201,6 +273,15 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Записать «Формат» (и перечень форматов в «Примечание») на уровни модели. Возвращает число изменений.</summary>
         private static int Write(ModelDoc2 model, List<string> sheets)
         {
+            return Write(model, sheets, false, null);
+        }
+
+        /// <summary>
+        /// dryRun — только сверка: число свойств, которые запись изменила бы; модель не меняется. operations — куда сложить
+        /// строки журнала записи (null — не нужны).
+        /// </summary>
+        private static int Write(ModelDoc2 model, List<string> sheets, bool dryRun, List<string> operations)
+        {
             string title = DocInfo.TitleOf(model);
             string remark;
             string column = DrawingFormat.Column(sheets, out remark);
@@ -208,7 +289,7 @@ namespace ESKD.MaterialSync.Sw
 
             Settings settings = Settings.Read();
             PropertyDictionary dict = SyncService.Dictionary(settings);
-            PropertyWriter w = new PropertyWriter(model, settings.DryRun);
+            PropertyWriter w = new PropertyWriter(model, dryRun || settings.DryRun);
             if (BchService.IsBch(w, dict)) return 0;
 
             string[] configs = w.ConfigurationNames();
@@ -221,7 +302,7 @@ namespace ESKD.MaterialSync.Sw
                 if (remark.Length > 0)
                 {
                     if (DrawingFormat.RemarkIsFormatList(oldRemark)) w.Set(level, dict[Role.Remark], remark);
-                    else Log.Warn(string.Format("{0} [{1}]: «Примечание» занято («{2}») — перечень форматов «{3}» впишите сами",
+                    else if (!dryRun) Log.Warn(string.Format("{0} [{1}]: «Примечание» занято («{2}») — перечень форматов «{3}» впишите сами",
                         title, level.Length == 0 ? "общие" : level, oldRemark, remark));
                 }
                 else if (oldRemark != null && oldRemark.Trim().StartsWith(DrawingFormat.Several, StringComparison.Ordinal))
@@ -229,6 +310,8 @@ namespace ESKD.MaterialSync.Sw
                     w.Set(level, dict[Role.Remark], "");
                 }
             }
+            if (operations != null) operations.AddRange(w.Operations);
+            if (dryRun) return w.Operations.Count;
             if (w.Operations.Count > 0)
                 Log.Info(string.Format("Формат чертежа → модель {0}: {1}; операций {2}\r\n    {3}", title, column, w.Operations.Count,
                     string.Join("\r\n    ", w.Operations.ToArray())));

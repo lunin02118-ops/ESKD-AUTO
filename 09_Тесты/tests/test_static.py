@@ -469,6 +469,358 @@ class StaticRepository(StaticTestCase):
         self.assertEqual([], result["problems"])
         self.assertTrue(result["sandboxRemoved"], "временный раздел реестра не удалён")
 
+    def test_T0_command_callbacks_are_guarded(self):
+        """T0 (сверка SW API 23.09.2026, №7): тело каждой кнопки надстройки — в Guarded или try: исключение, ушедшее в
+        SolidWorks, он проглатывает молча, и кнопка «ничего не сделала» без записи в журнал."""
+        raw = (ADDIN / "SwAddin.cs").read_text(encoding="utf-8-sig")
+        # Имя обработчика стоит перед именем проверки доступности: «…, "CheckProduct", "EnableCheckCommand", …».
+        callbacks = re.findall(r'"(\w+)",\s*"Enable\w*"', raw)
+        self.assertGreaterEqual(len(callbacks), 12, callbacks)
+        text = strip_csharp_literals(raw)
+        bare = []
+        for name in callbacks:
+            found = re.search(r"public void " + name + r"\(\)\s*\{", text)
+            self.assertIsNotNone(found, name)
+            body = text[found.end():matching_brace(text, found.end() - 1)]
+            body = re.sub(r"//[^\n]*", "", body).strip()
+            if not (body.startswith("Guarded(") or body.startswith("try")):
+                bare.append(name)
+        self.assertEqual([], bare, "кнопки без защиты от исключения")
+
+    def test_T0_graph3_reads_body_materials(self):
+        """T0 (сверка SW API 23.09.2026, №33): графа 3, «Материал_Строка», запись БЧ и проверка «материал не назначен»
+        читают фактический материал — свой материал тела перекрывает материал детали (SyncService.ActualMaterial)."""
+        sync = (ADDIN / "Sw" / "SyncService.cs").read_text(encoding="utf-8-sig")
+        found = re.search(r"public static void SyncMaterials\([^)]*\)\s*\{", sync)
+        body = sync[found.end():matching_brace(sync, found.end() - 1)]
+        self.assertIn("ActualMaterial(", body, "графа 3 — по фактическому материалу")
+        self.assertNotIn("MaterialName(", body, "не только материал детали")
+        for name in ("CheckService.cs", "BchService.cs"):
+            text = (ADDIN / "Sw" / name).read_text(encoding="utf-8-sig")
+            self.assertNotIn("SyncService.MaterialName(", text, name + ": только материал детали")
+            self.assertIn("SyncService.ActualMaterial(", text, name)
+
+    def test_T0_open_event_takes_only_the_opened_document(self):
+        """T0 (сверка SW API 23.09.2026, №11): документ события ищется только по имени — запасной ActiveDoc давал чужой
+        документ (при SyncOnOpen = 1 запись ушла бы в него); пробный проход при открытии — в простое, открытие его не ждёт."""
+        hub = (ADDIN / "Sw" / "EventHub.cs").read_text(encoding="utf-8-sig")
+        code = re.sub(r"//[^\n]*", "", hub)
+        self.assertNotIn("return _app.ActiveDoc as ModelDoc2;", code, "запасной ActiveDoc при поиске документа по имени")
+        found = re.search(r"private int OnFileOpenPost\(string fileName\)\s*\{", code)
+        body = code[found.end():matching_brace(code, found.end() - 1)]
+        self.assertNotIn("DryRun = true", body, "пробный проход в самом событии открытия")
+        self.assertIn('Kind = "opendiag"', body, "пробный проход — задача простоя")
+
+    def test_T0_review2_windowless_and_opendiag(self):
+        """T0 (ревью 23.09.2026): документ без окна (скрытый, остался в сборке) материал по геометрии в простое не
+        получает — надстройка без окна документ не правит. Пробная задача открытия несёт путь и при закрытии документа
+        не пишет ложного «задача не выполнена» (закрытие заказа и очистка открывают и закрывают файлы подряд)."""
+        hub = (ADDIN / "Sw" / "EventHub.cs").read_text(encoding="utf-8-sig")
+        code = re.sub(r"//[^\n]*", "", hub)
+        found = re.search(r'if \(task\.Kind == "stock"\)\s*\{', code)
+        stock = code[found.end():matching_brace(code, found.end() - 1)]
+        self.assertIn("Windowless(task.Doc)", stock, "без окна — задача отменяется")
+        self.assertLess(stock.find("Windowless(task.Doc)"), stock.find("ApplyStock("), "до назначения")
+        self.assertRegex(code, r'Kind = "opendiag", TargetPath = SafePath\(doc\)', "задача открытия с путём")
+        for name in (r"private void DropTasks\(", r"public void Detach\("):
+            m = re.search(name + r"[^{]*\{", code)
+            body = code[m.end():matching_brace(code, m.end() - 1)]
+            self.assertIn('"opendiag"', body, name + ": пробная задача без предупреждения")
+
+    def test_T0_review2_lzk_abort_waits_for_swtools(self):
+        """T0 (ревью 23.09.2026): Abort ждёт завершения SWTools после Kill — иначе временные файлы ещё заняты и остаются;
+        служба перестаёт быть текущей и при сбое уборки (finally), а уборка ловит и отказ в доступе."""
+        lzk = (ADDIN / "Sw" / "LzkService.cs").read_text(encoding="utf-8-sig")
+        code = re.sub(r"//[^\n]*", "", lzk)
+        m = re.search(r"public static void Abort\(string reason\)\s*\{", code)
+        abort = code[m.end():matching_brace(code, m.end() - 1)]
+        self.assertIn("WaitForExit(", abort, "ждать SWTools после Kill")
+        self.assertIn("finally", abort, "служба снимается и при сбое уборки")
+        m = re.search(r"private void CleanupAttempt\(\)\s*\{", code)
+        cleanup = code[m.end():matching_brace(code, m.end() - 1)]
+        self.assertIn("UnauthorizedAccessException", cleanup, "отказ в доступе при удалении временного файла")
+
+    def test_T0_unloaded_component_is_not_suppressed(self):
+        """T0 (сверка SW API 23.09.2026, №20; e2e X17): скрытый незагруженный компонент SolidWorks отдаёт погашенным, но с
+        IsLoaded = false. Выгрузка, проверка изделия и ЛЗК отбрасывают только погашенный (ComponentState.Suppressed), а
+        незагруженный называют «модель не загружена»."""
+        for name in ("ExportService.cs", "ProductReviewService.cs", "LzkService.cs"):
+            code = re.sub(r"//[^\n]*", "", (ADDIN / "Sw" / name).read_text(encoding="utf-8-sig"))
+            self.assertIn("ComponentState.Suppressed(", code, name)
+            self.assertNotIn("swComponentSuppressionState_e.swComponentSuppressed", code, name + ": погашенный — через ComponentState")
+            self.assertNotRegex(code, r"\bc(omp)?\.IsSuppressed\(\)", name + ": IsSuppressed компонента истинно и у незагруженного")
+        state = (ADDIN / "Sw" / "ComponentState.cs").read_text(encoding="utf-8-sig")
+        self.assertIn("IsLoaded()", state, "незагруженный — не погашенный")
+
+    def test_T0_raw_property_read_without_recalculation(self):
+        """T0 (сверка SW API 23.09.2026, №24; e2e P20): сырое значение свойства читается без пересчёта (Get4 с
+        UseCached = true) — пересчёт «SW-Mass» каждого исполнения библиотечной детали растягивал Ctrl+S до ~28 с;
+        с пересчётом читается только вычисленное."""
+        code = re.sub(r"//[^\n]*", "", (ADDIN / "Sw" / "PropertyWriter.cs").read_text(encoding="utf-8-sig"))
+        self.assertIn("Get4(name, !fresh,", code, "пересчёт только по запросу")
+        self.assertRegex(code, r"public string Raw\([^)]*\)\s*\{\s*string\[\] pair = Values\(cfg, name, false\);", "сырое — из кэша")
+        self.assertRegex(code, r"public string Resolved\([^)]*\)\s*\{\s*string\[\] pair = Values\(cfg, name, true\);",
+                         "вычисленное — свежее")
+
+    def test_T0_export_opens_drawings_without_window(self):
+        """T0 (сверка SW API 23.09.2026, №28, шаг 2; e2e X20): выгрузка открывает чертёж без окна и возвращает прежнюю
+        видимость новых чертежей даже при сбое открытия (finally)."""
+        code = re.sub(r"//[^\n]*", "", (ADDIN / "Sw" / "ExportService.cs").read_text(encoding="utf-8-sig"))
+        m = re.search(r"private static ModelDoc2 OpenDrawing\([^)]*\)\s*\{", code)
+        body = code[m.end():matching_brace(code, m.end() - 1)]
+        self.assertIn("GetDocumentVisible((int)swDocumentTypes_e.swDocDRAWING)", body, "прежняя видимость запомнена")
+        self.assertRegex(body, r"DocumentVisible\(false, \(int\)swDocumentTypes_e\.swDocDRAWING\);\s*try\s*\{[^}]*OpenDoc6",
+                         "открытие — без окна")
+        self.assertRegex(body, r"finally\s*\{\s*app\.DocumentVisible\(visible,", "видимость возвращается в finally")
+
+    def test_T0_flat_frame_points_checked_by_edge_ends(self):
+        """T0 (L15, 23.09.2026): рамка развёртки берёт прямые рёбра по концам (GetCurveParams2), а точки кривых — только
+        сверенные с концами ребра (EdgePoints.Choose). Кривая развёрнутого тела бывает сдвинута: уголок 100+60 давал
+        262 мм вместо 161."""
+        lzk = (ADDIN / "Sw" / "LzkService.cs").read_text(encoding="utf-8-sig")
+        code = re.sub(r"//[^\n]*", "", lzk)
+        m = re.search(r"private static double\[\] FlatFrame\([^)]*\)\s*\{", code)
+        frame = code[m.end():matching_brace(code, m.end() - 1)]
+        self.assertIn("EdgePoints.Choose(", frame, "точки рёбер сверены с концами")
+        self.assertNotIn("Evaluate2(", frame, "кривая не вычисляется в обход сверки")
+        self.assertEqual(1, len(re.findall(r"curve\.Evaluate2\(", code)), "Curve.Evaluate2 — только в EdgeSamples")
+
+    def test_T0_review2_materials_and_namesakes(self):
+        """T0 (ревью 23.09.2026): материал детали, который встал, считается назначенным, а перекрывающие тела — отдельным
+        замечанием (StockCatalog.WholePartResult); многотельный лист, где конструктор уже назначил телам материалы, не
+        даёт замечания (SheetBodiesSettled); материал тел читается только у активного исполнения (BodiesBelongTo);
+        отказ «Закрыть заказ» разделяет окна и детали сборок (NamesakeText)."""
+        stock = (ADDIN / "Sw" / "StockService.cs").read_text(encoding="utf-8-sig")
+        self.assertIn("StockCatalog.WholePartResult(", stock, "итог назначения детали целиком")
+        self.assertNotRegex(stock, r"WholePartProblem\([^;]*;\s*bool set = problem\.Length == 0", "«не назначен» при вставшем материале")
+        self.assertIn("StockCatalog.SheetBodiesSettled(", stock, "решённый многотельный лист без замечания")
+        sync = (ADDIN / "Sw" / "SyncService.cs").read_text(encoding="utf-8-sig")
+        self.assertIn("BodyMaterials.BodiesBelongTo(", sync, "тела — только своего исполнения")
+        close = (ADDIN / "Sw" / "CloseOrderService.cs").read_text(encoding="utf-8-sig")
+        self.assertIn("OrderArchive.NamesakeText(", close, "отказ с окнами и деталями сборок раздельно")
+        self.assertNotIn("Закройте их и повторите", close, "не просить закрыть документы без окна")
+        self.assertIn("WholePartResult(before", stock, "назначением считается только смена материала детали")
+        self.assertIn("propagate", stock, "материал чужой библиотеки в исполнения не переносится")
+        self.assertIn("BodyMaterials.Actual(", sync, "материал другого исполнения — «не узнать», а не «нет»")
+        hub = (ADDIN / "Sw" / "EventHub.cs").read_text(encoding="utf-8-sig")
+        self.assertIn("applied.StatusLine()", hub, "замечания назначения по Ctrl+S видны в строке состояния")
+        self.assertIn(".Visible", close, "есть ли у документа окно")
+
+    def test_T0_hidden_document_stays_tracked(self):
+        """T0 (сверка SW API 23.09.2026, №9): надстройка слушает DestroyNotify2 с типом закрытия. Скрытый документ (окно
+        закрыто, документ остался в памяти сборки) остаётся в учёте, у него снимаются только отложенные задачи."""
+        hub = (ADDIN / "Sw" / "EventHub.cs").read_text(encoding="utf-8-sig")
+        code = re.sub(r"//[^\n]*", "", hub)
+        self.assertNotRegex(code, r"\.DestroyNotify\s*[+-]=", "старый DestroyNotify без типа")
+        self.assertEqual(3, len(re.findall(r"\.DestroyNotify2\s*\+=", code)), "деталь, сборка, чертёж")
+        self.assertIn("swDestroyNotifyHidden", code, "скрытие различается")
+
+    def test_T0_addin_release_takes_down_everything(self):
+        """T0 (сверка SW API 23.09.2026, №0 и №3): сбой ConnectToSW и выгрузка надстройки идут одним путём Release —
+        ведомость ЛЗК прерывается, подписки и вкладка снимаются. Каждая подписка Attach записана для отписки, Detach
+        снимает их по одной и пишет в журнал отложенные задачи, которые не успели выполниться."""
+        addin = strip_csharp_literals((ADDIN / "SwAddin.cs").read_text(encoding="utf-8-sig"))
+        hub = strip_csharp_literals((ADDIN / "Sw" / "EventHub.cs").read_text(encoding="utf-8-sig"))
+        lzk = (ADDIN / "Sw" / "LzkService.cs").read_text(encoding="utf-8-sig")
+
+        def body(text, signature):
+            found = re.search(signature + r"[^{]*\{", text)
+            self.assertIsNotNone(found, signature)
+            return text[found.end():matching_brace(text, found.end() - 1)]
+
+        connect = body(addin, r"public bool ConnectToSW\(")
+        self.assertRegex(connect, r"catch \(Exception ex\)\s*\{[^}]*Release\(", "сбой ConnectToSW снимает то, что успело встать")
+        self.assertIn("Release(", body(addin, r"public bool DisconnectFromSW\("), "выгрузка — тем же путём")
+        release = body(addin, r"private void Release\(")
+        for step in ("LzkService.Abort(", "_hub.Detach()", "RemoveCommands()"):
+            self.assertIn(step, release, "Release: " + step)
+        attach = body(hub, r"public void Attach\(")
+        self.assertEqual(attach.count("+="), attach.count("Undo("), "каждая подписка записана для отписки")
+        detach = body(hub, r"public void Detach\(")
+        self.assertIn("_unsubscribe", detach, "отписка по записанному списку")
+        self.assertNotIn("-=", detach, "не одним блоком: сбой первой отписки оставлял остальные")
+        self.assertIn("до выполнения отложенной задачи", (ADDIN / "Sw" / "EventHub.cs").read_text(encoding="utf-8-sig"),
+                      "снятые задачи — в журнале")
+        self.assertIn("public static void Abort(string reason)", lzk, "ведомость ЛЗК можно прервать снаружи")
+
+    def test_T0_export_survives_one_bad_document(self):
+        """T0 (сверка SW API 23.09.2026, №29 и №20): сбой одного документа не обрывает выгрузку. Вызовы SolidWorks и
+        создание папок в составе, PDF, DXF и IGS стоят внутри try с catch; каждый документ выгружается под своим catch;
+        окно изделия возвращается в finally; незагруженная модель названа в отчёте, итог разрешения облегчённых
+        компонентов проверяется."""
+        raw = (ADDIN / "Sw" / "ExportService.cs").read_text(encoding="utf-8-sig")
+        text = re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), strip_csharp_literals(raw))
+
+        def body(name):
+            found = re.search(r"(?:private|public) static [\w<>\[\], ]+ " + name + r"\([^)]*\)\s*\{", text)
+            self.assertIsNotNone(found, name)
+            return found.end(), matching_brace(text, found.end() - 1)
+
+        def guarded(kind):
+            """Участки [начало, конец) блоков try, за которыми стоит catch (kind="try"), или блоков finally."""
+            spans = []
+            for m in re.finditer(r"\b" + kind + r"\s*\{", text):
+                end = matching_brace(text, m.end() - 1)
+                if kind == "finally" or re.match(r"\s*catch\b", text[end + 1:]):
+                    spans.append((m.end(), end))
+            return spans
+
+        tries, finals = guarded("try"), guarded("finally")
+        risky = ["Directory.CreateDirectory(", ".CloseDoc(", ".ShowConfiguration2(", ".GetSaveFlag()", ".GetSuppression2()",
+                 ".GetModelDoc2()", ".ExcludeFromBOM", ".ReferencedConfiguration"]
+        bare = []
+        for method in ("Collect", "ExportItem", "Pdf", "PartFiles", "DxfOne", "IgsOne"):
+            start, end = body(method)
+            for call in risky:
+                for m in re.finditer(re.escape(call), text[start:end]):
+                    at = start + m.start()
+                    if not any(a <= at < b for a, b in tries):
+                        bare.append(f"{method}: {call}")
+        self.assertEqual([], bare, "вызовы без catch: исключение оборвало бы всю выгрузку")
+
+        start, end = body("Run")
+        calls = [start + m.start() for m in re.finditer(r"ExportItem\(", text[start:end])]
+        self.assertTrue(calls and all(any(a <= at < b for a, b in tries) for at in calls), "каждый документ — под своим catch")
+        back = [start + m.start() for m in re.finditer(r"Activate\(app, path\)", text[start:end])]
+        self.assertTrue(back and all(any(a <= at < b for a, b in finals) for at in back), "окно изделия возвращается в finally")
+
+        start, end = body("Collect")
+        self.assertIn("swResolveOk", text[start:end], "итог разрешения облегчённых компонентов проверяется")
+        self.assertIn("модель не загружена", raw, "незагруженная модель названа в отчёте")
+
+    def test_T0_cut_list_is_walked_in_one_place(self):
+        """T0 (сверка SW API 23.09.2026, №32, №34, №41): список вырезов обходится только через CutListFolders — папки с
+        телами активного исполнения, вместе с подсварками. Свой обход в сервисе брал и скрытые папки других исполнений
+        (чужой профиль, вторая «заготовка»), а подсварки пропускал."""
+        own = []
+        for path in sorted((ADDIN / "Sw").glob("*.cs")):
+            if path.name == "CutListFolders.cs":
+                continue
+            raw = path.read_text(encoding="utf-8-sig")
+            if re.search(r'"(CutListFolder|SolidBodyFolder|SubWeldFolder)"', raw):
+                own.append(path.name)
+        self.assertEqual([], own, "свой обход списка вырезов")
+        self.assertTrue((ADDIN / "Sw" / "CutListFolders.cs").exists())
+
+    def test_T0_body_material_refusal_is_explained(self):
+        """T0 (сверка SW API 23.09.2026, №38): отказ SolidWorks поставить материал телу объясняется словами — в замечании
+        стояло «не назначен телу (код 4)», и конструктор не знал, что дерево откатано."""
+        text = (ADDIN / "Sw" / "StockService.cs").read_text(encoding="utf-8-sig")
+        # Назначение телам — через BodyAssignment (всем или ни одному, №38), код отказа словами — SwCodes.BodyMaterialProblem.
+        self.assertRegex(text, r"(?s)BodyAssignment\.Apply\(.*?SwCodes\.BodyMaterialProblem\);", "код отказа словами")
+        self.assertNotIn("не назначен телу (код", text)
+        core = (ADDIN / "Core" / "BodyAssignment.cs").read_text(encoding="utf-8-sig")
+        self.assertIn("problem(code)", core, "причина отказа в замечании")
+
+    def test_T0_registration_refuses_32bit_powershell(self):
+        """T0 (сверка SW API 23.09.2026, №4): из 32-битного PowerShell модуль регистрации отказывает с понятным текстом и
+        ничего не пишет: HKCU\\Software\\Classes\\CLSID и HKLM\\Software ушли бы в Wow6432Node, 64-битный SolidWorks такую
+        регистрацию не увидел бы, а проверка, читающая то же представление реестра, сообщала бы «[OK]»."""
+        ps32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "SysWOW64" / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+        if not ps32.exists():
+            self.skipTest("32-битного PowerShell нет (32-битная Windows)")
+        out = subprocess.run([str(ps32), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                              str(paths.TESTS / "tools" / "check_registration_bitness.ps1"),
+                              "-ModulePath", str(ADDIN / "Register-EskdAddin.ps1")], capture_output=True, timeout=120)
+        lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+        self.assertTrue(lines, out.stdout.decode("utf-8", errors="replace") + out.stderr.decode("cp866", errors="replace"))
+        result = json.loads(lines[-1])
+        self.assertFalse(result["is64"], "проба запущена в 32-битном PowerShell")
+        for call in ("reg", "unreg"):
+            self.assertIn("32", result[call], f"{call}: отказ с причиной — 32-битный PowerShell")
+        # Ревью 23.09.2026: снятие регистрации отказывает своим текстом, без «двойного щелчка» по unregister.ps1.
+        self.assertIn("Снятие регистрации", result["unreg"], "отказ снятия — о снятии")
+        self.assertNotIn("двойным щелчком", result["unreg"], "unregister.ps1 двойным щелчком не запускается")
+        self.assertFalse(result["written"], "в реестр ничего не записано")
+
+    def test_T0_registration_refuses_foreign_account(self):
+        """T0 (сверка SW API 23.09.2026, №2): скрипт регистрации, запущенный не от имени того, кто работает за компьютером
+        («Запуск от имени администратора» с паролем ИТ), отказывает до записи в реестр: автозагрузка надстройки ушла бы в
+        профиль администратора, а скрипт писал «[OK]». «[OK]» называет учётную запись. Установщик не меняется."""
+        out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                              str(paths.TESTS / "tools" / "check_registration_account.ps1"),
+                              "-ModulePath", str(ADDIN / "Register-EskdAddin.ps1")], capture_output=True, timeout=120)
+        lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+        self.assertTrue(lines, out.stdout.decode("utf-8", errors="replace") + out.stderr.decode("cp866", errors="replace"))
+        result = json.loads(lines[-1])
+        self.assertIn("учётной записью конструктора", result["foreign"] or "", "чужая учётка — отказ с объяснением")
+        self.assertEqual("", result["same"] or "", "та же учётка — можно")
+        self.assertEqual("", result["unknown"] or "", "владелец сеанса не определён — проверка не мешает")
+        self.assertEqual("", result["here"] or "", "тесты запускает сам владелец сеанса")
+        # Ревью 23.09.2026: владелец сеанса — пользователь, вошедший в сеанс (WTS), а не владелец explorer.exe: чужой
+        # процесс без повышения прав не читает владельца explorer, и проверка молча пропускала.
+        self.assertTrue(result["session_is_me"], "владелец сеанса — тот, кто запускает тесты")
+        module = (ADDIN / "Register-EskdAddin.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("WTSQuerySessionInformation", module, "владелец сеанса — по сеансу Windows")
+        self.assertIn("Регистрация_ЕСКД_на_этом_компьютере.cmd", result["foreign"] or "", "отказ называет, что запустить")
+        self.assertIn("Снятие регистрации", result["foreign_unreg"] or "", "отказ снятия — о снятии, не о регистрации")
+        self.assertNotIn("двойным щелчком", result["foreign_unreg"] or "", "у unregister.ps1 нет ярлыка для двойного щелчка")
+        self.assertIn("-ExecutionPolicy Bypass", result["foreign_unreg"] or "", "команда, которая запустится и при запрете сценариев")
+        self.assertIn(r"C:\ЕСКД\unregister.ps1", result["foreign_unreg"] or "", "путь к скрипту")
+        self.assertIn("Войдите в Windows", result["foreign"] or "", "что делать, если за компьютером не конструктор")
+        register = (ADDIN / "register_eskd.ps1").read_text(encoding="utf-8-sig")
+        check = register.find("Get-EskdForeignAccountMessage")
+        self.assertGreater(check, 0, "register_eskd.ps1 проверяет учётку")
+        self.assertLess(check, register.find('& (Join-Path $PSScriptRoot "build.ps1")'), "до сборки")
+        self.assertLess(check, register.find("Register-EskdAddin -DllPath"), "до записи в реестр")
+        self.assertRegex(register, r"\[OK\][^\n]*учётной записи", "«[OK]» называет учётку")
+        unregister = (ADDIN / "unregister.ps1").read_text(encoding="utf-8-sig")
+        check = unregister.find("Get-EskdForeignAccountMessage")
+        self.assertGreater(check, 0, "unregister.ps1 проверяет учётку")
+        self.assertLess(check, unregister.find("Unregister-EskdAddin -SystemWide"), "до снятия регистрации")
+        self.assertIn("Get-EskdForeignAccountMessage -Action Unregister", unregister, "текст отказа — о снятии")
+
+    def test_T0_launchers_start_64bit_powershell(self):
+        """T0 (сверка SW API 23.09.2026, №4): УСТАНОВИТЬ_ЕСКД.bat и «Регистрация_ЕСКД_на_этом_компьютере.cmd», запущенные
+        из 32-битной программы, всё равно зовут 64-битный PowerShell (Sysnative): System32 у 32-битного процесса — это
+        SysWOW64. Проверяется копиями файлов с поддельными скриптами, которые записывают разрядность своего процесса."""
+        import shutil
+        import tempfile
+        cmd32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "SysWOW64" / "cmd.exe"
+        if not cmd32.exists():
+            self.skipTest("32-битной подсистемы нет (32-битная Windows)")
+        fake = "param([string]$CloseMode)\r\n[Environment]::Is64BitProcess | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'bitness.txt')\r\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            (tmp / "01_x").mkdir()
+            (tmp / "addin").mkdir()
+            shutil.copy2(ROOT / "УСТАНОВИТЬ_ЕСКД.bat", tmp / "setup.bat")
+            (tmp / "01_x" / "Setup_Workstation_SolidWorks.ps1").write_text(fake, encoding="ascii")
+            shutil.copy2(ADDIN / "Регистрация_ЕСКД_на_этом_компьютере.cmd", tmp / "addin" / "reg.cmd")
+            (tmp / "addin" / "register_eskd.ps1").write_text(fake, encoding="ascii")
+            for launcher, result in ((tmp / "setup.bat", tmp / "01_x" / "bitness.txt"),
+                                     (tmp / "addin" / "reg.cmd", tmp / "addin" / "bitness.txt")):
+                with self.subTest(launcher=launcher.name):
+                    subprocess.run([str(cmd32), "/c", str(launcher)], input=b"\r\n", capture_output=True, timeout=120,
+                                   cwd=str(launcher.parent))
+                    self.assertTrue(result.exists(), f"{launcher.name}: PowerShell не запустился")
+                    self.assertEqual("True", result.read_text(encoding="utf-8-sig").strip(), f"{launcher.name}: 64-битный PowerShell")
+
+    def test_T0_e2e_harness_follows_registered_versions(self):
+        """T0 (сверка SW API 23.09.2026, №6): стенд e2e направляет на проверяемую DLL все подразделы версий
+        InprocServer32, а не только «1.0.0.0»: версию регистрация берёт из самой DLL, и после её подъёма стенд незаметно
+        проверял бы установленную копию надстройки."""
+        import uuid
+        import winreg
+        from eskd_e2e import session
+        base = "Software\\ESKD_RegistrationTest_" + uuid.uuid4().hex
+        key = base + "\\InprocServer32"
+        try:
+            for version in ("1.0.0.0", "6.0.0.0"):
+                winreg.CloseKey(winreg.CreateKey(winreg.HKEY_CURRENT_USER, key + "\\" + version))
+            self.assertEqual(sorted([key, key + "\\1.0.0.0", key + "\\6.0.0.0"]),
+                             sorted(session.inproc_keys(winreg.HKEY_CURRENT_USER, key)), "раздел и все подразделы версий")
+            self.assertEqual([key + "_нет"], session.inproc_keys(winreg.HKEY_CURRENT_USER, key + "_нет"),
+                             "раздела нет — только он сам, подразделы не выдумываются")
+        finally:
+            for sub in (key + "\\1.0.0.0", key + "\\6.0.0.0", key, base):
+                try:
+                    winreg.DeleteKey(winreg.HKEY_CURRENT_USER, sub)
+                except OSError:
+                    pass
+        text = (paths.TESTS / "eskd_e2e" / "session.py").read_text(encoding="utf-8")
+        self.assertNotIn('"\\\\1.0.0.0"', text, "версия сборки в стенде не прибита")
+
     def test_T0_setup_writes_swplus_files_only_when_changed(self):
         """T0: установщик переписывает файлы SWPlus только при отличии, свою фамилию и организацию ставит первыми — MProp берёт первую строку (WP-3.4, З-3);
         функции — в модуле EskdDeploy.psm1, запись идёт в локальную копию."""
@@ -481,6 +833,80 @@ class StaticRepository(StaticTestCase):
         self.assertEqual([], json.loads(lines[-1])["problems"])
         for script in (module, ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1"):
             self.assertNotIn("WriteAllLines", script.read_text(encoding="utf-8-sig"), "файлы SWPlus пишутся только через Write-SwPlusLines")
+
+    def test_T0_installer_survives_powershell7_environment(self):
+        """T0 (аудит 23.09.2026): установщик, запущенный из PowerShell 7, наследовал его PSModulePath — Windows PowerShell 5.1
+        терял Get-FileHash, сверка хешей молча давала пусто, и Drew переустанавливался. Теперь хэш считается средствами .NET,
+        движок сам чистит пути модулей, окно и .bat запускают 5.1 по полному пути с его собственными путями модулей."""
+        import tempfile
+        setup_dir = ROOT / "01_Настройки_SolidWorks" / "_Служебное"
+        module = setup_dir / "EskdDeploy.psm1"
+        setup = (setup_dir / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        code = setup + module.read_text(encoding="utf-8-sig")
+        self.assertNotRegex(code, r"\(Get-FileHash\s+-", "хэш через Get-FileHash: без модуля Utility он молча пуст")
+        self.assertIn("Reset-EskdPowerShellEnvironment", setup, "движок не чистит пути модулей PowerShell 7")
+        self.assertLess(setup.index("Reset-EskdPowerShellEnvironment"), setup.index("Get-EskdLayout"), "чистка — до работы")
+        bat = (ROOT / "УСТАНОВИТЬ_ЕСКД.bat").read_bytes()
+        self.assertTrue(all(b < 128 for b in bat), "в .bat не-ASCII символы")
+        self.assertIn(b"PSModulePath=", bat, ".bat передаёт 5.1 чужие пути модулей")
+        self.assertIn(b"WindowsPowerShell\\v1.0\\powershell.exe", bat, ".bat запускает powershell из PATH")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sample = Path(tmp) / "sample.bin"
+            sample.write_bytes(b"ESKD" * 1000)
+            expected = hashlib.sha256(sample.read_bytes()).hexdigest()
+            script = Path(tmp) / "probe.ps1"
+            script.write_text(
+                "param([string]$Module, [string]$File)\n"
+                "Import-Module $Module -Force -DisableNameChecking\n"
+                "$fixed = Reset-EskdPowerShellEnvironment\n"
+                "$again = Reset-EskdPowerShellEnvironment\n"
+                "[pscustomobject]@{ fixed = $fixed; again = $again; path = $env:PSModulePath;\n"
+                "  sha = (Get-EskdFileSha256 -Path $File); missing = (Get-EskdFileSha256OrNull -Path ($File + '.нет')) } |\n"
+                "  ConvertTo-Json -Compress\n", encoding="utf-8-sig")
+            env = {k: v for k, v in os.environ.items() if k.upper() != "PSMODULEPATH"}
+            env["PSModulePath"] = r"C:\Users\x\Documents\PowerShell\Modules;C:\Program Files\PowerShell\Modules;" \
+                                  r"C:\Program Files\PowerShell\7\Modules;C:\Program Files\WindowsPowerShell\Modules;D:\Other\Modules"
+            out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
+                                  "-Module", str(module), "-File", str(sample)], capture_output=True, timeout=120, env=env)
+            lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+            self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
+            result = json.loads(lines[-1])
+        self.assertTrue(result["fixed"], "пути PowerShell 7 не убраны")
+        self.assertFalse(result["again"], "повторная чистка снова что-то меняет")
+        parts = result["path"].split(";")
+        self.assertFalse([p for p in parts if "\\PowerShell\\" in p and "WindowsPowerShell" not in p], parts)
+        self.assertTrue(parts[0].endswith("WindowsPowerShell\\Modules"), parts)
+        self.assertIn("D:\\Other\\Modules", parts, "посторонние пути 5.1 не выбрасываются")
+        self.assertEqual(1, len([p for p in parts if p.rstrip("\\").lower().endswith("program files\\windowspowershell\\modules")]),
+                         "свой путь не дублируется")
+        self.assertEqual(expected, result["sha"], "SHA-256 средствами .NET")
+        self.assertIsNone(result["missing"], "нет файла — пусто, а не исключение")
+
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("configurator", setup_dir.parent / "_Исходники" / "CAD_Workstation_Configurator.py")
+        configurator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(configurator)
+        polluted = {"PSMODULEPATH": r"C:\Program Files\PowerShell\7\Modules", "SYSTEMROOT": r"C:\Windows",
+                    "PROGRAMFILES": r"C:\Program Files", "OTHER": "1"}
+        env = configurator.engine_env(polluted)
+        keys = [k for k in env if k.upper() == "PSMODULEPATH"]
+        self.assertEqual(["PSModulePath"], keys, "один ключ пути модулей")
+        self.assertNotIn("PowerShell\\7", env["PSModulePath"])
+        self.assertEqual("1", env["OTHER"], "прочее окружение сохраняется")
+        ps51 = os.path.join(os.environ.get("SYSTEMROOT", r"C:\Windows"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+        if os.path.isfile(ps51):
+            self.assertEqual(os.path.normcase(ps51), os.path.normcase(configurator.build_command("S.ps1", "И", "", "Skip")[0]),
+                             "окно запускает powershell из PATH, а не 5.1 по полному пути")
+        import inspect
+        self.assertRegex(inspect.getsource(configurator), r"Popen\([^)]*env=engine_env\(\)",
+                         "окно передаёт движку PSModulePath PowerShell 7")
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / configurator.ENGINE).write_text("old", encoding="utf-8")
+            (Path(tmp) / "_Служебное").mkdir()
+            (Path(tmp) / "_Служебное" / configurator.ENGINE).write_text("new", encoding="utf-8")
+            self.assertEqual(str(Path(tmp) / "_Служебное" / configurator.ENGINE), configurator.find_engine(tmp, tmp),
+                             "выпуск поверх старой папки: окно запускает старый движок рядом с собой")
 
     def test_T0_mprop_ini_cleanup_flag_untouched(self):
         """T0: надстройка не пишет MProp.ini — первая строка там флаг MProp «Очистка свойств», в репозитории он выключен (Д-29)."""
@@ -661,7 +1087,8 @@ class StaticRepository(StaticTestCase):
     def test_T0_fixture_materials_follow_library(self):
         """T0: по манифесту фикстур у деталей из проката корпуса А и у копий корпуса Б — сортамент из корпоративной библиотеки,
         у стандартных и покупных изделий сортамента нет; копии корпуса Б сделаны из текущих исходных файлов и не изменены
-        (решение владельца 13.09.2026; материалы в самих файлах проверяет I07)."""
+        (решение владельца 13.09.2026; материалы в самих файлах проверяет I07). Детали из листа построены листовым металлом:
+        вытянутая пластина из «Лист …» не даёт DXF развёртки, и изделие с ней не проходит проверку (23.09.2026, G05)."""
         from eskd_e2e import build
 
         def digest(path):
@@ -674,6 +1101,8 @@ class StaticRepository(StaticTestCase):
             kind = item.get("kind")
             if kind in ("part", "weldment") and item.get("material") not in library:
                 wrong.append(f"{fid}: у детали из проката «{item.get('material')}» — не сортамент библиотеки")
+            if str(item.get("material") or "").startswith("Лист ") and not item.get("sheet_metal"):
+                wrong.append(f"{fid}: деталь из листа построена не листовым металлом — fixtures/build_fixtures.py --sheet-metal")
             if kind in ("standard", "purchased"):
                 if "material_sw" not in item:
                     wrong.append(f"{fid}: материал изделия не записан в манифест")
@@ -732,21 +1161,27 @@ class StaticRepository(StaticTestCase):
     def test_T0_audit_wave2_guards(self):
         """T0 (глубокий аудит 19.09.2026, волны 2–3): скорость на NAS и одно правило «покупное».
         Словарь SWPlus и значения свойств не перечитываются на каждое обращение; опрос кнопки «Новая ревизия» не читает
-        сеть чаще раза в 2 с; выгрузка открывает чертёж один раз и возвращает настройки DXF; «покупное» решает
+        сеть в потоке SolidWorks; выгрузка открывает чертёж один раз и возвращает настройки DXF; «покупное» решает
         ComponentKind; установщик запускает повышенные процессы из %TEMP% и проверяет чужие пути в профиле."""
         sync = (ADDIN / "Sw" / "SyncService.cs").read_text(encoding="utf-8")
         self.assertIn("DictionaryRecheck", sync, "словарь SWPlus кешируется")
         writer = (ADDIN / "Sw" / "PropertyWriter.cs").read_text(encoding="utf-8")
         self.assertIn("_values.Clear()", writer, "кеш значений сбрасывается при записи")
         addin = (ADDIN / "SwAddin.cs").read_text(encoding="utf-8")
-        self.assertIn("RevisionService.Unavailable(_app, true)", addin, "опрос кнопки ревизии — с кешем")
+        self.assertIn("RevisionService.AvailableForButton(_app)", addin, "опрос кнопки ревизии — из памяти")
+        revision = (ADDIN / "Sw" / "RevisionService.cs").read_text(encoding="utf-8")
+        self.assertNotIn("IssuedQuick", revision, "опрос не читает отчёты выдачи в потоке SolidWorks")
+        self.assertIn("IssuedFlags.Get(", revision, "признак «выдан» для опроса — фоновый")
+        for name in ("ReadyService.cs", "CloseOrderService.cs"):
+            self.assertIn("RevisionService.ForgetIssued()", (ADDIN / "Sw" / name).read_text(encoding="utf-8"),
+                          name + ": после выдачи или закрытия заказа запомненный ответ кнопки сбрасывается")
         export = (ADDIN / "Sw" / "ExportService.cs").read_text(encoding="utf-8")
         self.assertEqual(1, export.count("swDocumentTypes_e.swDocDRAWING,"), "чертёж открывается в одном месте")
         self.assertIn("восстановление настройки DXF", export, "настройки DXF пользователя возвращаются")
         services = {name: (ADDIN / "Sw" / name).read_text(encoding="utf-8")
-                    for name in ("CheckService.cs", "ExportService.cs", "LzkService.cs")}
+                    for name in ("ProductReviewService.cs", "ExportService.cs", "LzkService.cs")}
         self.assertEqual([], [n for n, text in services.items() if "ComponentKind.IsPurchased(" not in text],
-                         "проверка, выгрузка и ЛЗК решают «покупное» одним правилом")
+                         "проверка (состав изделия собирает ProductReviewService), выгрузка и ЛЗК решают «покупное» одним правилом")
         etalon = (ADDIN / "Sw" / "EtalonService.cs").read_text(encoding="utf-8")
         self.assertIn("ReadManifest(snapshot) ?? State(snapshot)", etalon, "прежние снимки сравниваются по манифесту")
         setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
@@ -986,6 +1421,55 @@ class StaticRepository(StaticTestCase):
                 pass
             backup.unlink(missing_ok=True)
 
+    def test_T0_session_waits_for_own_solidworks_only(self):
+        """T0 (23.09.2026, T05): после зависания stop() завершает свой SolidWorks через kill, и процесс ещё виден
+        какое-то время. Новая сессия его дожидается, а не отказывает — иначе все следующие тесты прогона становятся
+        ошибками. SolidWorks, запущенный не тестами (в том числе получивший номер нашего завершённого процесса),
+        по-прежнему — немедленный отказ, и его никто не трогает. Вместо SolidWorks — дочерние процессы Python."""
+        import sys
+        import time
+        import psutil
+        from eskd_e2e import session
+
+        def child(seconds):
+            return subprocess.Popen([sys.executable, "-c", f"import time; time.sleep({seconds})"])
+
+        children = []
+        try:
+            # Свой, завершается за время ожидания: старт дожидается, а не отказывает.
+            leaving = child(2)
+            children.append(leaving)
+            session.remember_own(leaving.pid)
+            session.wait_own_exit([psutil.Process(leaving.pid)], timeout=30)
+            self.assertIsNotNone(leaving.poll(), "старт не дождался своего процесса")
+
+            # Свой, но не завершается: отказ после ожидания, с номером процесса.
+            stuck = child(60)
+            children.append(stuck)
+            session.remember_own(stuck.pid)
+            with self.assertRaisesRegex(session.SessionRefused, str(stuck.pid)):
+                session.wait_own_exit([psutil.Process(stuck.pid)], timeout=1)
+
+            # Чужой: отказ сразу, без ожидания, процесс жив.
+            foreign = child(60)
+            children.append(foreign)
+            started = time.time()
+            with self.assertRaisesRegex(session.SessionRefused, "уже запущен"):
+                session.wait_own_exit([psutil.Process(foreign.pid)], timeout=30)
+            self.assertLess(time.time() - started, 5, "чужой SolidWorks не повод ждать")
+            self.assertIsNone(foreign.poll(), "чужой процесс завершён")
+
+            # Номер нашего процесса достался другому: время создания не то — чужой.
+            session._OWN_SOLIDWORKS[foreign.pid] = psutil.Process(foreign.pid).create_time() - 100
+            with self.assertRaisesRegex(session.SessionRefused, "уже запущен"):
+                session.wait_own_exit([psutil.Process(foreign.pid)], timeout=30)
+        finally:
+            for p in children:
+                session._OWN_SOLIDWORKS.pop(p.pid, None)
+                if p.poll() is None:
+                    p.kill()
+                p.wait(10)
+
     def test_T0_vba_export_matches_swp(self):
         """T0: текстовая выгрузка модулей VBA пяти макросов SWPlus и SHA-256 в manifest.json совпадают с .swp (WP-0.2);
         после правки макроса выгрузку обновляет tools/export_vba.py в том же коммите."""
@@ -999,7 +1483,9 @@ class StaticRepository(StaticTestCase):
         """T0 (19.09.2026, M07 в длинном прогоне): обработчик DestroyNotify надстройки не снимает подписки — отписка внутри
         события меняет список подписчиков, который перебирает SolidWorks, и изредка роняет его при закрытии детали."""
         hub = (ADDIN / "Sw" / "EventHub.cs").read_text(encoding="utf-8-sig")
-        body = re.search(r"private int OnDocDestroy\(DocState s\)\s*\{(.*?)\n        \}", hub, re.S).group(1)
+        body = re.search(r"private int OnDocDestroy\(DocState s, int destroyType\)\s*\{(.*?)\n        \}", hub, re.S).group(1)
+        # Снятие задач вынесено в DropTasks (№9) — в нём тоже ни одной отписки.
+        body += re.search(r"private void DropTasks\(DocState s, string text\)\s*\{(.*?)\n        \}", hub, re.S).group(1)
         code = "\n".join(line for line in body.splitlines() if not line.strip().startswith("//"))
         self.assertNotIn("Untrack", code)
         self.assertNotIn("-=", code)
@@ -1007,6 +1493,18 @@ class StaticRepository(StaticTestCase):
         for handler in ("OnDocSave(DocState s, string fileName)", "OnDocSavePost(DocState s, int saveType, string fileName)"):
             start = hub.index(handler)
             self.assertIn("if (s.Destroyed) return 0;", hub[start:start + 200], handler)
+
+    def test_T0_idle_queue_cannot_spin(self):
+        """T0 (23.09.2026, T05): очередь простоя надстройки не крутится без конца. Замена материала, которая не прижилась
+        (материал тела перекрывает материал детали), пересохраняла деталь, FileSaveNotify снова ставил подбор, и OnIdle
+        не возвращал управление SolidWorks — тот переставал отвечать, прогон e2e обрывался на T06."""
+        hub = (ADDIN / "Sw" / "EventHub.cs").read_text(encoding="utf-8-sig")
+        idle = re.search(r"private int OnIdle\(\)\s*\{(.*?)\n        \}", hub, re.S).group(1)
+        self.assertRegex(idle, r"int count = _idle\.Count;\s*(//[^\n]*\s*)*while \(count-- > 0",
+                         "OnIdle выполняет только задачи, стоявшие в очереди на входе")
+        remember = re.search(r"private void Remember\(ModelDoc2 doc, SyncReport report\)\s*\{(.*?)\n        \}", hub, re.S).group(1)
+        self.assertIn("if (report.StockNeedsWork && doc != null && !_resaving)", remember,
+                      "собственное пересохранение надстройки не ставит подбор материала заново")
 
     def test_T0_swplus_macros_rebuild_from_original(self):
         """T0 (аудит 19.09, М-К2): исходный SWPlus из git + все правки ЕСКД по порядку (tools/swplus_apply_all.py) дают

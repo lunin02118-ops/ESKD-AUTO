@@ -62,6 +62,13 @@ namespace ESKD.MaterialSync.Sw
                         Environment.NewLine + open);
                     return false;
                 }
+                string namesakes = OpenNamesakes(app, order);
+                if (namesakes.Length > 0)
+                {
+                    Fail(app, interactive, "В SolidWorks открыты одноимённые документы из других папок — сборка заказа взяла " +
+                        "бы их вместо своих, и в архив ушли бы чужие файлы. Закройте документы из списка и повторите:" + Environment.NewLine + namesakes);
+                    return false;
+                }
                 string root = (archiveRoot ?? "").Trim();
                 if (root.Length == 0) root = OrderArchive.DefaultRoot(order);
                 if (interactive)
@@ -142,7 +149,10 @@ namespace ESKD.MaterialSync.Sw
 
                 Status(app, "ЕСКД: закрытие заказа — папка в «" + DoneFolder + "»…");
                 Note(order, target, copied);
-                if (!Move(order, done, problems))
+                bool moved = Move(order, done, problems);
+                // Отчёты выдачи заказа переехали: запомненные ответы кнопки «Новая ревизия» больше не верны.
+                RevisionService.ForgetIssued();
+                if (!moved)
                 {
                     LastOutcome = "error|Заказ в архиве «" + target + "», но папка заказа не перенесена в «" +
                         DoneFolder + "»: " + string.Join("; ", problems.Take(5).ToArray());
@@ -220,6 +230,37 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
+        /// <summary>Открытые документы других папок с именами файлов заказа — через строку (№16); пусто — нет.</summary>
+        private static string OpenNamesakes(ISldWorks app, string order)
+        {
+            try
+            {
+                List<string> open = new List<string>();
+                HashSet<string> windowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                ModelDoc2 doc = app != null ? app.GetFirstDocument() as ModelDoc2 : null;
+                while (doc != null)
+                {
+                    string path = doc.GetPathName() ?? "";
+                    open.Add(path);
+                    // Детали открытых сборок другого заказа загружены без своего окна: закрыть их нечем — закрывают сборку
+                    // или чертёж (ревью 23.09.2026).
+                    if (doc.Visible) windowed.Add(path);
+                    doc = doc.GetNext() as ModelDoc2;
+                }
+                if (open.Count == 0) return "";
+                List<string> found = OrderArchive.Namesakes(open,
+                    Directory.GetFiles(order, "*.sld*", SearchOption.AllDirectories), order);
+                return OrderArchive.NamesakeText(found.Where(p => windowed.Contains(p)).ToList(),
+                    found.Where(p => !windowed.Contains(p)).ToList(), 20);
+            }
+            catch (Exception ex)
+            {
+                // Не узнали — значит нельзя: пустая строка пропустила бы чужие файлы в архив.
+                Log.Error("Закрытие заказа: одноимённые документы", ex);
+                return "SolidWorks не ответил, какие документы открыты (" + ex.Message.Trim() + ") — повторите";
+            }
+        }
+
         // ------------------------------------------------------------------ комплекты (Т-45)
         private static void Kits(ISldWorks app, string order, string temp, List<string> problems)
         {
@@ -236,32 +277,44 @@ namespace ESKD.MaterialSync.Sw
                         .OrderBy(f => f.Length).FirstOrDefault();
                 if (assembly == null) continue;
                 string cipher = LzkNaming.Cipher(folder, assembly);
+                string product = folder;
                 string kit = Path.Combine(temp, KitsFolder, LzkNaming.SafeFileName(cipher));
                 // Повторный запуск не пересобирает готовый комплект: Pack and Go — самая долгая часть (Т-46).
                 if (Directory.Exists(kit) && Directory.GetFiles(kit).Any(f =>
                         f.EndsWith(".sldasm", StringComparison.OrdinalIgnoreCase))) continue;
                 Directory.CreateDirectory(kit);
-                string problem = Pack(app, assembly, kit);
+                string problem = Pack(app, assembly, kit, product);
                 if (problem.Length > 0) problems.Add(cipher + ": " + problem);
             }
         }
 
-        /// <summary>Pack and Go главной сборки с чертежами в одну папку (Т-45).</summary>
-        private static string Pack(ISldWorks app, string assembly, string kit)
+        /// <summary>Pack and Go главной сборки с чертежами в одну папку (Т-45); product — папка изделия.</summary>
+        private static string Pack(ISldWorks app, string assembly, string kit, string product)
         {
             ModelDoc2 doc = null;
             bool opened = false;
             try
             {
                 doc = app.GetOpenDocumentByName(assembly) as ModelDoc2;
+                bool fresh = false;
                 if (doc == null)
                 {
                     int errors = 0, warnings = 0;
                     doc = app.OpenDoc6(assembly, (int)swDocumentTypes_e.swDocASSEMBLY,
                         (int)swOpenDocOptions_e.swOpenDocOptions_Silent, "", ref errors, ref warnings) as ModelDoc2;
-                    opened = doc != null;
+                    if (doc == null) return "сборка не открылась: " + SwCodes.OpenProblem(errors);
+                    fresh = true;
+                    if (warnings != 0) Log.Info("Закрытие заказа: " + assembly + " открыта с предупреждениями (код " + warnings + ")");
                 }
-                if (doc == null) return "сборка не открылась";
+                // SolidWorks мог подставить уже открытую одноимённую сборку другой папки. Чужой документ не закрываем: в
+                // нём могут быть несохранённые правки конструктора (сверка SW API 23.09.2026, №16).
+                string actual = doc.GetPathName() ?? "";
+                if (!string.Equals(actual, assembly, StringComparison.OrdinalIgnoreCase))
+                {
+                    doc = null;
+                    return "SolidWorks подставил одноимённую сборку «" + actual + "»";
+                }
+                opened = fresh;
 
                 PackAndGo pack = doc.Extension.GetPackAndGo() as PackAndGo;
                 if (pack == null) return "Pack and Go недоступен";
@@ -273,6 +326,11 @@ namespace ESKD.MaterialSync.Sw
                 // (боевой прогон 18.09.2026 — 20 моделей и 0 чертежей).
                 object names = null;
                 pack.GetDocumentNames(out names);
+                // Компонент мог прийти из другой папки при своём одноимённом файле (открытый документ другого заказа
+                // подменяет свой) или не найтись вовсе: такой комплект в архив не идёт (№16).
+                List<string> swapped = OrderArchive.Substituted((names as string[]) ?? new string[0],
+                    Directory.GetFiles(product, "*.sld*", SearchOption.AllDirectories), File.Exists);
+                if (swapped.Count > 0) return string.Join("; ", swapped.Take(10).ToArray());
                 pack.SetSaveToName(true, kit);
                 string[] wanted = Drawings(pack, names as string[]);
                 // В журнал — из чего собирается комплект: по этой строке видно, нашёл ли SolidWorks чертежи.

@@ -266,7 +266,8 @@ namespace ESKD.MaterialSync.Sw
             try
             {
                 string db;
-                materialName = SyncService.MaterialName(part, (ModelDoc2)part, cfg, out db) ?? "";
+                // Свой материал тела перекрывает материал детали (сверка SW API 23.09.2026, №33).
+                materialName = SyncService.ActualMaterial(part, (ModelDoc2)part, cfg, out db, null) ?? "";
                 if (materialName.Length == 0) return null;
                 List<string> databases = SyncService.MaterialDatabases(app);
                 if (MaterialCatalog.IsCorporateLibraryMissing(databases, db))

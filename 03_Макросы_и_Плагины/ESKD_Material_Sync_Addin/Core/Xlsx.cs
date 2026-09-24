@@ -41,7 +41,10 @@ namespace ESKD.MaterialSync.Core
         private XlsxBook(string path)
         {
             _path = path;
-            using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            // Книга читается в память целиком, поэтому чтению не мешает Excel, который держит её открытой на запись
+            // (FileShare.Read в таком случае отказывал: журнал изменений, открытый в Excel, «не читался» — ревью 23.09.2026).
+            // Запись (Save) по-прежнему откажет, пока книга открыта.
+            using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
             using (ZipArchive zip = new ZipArchive(fs, ZipArchiveMode.Read))
             {
                 foreach (ZipArchiveEntry entry in zip.Entries)

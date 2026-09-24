@@ -23,6 +23,7 @@ namespace ESKD.MaterialSync.Sw
         private readonly Dictionary<string, CustomPropertyManager> _managers = new Dictionary<string, CustomPropertyManager>(StringComparer.Ordinal);
         private readonly Dictionary<string, string[]> _values = new Dictionary<string, string[]>(StringComparer.Ordinal);
         private string[] _configurations;
+        private bool _dirty;
 
         public int Changes { get; private set; }
         public int Failures { get; private set; }
@@ -63,6 +64,7 @@ namespace ESKD.MaterialSync.Sw
             {
                 _doc.set_SummaryInfo((int)swSummInfoField_e.swSumInfoAuthor, value);
                 Changes++;
+                Dirty();
                 return true;
             }
             catch (Exception ex)
@@ -70,6 +72,25 @@ namespace ESKD.MaterialSync.Sw
                 Failures++;
                 Log.Error("SummaryInfo Author = " + value, ex);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Свойства, записанные через API, SolidWorks изменением документа не считает (D13, 23.09.2026): без флага документ
+        /// закрылся бы без вопроса «сохранить?», и записанное надстройкой в открытую модель (формат из чертежа, кнопка
+        /// «Синхронизировать», «Применить без сохранения») молча пропало бы. Флаг ставится один раз на экземпляр.
+        /// </summary>
+        private void Dirty()
+        {
+            if (_dirty) return;
+            _dirty = true;
+            try
+            {
+                _doc.SetSaveFlag();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("SetSaveFlag " + _docTitle, ex);
             }
         }
 
@@ -124,18 +145,23 @@ namespace ESKD.MaterialSync.Sw
             return manager;
         }
 
-        /// <summary>Сырое и вычисленное значение одним вызовом Get4; null — свойства нет или чтение не удалось.</summary>
-        private string[] Values(string cfg, string name)
+        /// <summary>
+        /// Сырое и вычисленное значение одним вызовом Get4; null — свойства нет или чтение не удалось. fresh — вычисленное
+        /// пересчитать (UseCached = false); иначе SolidWorks отдаёт его из кэша. Сырому значению пересчёт не нужен, а
+        /// пересчёт «SW-Mass@@исполнение@…» каждого из сотни исполнений библиотечной детали занимал при Ctrl+S ~28 с
+        /// против 0,15 с без надстройки (сверка SW API 23.09.2026, №24; e2e P20). pair[2] = "1" — вычисленное свежее.
+        /// </summary>
+        private string[] Values(string cfg, string name, bool fresh)
         {
             if (!Exists(cfg, name)) return null;
             string key = (cfg ?? "") + "\0" + name;
             string[] pair;
-            if (_values.TryGetValue(key, out pair)) return pair;
+            if (_values.TryGetValue(key, out pair) && (!fresh || pair[2].Length > 0)) return pair;
             string val, resolved;
             try
             {
-                Manager(cfg).Get4(name, false, out val, out resolved);
-                pair = new[] { val ?? "", resolved ?? "" };
+                Manager(cfg).Get4(name, !fresh, out val, out resolved);
+                pair = new[] { val ?? "", resolved ?? "", fresh ? "1" : "" };
             }
             catch (Exception ex)
             {
@@ -185,13 +211,13 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Сырое значение (выражение, как записано) или null, если свойства нет.</summary>
         public string Raw(string cfg, string name)
         {
-            string[] pair = Values(cfg, name);
+            string[] pair = Values(cfg, name, false);
             return pair != null ? pair[0] : null;
         }
 
         public string Resolved(string cfg, string name)
         {
-            string[] pair = Values(cfg, name);
+            string[] pair = Values(cfg, name, true);
             return pair != null ? pair[1] : null;
         }
 
@@ -227,6 +253,7 @@ namespace ESKD.MaterialSync.Sw
                 }
                 Names(cfg).Add(name);
                 Changes++;
+                Dirty();
                 return true;
             }
             catch (Exception ex)
@@ -262,6 +289,7 @@ namespace ESKD.MaterialSync.Sw
                 }
                 Names(cfg).Remove(name);
                 Changes++;
+                Dirty();
                 return true;
             }
             catch (Exception ex)

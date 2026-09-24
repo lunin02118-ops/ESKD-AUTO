@@ -23,6 +23,12 @@ namespace ESKD.MaterialSync.Core
         public string Document = "";
         public string Text = "";
 
+        /// <summary>
+        /// Окно «Проверить изделие» исправит это само или спросит об этом (не записанное свойство, обозначение не по имени
+        /// файла, спорный материал): пока документ стоит в окне, находка в его замечаниях не повторяется.
+        /// </summary>
+        public bool Fixable;
+
         public override string ToString()
         {
             return CheckRules.LevelName(Level) + " — " + (Document.Length > 0 ? Document : "изделие") + " — " + Text;
@@ -36,6 +42,8 @@ namespace ESKD.MaterialSync.Core
         public string Assembly = "";
         public string User = "";
         public DateTime Time = DateTime.Now;
+        /// <summary>Версия изделия (<see cref="ProductStamp"/>): по ней книга ЛЗК и выгрузка сверяются с проверкой.</summary>
+        public string Version = "";
         public readonly List<CheckFinding> Findings = new List<CheckFinding>();
         /// <summary>Файл → SHA-256, в порядке обхода.</summary>
         public readonly List<KeyValuePair<string, string>> Checksums = new List<KeyValuePair<string, string>>();
@@ -50,9 +58,11 @@ namespace ESKD.MaterialSync.Core
             return Findings.Count(f => f.Level == level);
         }
 
-        public void Add(string rule, CheckLevel level, string document, string text)
+        public CheckFinding Add(string rule, CheckLevel level, string document, string text)
         {
-            Findings.Add(new CheckFinding { Rule = rule, Level = level, Document = document ?? "", Text = text ?? "" });
+            CheckFinding finding = new CheckFinding { Rule = rule, Level = level, Document = document ?? "", Text = text ?? "" };
+            Findings.Add(finding);
+            return finding;
         }
     }
 
@@ -62,19 +72,54 @@ namespace ESKD.MaterialSync.Core
     /// </summary>
     public static class CheckRules
     {
+        /// <summary>
+        /// Исполнения из изделия, которые проверка сверяет сверх активного в файле: есть в файле, не активное, без пустых и
+        /// повторов (сверка SW API 23.09.2026, находка 14). Имена конфигураций SolidWorks сравнивает без учёта регистра.
+        /// Техническая производная («00&lt;Как сварено&gt;», «01SM-FLAT-PATTERN») — не исполнение: сверяется её исполнение
+        /// («00», «01»), если оно есть в файле, — материал ставят там, а не в производной.
+        /// </summary>
+        public static List<string> OtherExecutions(IEnumerable<string> used, string active, IEnumerable<string> existing)
+        {
+            HashSet<string> names = new HashSet<string>(existing ?? new string[0], StringComparer.OrdinalIgnoreCase);
+            List<string> result = new List<string>();
+            foreach (string name in used ?? new string[0])
+            {
+                string cfg = name ?? "";
+                string owner = TechnicalOwner(cfg);
+                if (owner.Length > 0 && names.Contains(owner)) cfg = owner;
+                if (cfg.Length == 0 || string.Equals(cfg, active, StringComparison.OrdinalIgnoreCase) || !names.Contains(cfg) ||
+                    result.Contains(cfg, StringComparer.OrdinalIgnoreCase)) continue;
+                result.Add(cfg);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Исполнение технической производной по имени: «00&lt;Как сварено&gt;» → «00», «01SM-FLAT-PATTERN» → «01»; не
+        /// техническая — пусто. Признаки те же, что в разборе исполнения по имени конфигурации (DesignationParser).
+        /// </summary>
+        public static string TechnicalOwner(string cfg)
+        {
+            string s = cfg ?? "";
+            string t = System.Text.RegularExpressions.Regex.Replace(s, @"<[^>]*>", "");
+            t = System.Text.RegularExpressions.Regex.Replace(t, @"[-_]?SM-FLAT-PATTERN.*$", "",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+            return t.Length > 0 && !string.Equals(t, s.Trim(), StringComparison.Ordinal) ? t : "";
+        }
+
         public const string ReportName = "_Проверка.txt";
         public const string PreviousReportName = "_Проверка_пред.txt";
         public const string ExportReportName = "_Экспорт.txt";
 
         /// <summary>Правило а: компоненты найдены и лежат в этом заказе, базе или библиотеке.</summary>
         public const string References = "а";
-        /// <summary>Правило б: перестроение без ошибок.</summary>
+        /// <summary>Правило б: перестроение без ошибок (список «Что не так», без перестроения).</summary>
         public const string Rebuild = "б";
         /// <summary>Правило в: реквизиты, материал из библиотеки, масса записана.</summary>
         public const string Attributes = "в";
         /// <summary>
         /// Правило в2: реквизит в модель ещё не записан, но берётся из имени файла или материала
-        /// SolidWorks — это не брак, а несделанная синхронизация: кнопка «Синхронизировать» всё запишет.
+        /// SolidWorks — это не брак, а несделанная синхронизация: окно «Проверить изделие» всё запишет.
         /// </summary>
         public const string Sync = "в2";
         /// <summary>Правило г: у детали есть чертёж или признак БЧ.</summary>
@@ -125,6 +170,7 @@ namespace ESKD.MaterialSync.Core
             sb.AppendLine("Изделие:  " + report.Product);
             sb.AppendLine("Сборка:   " + report.Assembly);
             sb.AppendLine("Проверил: " + report.User + ", " + report.Time.ToString("dd.MM.yyyy HH:mm", CultureInfo.GetCultureInfo("ru-RU")));
+            if (report.Version.Length > 0) sb.AppendLine(ProductStamp.VersionLabel + "   " + report.Version);
             sb.AppendLine("Итог:     " + OutcomeName(report.Outcome) +
                 (report.Findings.Count > 0
                     ? " (брак: " + report.Count(CheckLevel.Defect) + ", замечаний: " + report.Count(CheckLevel.Issue) + ")"
@@ -137,7 +183,7 @@ namespace ESKD.MaterialSync.Core
             if (report.Checksums.Count > 0)
             {
                 sb.AppendLine();
-                sb.AppendLine("Контрольные суммы (SHA-256):");
+                sb.AppendLine(ProductStamp.ChecksumTitle);
                 foreach (KeyValuePair<string, string> pair in report.Checksums)
                     sb.AppendLine("  " + pair.Value + "  " + pair.Key);
             }
