@@ -143,6 +143,8 @@ namespace ESKD.MaterialSync.Sw
                 List<Item> items = Collect(app, doc, path, productFolder, log);
                 foreach (Item item in items) CollectStems(item);
                 HashSet<string> issued = ExportNaming.Issued(productFolder);
+                // Сборки, чистые до выгрузки: после неё они сохраняются снова, если выгрузка их изменила (ResaveAssemblies).
+                HashSet<Item> clean = new HashSet<Item>(items.Where(i => i.IsAssembly && !DocumentGuard.HasUserEdits(i.Model)));
                 try
                 {
                     foreach (Item item in items)
@@ -169,6 +171,7 @@ namespace ESKD.MaterialSync.Sw
                     CloseOwnWindows(app, items);
                     Activate(app, path);
                 }
+                ResaveAssemblies(items, clean, log, saves);
                 // Свои сохранения кнопки — в отчёт проверки: изделие для следующей кнопки остаётся проверенным.
                 ProductFreshness.Restamp(productFolder, saves.Changes, "выгрузка для производства");
                 bool keepVersion = !partEdited && (assembly || SameAsChecked(path));
@@ -248,6 +251,39 @@ namespace ESKD.MaterialSync.Sw
                 }
             }
             if (!item.IsAssembly) PartFiles(app, item, productFolder, log, saves);
+        }
+
+        /// <summary>
+        /// Сборки изделия, чистые до выгрузки, после неё перестраиваются и сохраняются снова (Т-6 — как детали после
+        /// развёртки). Когда выгрузка открывает сборочный чертёж ради PDF, SolidWorks перестраивает сборку, детали которой
+        /// перед этим пересохранила ЛЗК, и отмечает её изменённой; подсборка становилась изменённой при перестроении в
+        /// проверке. Проверка изделия называла их «несохранённые правки», и «Готово к производству» не проходило (e2e G05,
+        /// 24.09.2026). Сохранение — своё, кнопки (ToolSaves): версия изделия остаётся проверенной. Сборка с правками
+        /// конструктора не сохраняется (З-25).
+        /// </summary>
+        private static void ResaveAssemblies(List<Item> items, HashSet<Item> clean, ExportLog log, ToolSaves saves)
+        {
+            // Сначала подсборки, потом главная сборка: её сохранение изменённые подсборки не пишет.
+            for (int i = items.Count - 1; i >= 0; i--)
+            {
+                Item item = items[i];
+                if (!clean.Contains(item) || item.Model == null) continue;
+                string file = Path.GetFileName(item.Path);
+                try
+                {
+                    item.Model.EditRebuild3();
+                    if (!DocumentGuard.HasUserEdits(item.Model)) continue;
+                    int errors;
+                    if (!saves.Save(item.Model, out errors))
+                        log.Warn(file, "сборка после выгрузки не сохранена (" + SwCodes.SaveProblem(errors) + "): правок в ней нет — " +
+                            "сохраните её и проверьте изделие снова");
+                }
+                catch (COMException ex)
+                {
+                    Log.Error("Выгрузка: сохранение сборки " + item.Path, ex);
+                    log.Warn(file, "сборка после выгрузки не сохранена (" + ex.Message.Trim() + "): сохраните её и проверьте изделие снова");
+                }
+            }
         }
 
         /// <summary>Файл детали — ровно тот, что в отчёте последней проверки изделия (с поправкой на сохранения кнопок).</summary>
