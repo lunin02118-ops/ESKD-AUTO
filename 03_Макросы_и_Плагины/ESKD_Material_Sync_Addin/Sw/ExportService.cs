@@ -91,6 +91,13 @@ namespace ESKD.MaterialSync.Sw
                 productFolder = location.ProductFolder.Length > 0
                     ? location.ProductFolder : LzkNaming.ProductFolder(path);
                 bool assembly = type == (int)swDocumentTypes_e.swDocASSEMBLY;
+                // Подменённый одноимённый компонент другого заказа — до любых файлов: в цех ушла бы чужая деталь (№16).
+                List<string> swapped = assembly ? ProductNamesakes.Swapped(doc, productFolder) : new List<string>();
+                if (swapped.Count > 0)
+                {
+                    Fail(app, interactive, OrderArchive.SwappedText(swapped, 20));
+                    return false;
+                }
                 // Деталь с несохранёнными правками выгружается из открытого, а не из файла: такую выгрузку версия изделия
                 // не покрывает. Флаг — до переключений исполнений.
                 bool partEdited = !assembly && DocumentGuard.HasUserEdits(doc);
@@ -147,14 +154,17 @@ namespace ESKD.MaterialSync.Sw
                 finally
                 {
                     // Экспорт переключал окна: конструктор должен увидеть ту же сборку, с которой начал, — и после сбоя тоже.
-                    Activate(app, path);
+                    // Сначала закрываются свои окна, потом активируется изделие: закрытое окно SolidWorks сменяет следующим
+                    // по порядку — окном конструктора, а не изделием (e2e X19, прогон r34 24.09.2026).
                     CloseOwnWindows(app, items);
+                    Activate(app, path);
                 }
                 // Свои сохранения кнопки — в отчёт проверки: изделие для следующей кнопки остаётся проверенным.
                 ProductFreshness.Restamp(productFolder, saves.Changes, "выгрузка для производства");
                 bool keepVersion = !partEdited && (assembly || SameAsChecked(path));
                 if (!assembly && !keepVersion)
-                    log.Warn(Path.GetFileName(path), (partEdited ? "деталь выгружена с несохранёнными правками"
+                    log.Warn(Path.GetFileName(path), (partEdited ? (DocumentGuard.OlderVersion(app, path)
+                            ? "деталь выгружена, а " + SwFileVersion.OlderNote : "деталь выгружена с несохранёнными правками")
                         : "деталь изменена после проверки изделия") + " — выгрузка изделия теперь «" + ProductStamp.Unchecked +
                         "»: сохраните деталь, проверьте изделие и выгрузите его заново");
                 string reportPath = Write(productFolder, log, !assembly, items, keepVersion);
@@ -513,6 +523,10 @@ namespace ESKD.MaterialSync.Sw
             // после чего SolidWorks сам предупредил о нехватке памяти и упал. Прежнее значение возвращается.
             bool[] wanted = { true, true, true, false, true, false };
             PreferenceSwap<bool> preferences = null;
+            // Чертёж без окна SolidWorks 2025 в PDF не пишет — SaveAs отвечает кодом 1 при любых настройках (проба
+            // 24.09.2026, X20). Окно показывается только на время записи PDF и скрывается снова; активным после этого
+            // SolidWorks сам делает прежний документ — изделие (там же).
+            bool shown = false;
             try
             {
                 // Папка — внутри try: на месте «02_PDF» может лежать файл или не хватить прав — это пропуск одного PDF,
@@ -530,6 +544,11 @@ namespace ESKD.MaterialSync.Sw
                     return;
                 }
                 int saveErrors = 0, saveWarnings = 0;
+                if (!drawing.Visible)
+                {
+                    drawing.Visible = true;
+                    shown = true;
+                }
                 bool ok = drawing.Extension.SaveAs(target, (int)swSaveAsVersion_e.swSaveAsCurrentVersion,
                     (int)swSaveAsOptions_e.swSaveAsOptions_Silent, data, ref saveErrors, ref saveWarnings);
                 if (ok) log.Add(target);
@@ -542,6 +561,17 @@ namespace ESKD.MaterialSync.Sw
             }
             finally
             {
+                if (shown)
+                {
+                    try
+                    {
+                        drawing.Visible = false;
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error("Выгрузка: скрыть чертёж после PDF " + drawingPath, ex);
+                    }
+                }
                 if (preferences != null) preferences.Restore();
             }
         }
@@ -577,8 +607,15 @@ namespace ESKD.MaterialSync.Sw
             if (item.Executions.Count == 0)
             {
                 string file = Path.GetFileName(item.Path);
+                bool dirtyBefore = DocumentGuard.HasUserEdits(item.Model);
                 DxfOne(app, item, item.Designation, item.Name, 0, productFolder, log, file);
-                IgsOne(app, item, item.Designation, item.Name, item.Operations, productFolder, log, saves, file);
+                bool clean = IgsOne(app, item, item.Designation, item.Name, item.Operations, productFolder, log, saves, file);
+                // Экспорт развёртки SolidWorks отмечает листовую деталь изменённой, хотя в ней ничего не поменялось: сохранённая
+                // до выгрузки деталь сохраняется снова, как после переключения исполнений. Иначе новая ревизия оставляла окно
+                // «изменённой» модели открытым, а закрытие чертежа спрашивало «Сохранить?» (V09, 24.09.2026).
+                string active = ActiveConfiguration(item.Model);
+                if (clean && !dirtyBefore && active.Length > 0 && DocumentGuard.HasUserEdits(item.Model))
+                    RestoreConfiguration(item, active, false, log, saves);
                 return;
             }
             string original = ActiveConfiguration(item.Model);
@@ -685,7 +722,12 @@ namespace ESKD.MaterialSync.Sw
             string productFolder, ExportLog log, string label)
         {
             PartDoc part = (PartDoc)item.Model;
-            double thickness = SheetThicknessMm(item.Model);
+            double thickness = StockService.SheetThicknessMm(item.Model);
+            // Многотельная листовая деталь — DXF на каждое листовое тело (сверка SW API 23.09.2026, №42; решение владельца
+            // 24.09.2026). Раньше ExportToDWG2 без выделения развёртки отдавал одну развёртку или все тела одним файлом, а
+            // толщина в имени была первого тела. Справка ExportToDWG2: развёртку тела многотельной детали выделяют до вызова.
+            List<SheetBody> sheets = double.IsNaN(thickness) ? new List<SheetBody>() : SheetBodies(part);
+            bool several = sheets.Count > 1;
             if (double.IsNaN(thickness))
             {
                 // Не листовая деталь — развёртки и не должно быть. Но если материал — лист, конструктор ждёт DXF:
@@ -720,6 +762,101 @@ namespace ESKD.MaterialSync.Sw
                     log.Skip(label, "SolidWorks не сделал деталь активной: DXF не сделан");
                     return;
                 }
+                if (several)
+                    log.Warn(label, "многотельная листовая деталь: листовых тел " + sheets.Count + " — DXF на каждое тело " +
+                        "(«" + ExportNaming.BodyMark + "1», «" + ExportNaming.BodyMark + "2»…)");
+                for (int i = 0; i < (several ? sheets.Count : 1); i++)
+                {
+                    string bodyLabel = several ? label + " [тело " + (i + 1) + "]" : label;
+                    double bodyThickness = several && !double.IsNaN(sheets[i].ThicknessMm) ? sheets[i].ThicknessMm : thickness;
+                    item.Model.ClearSelection2(true);
+                    if (several && (sheets[i].Flat == null || !sheets[i].Flat.Select2(false, -1)))
+                    {
+                        log.Skip(bodyLabel, "развёртка тела не выделилась: DXF не сделан");
+                        continue;
+                    }
+                    DxfBody(part, item, designation, name, quantity, productFolder, log, bodyLabel, folder,
+                        several ? i + 1 : 0, bodyThickness, i == 0 ? temporary : Path.Combine(folder,
+                            "_замер_" + Guid.NewGuid().ToString("N") + ".dxf"));
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Выгрузка: DXF " + item.Path, ex);
+                log.Skip(label, "DXF не сделан: " + ex.Message);
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(temporary)) File.Delete(temporary);
+                }
+                catch (IOException ex)
+                {
+                    Log.Error("Выгрузка: временный DXF " + temporary, ex);
+                }
+                if (several)
+                {
+                    try
+                    {
+                        item.Model.ClearSelection2(true);
+                    }
+                    catch (COMException ex)
+                    {
+                        Log.Error("Выгрузка: снять выделение развёртки " + item.Path, ex);
+                    }
+                }
+                format.Restore();
+                map.Restore();
+            }
+        }
+
+        /// <summary>Листовое тело детали: его «Развёртка» и толщина из его «Листового металла» (№42).</summary>
+        private sealed class SheetBody
+        {
+            public Feature Flat;
+            public double ThicknessMm = double.NaN;
+        }
+
+        /// <summary>Листовые тела детали — у многотельной у каждого своя «Развёртка» и свой «Листовой металл».</summary>
+        private static List<SheetBody> SheetBodies(PartDoc part)
+        {
+            List<SheetBody> list = new List<SheetBody>();
+            try
+            {
+                object[] bodies = part.GetBodies2((int)swBodyType_e.swSolidBody, true) as object[];
+                if (bodies == null) return list;
+                foreach (object o in bodies)
+                {
+                    Body2 body = o as Body2;
+                    if (body == null || !body.IsSheetMetal()) continue;
+                    SheetBody sheet = new SheetBody { ThicknessMm = StockService.BodySheetThicknessMm(body, (ModelDoc2)part) };
+                    object[] features = body.GetFeatures() as object[];
+                    if (features != null)
+                        foreach (object fo in features)
+                        {
+                            Feature f = fo as Feature;
+                            if (f != null && f.GetTypeName2() == "FlatPattern" && sheet.Flat == null) sheet.Flat = f;
+                        }
+                    list.Add(sheet);
+                }
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Выгрузка: листовые тела", ex);
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// Развёртка одного листового тела (body ≥ 1) или всей однотельной детали (body = 0): экспорт во временный файл,
+        /// замер рамки, имя «…[_телоN]_S&lt;толщина&gt;мм[_Nшт]_&lt;ширина&gt;х&lt;длина&gt;.dxf», прежние развёртки — в архив.
+        /// </summary>
+        private static void DxfBody(PartDoc part, Item item, string designation, string name, int quantity, string productFolder,
+            ExportLog log, string label, string folder, int body, double thickness, string temporary)
+        {
+            try
+            {
                 // Выравнивание — 12 чисел, список видов — массив строк: null в этих параметрах
                 // SolidWorks молча отвергает, и развёртка не выгружается.
                 double[] alignment = new double[12];
@@ -739,7 +876,7 @@ namespace ESKD.MaterialSync.Sw
                     log.Skip(label, "развёртка пустая: DXF не сделан");
                     return;
                 }
-                string target = ExportNaming.DxfPath(productFolder, designation, name, item.Path,
+                string target = ExportNaming.DxfPath(productFolder, designation, name, item.Path, body,
                     thickness, quantity, width, length, item.Revision);
                 if (ExportNaming.TooLong(target).Length > 0)
                 {
@@ -758,11 +895,6 @@ namespace ESKD.MaterialSync.Sw
                 log.Add(target);
                 RetireStaleDxf(folder, ExportNaming.Stem(designation, name, item.Path), item.Revision, target, log, label);
             }
-            catch (Exception ex)
-            {
-                Log.Error("Выгрузка: DXF " + item.Path, ex);
-                log.Skip(label, "DXF не сделан: " + ex.Message);
-            }
             finally
             {
                 try
@@ -773,8 +905,6 @@ namespace ESKD.MaterialSync.Sw
                 {
                     Log.Error("Выгрузка: временный DXF " + temporary, ex);
                 }
-                format.Restore();
-                map.Restore();
             }
         }
 
@@ -813,24 +943,6 @@ namespace ESKD.MaterialSync.Sw
             }
         }
 
-        /// <summary>Толщина листовой детали, мм; NaN — деталь не листовая.</summary>
-        private static double SheetThicknessMm(ModelDoc2 model)
-        {
-            try
-            {
-                for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
-                {
-                    if (f.GetTypeName2() != "SheetMetal") continue;
-                    SheetMetalFeatureData data = f.GetDefinition() as SheetMetalFeatureData;
-                    if (data != null) return data.Thickness * 1000.0;
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Выгрузка: толщина листа", ex);
-            }
-            return double.NaN;
-        }
 
         /// <summary>
         /// Сделать документ активным — развёртку (ExportToDWG2), построение СК оси трубы и переключение исполнения

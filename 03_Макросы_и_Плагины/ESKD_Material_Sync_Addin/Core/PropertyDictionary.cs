@@ -63,6 +63,16 @@ namespace ESKD.MaterialSync.Core
         public static readonly string[] ExtraNames = new string[] { OperationsName, RevisionName };
 
         /// <summary>
+        /// Появляются в файле поздно, и пишут их кнопки, которые сохраняют сами (ЛЗК, «Новая ревизия», «Оставить как есть»
+        /// в окне «Проверить изделие»). В едином порядке свойств (№23) они последние среди известных: дописанное в конец уже
+        /// на своём месте, и сохранение кнопкой порядок не ломает.
+        /// </summary>
+        public static readonly string[] LateNames = new string[]
+        {
+            PropertyDictionary.OperationsName, PropertyDictionary.RevisionName, LzkOperations.SizePropertyName, ReviewAccepted.PropertyName
+        };
+
+        /// <summary>
         /// Свойства папки списка вырезов, которые приходят в деталь из файла профиля сварной конструкции.
         /// Надстройка их только читает — по ним подбирается материал проката (Р-8). В документ они не пишутся
         /// и к словарю SWPlus отношения не имеют: это свойства папки, а не модели.

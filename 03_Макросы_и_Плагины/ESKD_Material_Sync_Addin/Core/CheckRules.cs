@@ -95,6 +95,29 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>
+        /// Активное в файле исполнение стоит в изделии (№36; решение владельца 24.09.2026: про материал исполнения, которого
+        /// в изделии нет, проверка не спрашивает и его не меняет). Исполнения изделия не известны (деталь проверяют саму по
+        /// себе) — стоит, как раньше. Техническая производная — это её исполнение: «00&lt;Как сварено&gt;» в изделии — «00».
+        /// </summary>
+        public static bool UsesExecution(IEnumerable<string> used, string active)
+        {
+            string current = active ?? "";
+            string owner = TechnicalOwner(current);
+            bool known = false;
+            foreach (string name in used ?? new string[0])
+            {
+                if (string.IsNullOrEmpty(name)) continue;
+                known = true;
+                string usedOwner = TechnicalOwner(name);
+                foreach (string a in new[] { current, owner })
+                    if (a.Length > 0 && (string.Equals(name, a, StringComparison.OrdinalIgnoreCase) ||
+                                         string.Equals(usedOwner, a, StringComparison.OrdinalIgnoreCase)))
+                        return true;
+            }
+            return !known || current.Length == 0;
+        }
+
+        /// <summary>
         /// Исполнение технической производной по имени: «00&lt;Как сварено&gt;» → «00», «01SM-FLAT-PATTERN» → «01»; не
         /// техническая — пусто. Признаки те же, что в разборе исполнения по имени конфигурации (DesignationParser).
         /// </summary>

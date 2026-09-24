@@ -273,7 +273,7 @@ namespace ESKD.MaterialSync.Sw
             List<Body2> solids = SolidBodies(part);
             if (solids.Count > 1)
             {
-                List<double> thickness = solids.Select(BodySheetThicknessMm).ToList();
+                List<double> thickness = solids.Select(b => BodySheetThicknessMm(b, doc)).ToList();
                 double single;
                 string problem = StockCatalog.SheetBodiesProblem(thickness, out single);
                 // Конструктор уже назначил телам материалы по их толщине — вопроса нет, замечание при каждом сохранении
@@ -311,6 +311,100 @@ namespace ESKD.MaterialSync.Sw
             return findings;
         }
 
+        /// <summary>
+        /// Исполнение cfg, которое стоит в изделии, но не активно в файле (№36; решение владельца 24.09.2026): профиль —
+        /// из элементов сварной конструкции, не погашенных в cfg, материал — по имени конфигурации. Исполнение не
+        /// переключается, деталь не помечается изменённой — только чтение. Список вырезов, тела и толщина листа видны только
+        /// у активной конфигурации, поэтому сверяется деталь из одного профиля. Материал, который без переключения не узнать
+        /// (он у тел), с профилем не сверяется: про него проверка изделия уже пишет «материал не проверен» (находка 14).
+        /// </summary>
+        public static List<StockFinding> InspectExecution(ISldWorks app, ModelDoc2 doc, string cfg)
+        {
+            List<StockFinding> findings = new List<StockFinding>();
+            PartDoc part = doc as PartDoc;
+            if (part == null || string.IsNullOrEmpty(cfg)) return findings;
+            List<string> profiles = new List<string>();
+            try
+            {
+                for (Feature f = doc.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+                {
+                    if (f.GetTypeName2() != "WeldMemberFeat" || SuppressedIn(f, cfg)) continue;
+                    string profile = ProfilePath(f);
+                    if (profile.Length > 0 && !profiles.Contains(profile, StringComparer.OrdinalIgnoreCase)) profiles.Add(profile);
+                }
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Материал по геометрии: обход дерева " + DocInfo.TitleOf(doc) + ", исполнение " + cfg, ex);
+                return findings;
+            }
+            if (profiles.Count != 1)
+            {
+                if (profiles.Count > 1)
+                    Log.Info("Материал по геометрии: " + DocInfo.TitleOf(doc) + ", исполнение «" + cfg + "» — профилей " +
+                             profiles.Count + ": без переключения исполнения не понять, какому телу какой материал");
+                return findings;
+            }
+            StockFinding finding = ProfileFinding(profiles[0]);
+            if (finding == null) return findings;
+            List<MaterialInfo> library = MaterialCatalog.All(SyncService.MaterialDatabases(app));
+            if (library.Count == 0) return findings;
+            string db;
+            bool known;
+            List<string> mixed = new List<string>();
+            string material = SyncService.ActualMaterial(part, doc, cfg, out db, mixed, out known);
+            if (!known || mixed.Count > 0)
+            {
+                Log.Info("Материал по геометрии: " + DocInfo.TitleOf(doc) + ", исполнение «" + cfg + "» — материал у тел, он " +
+                         "виден, только когда исполнение активно: с профилем не сверяется");
+                return findings;
+            }
+            finding.CurrentMaterial = (material ?? "").Trim();
+            Decide(finding, library);
+            findings.Add(finding);
+            return findings;
+        }
+
+        /// <summary>
+        /// Замечание по исполнению cfg, не активному в файле (№36): ответить в окне можно только за активное исполнение,
+        /// поэтому — «сделайте его активным и нажмите «Синхронизировать»». Материал не назначен — пусто: это брак
+        /// «материал не назначен» проверки изделия (находка 14), повторять его незачем.
+        /// </summary>
+        public static string ExecutionMessage(string cfg, StockFinding finding)
+        {
+            if (finding == null || finding.Request == null) return "";
+            string current = (finding.CurrentMaterial ?? "").Trim();
+            string gost = (finding.Request.Gost ?? "").Length > 0 ? " " + finding.Request.Gost : "";
+            switch (finding.Verdict)
+            {
+                case StockVerdict.NotInLibrary:
+                    return string.Format("исполнение «{0}» (стоит в изделии): типоразмер «{1}»{2} не найден в библиотеке " +
+                        "материалов — проверьте материал", cfg, finding.Request.Size, gost);
+                case StockVerdict.Choose:
+                case StockVerdict.Replace:
+                    if (current.Length == 0) return "";
+                    return string.Format("исполнение «{0}» (стоит в изделии): материал «{1}» не соответствует профилю «{2}»{3} — " +
+                        "сделайте «{0}» активным в детали и нажмите «Синхронизировать»", cfg, current, finding.Request.Size, gost);
+                default:
+                    return "";
+            }
+        }
+
+        /// <summary>Элемент погашен в конфигурации cfg — без её переключения; не прочитать — считается погашенным.</summary>
+        private static bool SuppressedIn(Feature f, string cfg)
+        {
+            try
+            {
+                bool[] states = f.IsSuppressed2((int)swInConfigurationOpts_e.swSpecifyConfiguration, new[] { cfg }) as bool[];
+                return states != null && states.Length > 0 && states[0];
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Материал по геометрии: погашен ли элемент в " + cfg, ex);
+                return true;
+            }
+        }
+
         /// <summary>Путь к файлу профиля элемента сварной конструкции; пусто — не прочитан.</summary>
         private static string ProfilePath(Feature member)
         {
@@ -340,6 +434,25 @@ namespace ESKD.MaterialSync.Sw
         private static StockFinding FromProfilePath(PartDoc part, string profilePath, List<Feature> members,
             List<MaterialInfo> library, string cfg)
         {
+            StockFinding finding = ProfileFinding(profilePath);
+            if (finding == null) return null;
+            List<Body2> all = SolidBodies(part);
+            if (all.Count > 1 && MemberBodies(members).Count < all.Count)
+            {
+                Log.Warn("Материал по геометрии: в детали " + DocInfo.TitleOf((ModelDoc2)part) + " кроме профиля «" + finding.Folder +
+                         "» есть другие тела, а список вырезов не построен — обновите список вырезов, иначе неясно, какому " +
+                         "телу какой материал");
+                return null;
+            }
+            finding.Bodies.AddRange(all);
+            finding.CurrentMaterial = PositionMaterial(part, finding, library, cfg);
+            Decide(finding, library);
+            return finding;
+        }
+
+        /// <summary>Позиция по пути к профилю, без тел и материала; путь не по библиотеке (нет типоразмера или ГОСТа) — null.</summary>
+        private static StockFinding ProfileFinding(string profilePath)
+        {
             string size = Path.GetFileNameWithoutExtension(profilePath) ?? "";
             string folder = Path.GetFileName(Path.GetDirectoryName(profilePath) ?? "") ?? "";
             string gost = GostFrom(folder);
@@ -354,17 +467,6 @@ namespace ESKD.MaterialSync.Sw
                 Gost = gost,
                 Source = profilePath
             };
-            List<Body2> all = SolidBodies(part);
-            if (all.Count > 1 && MemberBodies(members).Count < all.Count)
-            {
-                Log.Warn("Материал по геометрии: в детали " + DocInfo.TitleOf((ModelDoc2)part) + " кроме профиля «" + finding.Folder +
-                         "» есть другие тела, а список вырезов не построен — обновите список вырезов, иначе неясно, какому " +
-                         "телу какой материал");
-                return null;
-            }
-            finding.Bodies.AddRange(all);
-            finding.CurrentMaterial = PositionMaterial(part, finding, library, cfg);
-            Decide(finding, library);
             return finding;
         }
 
@@ -1128,7 +1230,7 @@ namespace ESKD.MaterialSync.Sw
         /// Толщина листового тела, мм, из его собственного элемента «Листовой металл» (IBody2.GetFeatures, сверка SW API
         /// 23.09.2026, №39): у многотельной листовой детали он у каждого тела свой. NaN — тело не листовое или не прочитано.
         /// </summary>
-        private static double BodySheetThicknessMm(Body2 body)
+        internal static double BodySheetThicknessMm(Body2 body, ModelDoc2 model)
         {
             try
             {
@@ -1139,8 +1241,8 @@ namespace ESKD.MaterialSync.Sw
                 {
                     Feature f = o as Feature;
                     if (f == null || f.GetTypeName2() != "SheetMetal") continue;
-                    SheetMetalFeatureData data = f.GetDefinition() as SheetMetalFeatureData;
-                    if (data != null) return data.Thickness * 1000.0;
+                    double mm = FeatureThicknessMm(f, model);
+                    if (!double.IsNaN(mm)) return mm;
                 }
             }
             catch (COMException ex)
@@ -1148,6 +1250,29 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Материал по геометрии: толщина листового тела", ex);
             }
             return double.NaN;
+        }
+
+        /// <summary>
+        /// Толщина элемента «Листовой металл», мм; NaN — не прочитана. У многотельной листовой детали SolidWorks после
+        /// переоткрытия файла отдаёт 0 у элемента тела, чья толщина совпадает с толщиной детали по умолчанию, — даже
+        /// «Толщина листового металла» в списке вырезов у него 0 (проба 24.09.2026, X21: DXF «_тело1_S0мм»). Тогда верна
+        /// толщина папки «Листовой металл» — её и берём.
+        /// </summary>
+        internal static double FeatureThicknessMm(Feature feature, ModelDoc2 model)
+        {
+            SheetMetalFeatureData data = feature.GetDefinition() as SheetMetalFeatureData;
+            if (data == null) return double.NaN;
+            double mm = data.Thickness * 1000.0;
+            return mm > 0 ? mm : DefaultSheetThicknessMm(model);
+        }
+
+        /// <summary>Толщина листа детали по умолчанию — из папки «Листовой металл» многотельной детали; NaN — папки нет.</summary>
+        private static double DefaultSheetThicknessMm(ModelDoc2 model)
+        {
+            SheetMetalFolder folder = model.FeatureManager.GetSheetMetalFolder() as SheetMetalFolder;
+            Feature feature = folder != null ? folder.GetFeature() as Feature : null;
+            SheetMetalFeatureData data = feature != null ? feature.GetDefinition() as SheetMetalFeatureData : null;
+            return data != null && data.Thickness > 0 ? data.Thickness * 1000.0 : double.NaN;
         }
 
         /// <summary>Толщина листовой детали, мм; NaN — деталь не листовая.</summary>
@@ -1158,8 +1283,8 @@ namespace ESKD.MaterialSync.Sw
                 for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
                 {
                     if (f.GetTypeName2() != "SheetMetal") continue;
-                    SheetMetalFeatureData data = f.GetDefinition() as SheetMetalFeatureData;
-                    if (data != null) return data.Thickness * 1000.0;
+                    double mm = FeatureThicknessMm(f, model);
+                    if (!double.IsNaN(mm)) return mm;
                 }
             }
             catch (COMException ex)

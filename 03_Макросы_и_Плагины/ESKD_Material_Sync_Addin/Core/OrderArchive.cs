@@ -71,6 +71,38 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>
+        /// Компоненты сборки изделия, которые SolidWorks взял не из своей папки, хотя в ней лежит свой одноимённый файл
+        /// (№16; решение владельца 24.09.2026 — «как правильно»). SolidWorks ищет компонент сначала среди открытых
+        /// документов — по имени файла, а не по пути: открыт одноимённый документ другого заказа — сборка берёт его, и
+        /// проверка, выгрузка и ЛЗК работали бы с чужой деталью. Возвращает пути подменённых компонентов, без повторов.
+        /// </summary>
+        public static List<string> Swapped(IEnumerable<string> resolved, IEnumerable<string> ownFiles)
+        {
+            HashSet<string> paths = new HashSet<string>(ownFiles ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            HashSet<string> names = new HashSet<string>(paths.Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
+            List<string> swapped = new List<string>();
+            foreach (string path in resolved ?? Enumerable.Empty<string>())
+                if (!string.IsNullOrEmpty(path) && names.Contains(Path.GetFileName(path)) && !paths.Contains(path) &&
+                    !swapped.Contains(path, StringComparer.OrdinalIgnoreCase))
+                    swapped.Add(path);
+            return swapped;
+        }
+
+        /// <summary>Отказ кнопки из-за подменённых компонентов: что случилось и что сделать; не больше max путей.</summary>
+        public static string SwappedText(IList<string> swapped, int max)
+        {
+            List<string> lines = new List<string>
+            {
+                "SolidWorks взял в сборку изделия одноимённые файлы из других папок — в SolidWorks открыты документы с теми же " +
+                "именами (другой заказ). Кнопка работала бы с чужими деталями. Закройте эти документы, откройте сборку изделия " +
+                "заново и повторите:"
+            };
+            foreach (string path in swapped.Take(max)) lines.Add("  " + path);
+            if (swapped.Count > max) lines.Add("  … и ещё " + (swapped.Count - max));
+            return string.Join(Environment.NewLine, lines.ToArray());
+        }
+
+        /// <summary>
         /// Документы комплекта, которые Pack and Go взял не из своей папки при своём одноимённом файле, и ссылки на
         /// несуществующие файлы (№16). Общий компонент библиотеки, чьего имени в изделии нет, — не подмена.
         /// </summary>
@@ -88,6 +120,63 @@ namespace ESKD.MaterialSync.Core
                     bad.Add("нет файла «" + path + "»");
             }
             return bad;
+        }
+
+        /// <summary>
+        /// Модели сборки, которых нет в списке Pack and Go. SolidWorks 2025 SP3 отдаёт в GetDocumentNames только саму
+        /// сборку и чертежи — без деталей и подсборок, и у образцовых сборок из поставки тоже (e2e Y06, 24.09.2026):
+        /// комплект уезжал в архив одной сборкой и открывался без компонентов. Поэтому состав комплекта — зависимости
+        /// сборки (GetDependencies2), а недостающее добавляется явно. Виртуальная деталь («Деталь1^Сборка») живёт
+        /// внутри сборки, своего файла у неё нет.
+        /// </summary>
+        public static List<string> KitMissing(IEnumerable<string> dependencies, IEnumerable<string> packed)
+        {
+            HashSet<string> seen = new HashSet<string>(packed ?? Enumerable.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+            List<string> missing = new List<string>();
+            foreach (string path in dependencies ?? Enumerable.Empty<string>())
+            {
+                if (string.IsNullOrEmpty(path) || Path.GetFileName(path).Contains("^")) continue;
+                if (seen.Add(path)) missing.Add(path);
+            }
+            return missing;
+        }
+
+        /// <summary>Разные файлы с одним именем: комплект — одна папка, и второй затёр бы первый.</summary>
+        public static List<string> KitCollisions(IEnumerable<string> documents)
+        {
+            return (documents ?? Enumerable.Empty<string>())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .GroupBy(p => Path.GetFileName(p), StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1)
+                .Select(g => "«" + g.Key + "»: " + string.Join("; ", g.ToArray()))
+                .ToList();
+        }
+
+        /// <summary>Документы, которых после Pack and Go нет в папке комплекта (сверка по имени файла).</summary>
+        public static List<string> KitAbsent(IEnumerable<string> documents, IEnumerable<string> kitFiles)
+        {
+            HashSet<string> written = new HashSet<string>((kitFiles ?? Enumerable.Empty<string>()).Select(Path.GetFileName),
+                StringComparer.OrdinalIgnoreCase);
+            return (documents ?? Enumerable.Empty<string>())
+                .Where(p => !string.IsNullOrEmpty(p) && !written.Contains(Path.GetFileName(p)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Папки, где ищутся чертежи комплекта: папки его моделей внутри папки изделия. Библиотечный болт из общей
+        /// папки не тянет в комплект все чертежи библиотеки.
+        /// </summary>
+        public static List<string> KitDrawingFolders(IEnumerable<string> models, string product)
+        {
+            string root = (product ?? "").TrimEnd('\\', '/') + Path.DirectorySeparatorChar;
+            return (models ?? Enumerable.Empty<string>())
+                .Where(p => !string.IsNullOrEmpty(p) && p.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                .Select(p => Path.GetDirectoryName(p) ?? "")
+                .Where(f => f.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
     }
 }

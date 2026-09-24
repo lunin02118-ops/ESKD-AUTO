@@ -9,7 +9,7 @@ import unittest
 import winreg
 from pathlib import Path
 
-from eskd_e2e import com, oracles, paths
+from eskd_e2e import com, oracles, paths, testing
 from eskd_e2e.testing import SwTestCase, tags
 
 V = oracles.value
@@ -675,8 +675,10 @@ class Lzk(SwTestCase):
     def test_L17_unloading_addin_aborts_running_lzk(self):
         """L17 (сверка SW API 23.09.2026, №3): надстройку выгрузили, пока SWTools формирует ведомость. Раньше таймер
         выгруженной надстройки дописывал книгу и показывал окно, а в SolidWorks, запущенном из другой программы,
-        ведомость зависала до следующей загрузки. Теперь ведомость прерывается: SWTools остановлен, книги нет, итог —
-        «прервана», кнопку можно нажать снова."""
+        ведомость зависала до следующей загрузки. Теперь ведомость прерывается: SWTools остановлен, книги нет, в журнале —
+        «Ведомость ЛЗК прервана (надстройка ЕСКД выгружена)». Снова загрузить надстройку в том же SolidWorks нельзя:
+        LoadAddIn после UnloadAddIn ConnectToSW не зовёт (проба 23.09.2026, прогон r33) — поэтому после теста общая сессия
+        поднимается заново, как в I11."""
         import psutil
 
         def swtools_running():
@@ -687,20 +689,19 @@ class Lzk(SwTestCase):
         self.s.activate(doc)
         com.call(self.s.eskd(), "BuildLzkSilent")
         self.assertEqual("running", str(com.call(self.s.eskd(), "LzkStatus")), "ведомость формируется")
-        self.s.unload_eskd()
-        deadline = time.time() + TIMEOUT
-        while time.time() < deadline and swtools_running():
-            time.sleep(1)
-        self.wait_idle(3.0)
-        self.assertFalse((product / DOCS / BOOK).exists(), "выгруженная надстройка книгу не пишет")
-        self.s.load_eskd()
-        self.s.activate(doc)
-        status = str(com.call(self.s.eskd(), "LzkStatus"))
-        self.assertTrue(status.startswith("error|"), status)
-        self.assertIn("прервана", status)
-        self.assertEqual(1, int(com.call(self.s.eskd(), "EnableLzkCommand")), "ведомость можно запустить заново")
-        self.assertTrue(any("Ведомость ЛЗК прервана" in line for line in self.addin_log.new_lines()), "запись в журнале")
-        self.s.close_all()
+        try:
+            self.s.unload_eskd()
+            deadline = time.time() + TIMEOUT
+            while time.time() < deadline and swtools_running():
+                time.sleep(1)
+            self.wait_idle(3.0)
+            self.assertFalse(swtools_running(), "SWTools остановлен")
+            self.assertFalse((product / DOCS / BOOK).exists(), "выгруженная надстройка книгу не пишет")
+            self.assertTrue(any("Ведомость ЛЗК прервана (надстройка ЕСКД выгружена)" in line
+                                for line in self.addin_log.new_lines()), "запись в журнале")
+        finally:
+            testing.shutdown()
+            self.s = testing.session()
 
     def test_L16_hidden_folder_is_not_a_second_blank(self):
         """L16 (сверка SW API 23.09.2026, №34): «Укосина» — в «00» труба 500, в «01» — 700, чужой элемент погашен. Папка

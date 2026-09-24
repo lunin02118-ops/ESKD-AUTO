@@ -8,6 +8,19 @@ namespace ESKD.Tests
     /// <summary>Имена и места файлов выдачи для производства (ТЗ-02 Т-27…Т-31).</summary>
     public static class ExportNamingTests
     {
+        /// <summary>№42, решение владельца 24.09.2026: DXF на каждое листовое тело — «_тело2» перед толщиной.</summary>
+        public static void Test_Dxf_of_one_body_of_multibody_part()
+        {
+            string path = ExportNaming.DxfPath(@"Z:\И01", "ПРТИ.301111.067", "Лист двойной", @"Z:\И01\01_3D\x.sldprt", 2, 8, 1, 100, 200, 0);
+            Assert.AreEqual("ПРТИ.301111.067 Лист двойной_тело2_S8мм_1шт_100х200.dxf", System.IO.Path.GetFileName(path), "имя DXF тела");
+            string single = ExportNaming.DxfPath(@"Z:\И01", "ПРТИ.301111.067", "Лист двойной", @"Z:\И01\01_3D\x.sldprt", 3, 1, 100, 200, 0);
+            Assert.AreEqual("ПРТИ.301111.067 Лист двойной_S3мм_1шт_100х200.dxf", System.IO.Path.GetFileName(single), "однотельная — как раньше");
+            Assert.IsTrue(ExportNaming.BelongsTo("ПРТИ.301111.067 Лист двойной_тело2_S8мм_1шт_100х200.dxf", "ПРТИ.301111.067 Лист двойной"),
+                "файл тела — выдача этого документа: ревизия унесёт его в архив");
+            Assert.AreEqual(2, ExportNaming.BodyOf("ПРТИ.301111.067 Лист двойной_тело2_S8мм_1шт_100х200.dxf", "ПРТИ.301111.067 Лист двойной"), "номер тела");
+            Assert.AreEqual(0, ExportNaming.BodyOf("ПРТИ.301111.067 Лист двойной_S8мм_100х200.dxf", "ПРТИ.301111.067 Лист двойной"), "без номера");
+        }
+
         private const string Product = @"\\Synology_TR\Конструкторский отдел\_Заявки\2026-014 Школа\02_Металл\И01_ТС-52_Стол";
         private const string Model = @"D:\И\01_3D\ТС-52.00.01.004 Заглушка.sldprt";
 
@@ -294,6 +307,12 @@ namespace ESKD.Tests
             const string stem = "ПРТИ.468211.161 Лист";
             const string now = stem + "_S3мм_2шт_100х250.dxf";
             Assert.IsTrue(ExportNaming.IsStaleDxf(stem + "_S3мм_1шт_100х200.dxf", stem, 0, now), "другая рамка и количество");
+            // №42: развёртки тел многотельной детали — у каждого своя; прежняя — только того же тела.
+            string body1 = stem + "_тело1_S3мм_1шт_100х200.dxf";
+            Assert.IsFalse(ExportNaming.IsStaleDxf(stem + "_тело2_S8мм_1шт_100х200.dxf", stem, 0, body1), "тело 2 — не прежняя тела 1");
+            Assert.IsTrue(ExportNaming.IsStaleDxf(stem + "_тело1_S3мм_1шт_90х200.dxf", stem, 0, body1), "тело 1 с другой рамкой");
+            Assert.IsTrue(ExportNaming.IsStaleDxf(stem + "_S3мм_1шт_100х200.dxf", stem, 0, body1), "деталь стала многотельной");
+            Assert.IsTrue(ExportNaming.IsStaleDxf(body1, stem, 0, now), "деталь стала однотельной");
             Assert.IsTrue(ExportNaming.IsStaleDxf(stem + "_S2.5мм_100х250.dxf", stem, 0, now), "другая толщина, без количества");
             Assert.IsFalse(ExportNaming.IsStaleDxf(now.ToUpperInvariant(), stem, 0, now), "только что выгруженный");
             Assert.IsFalse(ExportNaming.IsStaleDxf(stem + "_S3мм_1шт_100х200_Изм1.dxf", stem, 0, now), "другая ревизия");

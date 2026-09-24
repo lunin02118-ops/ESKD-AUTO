@@ -137,6 +137,19 @@ namespace ESKD.Tests
             Assert.AreEqual("00", CheckRules.TechnicalOwner("00-SM-FLAT-PATTERN"), "развёртка");
         }
 
+        public static void Test_Active_execution_outside_product_is_not_asked()
+        {
+            // №36, решение владельца 24.09.2026: про материал активного исполнения, которого в изделии нет, не спрашивать.
+            Assert.IsTrue(CheckRules.UsesExecution(new[] { "00", "01" }, "00"), "активное стоит в изделии");
+            Assert.IsFalse(CheckRules.UsesExecution(new[] { "01", "" }, "00"), "в изделии только «01»");
+            Assert.IsTrue(CheckRules.UsesExecution(new[] { "ИСП1" }, "исп1"), "регистр имён SolidWorks не различает");
+            Assert.IsTrue(CheckRules.UsesExecution(new[] { "00<Как сварено>" }, "00"), "в изделии производная активного");
+            Assert.IsTrue(CheckRules.UsesExecution(new[] { "01" }, "01SM-FLAT-PATTERN"), "активна развёртка исполнения из изделия");
+            Assert.IsFalse(CheckRules.UsesExecution(new[] { "01<Как сварено>" }, "00"), "производная другого исполнения");
+            Assert.IsTrue(CheckRules.UsesExecution(new string[0], "00"), "исполнения изделия не известны — как раньше");
+            Assert.IsTrue(CheckRules.UsesExecution(null, "00"), "нет списка — как раньше");
+        }
+
         private static void CollectionAssertEqual(string[] expected, System.Collections.Generic.List<string> actual, string what)
         {
             Assert.AreEqual(string.Join("|", expected), string.Join("|", actual.ToArray()), what);

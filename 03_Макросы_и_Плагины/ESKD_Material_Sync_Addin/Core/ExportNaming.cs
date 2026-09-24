@@ -308,12 +308,35 @@ namespace ESKD.MaterialSync.Core
         public static string DxfPath(string productFolder, string designation, string name, string modelPath,
             double thicknessMm, int quantity, double widthMm, double lengthMm, int revision)
         {
+            return DxfPath(productFolder, designation, name, modelPath, 0, thicknessMm, quantity, widthMm, lengthMm, revision);
+        }
+
+        /// <summary>
+        /// DXF развёртки одного листового тела многотельной детали (№42; решение владельца 24.09.2026 — DXF на каждое тело):
+        /// «Обозначение Наименование_тело2_S8мм_1шт_200х100.dxf». body ≤ 0 — деталь из одного листового тела, номера нет.
+        /// </summary>
+        public static string DxfPath(string productFolder, string designation, string name, string modelPath, int body,
+            double thicknessMm, int quantity, double widthMm, double lengthMm, int revision)
+        {
             string file = Stem(designation, name, modelPath) +
+                (body > 0 ? BodyMark + body.ToString(CultureInfo.InvariantCulture) : "") +
                 "_S" + Thickness(thicknessMm) + "мм" +
                 (quantity > 0 ? "_" + quantity.ToString(CultureInfo.InvariantCulture) + "шт" : "") +
                 "_" + Round(widthMm) + "х" + Round(lengthMm) +
                 RevisionSuffix(revision) + ".dxf";
             return Path.Combine(LaserDirectory(productFolder), file);
+        }
+
+        /// <summary>Номер листового тела в имени DXF многотельной детали: «_тело2».</summary>
+        public const string BodyMark = "_тело";
+
+        /// <summary>Номер тела в имени DXF документа stem; 0 — номера нет (деталь из одного листового тела).</summary>
+        public static int BodyOf(string fileName, string stem)
+        {
+            string name = fileName ?? "";
+            if (string.IsNullOrEmpty(stem) || !name.StartsWith(stem, StringComparison.OrdinalIgnoreCase)) return 0;
+            Match m = Regex.Match(name.Substring(stem.Length), "^" + BodyMark + @"(\d+)_S", RegexOptions.IgnoreCase);
+            return m.Success ? int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
         }
 
         public static string IgsPath(string productFolder, string designation, string name, string modelPath, int revision)
@@ -351,7 +374,7 @@ namespace ESKD.MaterialSync.Core
             string rest = name.Substring(stem.Length);
             return rest.StartsWith(".", StringComparison.Ordinal) ||
                 Regex.IsMatch(rest, @"^_Изм\d+\.", RegexOptions.IgnoreCase) ||
-                Regex.IsMatch(rest, @"^_S\d+(\.\d+)?мм_", RegexOptions.IgnoreCase);
+                Regex.IsMatch(rest, "^(" + BodyMark + @"\d+)?_S\d+(\.\d+)?мм_", RegexOptions.IgnoreCase);
         }
 
         /// <summary>
@@ -366,7 +389,12 @@ namespace ESKD.MaterialSync.Core
             if (!name.EndsWith(".dxf", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(stem) ||
                 string.Equals(name, current ?? "", StringComparison.OrdinalIgnoreCase)) return false;
             if (!name.StartsWith(stem, StringComparison.OrdinalIgnoreCase) ||
-                !Regex.IsMatch(name.Substring(stem.Length), @"^_S\d+(\.\d+)?мм_", RegexOptions.IgnoreCase)) return false;
+                !Regex.IsMatch(name.Substring(stem.Length), "^(" + BodyMark + @"\d+)?_S\d+(\.\d+)?мм_", RegexOptions.IgnoreCase))
+                return false;
+            // Развёртка другого тела той же детали — не прежняя (№42): выгрузка тела 1 не уносит в архив файл тела 2.
+            // Деталь стала однотельной или многотельной — прежние файлы без номера или с номером прежние.
+            int body = BodyOf(name, stem), now = BodyOf(current, stem);
+            if (body > 0 && now > 0 && body != now) return false;
             Match suffix = Regex.Match(name, @"_Изм(\d+)\.dxf$", RegexOptions.IgnoreCase);
             int found = suffix.Success ? int.Parse(suffix.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
             return found == Math.Max(0, revision);

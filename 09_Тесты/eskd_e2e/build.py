@@ -341,7 +341,8 @@ def weldment_feature(doc):
     """Элемент «Сварная деталь» — его SolidWorks ставит сам, когда конструктор добавляет первый элемент конструкции.
     InsertStructuralWeldment4 его не добавляет, и у такой детали нет списка вырезов — только «Твердые тела»:
     SetAutomaticCutList и UpdateCutList отвечают false, папок элементов нет (проба 23.09.2026)."""
-    feat = doc.FeatureManager.InsertWeldmentFeature()
+    # Метод без аргументов позднее связывание выполнило бы как чтение свойства, а скобки вызвали бы найденный элемент.
+    feat = com.call(doc.FeatureManager, "InsertWeldmentFeature")
     if feat is None:
         raise RuntimeError("Элемент «Сварная деталь» не вставлен")
     return feat

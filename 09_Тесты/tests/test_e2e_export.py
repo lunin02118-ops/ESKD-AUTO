@@ -294,6 +294,44 @@ class Export(SwTestCase):
         self.assertEqual(["ПРТИ.468211.192 Вставка.igs"], igs, "IGS — только у детали с галочкой")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
+    def test_X21_multibody_sheet_part_gets_dxf_for_every_body(self):
+        """X21 (сверка SW API 23.09.2026, №42; решение владельца 24.09.2026): деталь из двух листовых тел 3 и 8 мм,
+        каждое 200×100. Раньше ExportToDWG2 без выделения развёртки отдавал одну развёртку или оба тела одним файлом
+        (рамка 500×100), а толщина в имени — первого тела. Теперь у каждого тела свой DXF: «_тело1_S3мм_…»,
+        «_тело2_S8мм_…», рамка одного тела, в отчёте — замечание «многотельная листовая деталь»."""
+        from eskd_e2e import build
+        short = self._case_name().split("_")[1]
+        models = self.s.run_dir / f"{short}/_Заявки/2026-001/02_Металл/И01_ПРТИ.468211.170/01_3D"
+        if models.exists():
+            shutil.rmtree(models.parent, ignore_errors=True)
+        models.mkdir(parents=True)
+        sheet = models / "ПРТИ.468211.171 Лист двойной.sldprt"
+        doc = build.sheet_metal_two_bodies(self.s, 3, 8, None)
+        self.s.save_as(doc, sheet)
+        asm, _ = build.assembly(self.s, [(sheet, 0, 0, 0)])
+        asm_path = models / "ПРТИ.468211.170 СБ Узел.sldasm"
+        self.s.save_as(asm, asm_path)
+        self.s.close_all()
+        doc = self.s.open(asm_path)
+        self.s.activate(doc)
+
+        status = self._export()
+        self.assertTrue(status.startswith("ok|"), status)
+        product = models.parent
+        names = sorted(p.name for p in (product / "03_ЧПУ" / "Лазер_Лист").glob("*.dxf"))
+        self.assertEqual(2, len(names), f"DXF на каждое тело: {names}")
+        found = {}
+        for n in names:
+            m = re.match(r"^ПРТИ\.468211\.171 Лист двойной_тело([12])_S(\d+)мм_1шт_(200х100|100х200)\.dxf$", n)
+            self.assertIsNotNone(m, f"имя DXF тела и рамка одного тела 200×100: {n}")
+            found[m.group(1)] = m.group(2)
+        self.assertEqual({"1", "2"}, set(found), f"оба тела: {names}")
+        self.assertEqual({"3", "8"}, set(found.values()), f"у каждого тела своя толщина: {names}")
+        text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
+        self.assertIn("многотельная листовая деталь", text, text)
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+        self.s.close_all()
+
     def test_X07_every_sheet_execution_gets_its_dxf_with_quantity(self):
         """X07 (заказ 778, 22.09.2026): листовая деталь в двух исполнениях — «00» дважды и «01» один раз — даёт две
         развёртки, каждая со своим обозначением и количеством на изделие в имени. Деталь лежит в «Стандартные изделия
@@ -636,7 +674,9 @@ class Export(SwTestCase):
         """X20 (сверка SW API 23.09.2026, №28, шаг 2): выгрузка открывает чертежи без окна, как «Формат» чертежа. Раньше
         каждый чертёж изделия открывался в своём окне и становился активным — у изделия с десятками чертежей окна мелькали,
         и конструктор, вернувшийся в SolidWorks, мог застать чужое окно. PDF те же: страница на каждый лист, текст
-        основной надписи на месте. Видимость новых чертежей после выгрузки прежняя."""
+        основной надписи на месте. Видимость новых чертежей после выгрузки прежняя. PDF SolidWorks 2025 пишет только из
+        видимого чертежа (проба 24.09.2026): окно показывается на время записи PDF — не больше раза на чертёж — и
+        скрывается, активным после выгрузки остаётся изделие."""
         import fitz
 
         product, asm = self._product()
@@ -645,18 +685,26 @@ class Export(SwTestCase):
         mark = self.mark("x20")
         status = self._export()
         self.assertTrue(status.startswith("ok|"), status)
+        # Открытие без окна SolidWorks тоже отмечает событием «активный документ сменился» (проба 23.09.2026): в счёт идёт
+        # только чертёж с окном — его увидел бы конструктор.
         activated = [e["path"] for e in self.s.journal.of("ActiveDocChangeNotify", mark)
-                     if str(e.get("path", "")).lower().endswith(".slddrw")]
-        self.assertEqual([], activated, "чертёж становился активным окном")
+                     if str(e.get("path", "")).lower().endswith(".slddrw") and e.get("visible") is not False]
         self.assertTrue(bool(com.call(self.s.sw, "GetDocumentVisible", 3)), "видимость новых чертежей возвращена")
         pdfs = sorted((product / "02_PDF").glob("*.pdf"))
         self.assertTrue(pdfs, "PDF чертежей")
+        self.assertEqual(len(activated), len(set(activated)), f"окно чертежа — один раз, на запись PDF: {activated}")
+        self.assertLessEqual(len(activated), len(pdfs), "окно показывается только ради PDF")
+        active = com.dyn(self.s.sw).ActiveDoc
+        self.assertEqual(str(asm).lower(), str(com.dyn(active).GetPathName).lower() if active is not None else "",
+                         "после выгрузки активно изделие")
         for pdf in pdfs:
             with fitz.open(pdf) as book:
                 self.assertGreater(book.page_count, 0, pdf.name)
                 for page in book:
                     self.assertTrue(page.get_text().strip(), f"{pdf.name}: на странице есть текст")
-                    self.assertGreater(len(page.get_drawings()), 20, f"{pdf.name}: на странице есть графика")
+                    # У чертежей фикстуры A на странице 2–3 объекта графики — столько же, сколько у PDF из чертежа,
+                    # открытого с окном (проба 24.09.2026): показанный на время чертёж даёт тот же PDF.
+                    self.assertGreater(len(page.get_drawings()), 0, f"{pdf.name}: на странице есть графика")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_X17_unloaded_component_is_named_in_report(self):

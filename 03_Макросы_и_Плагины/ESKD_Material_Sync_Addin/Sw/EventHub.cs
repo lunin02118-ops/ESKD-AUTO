@@ -439,8 +439,8 @@ namespace ESKD.MaterialSync.Sw
                 foreach (string hint in applied.Hints) Log.Info(hint);
                 if (changed == 0)
                 {
-                    // Замечания назначения («не назначен: …») — не только в журнал: видны в строке состояния и по
-                    // «Синхронизировать» (ревью 23.09.2026).
+                    // Замечания назначения («не назначен: …») — не только в журнал: первое видно в строке состояния
+                    // (ревью 23.09.2026). Окно «Синхронизировать» их не повторяет (сверка документации 24.09.2026).
                     if (applied.Warnings.Count > 0)
                     {
                         _lastWarnings.Clear();
@@ -463,7 +463,7 @@ namespace ESKD.MaterialSync.Sw
                 _lastWarnings.AddRange(applied.Warnings);
                 _lastWarnings.AddRange(report.Warnings);
                 string text = "ЕСКД: материал назначен по типоразмеру (" + changed + ") — деталь изменена, сохраните её" +
-                    (applied.Warnings.Count > 0 ? "; замечания (" + applied.Warnings.Count + ") — в «Синхронизировать»" : "") +
+                    (applied.Warnings.Count > 0 ? "; замечания (" + applied.Warnings.Count + ") — в журнале надстройки" : "") +
                     (ask.Length > 0 ? "; " + ask : "");
                 Log.Info(text + ": " + path);
                 Status(text);
@@ -490,9 +490,10 @@ namespace ESKD.MaterialSync.Sw
 
         private void SyncAndResave(ModelDoc2 doc, string reason, string targetPath, string previousPath)
         {
+            // «Сохранить как» и копия — тоже сохранение по команде конструктора: порядок свойств наводится (№23).
             SyncReport report = SyncService.SyncModel(_app, doc, new SyncRequest
             {
-                Reason = reason, TargetPath = targetPath, PreviousPath = previousPath
+                Reason = reason, TargetPath = targetPath, PreviousPath = previousPath, OrderFor = targetPath
             });
             Remember(doc, report);
             if (report.Changes == 0) return;
@@ -570,11 +571,16 @@ namespace ESKD.MaterialSync.Sw
                 // «Проверить изделие» сохраняет документы сам и уже всё записал — второй круг не нужен. ЛЗК и выгрузка
                 // сохраняют только своё (ToolSaves): не спрошенное у конструктора при их сохранении не пишется.
                 if (ProductReviewService.Running || DrawingFormatService.Busy || ToolSaves.Busy) return 0;
+                // Единый порядок свойств (№23) — по команде того, кто сохраняет: скрытая деталь сохраняется вместе с
+                // активной сборкой, и файл другого заказа порядок не получает.
+                ModelDoc2 active = _app.ActiveDoc as ModelDoc2;
+                string by = Windowless(s.Doc) && active != null ? SafePath(active) : SafePath(s.Doc);
                 Remember(s.Doc, SyncService.SyncModel(_app, s.Doc, new SyncRequest
                 {
                     Reason = _resaving ? "пересохранение" : "сохранение",
                     TargetPath = SafePath(s.Doc),
-                    PreviousPath = s.LastPath
+                    PreviousPath = s.LastPath,
+                    OrderFor = by
                 }));
             }
             catch (Exception ex)

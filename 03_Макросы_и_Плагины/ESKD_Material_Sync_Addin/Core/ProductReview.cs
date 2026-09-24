@@ -94,6 +94,9 @@ namespace ESKD.MaterialSync.Core
         /// <summary>До проверки в документе были несохранённые правки конструктора: галочка «сохранить» снята.</summary>
         public bool Edited;
 
+        /// <summary>Файл сохранён в прежней версии SolidWorks: «изменён» сразу после открытия (№26) — свой текст в окне.</summary>
+        public bool Older;
+
         /// <summary>Галочка списка «Сохранить».</summary>
         public bool Save;
 
