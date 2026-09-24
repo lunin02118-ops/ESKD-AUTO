@@ -488,6 +488,30 @@ function Reset-EskdSolidWorksProfile {
     return [pscustomobject]@{ Existed = $true; Preserved = @($saved.Name) + @($savedValues | ForEach-Object { "$($_.Key)\$($_.Name)" }) }
 }
 
+# ------------------------------------------------------------------ Язык интерфейса
+# Правило SolidWorks 2025 (sldutu.dll, LangUtils::GetLangSubdir; разбор 25.09.2026): «Use English language» = 1 —
+# английский; иначе основной язык регионального формата пользователя (GetUserDefaultLangID & 0x3FF) = 0x19 при DLL
+# в lang\russian — русский; всё прочее — английский. Русскими считаются только ru-RU (0x0419) и ru-MD (0x0819):
+# у ru-KZ, ru-UA, ru-BY LCID 0x1000, у kk-KZ — 0x043F. Язык интерфейса Windows и системная локаль на выбор не влияют.
+# Макросам SWPlus (VBA, кодовая страница проекта 1251) нужна системная кодовая страница 1251 — её меняет только
+# администратор с перезагрузкой, установщик лишь предупреждает.
+function Get-EskdLanguagePlan {
+    param(
+        [Parameter(Mandatory = $true)][ValidateSet("Russian", "English")][string]$Language,
+        [int]$UserLcid,
+        [bool]$RussianPack,
+        [string]$Acp
+    )
+    $russianFormat = ($UserLcid -band 0x3FF) -eq 0x19
+    return [pscustomobject]@{
+        UseEnglish    = [int]($Language -eq "English")
+        RussianFormat = $russianFormat
+        SetCulture    = ($Language -eq "Russian") -and $RussianPack -and -not $russianFormat
+        DrewLang      = $(if ($Language -eq "English") { "en" } else { "ru" })
+        AcpOk         = ("$Acp".Trim() -eq "1251")
+    }
+}
+
 # ------------------------------------------------------------------ SWTools
 # Установщик SWTools не хранится в репозитории: Publish-EskdToolkit -SwToolsSetup кладёт его в общую папку
 # (03_Макросы_и_Плагины\SWTools_Установщик) вместе с описанием swtools_release.json, установщик рабочего места ставит его оттуда.

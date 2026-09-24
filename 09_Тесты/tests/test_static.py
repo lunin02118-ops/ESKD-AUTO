@@ -373,11 +373,53 @@ class StaticRepository(StaticTestCase):
         self.assertTrue((block / "Set-SwInternetBlock.ps1").exists() and (block / "SWInternetBlock.manifest.json").exists(),
                         "нет пакета SwInternetBlock рядом с движком")
         configurator = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
-        for needed in ("Gov-издание (лицензия встроена", "Отучение SolidWorks от сети", "DREW_LANG=ru",
-                       '"-SkipDrew"', '"-SwInternetBlock"', '"-DrewRussian"'):
+        for needed in ("Gov-издание (лицензия встроена", "Отучение SolidWorks от сети", "Язык интерфейса SolidWorks и Drew",
+                       '"-SkipDrew"', '"-SwInternetBlock"', '"-Language"'):
             self.assertIn(needed, configurator, f"в окне настройки нет: {needed}")
         for gone in ("Активация Drew", "Client-Activate-Drew.ps1", "drew_needs_activation"):
             self.assertNotIn(gone, configurator, f"артефакт активации не должен остаться в окне: {gone}")
+
+    def test_T0_language_choice_at_deploy(self):
+        """T0 (решение владельца 25.09.2026): при развёртывании выбирается язык интерфейса SolidWorks и Drew.
+        SolidWorks 2025 берёт язык из регионального формата пользователя (sldutu.dll LangUtils::GetLangSubdir:
+        «Use English language» = 1 — английский, иначе основной язык формата 0x19 при DLL в lang/russian — русский).
+        Установщик: ключ -Language Russian|English (прежний выбор, иначе русский; -DrewRussian — синоним), значение
+        «Use English language» пишется ПОСЛЕ профиля .reg, формат пользователя — Set-Culture ru-RU (без прав
+        администратора) только при установленном русском пакете; системную локаль, язык Windows, «Расположение»
+        и папки lang не трогает — кодовую страницу для макросов SWPlus только проверяет."""
+        service = ROOT / "01_Настройки_SolidWorks" / "_Служебное"
+        setup = (service / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        module = (service / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
+        self.assertIn('[ValidateSet("Russian", "English", "")][string]$Language', setup, "ключ -Language")
+        self.assertIn('if (-not $Language -and $DrewRussian) { $Language = "Russian" }', setup, "-DrewRussian — синоним")
+        self.assertIn('Get-RegValue $install "Language"', setup, "по умолчанию — прежний выбор ПК")
+        self.assertIn('Set-Reg $install "Language" $Language', setup, "выбор запоминается в ESKD_Install")
+        write = setup.index(r'Set-Reg "$swRoot\General" "Use English language" $plan.UseEnglish "DWord"')
+        self.assertLess(setup.index("reg.exe import"), write, "язык пишется после импорта профиля .reg — иначе .reg его перекроет")
+        for needed in ("Set-Culture -CultureInfo ru-RU", r'lang\russian', '"SolidWorks Folder"', r"Nls\CodePage",
+                       "[Environment]::SetEnvironmentVariable('DREW_LANG', $plan.DrewLang, 'User')"):
+            self.assertIn(needed, setup, f"в установщике нет: {needed}")
+        for forbidden in ("Set-WinSystemLocale", "Set-WinUILanguageOverride", "Set-WinHomeLocation", "Set-WinUserLanguageList",
+                          r"Control Panel\International"):
+            self.assertNotIn(forbidden, setup, f"установщик не должен менять: {forbidden}")
+        self.assertIn("function Get-EskdLanguagePlan", module)
+        self.assertIn("-band 0x3FF", module, "основной язык формата — младшие 10 бит LCID")
+        self.assertIn("-eq 0x19", module, "русский — основной язык 0x19")
+        reg = (ROOT / "01_Настройки_SolidWorks" / "Реестровые_Профили" / "01_SW2025_Корпоративный_Стандарт_ЕСКД.reg").read_text(encoding="utf-16")
+        self.assertIn('"Use English language feature names"=dword:00000000', reg, "имена элементов — по стандарту отдела")
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("configurator", ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py")
+        configurator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(configurator)
+        cmd = configurator.build_command("S.ps1", "И", "", "Skip")
+        self.assertEqual(["-Language", "Russian"], cmd[cmd.index("-Language"):cmd.index("-Language") + 2], "по умолчанию русский")
+        cmd = configurator.build_command("S.ps1", "И", "", "Skip", language="English")
+        self.assertEqual(["-Language", "English"], cmd[cmd.index("-Language"):cmd.index("-Language") + 2])
+        self.assertNotIn("-DrewRussian", cmd, "прежний ключ окно не передаёт")
+        window = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
+        self.assertIn('"LastResult", "Language")', window, "окно читает прежний выбор языка из ESKD_Install")
+        guide = (ROOT / "06_Документация" / "РУКОВОДСТВО_ПОЛЬЗОВАТЕЛЯ_И_АДМИНИСТРАТОРА.md").read_text(encoding="utf-8")
+        self.assertIn("`-Language`", guide, "ключ -Language описан в руководстве")
 
     def test_T0_mprop_firm_is_pairs(self):
         """T0: общие списки MProp пусты — фамилию и организацию каждый вписывает при установке (решение владельца

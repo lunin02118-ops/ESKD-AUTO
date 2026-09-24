@@ -44,6 +44,9 @@ $sandbox = "HKCU:\Software\$registryName"
 $swKey = "$sandbox\SolidWorks\SOLIDWORKS 2025"
 $liveInstallBefore = Test-Path "HKCU:\Software\SolidWorks\ESKD_Install"
 $liveAuthorBefore = Read-Value "HKCU:\Software\SolidWorks\ESKD_Settings" "Author"
+# Язык: формат Windows и DREW_LANG пользователя тест менять не должен (в песочнице шаг [9/9] их не трогает)
+$liveLocaleBefore = Read-Value "HKCU:\Control Panel\International" "LocaleName"
+$liveDrewLangBefore = [Environment]::GetEnvironmentVariable("DREW_LANG", "User")
 $output = ""
 
 try {
@@ -92,6 +95,16 @@ try {
     Expect "класс: макрос" (Resolve-EskdProfilePath -Relative "$swplusRel\MProp\MProp.swp" -SourceRoot "S" -LocalRoot "L") "L\$swplusRel\MProp\MProp.swp"
     Expect "класс: надстройка" (Resolve-EskdProfilePath -Relative "$addinRel\x.dll" -SourceRoot "S" -LocalRoot "L") "L\$addinRel\x.dll"
     Expect "класс: шаблоны" (Resolve-EskdProfilePath -Relative "02_Шаблоны_и_Форматки\Шаблоны документов" -SourceRoot "S" -LocalRoot "L") "S\02_Шаблоны_и_Форматки\Шаблоны документов"
+    # Язык интерфейса (разбор SolidWorks 25.09.2026): русский — только основной язык формата 0x19 (ru-RU, ru-MD)
+    foreach ($case in @(@(0x0409, $true), @(0x1000, $true), @(0x043F, $true), @(0x0419, $false), @(0x0819, $false))) {
+        $p = Get-EskdLanguagePlan -Language Russian -UserLcid $case[0] -RussianPack $true -Acp "1251"
+        Expect ("язык: формат 0x{0:X4} переключается" -f $case[0]) $p.SetCulture $case[1]
+    }
+    Expect "язык: без русского пакета формат не трогается" (Get-EskdLanguagePlan -Language Russian -UserLcid 0x0409 -RussianPack $false -Acp "1251").SetCulture $false
+    $en = Get-EskdLanguagePlan -Language English -UserLcid 0x0409 -RussianPack $true -Acp "1252"
+    Expect "язык: английский — «Use English language» = 1, формат не трогается, DREW_LANG=en" ("{0}|{1}|{2}" -f $en.UseEnglish, $en.SetCulture, $en.DrewLang) "1|False|en"
+    Expect "язык: кодовая страница 1252 — предупреждение SWPlus" $en.AcpOk $false
+    Expect "язык: кодовая страница UTF-8 (65001) — предупреждение SWPlus" (Get-EskdLanguagePlan -Language Russian -UserLcid 0x0419 -RussianPack $true -Acp "65001").AcpOk $false
     Expect "класс: папка «SWPlusMacro_v_2018_SP0.0 2» не путается с папкой SWPlus" (Resolve-EskdProfilePath -Relative "${swplusRel} 2\x.swp" -SourceRoot "S" -LocalRoot "L") "S\${swplusRel} 2\x.swp"
 
     $setup = Join-Path $source "01_Настройки_SolidWorks\_Служебное\Setup_Workstation_SolidWorks.ps1"
@@ -140,6 +153,9 @@ try {
     Expect "организация" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Organization") "ООО «Проверка»"
     Expect "ESKD_Install: источник" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "SourceRoot") $source
     Expect "ESKD_Install: итог" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "LastResult") "OK"
+    Expect "язык: по умолчанию русский" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "Language") "Russian"
+    Expect "язык: «Use English language» = 0" (Read-Value "$swKey\General" "Use English language") 0
+    Expect "язык: шаг [9/9] в выводе" ($output.Contains("[9/9] Язык интерфейса SolidWorks и Drew: русский")) $true
     # Панель быстрого доступа: без базовых Btn0..Btn10 SolidWorks 2025 при запуске стирает её вместе с кнопками SWPlus
     $qat = "$swKey\User Interface\CommandManager\QAT\GB0"
     Expect "QAT: кнопок Btn0..Btn19" (@(0..19 | Where-Object { Read-Value $qat "Btn$_" }).Count) 20
@@ -195,7 +211,8 @@ try {
     Set-ItemProperty -LiteralPath $qat -Name "Btn20" -Value "1,40001"
     # Запомненный SolidWorks программный режим OpenGL (21.09.2026: переживал сброс и держал программный OpenGL серым)
     Set-ItemProperty -LiteralPath "$swKey\Performance" -Name "Saved OGL Settings" -Value 0x02110211 -Type DWord
-    $code2, $output2 = & $run
+    # Повторная установка с английским: [9/9] идёт после сброса профиля и .reg («Use English language» = 0) и перекрывает их
+    $code2, $output2 = & $run @("-Language", "English")
     $backups = @(Get-ChildItem -LiteralPath (Join-Path (Split-Path -Path $local -Parent) "Backups") -Recurse -Filter "*SOLIDWORKS 2025*.reg" -ErrorAction SilentlyContinue |
                  Where-Object { $_.Length -gt 0 -and [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::Unicode).Contains("Моя панель") })
     Expect "сброс: резервная копия раздела версии с прежними настройками создана" ($backups.Count -ge 1) $true
@@ -212,6 +229,8 @@ try {
     Expect "сброс: фамилия вне раздела версии не тронута" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
     $output += "`n--- повторная установка ---`n" + $output2
     Expect "код выхода повторной установки" $code2 0
+    Expect "язык: выбран английский" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "Language") "English"
+    Expect "язык: английский перекрыл сброс и профиль" (Read-Value "$swKey\General" "Use English language") 1
     Expect "профили MProp пользователя сохранены" ([System.IO.File]::ReadAllText($prof, $cp1251)) $profText
     $master2 = @([System.IO.File]::ReadAllLines((Join-Path $localSwPlus "Master\Master.ini"), $cp1251))
     Expect "Master.ini: шрифт пользователя сохранён" $master2[0] "Arial"
@@ -244,6 +263,7 @@ try {
     Expect "установка выпуска" $code 0
     Expect "установка сверила копию с выпуском" ($out.Contains("совпадает с выпуском 2026.09.19.1200")) $true
     Expect "ESKD_Install: версия выпуска" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "ReleaseVersion") "2026.09.19.1200"
+    Expect "язык: обновление без ключа сохраняет прежний выбор" (Read-Value "$swKey\General" "Use English language") 1
     $code, $out = & $run @("-Mode", "Check")
     Expect "Check: актуально" $code 0
     $localBefore = Snapshot $local
@@ -329,6 +349,8 @@ try {
 }
 Expect "настоящая ветка ESKD_Install не создана тестом" (Test-Path "HKCU:\Software\SolidWorks\ESKD_Install") $liveInstallBefore
 Expect "настоящая фамилия не изменена" (Read-Value "HKCU:\Software\SolidWorks\ESKD_Settings" "Author") $liveAuthorBefore
+Expect "настоящий формат Windows не изменён" (Read-Value "HKCU:\Control Panel\International" "LocaleName") $liveLocaleBefore
+Expect "настоящий DREW_LANG не изменён" ([Environment]::GetEnvironmentVariable("DREW_LANG", "User")) $liveDrewLangBefore
 $tail = if ($problems.Count) { ($output -split "`n" | Select-Object -Last 40) -join "`n" } else { "" }
 [pscustomobject]@{ ok = ($problems.Count -eq 0); problems = @($problems); sandboxRemoved = -not (Test-Path -LiteralPath $sandbox); output = $tail } |
     ConvertTo-Json -Compress

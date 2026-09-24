@@ -6,8 +6,8 @@
 и есть источник: путь нигде не зашит и не вводится. Окно берёт фамилию и организацию, а всю работу делает
 установщик Setup_Workstation_SolidWorks.ps1 из той же папки: пути SolidWorks на папку инструментария, макросы
 SWPlus и надстройка ЕСКД — в профиль пользователя, кнопки, шрифты, Drew (лицензия встроена - активация
-не нужна). Галочки: Drew, отучение SolidWorks от сети (единственная опция, запрашивающая права администратора),
-русский интерфейс Drew.
+не нужна). Галочки: Drew, отучение SolidWorks от сети (единственная опция, запрашивающая права администратора);
+выбор языка интерфейса SolidWorks и Drew (русский или английский).
 
 Повторный запуск — обновление: если на ПК уже есть установка, оно начинается само через несколько секунд.
 
@@ -191,18 +191,17 @@ def engine_env(environ=None):
     return env
 
 
-def build_command(engine, author, firm, close_mode, drew=True, block=False, ru=False, safe_graphics=False):
-    """Командная строка установщика: без вопросов в консоли, вывод в UTF-8; флаги чекбоксов."""
+def build_command(engine, author, firm, close_mode, drew=True, block=False, language="Russian", safe_graphics=False):
+    """Командная строка установщика: без вопросов в консоли, вывод в UTF-8; флаги чекбоксов и язык интерфейса."""
     cmd = [windows_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", engine,
-           "-Author", author, "-CloseMode", close_mode, "-NonInteractive", "-Utf8Output"]
+           "-Author", author, "-CloseMode", close_mode, "-NonInteractive", "-Utf8Output",
+           "-Language", "English" if language == "English" else "Russian"]
     if firm:
         cmd += ["-Firm", firm]
     if not drew:
         cmd += ["-SkipDrew"]
     if block:
         cmd += ["-SwInternetBlock"]
-    if ru:
-        cmd += ["-DrewRussian"]
     if safe_graphics:
         # Аппаратный конвейер графики не включается: лечение ПК, на котором SolidWorks после настройки не стартует.
         cmd += ["-Graphics", "Safe"]
@@ -245,7 +244,7 @@ class ConfiguratorApp:
         self.countdown = None
 
         root.title("Настройка рабочего места SolidWorks — ЕСКД")
-        root.geometry("820x600")
+        root.geometry("820x640")
         root.minsize(640, 460)
         if getattr(sys, "frozen", False):
             try:
@@ -265,7 +264,7 @@ class ConfiguratorApp:
 
         info = ttk.Frame(top)
         info.pack(fill=tk.X)
-        installed = read_registry("ESKD_Install", ("ReleaseVersion", "InstalledAt", "SourceRoot", "LastResult"))
+        installed = read_registry("ESKD_Install", ("ReleaseVersion", "InstalledAt", "SourceRoot", "LastResult", "Language"))
         settings = read_registry("ESKD_Settings", ("Author", "Organization"))
         self.installed = bool(installed["InstalledAt"])
         rows = [
@@ -298,14 +297,22 @@ class ConfiguratorApp:
         comp.pack(fill=tk.X, padx=16, pady=(6, 6))
         self.var_drew = tk.BooleanVar(value=True)
         self.var_block = tk.BooleanVar(value=False)
-        self.var_ru = tk.BooleanVar(value=True)
+        # Язык: прежний выбор этого ПК, иначе русский (решение владельца 25.09.2026) — автообновление его не меняет.
+        self.var_lang = tk.StringVar(value="English" if (installed["Language"] or "").lower() == "english" else "Russian")
         self.var_safe_gfx = tk.BooleanVar(value=False)
         ttk.Checkbutton(comp, text="Drew — Gov-издание (лицензия встроена, без активации и кейгена)",
                         variable=self.var_drew).pack(anchor=tk.W)
         ttk.Checkbutton(comp, text="Отучение SolidWorks от сети (файрвол + hosts; запросит права администратора)",
                         variable=self.var_block).pack(anchor=tk.W)
-        ttk.Checkbutton(comp, text="Русский интерфейс Drew (DREW_LANG=ru)",
-                        variable=self.var_ru).pack(anchor=tk.W)
+        lang = ttk.Frame(comp)
+        lang.pack(anchor=tk.W, pady=(4, 0))
+        ttk.Label(lang, text="Язык интерфейса SolidWorks и Drew:").pack(side=tk.LEFT)
+        ttk.Radiobutton(lang, text="Русский", value="Russian", variable=self.var_lang).pack(side=tk.LEFT, padx=(8, 0))
+        ttk.Radiobutton(lang, text="Английский", value="English", variable=self.var_lang).pack(side=tk.LEFT, padx=(8, 0))
+        # SolidWorks берёт язык из формата Windows пользователя, а не из языка Windows (разбор 25.09.2026).
+        ttk.Label(comp, text="Русский: если формат Windows не «Русский (Россия)», он будет переключён — иначе SolidWorks "
+                             "останется английским. Язык сменится после перезапуска SolidWorks.",
+                  foreground="#6b7682", font=("Segoe UI", 8), wraplength=760, justify=tk.LEFT).pack(anchor=tk.W)
         # Замечание владельца 22.09.2026: из подписи не было понятно, что галочка выключает аппаратное ускорение.
         ttk.Checkbutton(comp, text="Безопасная графика — выключает аппаратное ускорение "
                                    "(только если SolidWorks не запускается или окно чёрное)",
@@ -385,7 +392,7 @@ class ConfiguratorApp:
         self.log.configure(state=self.tk.DISABLED)
         self.set_status("Идёт настройка…", "text")
         cmd = build_command(self.engine, author, self.var_firm.get().strip(), close_mode,
-                             drew=self.var_drew.get(), block=self.var_block.get(), ru=self.var_ru.get(),
+                             drew=self.var_drew.get(), block=self.var_block.get(), language=self.var_lang.get(),
                              safe_graphics=self.var_safe_gfx.get())
         threading.Thread(target=self.run_engine, args=(cmd,), daemon=True).start()
 
