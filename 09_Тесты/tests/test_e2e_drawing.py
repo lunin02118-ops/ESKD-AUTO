@@ -167,8 +167,9 @@ class Drawing(SwTestCase):
 
     def test_D13_drawing_save_fills_model_format_for_specification(self):
         """D13 (З-1): сохранение чертежа пишет формат его листов в «Формат» модели — графу «Формат» спецификации:
-        у «Пластины» лист 1 — А3, лист 2 — А4, поэтому «*)» и «*) А4, А3» в «Примечании» (ГОСТ Р 2.106-2019, как SpecEditor);
-        модель сохранена и не осталась «грязной», повторное сохранение чертежа ничего не пишет."""
+        у «Пластины» лист 1 — А3, лист 2 — А4, поэтому «*)» и «*) А4, А3» в «Примечании» (ГОСТ Р 2.106-2019, как SpecEditor).
+        Модель надстройка НЕ сохраняет (решение владельца 23.09.2026: без команды конструктора не сохраняется) —
+        она остаётся изменённой, сохраняет её конструктор; повторное сохранение чертежа ничего не пишет."""
         model = self._prepare_model()
         doc = self.s.open(model)
         for cfg in ("",) + tuple(com.as_list(doc.GetConfigurationNames)):
@@ -180,11 +181,12 @@ class Drawing(SwTestCase):
         self.assertEqual([(420, 297), (210, 297)], sizes, "листы фикстуры: А3 и А4")
         self.s.save(drw)
         self.wait_idle()
-        self.assertFalse(bool(doc.GetSaveFlag), "модель сохранена после записи формата")
+        self.assertTrue(bool(doc.GetSaveFlag), "формат записан в открытую модель, а сохранить её — дело конструктора")
         mark = self.mark("D13-second-save")
         self.s.save(drw)
         self.wait_idle()
         self.assertNoPropertyWrites(mark, "повторное сохранение чертежа снова пишет в модель")
+        self.s.save(doc)
         self.s.close_all()
         props = self.persisted(model)
         levels = list(props["configs"]) + ([None] if len(props["configs"]) <= 1 else [])
@@ -210,7 +212,48 @@ class Drawing(SwTestCase):
     def test_D14_drawing_saved_and_closed_at_once_still_fills_model_format(self):
         """D14 (замечание владельца 21.09.2026 «формат не попадает в спецификацию»): чертёж сохранили и сразу закрыли.
         Раньше запись формата ждала простоя вместе с чертежом и отменялась его закрытием; теперь листы читаются при
-        сохранении, а модель — выгруженная вместе с чертежом — открывается скрыто, записывается и закрывается."""
+        сохранении, а модель — выгруженная вместе с чертежом — открывается скрыто, записывается и закрывается.
+        С 23.09.2026 это только при включённой настройке FormatSavesModel (по умолчанию модель не сохраняется, D17)."""
+        self.s.set_settings(FormatSavesModel=1)
+        try:
+            self._closed_model_after_drawing_save()
+        finally:
+            self.s.set_settings(FormatSavesModel=0)
+
+    def test_D17_closed_model_is_not_opened_and_saved_by_default(self):
+        """D17 (решение владельца 23.09.2026): деталь без команды конструктора не сохраняется. Чертёж сохранили и
+        закрыли — модель, выгруженная вместе с ним, не открывается и не переписывается; конструктору сказано об этом в
+        строке состояния. Прежний «Формат» (не пустой) исправляет «Проверить изделие»: чертёж новее модели."""
+        model = self._prepare_model()
+        doc = self.s.open(model)
+        for cfg in ("",) + tuple(com.as_list(doc.GetConfigurationNames)):
+            build.props(doc, {"Формат": "A3"}, cfg)
+        self.s.save(doc)
+        self.s.close(doc)
+        before = self.persisted(model)
+        drw = self.s.open(self.copy_fixture(A10))
+        self.s.sw.CommandInProgress = True
+        try:
+            self.s.save(drw)
+            self._close_now(drw)
+        finally:
+            self.s.sw.CommandInProgress = False
+        self.assertTrue(self.s.wait_addin_idle(timeout=60.0), "надстройка отработала простой")
+        self.s.close_all()
+        self.assertEqual(before, self.persisted(model), "закрытая модель не открыта и не сохранена надстройкой")
+
+        for name in (A09,) + A09_COMPONENTS:
+            if name != A01:
+                self.copy_fixture(name)
+        asm = self.s.open(self.path(A09))
+        self.s.activate(asm)
+        status = str(com.call(self.s.eskd(), "SyncProductSilent") or "")
+        self.assertIn("формат из чертежа 1", status, status)
+        self.s.close_all()
+        formats = self._formats(model)
+        self.assertEqual({c: "*)" for c in formats}, formats, "прежний «Формат» заменён по чертежу — по команде конструктора")
+
+    def _closed_model_after_drawing_save(self):
         model = self._prepare_model()
         doc = self.s.open(model)
         for cfg in ("",) + tuple(com.as_list(doc.GetConfigurationNames)):
@@ -232,8 +275,8 @@ class Drawing(SwTestCase):
         self.assertEqual({c: "*)" for c in formats}, formats, "«Формат» модели — из листов А3 и А4 закрытого чертежа")
 
     def test_D15_product_sync_backfills_empty_format_from_drawings(self):
-        """D15: чертежи, сохранённые до исправления, формат в модель не записали. «Синхронизировать» на сборке
-        дозаполняет пустой «Формат» деталей и сборки по чертежу рядом (тот же путь, .slddrw)."""
+        """D15: чертежи, сохранённые до исправления, формат в модель не записали. «Проверить изделие» (здесь — её
+        запись без окна) дозаполняет пустой «Формат» деталей и сборки по чертежу рядом (тот же путь, .slddrw)."""
         for name in (A09,) + A09_COMPONENTS + (A10, A11):
             self.copy_fixture(name)
         plate, asm_path = self.path(A01), self.path(A09)
@@ -255,6 +298,41 @@ class Drawing(SwTestCase):
         formats = self._formats(asm_path)
         self.assertEqual({c: "А2" for c in formats}, formats, "сборка: формат чертежа СБ")
 
+
+    def test_D18_assembly_save_keeps_designer_edits_in_parts(self):
+        """D18 (ревью 23.09.2026): «Проверить изделие» дописала «Формат» сборке и сохранила её, а в её детали —
+        несохранённая правка конструктора. Save3 сборки без swSaveAsOptions_SaveReferenced изменённые компоненты не
+        пишет (проверено на SolidWorks 2025 23.09.2026): файл детали не меняется, деталь остаётся несохранённой — её
+        сохраняет конструктор. Тест держит это поведение: иначе сохранение сборки унесло бы и чужие правки."""
+        for name in (A09,) + A09_COMPONENTS + (A10, A11):
+            self.copy_fixture(name)
+        plate, asm_path = self.path(A01), self.path(A09)
+        with self.s.eskd_muted():
+            doc = self.s.open(asm_path)
+            for cfg in ("",) + tuple(com.as_list(doc.GetConfigurationNames)):
+                build.props(doc, {"Формат": ""}, cfg)
+            self.s.save(doc)
+            self.s.close(doc)
+        before = plate.read_bytes()
+        asm = self.s.open(asm_path)
+        part = self.s.sw.GetOpenDocumentByName(str(plate))
+        self.assertIsNotNone(part, "пластина загружена сборкой")
+        # Несохранённая правка конструктора: любая правка помечает документ изменённым — так же поступаем и здесь.
+        com.dyn(part).SetSaveFlag()
+        self.s.activate(asm)
+        com.call(self.s.eskd(), "CheckProductApplySilent")
+        applied = str(com.call(self.s.eskd(), "CheckApplied"))
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        part_dirty, asm_dirty = bool(com.dyn(part).GetSaveFlag), bool(com.dyn(asm).GetSaveFlag)
+        self.s.close_all()
+        untouched = before == plate.read_bytes()
+        self.path("outcome.txt").write_text(f"{applied}\nпластина изменена: {part_dirty}, сборка изменена: {asm_dirty}, "
+                                            f"файл пластины не тронут: {untouched}\n{notices}", encoding="utf-8")
+        self.assertIn("формат из чертежа", applied, applied)
+        self.assertIn("сборка сохранена", applied, applied)
+        self.assertFalse(asm_dirty, "сборка сохранена")
+        self.assertTrue(untouched, "файл пластины не тронут")
+        self.assertTrue(part_dirty, "пластина осталась несохранённой — её сохраняет конструктор")
 
     def test_D16_flat_pattern_sheet_does_not_block_format(self):
         """D16 (живая проверка NC3-7R 22.09.2026): у листовой детали в чертеже есть лист развёртки Drew «DXF1»
@@ -291,6 +369,8 @@ class Drawing(SwTestCase):
         self.s.save(doc)
         self.s.close(doc)
         drw = self.s.open(self.path(A11))
+        # Закрытая модель переписывается при сохранении чертежа только по настройке (23.09.2026, D17).
+        self.s.set_settings(FormatSavesModel=1)
         self.s.sw.CommandInProgress = True
         try:
             drw.SetSaveFlag()
@@ -298,7 +378,10 @@ class Drawing(SwTestCase):
             self._close_now(drw)
         finally:
             self.s.sw.CommandInProgress = False
-        self.assertTrue(self.s.wait_addin_idle(timeout=60.0), "надстройка записала формат в простое")
+        try:
+            self.assertTrue(self.s.wait_addin_idle(timeout=60.0), "надстройка записала формат в простое")
+        finally:
+            self.s.set_settings(FormatSavesModel=0)
         self.s.close_all()
         formats = self._formats(asm_path)
         self.assertEqual({c: "А2" for c in formats}, formats, "сохранение чертежа: лист DXF1 не мешает записать А2")

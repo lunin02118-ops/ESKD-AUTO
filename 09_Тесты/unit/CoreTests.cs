@@ -6,6 +6,20 @@ namespace ESKD.Tests
 {
     public static class ParserTests
     {
+        public static void Test_Technical_configuration_names()
+        {
+            // Сверка SW API 23.09.2026, №40: техническая производная — не исполнение, материал ставится её родителю.
+            Assert.IsTrue(DesignationParser.IsTechnicalConfigurationName("00SM-FLAT-PATTERN"), "развёртка");
+            Assert.IsTrue(DesignationParser.IsTechnicalConfigurationName("По умолчанию<Как сварено>"), "как сварено");
+            Assert.IsTrue(DesignationParser.IsTechnicalConfigurationName("По умолчанию<Как обработанный>SM-FLAT-PATTERN"),
+                "развёртка обработанной");
+            Assert.IsFalse(DesignationParser.IsTechnicalConfigurationName("01"), "исполнение");
+            Assert.IsFalse(DesignationParser.IsTechnicalConfigurationName("Покраска"), "конструкторская конфигурация");
+            Assert.IsFalse(DesignationParser.IsTechnicalConfigurationName("00"), "базовое исполнение");
+            Assert.IsFalse(DesignationParser.IsTechnicalConfigurationName(null), "пусто");
+            Assert.AreEqual("00", CheckRules.TechnicalOwner("00SM-FLAT-PATTERN"), "исполнение развёртки — то же правило");
+        }
+
         public static void Test_ExecutionFlag_matches_mprop_checkboxes()
         {
             Assert.AreEqual("1", DesignationParser.ExecutionFlag("01", "01", true), "«Исполнение» + «Из»: номер из имени конфигурации");

@@ -41,6 +41,24 @@ namespace ESKD.Tests
             }
         }
 
+        public static void Test_Orphan_drawing_takes_the_name()
+        {
+            // Сверка SW API 23.09.2026, №27: модели нет, а её чертёж остался (модель удалили или переименовали) — имя
+            // занято: копия чертежа эталона легла бы поверх чужого чертежа без вопроса.
+            string models = Path.Combine(Path.GetTempPath(), "eskd_indep_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(models);
+            try
+            {
+                File.WriteAllText(Path.Combine(models, "ТС-52.00.01.004 Стойка.slddrw"), "чужой чертёж");
+                Assert.AreEqual(Path.Combine(models, "ТС-52.00.01.004 Стойка_2.sldprt"),
+                    IndependentNaming.TargetPath(models, "ТС-52.00.01.004", "Стойка", "Стойка.sldprt"), "чертёж-сирота занимает имя");
+            }
+            finally
+            {
+                Directory.Delete(models, true);
+            }
+        }
+
         public static void Test_Report_tells_what_was_created()
         {
             IndependentLog log = new IndependentLog

@@ -301,3 +301,73 @@ def diff_trees(before, after):
     created = [p for p in after if p not in before]
     deleted = [p for p in before if p not in after]
     return {"changed": sorted(changed), "created": sorted(created), "deleted": sorted(deleted)}
+
+
+# --------------------------------------------------------------------------- «медленный NAS»
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+kernel32.CreateFileW.argtypes = [wt.LPCWSTR, wt.DWORD, wt.DWORD, ctypes.c_void_p, wt.DWORD, wt.DWORD, wt.HANDLE]
+kernel32.CreateFileW.restype = wt.HANDLE
+kernel32.CreateEventW.argtypes = [ctypes.c_void_p, wt.BOOL, wt.BOOL, wt.LPCWSTR]
+kernel32.CreateEventW.restype = wt.HANDLE
+kernel32.DeviceIoControl.argtypes = [wt.HANDLE, wt.DWORD, ctypes.c_void_p, wt.DWORD, ctypes.c_void_p, wt.DWORD,
+                                     ctypes.POINTER(wt.DWORD), ctypes.c_void_p]
+kernel32.DeviceIoControl.restype = wt.BOOL
+kernel32.CloseHandle.argtypes = [wt.HANDLE]
+INVALID_HANDLE = wt.HANDLE(-1).value
+FSCTL_REQUEST_OPLOCK_LEVEL_1 = 0x00090000
+ERROR_IO_PENDING = 997
+
+
+class _Overlapped(ctypes.Structure):
+    _fields_ = [("Internal", ctypes.c_void_p), ("InternalHigh", ctypes.c_void_p),
+                ("Offset", wt.DWORD), ("OffsetHigh", wt.DWORD), ("hEvent", wt.HANDLE)]
+
+
+class stalled_open:
+    """Чужое открытие файла path ждёт до seconds секунд — так ведёт себя файл на подвисшем NAS.
+
+    Держим оплок первого уровня и не подтверждаем его разрыв: открытие файла другим процессом (SolidWorks) ждёт, пока
+    мы не закроем свой дескриптор, — по таймеру через seconds или на выходе из with. Оплок даётся, только если файл больше
+    никем не открыт."""
+
+    def __init__(self, path, seconds):
+        self.path = str(path)
+        self.seconds = seconds
+        self._lock = threading.Lock()
+        self._handle = None
+        self._event = None
+        self._overlapped = _Overlapped()
+        self._timer = None
+
+    def __enter__(self):
+        handle = kernel32.CreateFileW(self.path, 0x80000000, 7, None, 3, 0x40000000, None)  # GENERIC_READ, OVERLAPPED
+        if handle in (None, INVALID_HANDLE):
+            raise OSError(ctypes.get_last_error(), "не открыть " + self.path)
+        self._handle = handle
+        self._event = kernel32.CreateEventW(None, True, False, None)
+        self._overlapped.hEvent = self._event
+        done = kernel32.DeviceIoControl(handle, FSCTL_REQUEST_OPLOCK_LEVEL_1, None, 0, None, 0, None,
+                                        ctypes.byref(self._overlapped))
+        error = ctypes.get_last_error()
+        if done or error != ERROR_IO_PENDING:
+            self.release()
+            raise OSError(error, "оплок на " + self.path + " не получен (файл открыт кем-то ещё?)")
+        self._timer = threading.Timer(self.seconds, self.release)
+        self._timer.daemon = True
+        self._timer.start()
+        return self
+
+    def release(self):
+        with self._lock:
+            if self._handle is not None:
+                kernel32.CloseHandle(self._handle)
+                self._handle = None
+            if self._event is not None:
+                kernel32.CloseHandle(self._event)
+                self._event = None
+
+    def __exit__(self, *exc):
+        if self._timer is not None:
+            self._timer.cancel()
+        self.release()
+        return False

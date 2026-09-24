@@ -4,7 +4,7 @@ import re
 import unittest
 from pathlib import Path
 
-from eskd_e2e import com, oracles, paths
+from eskd_e2e import build, com, oracles, paths, testing
 from eskd_e2e.testing import SwTestCase, known_defect
 
 LEGACY = {"Разраб.", "Разработал", "Автор", "п_Разраб", "DrawnBy", "п_Разраб_Дата", "DrawnDate", "Пров.", "п_Пров",
@@ -171,34 +171,89 @@ class AddinLifecycle(SwTestCase):
 
     def test_I10_eskd_tab_has_own_buttons_for_every_document_type(self):
         """I10 (замечание владельца 14.09): вкладка ЕСКД у детали — «Настройки ЕСКД», «Синхронизировать», «Деталь БЧ»,
-        у сборки — ещё «Сделать независимым», «Ведомость ЛЗК», «Проверить изделие», «Готово к производству» и
-        «Закрыть заказ», у детали и сборки — «Выгрузить в производство»,
-        у чертежа — первые две и «Новая ревизия»; вкладка, сохранённая SolidWorks от
+        у сборки — «Настройки ЕСКД», «Сделать независимым», «Ведомость ЛЗК», «Проверить изделие», «Готово к производству»
+        и «Закрыть заказ» (без «Синхронизировать»: всё изделие обновляет «Проверить изделие» — решение владельца
+        23.09.2026, З-27), у детали и сборки — «Выгрузить в производство»,
+        у чертежа — «Настройки ЕСКД», «Синхронизировать» и «Новая ревизия»; вкладка, сохранённая SolidWorks от
         прежней раскладки, со ссылкой на чужую команду («Определенный пользователем маршрут») пересоздаётся при загрузке."""
         common = "Настройки ЕСКД|Синхронизировать"
         export = "|Выгрузить в производство"
         revision = "|Новая ревизия"
         order = "|Готово к производству|Закрыть заказ"
         for doc_type, wanted in ((1, common + "|Деталь БЧ" + export + revision),
-                                 (2, common + "|Сделать независимым|Ведомость ЛЗК|Проверить изделие" + export + order),
+                                 (2, "Настройки ЕСКД|Сделать независимым|Ведомость ЛЗК|Проверить изделие" + export + order),
                                  (3, common + revision)):
             with self.subTest(doc_type=doc_type):
                 self.assertEqual(wanted, str(com.call(self.s.eskd(), "TabButtons", doc_type)))
+
+
+class FailedConnect(SwTestCase):
+
+    def test_I11_failed_connect_leaves_no_subscriptions(self):
+        """I11 (сверка SW API 23.09.2026, №0): ConnectToSW упал — SolidWorks считает надстройку незагруженной и
+        DisconnectFromSW не зовёт. Раньше вкладка и подписки на события оставались, и «выключенная» надстройка писала
+        реквизиты при сохранении. Теперь откат снимает всё, что успело встать. Сбой — тестовый ключ DebugFailConnect:
+        свой SolidWorks запускается с ним, и надстройка падает при автозагрузке. Выгрузить и снова загрузить надстройку в
+        том же SolidWorks для этого нельзя: LoadAddIn после UnloadAddIn ConnectToSW не звал (прогон 23.09.2026)."""
+        import time
+        from eskd_e2e.session import TEST_SETTINGS, SwSession
+
+        path = self.path("ПРТИ.468211.331 Пластина откат.sldprt")
+        run_dir = self.s.run_dir
+        testing.shutdown()
+        own = SwSession(run_dir, load_eskd=False, settings=dict(TEST_SETTINGS, DebugFailConnect=1))
+        # Служба включена: иначе работу «выключенной» надстройки не было бы видно.
+        own.settings["ServiceEnabled"] = 1
+
+        def idle(seconds):
+            deadline = time.time() + seconds
+            while time.time() < deadline:
+                own.sw.RevisionNumber()
+                time.sleep(0.2)
+
+        try:
+            own.start()
+            self.assertIsNone(own.sw.GetAddInObject(paths.ADDIN_PROGID), "надстройка не загрузилась")
+            doc, _ = build.plate(own, 100, 50, 3, None)
+            own.save_as(doc, path)
+            idle(3.0)
+            own.save(doc)
+            idle(3.0)
+            own.close(doc)
+            lines = self.addin_log.new_lines()
+            self.path("addin.log").write_text("\n".join(lines), encoding="utf-8")
+            failed = [i for i, line in enumerate(lines) if "ConnectToSW: InvalidOperationException" in line]
+            self.assertTrue(failed, "сбой ConnectToSW в журнале")
+            after = lines[failed[-1] + 1:]
+            self.assertEqual([], [line for line in after if "Синхронизация (" in line or "Задача простоя" in line],
+                             "незагруженная надстройка работала")
+            dump = oracles.read_persisted(own, path)
+            values = [item["raw"] for level in [dump["general"], *dump["configs"].values()] for item in level.values()]
+            self.assertNotIn("ПРТИ.468211.331", values, "обозначение не записано")
+        finally:
+            own.stop()
+            # Общая сессия — заново, чистым SolidWorks: tearDown и следующие тесты работают в ней.
+            self.s = testing.session()
 
 
 class FixtureMaterials(SwTestCase):
 
     def test_I07_fixture_materials_match_manifest(self):
         """I07: материалы в файлах фикстур как в manifest.json — у деталей из проката корпуса А и у копии трубы B-01 сортамент
-        из библиотеки ЕСКД, у стандартного болта — сталь вне библиотеки, у покупного двигателя материала нет."""
+        из библиотеки ЕСКД, у стандартного болта — сталь вне библиотеки, у покупного двигателя материала нет. Детали из
+        листа построены листовым металлом толщины сортамента: иначе выгрузка не делает DXF развёртки (23.09.2026, G05)."""
         from eskd_e2e import build, testing
         manifest = testing.manifest()
         expected = {}
+        sheets = {}
         for fid, item in manifest["fixtures"].items():
-            if item.get("kind") in ("part", "weldment", "bch"):
+            if item.get("kind") in ("part", "weldment", "bch", "foreign") and item.get("material"):
                 expected[(fid, paths.FIXTURES_A / item["file"])] = {None: item["material"]}
             elif item.get("kind") in ("standard", "purchased"):
                 expected[(fid, paths.FIXTURES_A / item["file"])] = {None: item.get("material_sw") or ""}
+            sheet = re.match(r"Лист (\d+(?:,\d+)?) ", item.get("material") or "")
+            if sheet:
+                sheets[fid] = float(sheet.group(1).replace(",", "."))
         for fid, item in manifest["corpus_b"].items():
             expected[(fid, paths.FIXTURES_B / item["file"])] = dict(item["materials"])
         wrong = {}
@@ -211,6 +266,9 @@ class FixtureMaterials(SwTestCase):
                         got = build.material_of(doc, name)[0]
                         if got != material:
                             wrong[f"{fid} «{name}»"] = {"ожидался": material, "назначен": got}
+                if fid in sheets and build.sheet_thickness_mm(doc) != sheets[fid]:
+                    wrong[f"{fid} лист"] = {"ожидался листовой металл, мм": sheets[fid],
+                                            "толщина листового металла": build.sheet_thickness_mm(doc)}
             finally:
                 self.s.close(doc)
         self.assertEqual({}, wrong, "материалы фикстур расходятся с манифестом")

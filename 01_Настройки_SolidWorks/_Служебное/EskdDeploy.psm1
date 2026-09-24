@@ -216,8 +216,52 @@ function Get-EskdInstanceFiles {
 }
 
 function Get-EskdFileSha256 {
+    <#
+    SHA-256 файла средствами .NET, без Get-FileHash. Windows PowerShell 5.1, запущенный из PowerShell 7, наследует его
+    PSModulePath: модуль Microsoft.PowerShell.Utility 7-й версии в 5.1 не грузится, Get-FileHash пропадает, и выражение
+    «(Get-FileHash …).Hash» молча давало $null. Два $null сравнивались как «файлы совпадают» (обновление не копировало
+    файлы), а $null против замера — как «не совпадают» (Drew переустанавливался, 20.09.2026). Ошибка чтения — исключение,
+    а не пустой хэш.
+    #>
     param([Parameter(Mandatory = $true)][string]$Path)
-    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    try {
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try { return ([System.BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLowerInvariant() }
+        finally { $sha.Dispose() }
+    } finally { $stream.Dispose() }
+}
+
+function Get-EskdFileSha256OrNull {
+    # То же, но нет файла или он занят — $null (сверка, где отсутствие файла — законный ответ).
+    param([string]$Path)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
+    try { return Get-EskdFileSha256 -Path $Path } catch { return $null }
+}
+
+function Reset-EskdPowerShellEnvironment {
+    <#
+    Пути модулей Windows PowerShell 5.1 — свои, а не унаследованные. Установщик, запущенный из PowerShell 7 (pwsh —
+    по умолчанию в Windows Terminal) или из программы, запущенной из него, получает его PSModulePath: 5.1 находит модули
+    7-й версии раньше своих, они не загружаются, и пропадают команды (Get-FileHash и др.). Убираются пути PowerShell 7
+    (…\PowerShell\…, но не …\WindowsPowerShell\…), свои пути 5.1 ставятся первыми. Дочерние процессы (установщики,
+    msiexec) получают уже чистое окружение. Возвращает $true, если путь пришлось исправить.
+    #>
+    if ($PSVersionTable.PSEdition -eq "Core") { return $false }
+    $own = @((Join-Path $env:ProgramFiles "WindowsPowerShell\Modules"),
+             (Join-Path $env:SystemRoot "system32\WindowsPowerShell\v1.0\Modules"))
+    $ownLow = @($own | ForEach-Object { $_.TrimEnd('\').ToLowerInvariant() })
+    $rest = @(foreach ($item in ("$env:PSModulePath" -split ';')) {
+        if (-not $item) { continue }
+        $low = $item.TrimEnd('\').ToLowerInvariant()
+        if ($ownLow -contains $low) { continue }
+        if ($low -match '\\powershell\\' -and $low -notmatch '\\windowspowershell\\') { continue }
+        $item
+    })
+    $clean = (@($own) + $rest) -join ';'
+    if ($clean -eq $env:PSModulePath) { return $false }
+    $env:PSModulePath = $clean
+    return $true
 }
 
 function New-EskdReleaseFiles {
@@ -499,7 +543,7 @@ function Publish-EskdSwToolsSetup {
     $manifestPath = [System.IO.Path]::ChangeExtension($setup.FullName, ".manifest.json")
     if (-not (Test-Path -LiteralPath $manifestPath)) { throw "Нет манифеста сборки SWTools: $manifestPath" }
     $manifest = [System.IO.File]::ReadAllText($manifestPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-    $sha = (Get-FileHash -LiteralPath $setup.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sha = Get-EskdFileSha256 -Path $setup.FullName
     if ("$($manifest.setup.sha256)".ToLowerInvariant() -ne $sha) { throw "SHA-256 установщика SWTools не совпадает с манифестом: $($setup.FullName)" }
     $eula = "$($manifest.installer_behavior.silent_install_eula_sha256)".ToLowerInvariant()
     if ($eula -notmatch '^[0-9a-f]{64}$') { throw "В манифесте SWTools нет SHA-256 EULA для тихой установки" }
@@ -510,7 +554,7 @@ function Publish-EskdSwToolsSetup {
     Get-ChildItem -LiteralPath $dir -Filter "SWTools-*Setup.exe" -File | Where-Object { $_.Name -ne $setup.Name } | Remove-Item -Force
     $copy = Join-Path $dir $setup.Name
     Copy-Item -LiteralPath $setup.FullName -Destination $copy -Force
-    if ((Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha) {
+    if ((Get-EskdFileSha256 -Path $copy) -ne $sha) {
         throw "Установщик SWTools скопирован с ошибкой: $copy"
     }
     $release = [ordered]@{
