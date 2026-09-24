@@ -256,12 +256,16 @@ namespace ESKD.MaterialSync.Core
             foreach (string line in warnings ?? Enumerable.Empty<string>())
             {
                 string document, reason;
+                // Многотельной детали IGS не сделан (З-51) — проверять нечего, поправить нужно модель. Строка делится по
+                // « — » перед замечанием: « — » бывает и в имени файла.
+                if (ExportLog.SplitNote(line, ExportLog.MultibodyNote, out document, out reason))
+                {
+                    list.Add(Of(NoticeLevel.Warning, document, reason, "Проверьте чертёж и сборку детали"));
+                    continue;
+                }
                 SplitDocument(line, out document, out reason);
                 // Убранный в «_Аннулировано» прежний файл — сведения, а не забота: в папке выдачи его уже нет (З-48).
                 if (ExportLog.IsArchiveNote(reason)) list.Add(Of(NoticeLevel.Info, document, reason, ""));
-                // Многотельной детали IGS не сделан (З-51) — проверять нечего, поправить нужно модель.
-                else if (ExportLog.IsMultibodyNote(reason))
-                    list.Add(Of(NoticeLevel.Warning, document, reason, "Проверьте чертёж и сборку детали"));
                 else list.Add(Of(NoticeLevel.Warning, document, reason, "Проверьте файл перед резкой"));
             }
             foreach (string line in skipped ?? Enumerable.Empty<string>())

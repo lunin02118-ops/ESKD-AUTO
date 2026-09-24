@@ -475,5 +475,32 @@ namespace ESKD.Tests
             Assert.AreEqual("Проверьте чертёж и сборку детали", list[0].Hint, "подсказка — про модель");
             Assert.AreEqual("Проверьте чертёж и сборку детали", list[1].Hint, "и без резки трубы");
         }
+
+        /// <summary>
+        /// З-51, ревью: выгрузка одной детали показывает одно исполнение. Строки прежнего отчёта о других её исполнениях
+        /// остаются — иначе замечание о многотельном «00» пропадало бы от выгрузки однотельного «01», и проверка изделия
+        /// выпускала деталь без IGS. Строки о показанном исполнении и строки без исполнения заменяются новыми.
+        /// </summary>
+        public static void Test_Single_part_export_keeps_notes_of_other_executions()
+        {
+            Assert.AreEqual("00", ExportLog.ConfigurationOf("А.371 Рама.SLDPRT [00]"), "исполнение из подписи");
+            Assert.AreEqual("", ExportLog.ConfigurationOf("А.371 Рама.sldprt"), "без исполнения");
+            Assert.AreEqual("", ExportLog.ConfigurationOf("А.371-01 Рама.igs"), "файл — не документ с исполнением");
+            HashSet<string> documents = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "А.371 Рама" };
+            Func<string, ICollection<string>> shown = d => new HashSet<string> { "01" };
+            Assert.IsTrue(ExportLog.CarriesOver("А.371 Рама.sldprt [00]", documents, shown), "другое исполнение — строка остаётся");
+            Assert.IsFalse(ExportLog.CarriesOver("А.371 Рама.sldprt [01]", documents, shown), "показанное — заменяется новой");
+            Assert.IsFalse(ExportLog.CarriesOver("А.371 Рама.sldprt", documents, shown), "без исполнения — заменяется");
+            Assert.IsTrue(ExportLog.CarriesOver("А.372 Стойка.sldprt", documents, shown), "документ не выгружался — остаётся");
+
+            string document, reason;
+            string line = "А.373 Рама — левая.sldprt [00] — " + ExportLog.MultibodyReason(2, 0, 0, true);
+            Assert.IsTrue(ExportLog.SplitNote(line, ExportLog.MultibodyNoIgs, out document, out reason), line);
+            Assert.AreEqual("А.373 Рама — левая.sldprt [00]", document, "« — » в имени файла не мешает");
+            Assert.IsTrue(reason.StartsWith(ExportLog.MultibodyNoIgs), reason);
+            List<Notice> list = Notices.FromExport(new string[0], new[] { line });
+            Assert.AreEqual("А.373 Рама — левая.sldprt [00]", list[0].Document, "окно итога называет документ целиком");
+            Assert.AreEqual("Проверьте чертёж и сборку детали", list[0].Hint, "и подсказка — про модель");
+        }
     }
 }

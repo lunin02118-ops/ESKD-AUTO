@@ -51,6 +51,11 @@ namespace ESKD.MaterialSync.Sw
             public readonly List<string> Stems = new List<string>();
             /// <summary>Документ уже у цеха, и выгрузка его пропустила (Т-30).</summary>
             public bool Protected;
+            /// <summary>
+            /// Исполнения, которые выгрузка показывала в этот раз: строки прежнего отчёта о других исполнениях документа
+            /// выгрузка одной детали оставляет (<see cref="ExportLog.CarriesOver"/>).
+            /// </summary>
+            public readonly HashSet<string> Shown = new HashSet<string>(StringComparer.Ordinal);
 
             public void AddStem(string stem)
             {
@@ -686,6 +691,7 @@ namespace ESKD.MaterialSync.Sw
             if (item.Executions.Count == 0)
             {
                 string file = Path.GetFileName(item.Path);
+                item.Shown.Add(ActiveConfiguration(item.Model));
                 bool dirtyBefore = DocumentGuard.HasUserEdits(item.Model);
                 DxfOne(app, item, item.Designation, item.Name, 0, productFolder, log, file);
                 bool clean = IgsOne(app, item, item.Designation, item.Name, item.Operations, productFolder, log, saves, file);
@@ -706,6 +712,7 @@ namespace ESKD.MaterialSync.Sw
                 foreach (KeyValuePair<string, int> execution in item.Executions)
                 {
                     string cfg = execution.Key.Length > 0 ? execution.Key : original;
+                    item.Shown.Add(cfg);
                     if (!string.Equals(cfg, ActiveConfiguration(item.Model), StringComparison.Ordinal))
                     {
                         // Флаг — до переключения: сорвавшееся посередине переключение тоже возвращается (№29).
@@ -795,6 +802,20 @@ namespace ESKD.MaterialSync.Sw
             {
                 Log.Error("Выгрузка: активная конфигурация", ex);
                 return "";
+            }
+        }
+
+        /// <summary>Сколько конфигураций в модели; не прочитано — 2: подпись исполнением лишней не бывает.</summary>
+        private static int ConfigurationCount(ModelDoc2 model)
+        {
+            try
+            {
+                return model.GetConfigurationCount();
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Выгрузка: число конфигураций", ex);
+                return 2;
             }
         }
 
@@ -1123,7 +1144,11 @@ namespace ESKD.MaterialSync.Sw
             BodyCount bodies = Bodies(item.Model as PartDoc);
             if (bodies != null && bodies.All > 1)
             {
-                log.Warn(label, ExportLog.MultibodyReason(bodies.All, bodies.Surfaces, bodies.Hidden, cutting));
+                // Замечание подписано исполнением, даже когда выгружается одна деталь: у другого исполнения тел может быть
+                // одно, и выгрузка его не должна стереть замечание об этом (ExportLog.CarriesOver).
+                string note = label.Contains(" [") || ConfigurationCount(item.Model) < 2 ? label
+                    : label + " [" + ActiveConfiguration(item.Model) + "]";
+                log.Warn(note, ExportLog.MultibodyReason(bodies.All, bodies.Surfaces, bodies.Hidden, cutting));
                 if (File.Exists(target) && !log.Files.Contains(target, StringComparer.OrdinalIgnoreCase))
                     Retire(target, DateTime.Now, "IGS многотельной детали — на труборез она не идёт", log);
                 return true;
@@ -1316,6 +1341,9 @@ namespace ESKD.MaterialSync.Sw
             HashSet<string> now = new HashSet<string>(log.Files.Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
             HashSet<string> documents = new HashSet<string>(
                 items.Select(i => Path.GetFileNameWithoutExtension(i.Path)), StringComparer.OrdinalIgnoreCase);
+            Func<string, ICollection<string>> shown = document => new HashSet<string>(items
+                .Where(i => string.Equals(Path.GetFileNameWithoutExtension(i.Path), document, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(i => i.Shown), StringComparer.Ordinal);
             string[] folders =
             {
                 ExportNaming.PdfDirectory(productFolder), ExportNaming.LaserDirectory(productFolder),
@@ -1323,20 +1351,23 @@ namespace ESKD.MaterialSync.Sw
             };
             foreach (string name in previous.Files)
             {
-                if (now.Contains(name)) continue;
+                // Файл, который выгрузка не смогла убрать в «_Аннулировано», выгруженным не числится: его найдёт проверка.
+                if (now.Contains(name) || log.Unretired.Contains(name)) continue;
                 string found = folders.Select(f => Path.Combine(f, name)).FirstOrDefault(File.Exists);
                 if (found == null) continue;
                 log.Files.Add(found);
                 string sum;
                 if (previous.Checksums.TryGetValue(name, out sum)) log.Checksums[found] = sum;
             }
+            // Строки о документах, выгруженных сейчас, заменяются новыми — кроме строк об их исполнениях, которые сейчас не
+            // показывались (З-51: замечание о многотельном исполнении пропало бы от выгрузки другого).
             foreach (string line in previous.Skipped)
-                if (!documents.Contains(ExportLog.DocumentName(ExportLog.SplitSkip(line).Key))) log.Skipped.Add(line);
+                if (ExportLog.CarriesOver(ExportLog.SplitSkip(line).Key, documents, shown)) log.Skipped.Add(line);
             // Замечание «убран в _Аннулировано» — о прошлой выгрузке, а не о документе: дальше оно не переходит.
             foreach (string line in previous.Warnings)
             {
                 KeyValuePair<string, string> note = ExportLog.SplitSkip(line);
-                if (!documents.Contains(ExportLog.DocumentName(note.Key)) && !ExportLog.IsArchiveNote(note.Value)) log.Warnings.Add(line);
+                if (ExportLog.CarriesOver(note.Key, documents, shown) && !ExportLog.IsArchiveNote(note.Value)) log.Warnings.Add(line);
             }
         }
 
@@ -1471,6 +1502,7 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Выгрузка: перенос в " + ExportNaming.ArchiveFolder + " " + file, ex);
                 problem = ex.Message;
             }
+            log.Unretired.Add(name);
             log.Warn(name, "не убран в «" + ExportNaming.ArchiveFolder + "» (" + problem.Trim() + "): " + reason +
                 " — уберите его сами, иначе проверка изделия его не пропустит");
         }

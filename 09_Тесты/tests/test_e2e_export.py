@@ -991,11 +991,34 @@ class Export(SwTestCase):
         skipped = raw.split("Пропущено:", 1)[-1].split("Замечания:", 1)[0] if "Пропущено:" in raw else ""
         self.assertEqual([], [ln.strip() for ln in skipped.splitlines() if ln.strip() and "нет чертежа" not in ln],
                          "многотельное исполнение — замечание, а не пропуск")
+        note = f"ПРТИ.468211.371 Рама.sldprt [{base}] — многотельная деталь в IGS не идёт (тел 2)".lower()
+        self.assertTrue(self._check().startswith("ok|"), "проверка изделия")
+        flagged = [ln.strip().lower() for ln in (product / "_Проверка.txt").read_text(encoding="utf-8-sig").splitlines()
+                   if "многотельная" in ln]
+        self.assertEqual(1, len(flagged), f"замечание проверки: {flagged}")
+        self.assertIn(note, flagged[0], "замечание правила «е» о многотельном исполнении")
         self.s.close_all()
         part = self.s.open(frame)
         self.assertEqual("01", str(part.GetActiveConfiguration.Name), "конфигурация детали возвращена")
 
+        # Ревью З-51: выгрузка одной детали в однотельном «01» не стирает замечание о «00» — его не показывали.
+        self.s.activate(part)
+        status = self._export()
+        self.assertTrue(status.startswith("ok|"), status)
+        self.assertIn(note, (product / "_Экспорт.txt").read_text(encoding="utf-8-sig").lower(),
+                      "замечание о «00» осталось в отчёте")
+        self.s.close_all()
+        doc = self.s.open(asm_path)
+        self.s.activate(doc)
+        self.assertTrue(self._check().startswith("ok|"), "проверка изделия после выгрузки одной детали")
+        flagged = [ln.strip().lower() for ln in (product / "_Проверка.txt").read_text(encoding="utf-8-sig").splitlines()
+                   if "многотельная" in ln]
+        self.assertEqual(1, len(flagged), f"замечание проверки осталось: {flagged}")
+        self.s.close_all()
+        part = self.s.open(frame)
+
         # Выгрузка одной детали — полной выгрузки изделия с её уборкой нет, прежний IGS убирает сама выгрузка трубы.
+        # Замечание подписано исполнением и здесь: у детали их два.
         stale.write_text("IGS прежней выгрузки: вся рама", encoding="utf-8")
         build.show_configuration(part, base)
         self.s.activate(part)
@@ -1003,7 +1026,7 @@ class Export(SwTestCase):
         self.assertTrue(status.startswith("ok|"), status)
         self.assertFalse(stale.exists(), "прежний IGS многотельного исполнения убран и при выгрузке одной детали")
         text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig").lower()
-        self.assertIn("ПРТИ.468211.371 Рама.sldprt — многотельная деталь в IGS не идёт (тел 2)".lower(), text)
+        self.assertEqual(1, text.count(note), "замечание о «00» — одно, новое вместо прежнего")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_X16_blocked_folder_does_not_abort_export(self):

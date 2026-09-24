@@ -25,6 +25,11 @@ namespace ESKD.MaterialSync.Core
         public readonly System.Collections.Generic.List<string> Skipped = new System.Collections.Generic.List<string>();
         /// <summary>Выгружено, но с оговоркой: цеху стоит проверить файл (например, IGS не по оси трубы, Т-29).</summary>
         public readonly System.Collections.Generic.List<string> Warnings = new System.Collections.Generic.List<string>();
+        /// <summary>
+        /// Прежние файлы, которые эта выгрузка должна была убрать в «_Аннулировано», а не смогла (открыты у цеха): в отчёт они
+        /// не переносятся — проверка изделия найдёт их в папке выдачи. В отчёт не пишется.
+        /// </summary>
+        public readonly HashSet<string> Unretired = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         /// <summary>Файл выгрузки → SHA-256.</summary>
         public readonly System.Collections.Generic.Dictionary<string, string> Checksums =
             new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -106,7 +111,7 @@ namespace ESKD.MaterialSync.Core
         public const string MultibodyNoIgs = "многотельная деталь в IGS не идёт";
 
         /// <summary>Начало замечания о многотельной детали — с резкой трубы и без неё (<see cref="MultibodyReason"/>).</summary>
-        private const string Multibody = "многотельная деталь";
+        public const string MultibodyNote = "многотельная деталь";
 
         /// <summary>
         /// Замечание выгрузки о многотельной детали (З-51): тел всего, из них поверхностей и скрытых — конструктор находит
@@ -121,14 +126,56 @@ namespace ESKD.MaterialSync.Core
                 return MultibodyNoIgs + " (" + count + "): проверьте чертёж и сборку — труба для трубореза должна быть " +
                     "отдельной деталью из одного тела; если резать на труборезе не нужно, снимите «" +
                     LzkOperations.TubeCutting + "» в ведомости ЛЗК";
-            return Multibody + " из трубы (" + count + "), «" + LzkOperations.TubeCutting + "» в «Операциях» нет: IGS не " +
+            return MultibodyNote + " из трубы (" + count + "), «" + LzkOperations.TubeCutting + "» в «Операциях» нет: IGS не " +
                 "делается — проверьте чертёж и сборку";
         }
 
         /// <summary>Замечание о многотельной детали (<see cref="MultibodyReason"/>) — в окне итога с подсказкой про чертёж.</summary>
         public static bool IsMultibodyNote(string reason)
         {
-            return (reason ?? "").Trim().StartsWith(Multibody, StringComparison.Ordinal);
+            return (reason ?? "").Trim().StartsWith(MultibodyNote, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// Строка отчёта «документ — замечание», замечание которой начинается с prefix: документ и замечание. Делится по
+        /// « — » перед prefix, а не по первому: « — » бывает и в имени файла или исполнения.
+        /// </summary>
+        public static bool SplitNote(string line, string prefix, out string document, out string reason)
+        {
+            document = reason = "";
+            string s = (line ?? "").Trim();
+            int at = s.IndexOf(" — " + prefix, StringComparison.Ordinal);
+            if (at <= 0) return false;
+            document = s.Substring(0, at);
+            reason = s.Substring(at + 3);
+            return true;
+        }
+
+        /// <summary>Исполнение в подписи строки отчёта: «Деталь.sldprt [01]» — «01»; без исполнения — "".</summary>
+        public static string ConfigurationOf(string label)
+        {
+            string s = (label ?? "").Trim();
+            if (!s.EndsWith("]", StringComparison.Ordinal)) return "";
+            foreach (string extension in new[] { ".sldprt", ".sldasm", ".slddrw" })
+            {
+                int at = s.IndexOf(extension + " [", StringComparison.OrdinalIgnoreCase);
+                if (at > 0) return s.Substring(at + extension.Length + 2, s.Length - at - extension.Length - 3);
+            }
+            return "";
+        }
+
+        /// <summary>
+        /// Строка прежнего отчёта при выгрузке части изделия (одна деталь, «Новая ревизия»): о документе, который сейчас не
+        /// выгружался, — остаётся; о выгруженном — заменяется новыми строками. Кроме строк о его исполнении, которое сейчас не
+        /// показывалось: выгрузка одной детали показывает одно, активное исполнение, и замечание о другом («многотельная
+        /// деталь в IGS не идёт», З-51) иначе пропало бы — проверка изделия выпустила бы деталь без IGS для трубореза.
+        /// </summary>
+        public static bool CarriesOver(string label, ICollection<string> exportedDocuments, Func<string, ICollection<string>> shownConfigurations)
+        {
+            string document = DocumentName(label);
+            if (!exportedDocuments.Contains(document)) return true;
+            string configuration = ConfigurationOf(label);
+            return configuration.Length > 0 && !shownConfigurations(document).Contains(configuration);
         }
 
         /// <summary>
