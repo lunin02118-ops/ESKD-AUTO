@@ -42,11 +42,8 @@ class Migration(SwTestCase):
         args = [str(paths.ESKD_SYNC_EXE), "/clean", str(self.case_dir), "/report", str(report)] + (["/apply"] if apply else [])
         backups_before = set(self.case_dir.glob("_ESKD_backup_*"))
         # зонд не должен держать подписку на документы, которые закроет утилита
-        self.s.probe.call("doc_events", "0")
-        try:
+        with self.doc_events_paused():
             proc = subprocess.run(args, capture_output=True, timeout=600)
-        finally:
-            self.s.probe.call("doc_events", "1")
         output = (proc.stdout + proc.stderr).decode("utf-8", errors="replace")
         self.assertEqual(0, proc.returncode, f"ESKD_Sync.exe /clean завершился с кодом {proc.returncode}: {output}")
         self.assertTrue(Path(report).exists(), f"нет отчёта: {output}")
@@ -114,11 +111,8 @@ class FormatReload(SwTestCase):
 
     def _reload(self, apply, report):
         args = [str(paths.ESKD_SYNC_EXE), "/reloadformats", str(self.case_dir), "/report", str(report)] + (["/apply"] if apply else [])
-        self.s.probe.call("doc_events", "0")
-        try:
+        with self.doc_events_paused():
             proc = subprocess.run(args, capture_output=True, timeout=600)
-        finally:
-            self.s.probe.call("doc_events", "1")
         output = (proc.stdout + proc.stderr).decode("utf-8", errors="replace")
         self.assertEqual(0, proc.returncode, f"ESKD_Sync.exe /reloadformats завершился с кодом {proc.returncode}: {output}")
         with open(report, encoding="utf-8-sig", newline="") as f:
@@ -154,7 +148,8 @@ class FormatReload(SwTestCase):
 class GoldenMaster(SwTestCase):
     # Сценарии читают записи свойств при сохранении (AD-06), а new_part_ui_save сохраняет командой интерфейса — путь
     # подставляет зонд из FileSaveAsNotify2 (SwSession.ui_save_as). Снимок v5 снят с событиями документа; в полном прогоне
-    # их оставлял включёнными R05 (FormatReload._reload), а R01 отдельно падал на new_part_ui_save (24.09.2026).
+    # их раньше оставлял включёнными R05 (FormatReload._reload), а R01 отдельно падал на new_part_ui_save (24.09.2026).
+    # Утечка устранена (doc_events_paused), события теперь только у тестов, которые их объявили.
     doc_events = True
 
     def test_R01_behaviour_differs_from_v5_only_by_explained_changes(self):

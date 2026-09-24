@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Базовые классы тестов, общая сессия SolidWorks и учёт известных дефектов."""
+import contextlib
 import functools
 import json
 import os
@@ -143,7 +144,8 @@ class SwTestCase(unittest.TestCase):
             self.s.close_all()
         except Exception as exc:
             problems.append(f"закрытие документов: {exc}")
-        if self._doc_events_needed() and self.s.probe is not None:
+        # выключаются после каждого теста, объявил он их или нет: включённые подписки не переходят к следующим
+        if self.s.probe is not None:
             try:
                 self.s.probe.call("doc_events", "0")
             except Exception as exc:
@@ -158,6 +160,17 @@ class SwTestCase(unittest.TestCase):
             pass
         if problems:
             self.fail("; ".join(problems))
+
+    @contextlib.contextmanager
+    def doc_events_paused(self):
+        """Документы откроет и закроет другой процесс (ESKD_Sync.exe): зонд на это время на них не подписывается,
+        затем возвращается состояние, объявленное тестом. Прежнее безусловное «1» в test_e2e_real оставляло подписки
+        включёнными до конца сессии, и L11 в длинном прогоне падал (24.09.2026)."""
+        self.s.probe.call("doc_events", "0")
+        try:
+            yield
+        finally:
+            self.s.probe.call("doc_events", "1" if self._doc_events_needed() else "0")
 
     # помощники
     def _case_name(self):
