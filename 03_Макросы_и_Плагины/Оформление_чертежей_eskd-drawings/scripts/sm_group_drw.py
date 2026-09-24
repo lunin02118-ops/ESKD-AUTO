@@ -61,7 +61,7 @@ def v_lines(g):
 
 def bend_params(path):
     """Радиусы гибов и K-фактор из модели: у «Ребро-кромка» свой радиус, он часто не равен радиусу
-    в параметрах листового металла — писать в ТТ надо фактический (З-38)."""
+    в параметрах листового металла — писать в ТТ надо фактический (З-43)."""
     d = sw.GetOpenDocumentByName(path) or sw.OpenDoc6(path, 1, 32, "", 0, 0)
     if isinstance(d, tuple):
         d = d[0]
@@ -215,7 +215,7 @@ def table(drw, x, y):
     t = SW.ITableAnnotation(t._oleobj_)
     SW.IAnnotation(t.GetAnnotation()._oleobj_).SetPosition2(x * MM, y * MM, 0)
     t.TitleVisible = False
-    t.BorderLineWeight = 1      # наружный контур — основная линия (иначе SW ставит утолщённую, З-35)
+    t.BorderLineWeight = 1      # наружный контур — основная линия (иначе SW ставит утолщённую, З-40)
     t.GridLineWeight = 0
     for c, w in enumerate((45, 16, 24)):
         t.SetColumnWidth(c, w * MM, 0)
