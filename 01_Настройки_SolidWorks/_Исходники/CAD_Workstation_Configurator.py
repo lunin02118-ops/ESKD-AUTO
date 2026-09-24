@@ -60,18 +60,22 @@ def find_source_root(start):
 
 
 def _engine_in(folder):
-    """Движок в самой папке или в любой её подпапке одним уровнем ниже (_Служебное)."""
-    near = os.path.join(folder, ENGINE)
-    if os.path.isfile(near):
-        return near
+    """
+    Движок в подпапке одним уровнем ниже (_Служебное, нынешняя раскладка) или, если его там нет, в самой папке
+    (прежняя раскладка). Подпапка — первой: выпуск, распакованный поверх старой папки, оставляет рядом с окном старый
+    движок, и окно запускало бы его вместо нового (аудит 23.09.2026).
+    """
     try:
         names = sorted(os.listdir(folder))
     except OSError:
-        return None
+        names = []
     for name in names:
         candidate = os.path.join(folder, name, ENGINE)
         if os.path.isfile(candidate):
             return candidate
+    near = os.path.join(folder, ENGINE)
+    if os.path.isfile(near):
+        return near
     return None
 
 
@@ -155,9 +159,41 @@ def windows_display_name():
     return ""
 
 
+def windows_powershell(environ=None):
+    """Windows PowerShell 5.1 по полному пути: «powershell.exe» из PATH может оказаться чем угодно."""
+    env = os.environ if environ is None else environ
+    root = _env_get(env, "SYSTEMROOT") or r"C:\Windows"
+    exe = os.path.join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+    return exe if os.path.isfile(exe) else "powershell.exe"
+
+
+def _env_get(env, name):
+    for key, value in env.items():
+        if key.upper() == name:
+            return value
+    return ""
+
+
+def engine_env(environ=None):
+    """
+    Окружение движка: пути модулей Windows PowerShell 5.1, а не унаследованные. Окно, запущенное из PowerShell 7
+    (pwsh), передавало бы движку его PSModulePath: 5.1 подхватывал модули 7-й версии, Get-FileHash пропадал, сверка
+    хешей давала пусто, и установка переставляла Drew (20.09.2026). Ключ заменяется без учёта регистра — в Windows
+    у переменной одно имя, а два ключа в окружении дочернего процесса дали бы случайное значение.
+    """
+    env = dict(os.environ if environ is None else environ)
+    for key in [k for k in env if k.upper() == "PSMODULEPATH"]:
+        del env[key]
+    root = _env_get(env, "SYSTEMROOT") or r"C:\Windows"
+    program_files = _env_get(env, "PROGRAMFILES") or r"C:\Program Files"
+    env["PSModulePath"] = ";".join([os.path.join(program_files, "WindowsPowerShell", "Modules"),
+                                    os.path.join(root, "system32", "WindowsPowerShell", "v1.0", "Modules")])
+    return env
+
+
 def build_command(engine, author, firm, close_mode, drew=True, block=False, ru=False, safe_graphics=False):
     """Командная строка установщика: без вопросов в консоли, вывод в UTF-8; флаги чекбоксов."""
-    cmd = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", engine,
+    cmd = [windows_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", engine,
            "-Author", author, "-CloseMode", close_mode, "-NonInteractive", "-Utf8Output"]
     if firm:
         cmd += ["-Firm", firm]
@@ -356,7 +392,7 @@ class ConfiguratorApp:
     def run_engine(self, cmd):
         try:
             self.process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                                            env=engine_env(), creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             for raw in self.process.stdout:
                 self.events.put(("line", raw.decode("utf-8", errors="replace").rstrip()))
             code = self.process.wait()

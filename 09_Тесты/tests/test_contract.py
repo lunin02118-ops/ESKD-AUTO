@@ -129,6 +129,65 @@ class ContractPropertyEvents(SwTestCase):
         self.assertIn(("CommandCloseNotify", 2007), cmds)
 
 
+class ContractDestroyEvents(SwTestCase):
+    """C08 (сверка SW API 23.09.2026, №9): что приходит, когда закрывают окно детали, а сама деталь остаётся в памяти
+    как компонент открытой сборки. Надстройка раньше слушала только DestroyNotify без типа и по нему забывала документ."""
+    doc_events = True
+    load_eskd = False
+
+    def test_C08_hidden_document_gets_destroy_notify2_hidden(self):
+        """C08: окно детали закрыто, деталь осталась в сборке — DestroyNotify2(1, «скрыт»); при закрытии сборки —
+        DestroyNotify2(0, «разрушен»). Приходит ли при скрытии старый DestroyNotify, записывается в C08.txt."""
+        part_path = self.path("КОНТР.000008.001 Пластина.sldprt")
+        doc, _ = build.plate(self.s, 100, 50, 4, SHEET4)
+        self.assertTrue(self.s.save_as(doc, part_path)[0], "деталь сохранена")
+        asm, _ = build.assembly(self.s, [(part_path, 0, 0, 0)])
+        self.assertTrue(self.s.save_as(asm, self.path("КОНТР.000008.000 Сборка.sldasm"))[0], "сборка сохранена")
+
+        mark = self.mark("C08-hide")
+        self.s.sw.CloseDoc(doc.GetTitle)
+        self.s._opened[:] = [d for d in self.s._opened if d is not doc]
+        self.assertIsNotNone(self.s.sw.GetOpenDocumentByName(str(part_path)), "деталь осталась в памяти")
+        hidden = [(e["event"], e.get("destroyType")) for e in self.s.journal.events(mark)
+                  if e["event"] in ("DestroyNotify", "DestroyNotify2") and e.get("title", "").lower().startswith("контр.000008.001")]
+
+        mark = self.mark("C08-destroy")
+        self.s.close_all()
+        destroyed = [(e["event"], e.get("destroyType")) for e in self.s.journal.events(mark)
+                     if e["event"] in ("DestroyNotify", "DestroyNotify2") and e.get("title", "").lower().startswith("контр.000008.001")]
+        self.path("C08.txt").write_text(f"скрытие: {hidden}\nзакрытие сборки: {destroyed}\n", encoding="utf-8")
+        self.assertIn(("DestroyNotify2", 1), hidden, "скрытие — DestroyNotify2 с типом «скрыт»")
+        self.assertIn(("DestroyNotify2", 0), destroyed, "закрытие сборки — DestroyNotify2 с типом «разрушен»")
+
+
+class ContractOpenEvents(SwTestCase):
+    """C07 (сверка SW API 23.09.2026, №11): FileOpenPostNotify приходит только на документ, который открыли, — не на
+    каждую модель сборки (для компонентов SolidWorks шлёт DocumentLoadNotify2). Тяжёлой работы на каждую модель нет."""
+    load_eskd = False
+
+    def test_C07_file_open_post_notify_only_for_top_document(self):
+        """C07: открытие сборки из двух деталей — один FileOpenPostNotify (сборка), DocumentLoadNotify2 — на каждую модель."""
+        parts = []
+        for number, length in (("001", 100), ("002", 140)):
+            doc, _ = build.plate(self.s, length, 50, 4, SHEET4)
+            path = self.path(f"КОНТР.000007.{number} Пластина.sldprt")
+            self.assertTrue(self.s.save_as(doc, path)[0], "деталь сохранена")
+            parts.append(path)
+        asm, _ = build.assembly(self.s, [(parts[0], 0, 0, 0), (parts[1], 0, 0.1, 0)])
+        asm_path = self.path("КОНТР.000007.000 Сборка.sldasm")
+        self.assertTrue(self.s.save_as(asm, asm_path)[0], "сборка сохранена")
+        self.s.close_all()
+
+        mark = self.mark("C07-open")
+        self.s.open(asm_path)
+        opened = [e.get("fileName", "") for e in self.s.journal.of("FileOpenPostNotify", mark)]
+        loaded = self.s.journal.of("DocumentLoadNotify2", mark)
+        self.path("C07.txt").write_text(f"FileOpenPostNotify: {opened}\nDocumentLoadNotify2: {len(loaded)}\n", encoding="utf-8")
+        self.assertEqual([str(asm_path).lower()], [o.lower() for o in opened], "FileOpenPostNotify — только сборка")
+        self.assertGreaterEqual(len(loaded), 3, "DocumentLoadNotify2 — сборка и обе детали")
+        self.s.close_all()
+
+
 class ContractMassExpression(SwTestCase):
     """Спайки S-3 и S-4 (13.09.2026): на этом контракте стоит масса по конфигурациям (Д-36)."""
     load_eskd = False

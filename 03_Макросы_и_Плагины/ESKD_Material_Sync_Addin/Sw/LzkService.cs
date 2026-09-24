@@ -17,8 +17,10 @@ using SolidWorks.Interop.swconst;
 namespace ESKD.MaterialSync.Sw
 {
     /// <summary>
-    /// Кнопка К-4 «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37, ТЗ-04): окно «Операции» с тиражом, сроком и цветом → запись «Операции»
-    /// и «Габарит» в новые модели изделия → сохранение сборки → SWTools без окна по пресету «ЛЗК» → живая книга:
+    /// Кнопка К-4 «Ведомость ЛЗК» (ТЗ-02 Т-35…Т-37, ТЗ-04): сверка с проверкой изделия (изменено после неё — вопрос
+    /// «Проверить сейчас / Продолжить как есть», З-27) → окно «Операции» с тиражом, сроком и цветом → запись «Операции»
+    /// и «Габарит» в новые модели изделия → сохранение изменённого кнопкой (документы с несохранёнными правками
+    /// конструктора не сохраняются, З-25) → SWTools без окна по пресету «ЛЗК» → живая книга:
     /// паспорт, участки, расход, нормы → ЛЗК_&lt;шифр&gt;.xlsx: в структуре заказа — в «04_Сопроводительная документация»
     /// изделия (прежняя — в _Аннулировано), вне её — рядом со сборкой (прежняя — в резервную копию); введённое переносится.
     /// SWTools ждётся в потоке SolidWorks — таймером и в простое (опрос из постоянной подписки EventHub): синхронное
@@ -53,6 +55,18 @@ namespace ESKD.MaterialSync.Sw
         private Timer _timer;
         private DateTime _started;
         private LzkHeader _header;
+        /// <summary>Сверка с проверкой изделия: версия — в паспорт книги.</summary>
+        private ProductFreshness _freshness;
+        /// <summary>Сохранения самой кнопки: их суммы — в отчёт проверки, версия изделия от них не меняется.</summary>
+        private readonly ToolSaves _saves = new ToolSaves();
+        /// <summary>
+        /// Модели, в которых до кнопки были несохранённые правки конструктора: кнопка пишет в них «Операции» и «Габарит», но
+        /// не сохраняет — сохранять правки конструктора без его команды нельзя (решение владельца 23.09.2026, З-25).
+        /// </summary>
+        private readonly HashSet<string> _editedBefore = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>Активное исполнение модели до кнопки: замер его переключает, и сохранять можно, только если оно вернулось.</summary>
+        private readonly Dictionary<string, string> _activeBefore = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private bool _finishing;
         private bool _finished;
         private bool _exitedEarly;
@@ -98,6 +112,20 @@ namespace ESKD.MaterialSync.Sw
                 service.Cleanup();
                 Info("Ведомость ЛЗК не сформирована: " + ex.Message, MessageBoxIcon.Error);
             }
+            finally
+            {
+                // Отмена или ошибка после своих сохранений — их суммы всё равно в отчёт проверки (повторная запись пустая).
+                service.RecordSaves();
+            }
+        }
+
+        /// <summary>
+        /// Свои сохранения кнопки — в отчёт проверки: изделие для следующей кнопки остаётся проверенным. Повторный вызов
+        /// ничего не пишет: суммы в отчёте уже новые.
+        /// </summary>
+        private void RecordSaves()
+        {
+            if (_freshness != null) ProductFreshness.Restamp(_freshness.ProductFolder, _saves.Changes, "ведомость ЛЗК");
         }
 
         private static void Info(string text, MessageBoxIcon icon)
@@ -162,6 +190,23 @@ namespace ESKD.MaterialSync.Sw
                     Info("Файл " + Path.GetFileName(busy) + " открыт в Excel. Закройте его и повторите.", MessageBoxIcon.Information);
                     return false;
                 }
+            // Изделие проверено и с тех пор не менялось — без вопросов; иначе «Проверить сейчас / Продолжить как есть» (З-27).
+            bool cancelled;
+            _freshness = ProductFreshness.Ensure(_app, _doc, "Ведомость ЛЗК",
+                "книга соберётся по файлам как есть, в паспорте будет «" + ProductStamp.Unchecked + "»: «Готово к производству» " +
+                "её не примет, пока изделие не проверят и книгу не соберут заново.", interactive, out cancelled);
+            if (cancelled)
+            {
+                Log.Info("Ведомость ЛЗК: отменена в вопросе о проверке изделия");
+                return false;
+            }
+            if (!_freshness.Fresh)
+                _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_assemblyPath),
+                    "книга собрана по непроверенному изделию — " + string.Join("; ", _freshness.Reasons.ToArray()),
+                    "Нажмите «Проверить изделие», затем «Ведомость ЛЗК»: «Готово к производству» примет только такую книгу"));
+            // Правки конструктора — до любых действий кнопки: такие документы кнопка не сохраняет (З-25).
+            if (DocumentGuard.HasUserEdits(_doc)) _editedBefore.Add(_assemblyPath);
+
             // Введённое в прежней книге (тираж, срок, цвет, нормы, указания) переносится в новую.
             _inputs = LzkInputs.Read(File.Exists(_workbookPath) ? _workbookPath : "");
             if (_inputs.ReadError.Length > 0)
@@ -216,6 +261,12 @@ namespace ESKD.MaterialSync.Sw
                 LzkItem item;
                 if (!byKey.TryGetValue(key, out item))
                 {
+                    // Первая встреча файла — до замера, который может переключить исполнение.
+                    if (!models.ContainsKey(path))
+                    {
+                        if (DocumentGuard.HasUserEdits(model)) _editedBefore.Add(path);
+                        _activeBefore[path] = ActiveName(model);
+                    }
                     item = Describe(model, path, cfg, model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, traits, comp);
                     byKey[key] = item;
                     models[path] = model;
@@ -229,14 +280,21 @@ namespace ESKD.MaterialSync.Sw
             // Операции отмечаются и пишутся в свои модели изделия, где бы они ни лежали: детали сборки бывают и в другой
             // папке (замечание владельца 19.09.2026 — иначе у них «?» и участки пустые). Не правятся только покупные и
             // модели базы эталонов и библиотеки, общие для всех заказов.
+            // Модели другого заказа в окне есть (их операции нужны книге), но в их файлы ничего не пишется — ModelsToWrite.
             List<LzkItem> editable = _items.Where(i => !i.IsPurchased && (!i.InBase || (_inOrder && i.InProduct))).ToList();
+            HashSet<string> bookOnly = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (interactive && editable.Count > 0)
             {
                 Dictionary<string, string> chosen;
                 using (LzkOperationsForm form = new LzkOperationsForm(editable, traits, path => ShellThumbnail.Get(path, 256), _inputs))
                 {
-                    if (form.ShowDialog(Owner()) != DialogResult.OK) return false;
+                    if (form.ShowDialog(Owner()) != DialogResult.OK)
+                    {
+                        SaveMeasured(models);
+                        return false;
+                    }
                     chosen = form.Result;
+                    bookOnly.UnionWith(form.BookOnly);
                 }
                 foreach (LzkItem i in editable)
                 {
@@ -259,20 +317,28 @@ namespace ESKD.MaterialSync.Sw
                     "модель базы: операции предложены по модели и записаны только в книгу, файл базы не изменён"));
             }
 
-            WriteProperties(editable, models);
+            WriteProperties(ModelsToWrite(editable, bookOnly), models);
+            ExportOutdated();
             MarkPaintedUnits(instances, top);
             PaintedAssemblyAreas(instances, top, byKey, traits);
 
             Status("ЕСКД: ведомость ЛЗК — сохранение сборки…");
             // Сборку, которую не сохранить (только для чтения, чужая, защищённая папка), SWTools читает с диска как есть:
-            // книга собирается всё равно (замечание владельца 19.09.2026 — ЛЗК из любой папки).
-            int errors = 0, warnings = 0;
+            // книга собирается всё равно (замечание владельца 19.09.2026 — ЛЗК из любой папки). Сборка сохраняется, только
+            // если её изменила сама кнопка (записала «Операции»); с правками конструктора — нет (З-25).
+            int errors;
             if (_doc.IsOpenedReadOnly())
                 _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(_assemblyPath),
                     "сборка открыта только для чтения: состав взят из сохранённого файла"));
-            else if (!_doc.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
+            else if (_editedBefore.Contains(_assemblyPath))
+                _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_assemblyPath),
+                    "в сборке ваши несохранённые правки — кнопка её не сохраняет: состав взят из сохранённого файла",
+                    "Сохраните сборку и пересоберите книгу"));
+            else if (DocumentGuard.HasUserEdits(_doc) && !_saves.Save(_doc, out errors))
                 _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_assemblyPath),
                     "сборка не сохранена (код " + errors + "): состав взят из сохранённого файла", "Сохраните сборку и пересоберите книгу"));
+            // Свои сохранения кнопки — в отчёт проверки: изделие для следующей кнопки остаётся проверенным.
+            RecordSaves();
 
             _header = new LzkHeader
             {
@@ -283,7 +349,8 @@ namespace ESKD.MaterialSync.Sw
                 Author = _settings.Author ?? "",
                 Model = Path.GetFileName(_assemblyPath),
                 Date = DateTime.Now.ToString("dd.MM.yyyy HH:mm"),
-                Checksum = Checksum(_assemblyPath)
+                Checksum = Checksum(_assemblyPath),
+                Version = _freshness.Version
             };
             return true;
         }
@@ -358,7 +425,7 @@ namespace ESKD.MaterialSync.Sw
         {
             for (Component2 c = comp; c != null; c = c.GetParent() as Component2)
             {
-                if (c.IsSuppressed() || c.ExcludeFromBOM || c.IsEnvelope()) return false;
+                if (ComponentState.Suppressed(c) || c.ExcludeFromBOM || c.IsEnvelope()) return false;
             }
             return true;
         }
@@ -376,6 +443,7 @@ namespace ESKD.MaterialSync.Sw
                 IsAssembly = assembly,
                 InProduct = LzkNaming.IsInside(path, _productFolder),
                 InBase = ProductLocator.Locate(path).InBase,
+                Place = LzkNaming.Place(path, _productFolder, _assemblyPath),
                 IsPurchased = ComponentKind.IsPurchased(w, model, path, "Ведомость ЛЗК", _cipher),
                 Designation = Prop(w, active, "Обозначение"),
                 Name = Prop(w, active, "Наименование"),
@@ -394,7 +462,7 @@ namespace ESKD.MaterialSync.Sw
                 item.Designation = parsed.HasDesignation ? parsed.Designation : "";
             if (item.Name.Length == 0 || string.Equals(item.Name, baseName, StringComparison.OrdinalIgnoreCase))
                 item.Name = parsed.Title.Length > 0 ? parsed.Title : parsed.BaseName;
-            ModelTraits t = Traits(model, assembly);
+            ModelTraits t = Traits(model, assembly, active);
             t.Material = item.Material;
             t.IsPurchased = item.IsPurchased;
             traits[path] = t;
@@ -403,32 +471,150 @@ namespace ESKD.MaterialSync.Sw
             // Размер, развёртка, плотность и площадь — той конфигурации, что стоит в изделии: у «Укосины» 00 и 01 разные
             // длины, а SolidWorks меряет активную (аудит 21.09.2026, Л-1). Модель базы и библиотеки не переключаем —
             // её файл не правится и не сохраняется; её исполнение меряется по активной конфигурации с пометкой «оценка».
-            bool mayMeasure = !item.InBase || (_inOrder && item.InProduct);
+            // Модель другого заказа — так же (решение владельца 23.09.2026): ни исполнение, ни развёртка в ней не
+            // переключаются, иначе SolidWorks пометил бы её изменённой, и её сохранили бы вместе со сборкой.
+            // Модель только для чтения — так же: пометку «изменена» с неё не снять сохранением.
+            bool readOnly = ReadOnly(model);
+            bool mayMeasure = (!item.InBase || (_inOrder && item.InProduct)) && item.Place != LzkPlace.OtherOrder && !readOnly;
             bool otherConfig = cfg.Length > 0 && !string.Equals(cfg, w.ActiveConfigurationName(), StringComparison.OrdinalIgnoreCase) &&
                 w.ConfigurationNames().Contains(cfg);
+            bool wasDirty = DocumentGuard.HasUserEdits(model);
+            bool switchFailed;
             using (ConfigScope scope = new ConfigScope(model, otherConfig && mayMeasure ? cfg : ""))
             {
+                switchFailed = scope.Failed;
                 if (!assembly) t.DensityKgM3 = Density(model);
-                Size(model, assembly, t, item);
+                Size(model, assembly, t, item, mayMeasure);
                 // Деталь — наружная поверхность (у трубы без внутренней стенки); сборка — ниже, по её деталям (З-7).
                 item.AreaM2 = assembly || comp == null ? double.NaN : PaintArea.Outer(Area(model, comp), item.Material);
                 scope.Restore();
-                if (scope.Dirtied) _dirtiedBySwitch.Add(path);
             }
+            // Исполнение не открылось — замер шёл по активной конфигурации, и «Габарит» исполнения «00» ушёл бы в «01»
+            // (сверка SW API 23.09.2026, №18): размер — оценка, в модель не пишется.
+            if (switchFailed)
+            {
+                item.SizeIsEstimate = true;
+                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(path),
+                    "исполнение «" + cfg + "» не открылось — измерено по активной конфигурации, уточните размер заготовки"));
+            }
+            // Замер переключал исполнение или включал развёртку — SolidWorks пометил модель изменённой, хотя в ней ничего не
+            // поменялось. Такие модели кнопка сохраняет сама (или говорит о них): иначе их сочли бы правками конструктора (З-27).
+            if (!wasDirty && DocumentGuard.HasUserEdits(model)) _dirtiedBySwitch.Add(path);
             if (otherConfig && !mayMeasure)
             {
                 item.SizeIsEstimate = true;
                 _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(path),
-                    "исполнение «" + cfg + "» модели базы измерено по активной конфигурации — уточните размер заготовки"));
+                    "исполнение «" + cfg + "» " + (item.Place == LzkPlace.OtherOrder ? "модели другого заказа"
+                        : readOnly ? "модели, открытой только для чтения," : "модели базы") +
+                    " измерено по активной конфигурации — уточните размер заготовки"));
             }
             return item;
         }
 
         /// <summary>
-        /// Модели, у которых переключение конфигурации ради замера поставило признак «изменён» (SolidWorks хранит активную
-        /// конфигурацию в файле). Они сохраняются вместе с записью свойств, чтобы при закрытии не спрашивали «Сохранить?».
+        /// Модели, в которые пишутся «Операции» и «Габарит» (решение владельца 23.09.2026): модели изделия — всегда;
+        /// другой папки заказа и вне заказов — если в окне операций не снята галочка «В модель»; другого заказа — никогда.
+        /// Книга получает операции всех; файл другого заказа не меняется — иначе книга одного заказа переписала бы другой
+        /// (его выданные файлы, его операции). Про каждую модель, оставшуюся без записи, — строка в замечаниях.
+        /// </summary>
+        private List<LzkItem> ModelsToWrite(List<LzkItem> editable, HashSet<string> bookOnly)
+        {
+            List<LzkItem> write = new List<LzkItem>();
+            HashSet<string> told = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (LzkItem item in editable)
+            {
+                bool other = item.Place == LzkPlace.OtherOrder;
+                if (!other && !bookOnly.Contains(item.Path))
+                {
+                    write.Add(item);
+                    continue;
+                }
+                if (!told.Add(item.Path)) continue;
+                string reason = other
+                    ? "модель другого заказа («" + Path.GetFileName(ProductLocator.OrderOf(item.Path)) + "»): операции и габарит — только в книге, файл не изменён"
+                    : "запись в модель снята в окне операций: операции и габарит — только в книге";
+                if (_dirtiedBySwitch.Contains(item.Path))
+                    reason += "; SolidWorks считает её изменённой (для замера переключалось исполнение), но в ней ничего не " +
+                        "поменялось — закройте её без сохранения";
+                _notes.Add(Notices.Of(NoticeLevel.Info, Path.GetFileName(item.Path), reason));
+            }
+            return write;
+        }
+
+        /// <summary>
+        /// Модели, у которых замер поставил признак «изменён»: переключение конфигурации (SolidWorks хранит активную
+        /// конфигурацию в файле) или временно включённая развёртка. Они сохраняются вместе с записью свойств (и при «Отмене»
+        /// окна операций), чтобы при закрытии не спрашивали «Сохранить?», а проверка не сочла это правками конструктора.
         /// </summary>
         private readonly HashSet<string> _dirtiedBySwitch = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// «Отмена» в окне операций: модели, которые пометил изменёнными только замер кнопки, сохраняются — в них ничего не
+        /// поменялось, а несохранённые они считались бы правками конструктора (З-27). Модели с правками конструктора — нет.
+        /// </summary>
+        private void SaveMeasured(Dictionary<string, ModelDoc2> models)
+        {
+            foreach (string path in _dirtiedBySwitch)
+            {
+                ModelDoc2 model;
+                if (!models.TryGetValue(path, out model)) continue;
+                string refusal = SaveRefusal(_editedBefore.Contains(path), Before(path), ActiveName(model));
+                if (refusal.Length > 0)
+                {
+                    if (!_editedBefore.Contains(path)) NotSaved(path, refusal, "");
+                    continue;
+                }
+                int errors;
+                if (!_saves.Save(model, out errors))
+                    Log.Warn("Ведомость ЛЗК: после замера модель не сохранена (" + SwCodes.SaveProblem(errors) + ") — " + path);
+            }
+        }
+
+        private static bool ReadOnly(ModelDoc2 model)
+        {
+            try
+            {
+                return model.IsOpenedReadOnly();
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Ведомость ЛЗК: только для чтения?", ex);
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Файлы с изменённой «Лазерной резкой трубы»: выгрузка решает по этой галочке, делать ли IGS. Версия изделия от
+        /// записи операций не меняется, поэтому прежняя выгрузка изделия отмечается «не проверено» — её нужно повторить.
+        /// </summary>
+        private readonly List<string> _tubeChanged = new List<string>();
+
+        private void ExportOutdated()
+        {
+            if (_tubeChanged.Count == 0 || _freshness == null) return;
+            string path = Path.Combine(_freshness.ProductFolder, CheckRules.ExportReportName);
+            try
+            {
+                if (!File.Exists(path)) return;
+                bool changed;
+                string text = ExportLog.MarkUnchecked(File.ReadAllText(path, Encoding.UTF8), out changed);
+                if (!changed) return;
+                File.WriteAllText(path, text, new UTF8Encoding(true));
+                _notes.Add(Notices.Of(NoticeLevel.Warning, CheckRules.ExportReportName,
+                    "изменена «Лазерная резка трубы» (" + string.Join(", ", _tubeChanged.Take(5).ToArray()) +
+                    (_tubeChanged.Count > 5 ? " и ещё " + (_tubeChanged.Count - 5) : "") +
+                    "): прежняя выгрузка изделия устарела, в её отчёте теперь «" + ProductStamp.Unchecked + "»",
+                    "Выгрузите изделие заново"));
+            }
+            catch (IOException ex)
+            {
+                Log.Error("Ведомость ЛЗК: отметка устаревшей выгрузки", ex);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Log.Error("Ведомость ЛЗК: отметка устаревшей выгрузки", ex);
+            }
+        }
 
         /// <summary>
         /// Состав покупной сборки (мотор-редуктор, готовый узел поставщика) — не наше: его детали не комплектуются
@@ -460,32 +646,44 @@ namespace ESKD.MaterialSync.Sw
 
         /// <summary>
         /// Временно делает активной конфигурацию исполнения; <see cref="Restore"/> (и <see cref="Dispose"/>) возвращает
-        /// прежнюю. Пустое имя — ничего не переключает. <see cref="Dirtied"/> — переключение поставило признак «изменён».
+        /// прежнюю. Пустое имя — ничего не переключает.
         /// </summary>
         private sealed class ConfigScope : IDisposable
         {
             private ModelDoc2 _model;
             private readonly string _previous;
-            private readonly bool _wasDirty;
 
-            public bool Dirtied { get; private set; }
+            /// <summary>
+            /// Исполнение не стало активным — замер пойдёт по активной конфигурации (сверка SW API 23.09.2026, №18): раньше
+            /// об этом никто не знал, и «Габарит» чужого исполнения записывался в модель.
+            /// </summary>
+            public bool Failed;
 
             public ConfigScope(ModelDoc2 model, string cfg)
             {
                 if (string.IsNullOrEmpty(cfg)) return;
                 try
                 {
-                    Configuration active = model.GetActiveConfiguration() as Configuration;
-                    string previous = active != null ? active.Name : "";
-                    if (previous.Length == 0) return;
-                    _wasDirty = model.GetSaveFlag();
-                    if (!model.ShowConfiguration2(cfg)) return;
-                    _model = model;
-                    _previous = previous;
+                    string previous = ActiveName(model);
+                    if (previous.Length == 0)
+                    {
+                        Failed = true;
+                        return;
+                    }
+                    bool shown = model.ShowConfiguration2(cfg);
+                    string now = ActiveName(model);
+                    // Возвращать нужно всякий раз, когда активное уже не прежнее, — и после неудачного переключения.
+                    if (!string.Equals(now, previous, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _model = model;
+                        _previous = previous;
+                    }
+                    Failed = !shown || !string.Equals(now, cfg, StringComparison.OrdinalIgnoreCase);
                 }
                 catch (COMException ex)
                 {
                     Log.Error("Ведомость ЛЗК: переключение конфигурации " + cfg, ex);
+                    Failed = true;
                 }
             }
 
@@ -494,8 +692,11 @@ namespace ESKD.MaterialSync.Sw
                 if (_model == null) return;
                 try
                 {
-                    _model.ShowConfiguration2(_previous);
-                    Dirtied = !_wasDirty && _model.GetSaveFlag();
+                    // Не вернулось — модель не сохранится (SaveRefusal сверит перед сохранением), здесь — след в журнале.
+                    if (!_model.ShowConfiguration2(_previous) ||
+                        !string.Equals(ActiveName(_model), _previous, StringComparison.OrdinalIgnoreCase))
+                        Log.Warn("Ведомость ЛЗК: прежнее исполнение «" + _previous + "» не вернулось активным — " +
+                            DocInfo.TitleOf(_model));
                 }
                 catch (COMException ex)
                 {
@@ -518,7 +719,8 @@ namespace ESKD.MaterialSync.Sw
             return (value ?? "").Trim();
         }
 
-        private static ModelTraits Traits(ModelDoc2 model, bool assembly)
+        /// <param name="cfg">Исполнение из изделия: погашенный в нём элемент конструкции — чужого исполнения.</param>
+        private static ModelTraits Traits(ModelDoc2 model, bool assembly, string cfg)
         {
             ModelTraits t = new ModelTraits { IsAssembly = assembly };
             try
@@ -529,7 +731,8 @@ namespace ESKD.MaterialSync.Sw
                     if (type == "SheetMetal" || type == "SMBaseFlange") t.IsSheetMetal = true;
                     else if (type == "EdgeFlange" || type == "Hem" || type == "Jog" || type == "MiterFlange" || type == "OneBend" ||
                              type == "SketchBend" || type == "LoftedBend" || type == "SM3dBend") t.HasBends = true;
-                    else if (type == "WeldMemberFeat") t.IsStructuralMember = true;
+                    // Элемент, погашенный в исполнении, — чужого исполнения (критик сверки SW API 23.09.2026).
+                    else if (type == "WeldMemberFeat" && !SuppressedIn(f, cfg)) t.IsStructuralMember = true;
                     else if (type == "WeldmentFeature") t.IsWeldment = true;
                     else if (type.IndexOf("WeldBead", StringComparison.OrdinalIgnoreCase) >= 0 || type == "Weld") t.HasWeldBeads = true;
                 }
@@ -546,13 +749,15 @@ namespace ESKD.MaterialSync.Sw
         /// листовая деталь — развёртка Д×Ш×S (замечание владельца 21.09.2026: у гнутых деталей в ведомость уходил
         /// габарит готовой детали, а заготовка — это развёртка); прочее — Д×Ш×В.
         /// </summary>
-        private static void Size(ModelDoc2 model, bool assembly, ModelTraits t, LzkItem item)
+        /// <param name="mayChange">Можно временно включить развёртку (модель своего заказа, не база); нельзя — развёртка
+        /// только из свойств списка вырезов, иначе габарит согнутой детали с пометкой «оценка».</param>
+        private static void Size(ModelDoc2 model, bool assembly, ModelTraits t, LzkItem item, bool mayChange)
         {
             try
             {
                 if (t.IsSheetMetal && !assembly)
                 {
-                    double[] flat = FlatPatternSides((PartDoc)model, model);
+                    double[] flat = FlatPatternSides((PartDoc)model, model, mayChange);
                     if (flat != null)
                     {
                         item.Size = LzkOperations.FormatSize(flat[0], flat[1], flat[2]);
@@ -620,56 +825,37 @@ namespace ESKD.MaterialSync.Sw
         /// Развёртка листовой детали {длина, ширина, толщина} в мм: из свойств «граничной рамки» списка вырезов; их нет
         /// (список не обновляли — так в боевом заказе NC3-7R) — включается элемент «Развёртка» (FlatPattern), деталь
         /// меряется по габаритному ящику, элемент гасится обратно (SetBendState в SolidWorks 2025 ничего не делает,
-        /// проверено 21.09.2026). null — измерить не удалось.
+        /// проверено 21.09.2026). mayToggle = false (база, другой заказ) — развёртка не включается: это пометило бы модель
+        /// изменённой. null — измерить не удалось.
         /// </summary>
-        private static double[] FlatPatternSides(PartDoc part, ModelDoc2 model)
+        private static double[] FlatPatternSides(PartDoc part, ModelDoc2 model, bool mayToggle)
         {
             double thickness = StockService.SheetThicknessMm(model);
             double length = double.NaN, width = double.NaN;
-            for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+            // Только папки с телами этого исполнения (CutListFolders): папка погашенного тела — чужая рамка.
+            foreach (Feature sub in CutListFolders.Active(model))
             {
-                if (f.GetTypeName2() != "SolidBodyFolder") continue;
-                for (Feature sub = f.GetFirstSubFeature() as Feature; sub != null; sub = sub.GetNextSubFeature() as Feature)
-                {
-                    if (sub.GetTypeName2() != "CutListFolder") continue;
-                    CustomPropertyManager m = sub.CustomPropertyManager;
-                    if (m == null) continue;
-                    List<KeyValuePair<string, string>> written = Written(m);
-                    double l = Value(m, CutListProperties.Find(written, "Bounding Box Length", CutListProperties.BoundingBoxLengthSpellings));
-                    double w = Value(m, CutListProperties.Find(written, "Bounding Box Width", CutListProperties.BoundingBoxWidthSpellings));
-                    if (double.IsNaN(thickness))
-                        thickness = Value(m, CutListProperties.Find(written, "Sheet Metal Thickness", CutListProperties.SheetThicknessSpellings));
-                    if (double.IsNaN(l) || double.IsNaN(w) || l <= 0 || w <= 0) continue;
-                    if (double.IsNaN(length) || l * w > length * width) { length = l; width = w; }
-                }
+                CustomPropertyManager m = sub.CustomPropertyManager;
+                if (m == null) continue;
+                List<KeyValuePair<string, string>> written = Written(m);
+                double l = Value(m, CutListProperties.Find(written, "Bounding Box Length", CutListProperties.BoundingBoxLengthSpellings));
+                double w = Value(m, CutListProperties.Find(written, "Bounding Box Width", CutListProperties.BoundingBoxWidthSpellings));
+                if (double.IsNaN(thickness))
+                    thickness = Value(m, CutListProperties.Find(written, "Sheet Metal Thickness", CutListProperties.SheetThicknessSpellings));
+                if (double.IsNaN(l) || double.IsNaN(w) || l <= 0 || w <= 0) continue;
+                if (double.IsNaN(length) || l * w > length * width) { length = l; width = w; }
             }
-            if (double.IsNaN(length))
+            // Своя модель меряется по телу всегда: свойства списка вырезов SolidWorks пересчитывает только при его обновлении,
+            // и после правки детали в них оставалась прежняя рамка, а имя DXF — уже по новой (ревью 23.09.2026). Замер —
+            // та же наименьшая рамка, что в имени DXF. Не измерить — свойства, как раньше.
+            if (mayToggle)
             {
-                Feature flat = null;
-                for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
-                    if (f.GetTypeName2() == "FlatPattern") { flat = f; break; }
-                if (flat != null && flat.SetSuppression2((int)swFeatureSuppressionAction_e.swUnSuppressFeature,
-                        (int)swInConfigurationOpts_e.swThisConfiguration, null))
+                double[] measured = MeasureUnfolded(part, model, thickness);
+                if (measured != null)
                 {
-                    try
-                    {
-                        model.ForceRebuild3(false);
-                        double[] box = part.GetPartBox(true) as double[];
-                        if (box != null && box.Length >= 6)
-                        {
-                            double[] sides = { (box[3] - box[0]) * 1000, (box[4] - box[1]) * 1000, (box[5] - box[2]) * 1000 };
-                            Array.Sort(sides);
-                            length = sides[2];
-                            width = sides[1];
-                            if (double.IsNaN(thickness)) thickness = sides[0];
-                        }
-                    }
-                    finally
-                    {
-                        flat.SetSuppression2((int)swFeatureSuppressionAction_e.swSuppressFeature,
-                            (int)swInConfigurationOpts_e.swThisConfiguration, null);
-                        model.ForceRebuild3(false);
-                    }
+                    length = measured[0];
+                    width = measured[1];
+                    if (double.IsNaN(thickness)) thickness = measured[2];
                 }
             }
             if (double.IsNaN(length) || double.IsNaN(width) || length <= 0 || width <= 0) return null;
@@ -677,28 +863,241 @@ namespace ESKD.MaterialSync.Sw
             return new[] { length, width, thickness };
         }
 
-        /// <summary>Наибольшая длина LENGTH по папкам списка вырезов; several — заготовок больше одной (папок или QUANTITY).</summary>
+        /// <summary>
+        /// Развёртка по телу {длина, ширина, толщина}, мм — когда в списке вырезов нет граничной рамки: элемент «Развёртка»
+        /// (FlatPattern) включается, деталь меряется (<see cref="FlatFrame"/>), элемент гасится обратно (SetBendState в
+        /// SolidWorks 2025 ничего не делает, проверено 21.09.2026). Гасится, только если был погашен: развёрнутую
+        /// конструктором деталь раньше складывало. Модель помечается изменённой. null — не измерить.
+        /// </summary>
+        /// <param name="sheet">Толщина листа, мм (NaN — не известна): тело толще — не развёрнуто, не мерится.</param>
+        public static double[] MeasureUnfolded(PartDoc part, ModelDoc2 model, double sheet)
+        {
+            Feature flat = null;
+            for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+                if (f.GetTypeName2() == "FlatPattern") { flat = f; break; }
+            if (flat == null) return null;
+            bool folded = flat.IsSuppressed();
+            if (folded && !flat.SetSuppression2((int)swFeatureSuppressionAction_e.swUnSuppressFeature,
+                    (int)swInConfigurationOpts_e.swThisConfiguration, null)) return null;
+            try
+            {
+                if (folded) model.ForceRebuild3(false);
+                // Развёртка не перестроилась (элемент поперёк сгиба, битое тело) — SolidWorks пропускает её, и тело
+                // остаётся согнутым: его рамка — не заготовка (ревью 23.09.2026). Тогда «Габарит» — оценка.
+                bool warning;
+                int error = flat.GetErrorCode2(out warning);
+                if ((error != 0 && !warning) || flat.IsSuppressed()) return null;
+                return FlatFrame(part, sheet);
+            }
+            finally
+            {
+                if (folded)
+                {
+                    flat.SetSuppression2((int)swFeatureSuppressionAction_e.swSuppressFeature,
+                        (int)swInConfigurationOpts_e.swThisConfiguration, null);
+                    model.ForceRebuild3(false);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Граничная рамка развёрнутой детали {длина, ширина, толщина}, мм: наименьший прямоугольник вокруг всех рёбер тела в
+        /// проекции на плоскость наибольшей плоской грани — это и есть контур заготовки, — как у SolidWorks и в имени DXF.
+        /// Все рёбра, а не рёбра одной грани: без «Объединить грани» развёртка разбита по зонам сгиба, и наибольшая грань —
+        /// одна полка; у выштамповки наибольшей бывает площадка (ревью 23.09.2026). Прямые рёбра берутся по концам, кривые —
+        /// точками через 0,5 мм (отклонение хорды от дуги — сотые доли миллиметра), сверенными с концами ребра: у
+        /// развёрнутого тела кривая ребра бывает сдвинута, и уголок 100+60 выходил 262 мм (L15, EdgePoints). Толщина —
+        /// размах тела по нормали к грани; тело толще листа sheet больше чем на 0,5 мм — согнутое, не мерится.
+        /// Габаритный ящик детали (GetPartBox) шёл по осям модели и с запасом: пластина 200×100, построенная под 30°,
+        /// давала 223×187 (проверено на SolidWorks 2025; сверка 23.09.2026, замечание владельца — размер заготовки по
+        /// внешней рамке). Тел несколько — наибольшая рамка. null — плоской грани нет.
+        /// </summary>
+        private static double[] FlatFrame(PartDoc part, double sheet)
+        {
+            double[] best = null;
+            try
+            {
+                object[] bodies = part.GetBodies2((int)swBodyType_e.swSolidBody, true) as object[];
+                if (bodies == null) return null;
+                foreach (object o in bodies)
+                {
+                    Body2 body = o as Body2;
+                    Face2 flat = body == null ? null : LargestPlane(body);
+                    if (flat == null) continue;
+                    double[] plane = ((Surface)flat.GetSurface()).PlaneParams as double[];
+                    double[] u, v;
+                    if (plane == null || plane.Length < 3 || !PlaneAxes(plane, out u, out v)) continue;
+                    object[] edges = body.GetEdges() as object[];
+                    if (edges == null) continue;
+                    List<double> xy = new List<double>();
+                    int rough = 0;
+                    foreach (object e in edges)
+                    {
+                        Edge edge = e as Edge;
+                        double[] p = edge == null ? null : edge.GetCurveParams2() as double[];
+                        if (p == null || p.Length < 8) continue;
+                        double[] start = { p[0], p[1], p[2] }, end = { p[3], p[4], p[5] };
+                        Curve curve = edge.GetCurve() as Curve;
+                        bool line = curve == null || curve.IsLine();
+                        List<double[]> points = line
+                            ? EdgePoints.Choose(start, end)
+                            : EdgePoints.Choose(start, end, () => EdgeSamples(edge, curve, p, true),
+                                () => EdgeSamples(edge, curve, p, false), () => TessSamples(curve, start, end));
+                        if (!line && points.Count == 2) rough++;
+                        foreach (double[] q in points)
+                        {
+                            xy.Add((q[0] * u[0] + q[1] * u[1] + q[2] * u[2]) * 1000);
+                            xy.Add((q[0] * v[0] + q[1] * v[1] + q[2] * v[2]) * 1000);
+                        }
+                    }
+                    if (rough > 0)
+                        Log.Info("Ведомость ЛЗК: граничная рамка развёртки — у " + rough +
+                                 " кривых рёбер точки не сошлись с концами, взяты только концы");
+                    double width, length;
+                    if (!DxfFrame.Smallest(xy, out width, out length)) continue;
+                    if (best != null && length * width <= best[0] * best[1]) continue;
+                    double fx, fy, fz, bx, by, bz, thickness = double.NaN;
+                    double[] n = PlaneNormal(plane);
+                    if (n != null && body.GetExtremePoint(n[0], n[1], n[2], out fx, out fy, out fz) &&
+                        body.GetExtremePoint(-n[0], -n[1], -n[2], out bx, out by, out bz))
+                        thickness = ((fx - bx) * n[0] + (fy - by) * n[1] + (fz - bz) * n[2]) * 1000;
+                    if (!double.IsNaN(sheet) && sheet > 0 && !double.IsNaN(thickness) && thickness > sheet + 0.5) continue;
+                    best = new[] { length, width, thickness };
+                }
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Ведомость ЛЗК: граничная рамка развёртки по телу", ex);
+            }
+            return best;
+        }
+
+        /// <summary>
+        /// Точки кривого ребра через 0,5 мм по его параметрам p[6]…p[7]: по самому ребру (Edge.Evaluate2) или по его
+        /// кривой (Curve.Evaluate2) — у развёрнутого тела кривая бывает сдвинута, это отсеет EdgePoints.Choose.
+        /// null — SolidWorks не вычислил.
+        /// </summary>
+        private static List<double[]> EdgeSamples(Edge edge, Curve curve, double[] p, bool byEdge)
+        {
+            try
+            {
+                double t0 = p[6], t1 = p[7];
+                int steps = EdgePoints.Steps(curve.GetLength3(Math.Min(t0, t1), Math.Max(t0, t1)) * 1000);
+                List<double[]> points = new List<double[]>(steps + 1);
+                for (int k = 0; k <= steps; k++)
+                {
+                    double t = t0 + (t1 - t0) * k / steps;
+                    double[] q = (byEdge ? edge.Evaluate2(t, 0) : curve.Evaluate2(t, 0)) as double[];
+                    if (q == null || q.Length < 3) return null;
+                    points.Add(new[] { q[0], q[1], q[2] });
+                }
+                return points;
+            }
+            catch (COMException)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Точки кривого ребра по его концам (Curve.GetTessPts): хорда отходит от дуги не больше чем на 0,01 мм.
+        /// null — SolidWorks не вычислил.
+        /// </summary>
+        private static List<double[]> TessSamples(Curve curve, double[] start, double[] end)
+        {
+            try
+            {
+                double[] q = curve.GetTessPts(EdgePoints.Tolerance, 0.0005, start, end) as double[];
+                if (q == null || q.Length < 6) return null;
+                List<double[]> points = new List<double[]>(q.Length / 3);
+                for (int i = 0; i + 2 < q.Length; i += 3) points.Add(new[] { q[i], q[i + 1], q[i + 2] });
+                return points;
+            }
+            catch (COMException)
+            {
+                return null;
+            }
+        }
+
+        private static Face2 LargestPlane(Body2 body)
+        {
+            Face2 best = null;
+            double area = 0;
+            object[] faces = body.GetFaces() as object[];
+            if (faces == null) return null;
+            foreach (object o in faces)
+            {
+                Face2 face = o as Face2;
+                Surface surface = face == null ? null : face.GetSurface() as Surface;
+                if (surface == null || !surface.IsPlane()) continue;
+                double a = face.GetArea();
+                if (a <= area) continue;
+                area = a;
+                best = face;
+            }
+            return best;
+        }
+
+        private static double[] PlaneNormal(double[] plane)
+        {
+            double n = Math.Sqrt(plane[0] * plane[0] + plane[1] * plane[1] + plane[2] * plane[2]);
+            return n < 1e-12 ? null : new[] { plane[0] / n, plane[1] / n, plane[2] / n };
+        }
+
+        /// <summary>Две единичные оси в плоскости с нормалью plane[0..2].</summary>
+        private static bool PlaneAxes(double[] plane, out double[] u, out double[] v)
+        {
+            u = null;
+            v = null;
+            double[] normal = PlaneNormal(plane);
+            if (normal == null) return false;
+            double nx = normal[0], ny = normal[1], nz = normal[2];
+            // Ось, наименее параллельная нормали, × нормаль — лежит в плоскости.
+            double ax = Math.Abs(nx) < 0.9 ? 1 : 0, ay = 1 - ax;
+            u = new[] { ay * nz, -ax * nz, ax * ny - ay * nx };
+            double lu = Math.Sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]);
+            u[0] /= lu;
+            u[1] /= lu;
+            u[2] /= lu;
+            v = new[] { ny * u[2] - nz * u[1], nz * u[0] - nx * u[2], nx * u[1] - ny * u[0] };
+            return true;
+        }
+
+        /// <summary>Элемент погашен в конфигурации cfg (пусто — в активной), без её переключения; не прочитать — не погашен, как раньше.</summary>
+        private static bool SuppressedIn(Feature f, string cfg)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(cfg)) return f.IsSuppressed();
+                bool[] states = f.IsSuppressed2((int)swInConfigurationOpts_e.swSpecifyConfiguration, new[] { cfg }) as bool[];
+                return states != null && states.Length > 0 && states[0];
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Ведомость ЛЗК: погашен ли элемент", ex);
+                return false;
+            }
+        }
+
+        /// <summary>Наибольшая длина LENGTH по папкам списка вырезов; several — заготовок (тел в папках) больше одной.</summary>
         private static double CutListLength(ModelDoc2 model, out bool several)
         {
             double found = double.NaN;
             int pieces = 0;
-            for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+            // Только папки с телами активного исполнения, вместе с подсварками (CutListFolders): скрытая
+            // папка другого исполнения давала вторую «заготовку» (пометка «оценка») и свою длину — QUANTITY «0» у неё
+            // считался за 1 (сверка SW API 23.09.2026, №34). Заготовок в папке — сколько в ней тел: это и есть QUANTITY.
+            foreach (Feature sub in CutListFolders.Active(model))
             {
-                if (f.GetTypeName2() != "SolidBodyFolder") continue;
-                for (Feature sub = f.GetFirstSubFeature() as Feature; sub != null; sub = sub.GetNextSubFeature() as Feature)
-                {
-                    if (sub.GetTypeName2() != "CutListFolder") continue;
-                    CustomPropertyManager m = sub.CustomPropertyManager;
-                    if (m == null) continue;
-                    // Имена свойств зависят от языка SolidWorks («ДЛИНА», а не LENGTH), поэтому нужное ищется
-                    // по ссылке внутри значения — она английская всегда (замечание владельца 21.09.2026).
-                    List<KeyValuePair<string, string>> written = Written(m);
-                    double v = Value(m, CutListProperties.Find(written, "LENGTH", CutListProperties.LengthSpellings));
-                    if (double.IsNaN(v)) continue;
-                    if (double.IsNaN(found) || v > found) found = v;
-                    double quantity = Value(m, CutListProperties.Find(written, "QUANTITY", CutListProperties.QuantitySpellings));
-                    pieces += double.IsNaN(quantity) || quantity < 1 ? 1 : (int)Math.Round(quantity);
-                }
+                CustomPropertyManager m = sub.CustomPropertyManager;
+                if (m == null) continue;
+                // Имена свойств зависят от языка SolidWorks («ДЛИНА», а не LENGTH), поэтому нужное ищется
+                // по ссылке внутри значения — она английская всегда (замечание владельца 21.09.2026).
+                List<KeyValuePair<string, string>> written = Written(m);
+                double v = Value(m, CutListProperties.Find(written, "LENGTH", CutListProperties.LengthSpellings));
+                if (double.IsNaN(v)) continue;
+                if (double.IsNaN(found) || v > found) found = v;
+                pieces += CutListFolders.BodyCount(sub);
             }
             several = pieces > 1;
             return found;
@@ -787,8 +1186,7 @@ namespace ESKD.MaterialSync.Sw
             if (m == null || string.IsNullOrEmpty(name)) return double.NaN;
             string raw, resolved;
             m.Get4(name, false, out raw, out resolved);
-            double v = LzkOperations.ParseNumber(resolved);
-            return double.IsNaN(v) ? LzkOperations.ParseNumber(raw) : v;
+            return CutListProperties.Number(raw, resolved);
         }
 
         /// <summary>Плотность материала детали, кг/м³; 0 — не определена.</summary>
@@ -953,6 +1351,7 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>
         /// «Операции» и «Габарит» — в модели (изменённые сохраняются молча, Т-3). Модель, которую не записать (только для
         /// чтения, не сохраняется), книге не мешает: её операции идут в книгу, а в замечаниях — какие модели остались без записи.
+        /// Модель с несохранёнными правками конструктора получает свойства в открытый документ, но не сохраняется (З-25).
         /// </summary>
         private void WriteProperties(List<LzkItem> editable, Dictionary<string, ModelDoc2> models)
         {
@@ -996,6 +1395,9 @@ namespace ESKD.MaterialSync.Sw
                 PropertyWriter w = new PropertyWriter(model, false);
                 foreach (LzkItem item in changed[path])
                 {
+                    if (!item.IsAssembly && LzkOperations.TubeDecisionMayDiffer(Prop(w, "", LzkOperations.PropertyName), item.Operations ?? "") &&
+                        !_tubeChanged.Contains(Path.GetFileName(path)))
+                        _tubeChanged.Add(Path.GetFileName(path));
                     if (!string.IsNullOrEmpty(item.Operations)) w.Set("", LzkOperations.PropertyName, item.Operations);
                     else w.Delete("", LzkOperations.PropertyName);
                     if (!item.SizeIsEstimate && item.Size.Length > 0) w.Set(SizeLevel(w, item), LzkOperations.SizePropertyName, item.Size);
@@ -1006,14 +1408,66 @@ namespace ESKD.MaterialSync.Sw
                     continue;
                 }
                 if (object.ReferenceEquals(model, _doc)) continue;
-                CleanPreview(model);
-                int errors = 0, warnings = 0;
-                if (!model.Save3((int)swSaveAsOptions_e.swSaveAsOptions_Silent, ref errors, ref warnings))
+                // Сверяется фактическое состояние перед сохранением: любой путь, которым исполнение не вернулось, ловится здесь.
+                string refusal = SaveRefusal(_editedBefore.Contains(path), Before(path), ActiveName(model));
+                if (refusal.Length > 0)
                 {
-                    NotWritten(Path.GetFileName(path), "модель не сохранена (код " + errors + ")");
+                    NotSaved(path, refusal, " — операции и габарит записаны в открытую модель, но кнопка её не сохранила");
+                    continue;
+                }
+                CleanPreview(model);
+                int errors;
+                if (!_saves.Save(model, out errors))
+                {
+                    NotWritten(Path.GetFileName(path), "модель не сохранена (" + SwCodes.SaveProblem(errors) + ")");
                     continue;
                 }
                 Log.Info("Ведомость ЛЗК: свойства записаны — " + path);
+            }
+        }
+
+        public const string EditedRefusal = "в модели ваши несохранённые правки";
+
+        /// <summary>
+        /// Почему модель нельзя сохранить кнопкой; пусто — можно (сверка SW API 23.09.2026, №18). Замер переключал
+        /// исполнение, а прежнее не вернулось активным — нельзя: в файл ушла бы чужая активная конфигурация, и конструктор
+        /// открыл бы деталь в другом исполнении (выгрузка так уже делает — ExportService.RestoreConfiguration). Правки
+        /// конструктора — нельзя (З-25). Отделено от SolidWorks ради юнит-тестов.
+        /// </summary>
+        public static string SaveRefusal(bool editedBefore, string activeBefore, string activeNow)
+        {
+            if (!string.IsNullOrEmpty(activeBefore) &&
+                !string.Equals(activeBefore, activeNow ?? "", StringComparison.OrdinalIgnoreCase))
+                return "после замера прежнее исполнение «" + activeBefore + "» не вернулось активным";
+            return editedBefore ? EditedRefusal : "";
+        }
+
+        /// <summary>Модель не сохранена кнопкой: строка в журнал и замечание — что сделать конструктору.</summary>
+        private void NotSaved(string path, string refusal, string tail)
+        {
+            Log.Info("Ведомость ЛЗК: модель не сохранена (" + refusal + ") — " + path);
+            _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(path), refusal + tail,
+                refusal == EditedRefusal ? "Сохраните модель сами"
+                    : "Сделайте исполнение «" + Before(path) + "» активным и сохраните модель сами"));
+        }
+
+        private string Before(string path)
+        {
+            string before;
+            return _activeBefore.TryGetValue(path, out before) ? before : "";
+        }
+
+        private static string ActiveName(ModelDoc2 model)
+        {
+            try
+            {
+                Configuration c = model.GetActiveConfiguration() as Configuration;
+                return c != null ? c.Name ?? "" : "";
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Ведомость ЛЗК: активное исполнение", ex);
+                return "";
             }
         }
 
@@ -1120,8 +1574,8 @@ namespace ESKD.MaterialSync.Sw
             catch (Exception ex)
             {
                 Log.Error("Ведомость ЛЗК: StartBomExport", ex);
-                Info("Установленная версия SWTools не умеет выгружать ведомость без окна. Обновите SWTools до 1.1.109 или новее " +
-                     "(запустите настройку рабочего места).", MessageBoxIcon.Warning);
+                Info("Установленная версия SWTools не умеет выгружать ведомость без окна. " + SwToolsExport.UpdateAdvice + ".",
+                    MessageBoxIcon.Warning);
                 return false;
             }
             if (pid == 0)
@@ -1160,6 +1614,50 @@ namespace ESKD.MaterialSync.Sw
             return true;
         }
 
+        /// <summary>
+        /// Надстройку выгружают (сняли галочку в «Надстройках» или закрывают SolidWorks), а ведомость ещё формируется:
+        /// таймер остановить, SWTools завершить, временные файлы убрать. Раньше таймер выгруженной надстройки дописывал
+        /// книгу и показывал окно, а в SolidWorks, запущенном из другой программы, ведомость зависала до следующей
+        /// загрузки (сверка SW API 23.09.2026, №3). Прежняя книга не тронута: выгруженная надстройка книгу не пишет и окон
+        /// не показывает.
+        /// </summary>
+        public static void Abort(string reason)
+        {
+            LzkService running = _running;
+            if (running == null) return;
+            running._finishing = true;
+            running._finished = true;
+            try
+            {
+                // Kill не ждёт конца процесса: без ожидания SWTools ещё держит временную книгу, и уборка её не удалит
+                // (ревью 23.09.2026).
+                if (running._process != null && !running._process.HasExited)
+                {
+                    running._process.Kill();
+                    running._process.WaitForExit(5000);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Ведомость ЛЗК: остановка SWTools при выгрузке", ex);
+            }
+            try
+            {
+                running.CleanupAttempt();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Ведомость ЛЗК: уборка при выгрузке", ex);
+            }
+            finally
+            {
+                // Сбой уборки не оставляет службу текущей: иначе после повторного включения — «уже формируется».
+                if (object.ReferenceEquals(_running, running)) _running = null;
+            }
+            _lastOutcome = "error|Ведомость ЛЗК прервана: " + reason + ". Книга не записана, прежняя на месте — запустите ведомость заново.";
+            Log.Warn("Ведомость ЛЗК прервана (" + reason + "): книга не записана, прежняя на месте");
+        }
+
         /// <summary>Опрос из простоя SolidWorks (EventHub.OnIdle).</summary>
         public static void PollIdle()
         {
@@ -1182,8 +1680,14 @@ namespace ESKD.MaterialSync.Sw
                     if ((DateTime.Now - _started).TotalMinutes < TimeoutMinutes) return;
                     _finishing = true;
                     _timer.Stop();
-                    try { _process.Kill(); }
+                    // Kill не ждёт конца процесса — без ожидания временная книга ещё занята и не удалится (ревью 23.09.2026).
+                    try
+                    {
+                        _process.Kill();
+                        _process.WaitForExit(5000);
+                    }
                     catch (InvalidOperationException ex) { Log.Error("Ведомость ЛЗК: остановка SWTools", ex); }
+                    catch (System.ComponentModel.Win32Exception ex) { Log.Error("Ведомость ЛЗК: остановка SWTools", ex); }
                     Finish(null, "SWTools не ответил за " + TimeoutMinutes + " мин и остановлен.");
                     return;
                 }
@@ -1264,6 +1768,12 @@ namespace ESKD.MaterialSync.Sw
                     }
                 }
                 if (outcome != null && outcome.Version.Length > 0) Log.Info("Ведомость ЛЗК: SWTools " + outcome.Version);
+                if (problem.Length == 0 && outcome != null)
+                {
+                    string old = SwToolsExport.VersionWarning(outcome.Version);
+                    if (old.Length > 0)
+                        _notes.Add(Notices.Of(NoticeLevel.Warning, Path.GetFileName(_workbookPath), old, SwToolsExport.UpdateAdvice));
+                }
             }
             catch (Exception ex)
             {
@@ -1417,6 +1927,10 @@ namespace ESKD.MaterialSync.Sw
                     if (!string.IsNullOrEmpty(f) && File.Exists(f)) File.Delete(f);
                 }
                 catch (IOException ex)
+                {
+                    Log.Error("Ведомость ЛЗК: временный файл " + f, ex);
+                }
+                catch (UnauthorizedAccessException ex)
                 {
                     Log.Error("Ведомость ЛЗК: временный файл " + f, ex);
                 }

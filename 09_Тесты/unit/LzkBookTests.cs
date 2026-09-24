@@ -311,7 +311,8 @@ namespace ESKD.Tests
                 LzkInputs inputs = new LzkInputs { Quantity = 41, Deadline = new DateTime(2026, 10, 25), Color = "RAL 9005" };
                 inputs.Notes["Сварочный"] = "Свой текст";
                 inputs.Norms["Труба.Захват"] = 600;
-                LzkHeader header = new LzkHeader { Product = "А Рама", Cipher = "А", Name = "Рама", Order = "3021_Заказ", Date = "18.09.2026" };
+                LzkHeader header = new LzkHeader { Product = "А Рама", Cipher = "А", Name = "Рама", Order = "3021_Заказ", Date = "18.09.2026",
+                    Version = "23.09.2026 14:05:31 #1a2b3c4d" };
                 LzkResult r = LzkWorkbook.Complete(path, header, items, new LzkBook.Options { Inputs = inputs, Norms = ShippedNorms() });
                 Assert.AreEqual(0, r.Errors.Count, string.Join("; ", r.Errors.ToArray()));
 
@@ -373,6 +374,16 @@ namespace ESKD.Tests
                 Assert.IsTrue(summary != null, "лист «Сводная»");
                 Assert.AreEqual("Сводная ведомость расхода материалов", summary.Get("A1"), "название без списания");
                 Assert.AreEqual("Сортамент, материал, изделие", summary.Get("B6"), "шапка");
+                // Широкая шапка: срок в G3 (слияние G3:H3), цвет правее — в J3; срок не затирается цветом.
+                Assert.AreEqual("Срок отгрузки:", summary.Get("D3"), "подпись срока");
+                Assert.IsTrue(summary.Formula("G3").Contains("Срок"), "в G3 срок отгрузки, а не цвет: " + summary.Formula("G3"));
+                Assert.AreEqual("Цвет:", summary.Get("I3"), "подпись цвета не под слиянием D3:F3");
+                Assert.IsTrue(summary.Formula("J3").Contains("Цвет"), "цвет в J3: " + summary.Formula("J3"));
+                Assert.AreEqual("", summary.Get("F3"), "в F3 (внутри слияния D3:F3) ничего нет");
+                XlsxSheet painting = book.Sheet("Покрасочный");
+                Assert.AreEqual("Цвет:", painting.Get("F3"), "узкий лист: цвет на прежнем месте");
+                Assert.IsTrue(painting.Formula("E3").Contains("Срок"), "узкий лист: срок в E3");
+                Assert.IsTrue(painting.Formula("G3").Contains("Цвет"), "узкий лист: цвет в G3");
                 Assert.AreEqual("В чистоте на 1 изд.", summary.Get("D6"), "шапка: в чистоте на изделие");
                 Assert.AreEqual("Запас, %", summary.Get("F6"), "шапка: запас");
                 Assert.AreEqual("С запасом на заказ", summary.Get("G6"), "шапка: с запасом");
@@ -432,6 +443,12 @@ namespace ESKD.Tests
                 Assert.AreEqual("600", book.Sheet(sheet).Get(cell), "норма, правленная под заказ");
                 Assert.IsTrue(book.TryResolveName("Хлыст", out sheet, out cell), "хлыст");
                 Assert.AreEqual("6000", book.Sheet(sheet).Get(cell), "хлыст 6 м из справочника инструментария");
+                // Версия изделия (З-27): по ней проверка и «Готово к производству» сверяют книгу с изделием.
+                string version;
+                Assert.IsTrue(LzkInputs.TryReadVersion(book, out version), "в паспорте есть версия изделия");
+                Assert.AreEqual("23.09.2026 14:05:31 #1a2b3c4d", version, "версия из проверки");
+                Assert.IsTrue(book.TryResolveName(LzkBook.NameVersion, out sheet, out cell), "имя версии");
+                Assert.AreEqual("Паспорт", sheet, "версия — в паспорте");
 
                 LzkInputs read = LzkInputs.Read(path);
                 Assert.IsTrue(read.FromWorkbook, "прочитано из книги");
@@ -443,7 +460,16 @@ namespace ESKD.Tests
                 Assert.AreEqual(600.0, read.Norms["Труба.Захват"], "норма сохранена");
 
                 // Повторная сборка по прочитанному — те же значения.
+                header.Version = "";
                 LzkWorkbook.Complete(second, header, items, new LzkBook.Options { Inputs = read, Norms = ShippedNorms() });
+                using (XlsxBook rebuilt = XlsxBook.Open(second))
+                {
+                    string none;
+                    Assert.IsTrue(LzkInputs.TryReadVersion(rebuilt, out none), "строка версии есть и без проверки");
+                    Assert.AreEqual("", none, "книга по непроверенному изделию — версия пустая");
+                    Assert.IsTrue(rebuilt.TryResolveName(LzkBook.NameVersion, out sheet, out cell), "имя версии");
+                    Assert.AreEqual(ProductStamp.Unchecked, rebuilt.Sheet(sheet).Get(cell), "в ячейке — словами");
+                }
                 LzkInputs again = LzkInputs.Read(second);
                 Assert.AreEqual(41, again.Quantity, "тираж пережил пересборку");
                 Assert.AreEqual("Свой текст", again.Notes["Сварочный"], "указания пережили пересборку");

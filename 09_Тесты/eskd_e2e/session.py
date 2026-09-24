@@ -4,7 +4,8 @@
 Правила безопасности:
   * сессия поднимается только если SLDWORKS.exe не запущен — документы пользователя
     не бывают открыты в тестовой сессии;
-  * надстройка ЕСКД грузится явно (LoadAddIn), зонд событий — отдельный процесс;
+  * надстройка ЕСКД грузится явно (LoadAddIn), а в сессии без неё служба надстройки из автозагрузки SolidWorks
+    выключена (ServiceEnabled = 0); зонд событий — отдельный процесс;
   * все сохранения должны оказаться внутри каталога прогона: запись вне его запрещена
     харнессом до вызова API, а в контрактных тестах (события документа включены) зонд фиксирует
     и фактическое сохранение за пределами;
@@ -23,6 +24,7 @@ import time
 import winreg
 from pathlib import Path
 
+import psutil
 import pythoncom
 import win32com.client
 
@@ -37,9 +39,6 @@ TEST_SETTINGS = {
     "MassDecimals": 2,
     "AutoSplitName": 1,
     "AutoStockMaterial": 1,
-    # Окно выбора материала модально и остановило бы прогон: однозначные типоразмеры подставляются молча,
-    # неоднозначные проверяются через StockReport надстройки (Р-8).
-    "StockAskOnSave": 0,
     "Author": "Тестов Т.Т.",
     "Checker": "Проверкин П.П.",
     "Organization": "ООО «Испытание»",
@@ -48,6 +47,43 @@ TEST_SETTINGS = {
 
 class SessionRefused(RuntimeError):
     pass
+
+
+#: SolidWorks, запущенные харнессом в этом процессе Python: PID → время создания (Windows переиспользует PID, и
+#: SolidWorks, запущенный человеком позже, может получить номер нашего завершённого процесса).
+_OWN_SOLIDWORKS = {}
+
+
+def remember_own(pid):
+    """Запомнить процесс SolidWorks, запущенный харнессом: только такой start() дожидается, а не отказывается."""
+    try:
+        _OWN_SOLIDWORKS[pid] = psutil.Process(pid).create_time()
+    except psutil.Error:
+        pass
+
+
+def wait_own_exit(processes, timeout=60):
+    """Перед стартом сессии: SolidWorks, запущенный не тестами, — отказ; свой, ещё не завершившийся после stop(), —
+    дождаться.
+
+    23.09.2026 (T05): зависший SolidWorks stop() завершил через kill, но процесс ещё оставался в списке, и следующая
+    сессия отказалась стартовать с «SolidWorks уже запущен» — все остальные тесты прогона стали ошибками."""
+    foreign, own = [], []
+    for p in processes:
+        try:
+            created = p.create_time()
+        except psutil.NoSuchProcess:
+            continue  # уже завершился
+        except psutil.Error:
+            created = None  # не прочитать — считаем чужим
+        (own if created is not None and _OWN_SOLIDWORKS.get(p.pid) == created else foreign).append(p)
+    if foreign:
+        raise SessionRefused("SolidWorks уже запущен. Автотесты работают только в собственной сессии: "
+                             "сохраните работу и закройте SolidWorks.")
+    _, alive = psutil.wait_procs(own, timeout=timeout)
+    if alive:
+        raise SessionRefused(f"SolidWorks, запущенный автотестами (PID {[p.pid for p in alive]}), не завершился за "
+                             f"{timeout} с после остановки сессии: закройте его в диспетчере задач.")
 
 
 def solidworks_exe():
@@ -74,6 +110,25 @@ def rot_solidworks(pid):
         return None
 
 
+def inproc_keys(hive, inproc):
+    """InprocServer32 и его подразделы версий: версию сборки регистрация берёт из DLL (сверка SW API 23.09.2026, №6),
+    и стенд направляет на проверяемую DLL каждый, а не только «1.0.0.0». Раздела нет — только он сам (снимок его не
+    создаст)."""
+    keys = [inproc]
+    try:
+        with winreg.OpenKey(hive, inproc) as key:
+            i = 0
+            while True:
+                try:
+                    keys.append(inproc + "\\" + winreg.EnumKey(key, i))
+                except OSError:
+                    break
+                i += 1
+    except FileNotFoundError:
+        pass
+    return keys
+
+
 class SwSession:
     def __init__(self, run_dir, load_eskd=True, eskd_dll=None, settings=None, visible=True, use_probe=True, probe_flags=None,
                  launch="exe"):
@@ -83,6 +138,13 @@ class SwSession:
         self.load_eskd_on_start = load_eskd
         self.eskd_dll = Path(eskd_dll or paths.ADDIN_DLL)
         self.settings = dict(TEST_SETTINGS if settings is None else settings)
+        if not load_eskd:
+            # Сессия без надстройки: LoadAddIn не вызывается, но установка включает надстройку в автозагрузку
+            # SolidWorks, и она поднимается сама — из проверяемой DLL, с тестовыми настройками — и пишет свои свойства
+            # в каждый сохраняемый документ. Так 23.09.2026 сборщик фикстур записал в детали корпуса А «Контору»,
+            # «Проверил» и дробь материала. Служба выключается, как в eskd_muted; выгружать надстройку нельзя —
+            # SolidWorks при выходе запомнил бы её выключенной и у конструктора она перестала бы запускаться.
+            self.settings["ServiceEnabled"] = 0
         self.visible = visible
         self.use_probe = use_probe
         self.probe_flags = probe_flags
@@ -98,11 +160,17 @@ class SwSession:
         # регистрацию COM из HKCU. Ключ, которого нет, не создаётся.
         self.addin_uri = "file:///" + str(Path(self.eskd_dll).resolve()).replace("\\", "/")
         inproc = "Software\\Classes\\CLSID\\" + paths.ADDIN_CLSID + "\\InprocServer32"
-        keys = [(winreg.HKEY_CURRENT_USER, "HKCU", inproc), (winreg.HKEY_CURRENT_USER, "HKCU", inproc + "\\1.0.0.0"),
-                (winreg.HKEY_LOCAL_MACHINE, "HKLM", inproc), (winreg.HKEY_LOCAL_MACHINE, "HKLM", inproc + "\\1.0.0.0")]
+        keys = [(hive, prefix, key) for hive, prefix in ((winreg.HKEY_CURRENT_USER, "HKCU"), (winreg.HKEY_LOCAL_MACHINE, "HKLM"))
+                for key in inproc_keys(hive, inproc)]
         self.addin_com = [RegistrySnapshot(key, settings_backup_path(prefix + "\\" + key), {"CodeBase": self.addin_uri},
                                            ("CodeBase",), hive) for hive, prefix, key in keys
                           if prefix == "HKCU" or ctypes.windll.shell32.IsUserAnAdmin()]
+        # SolidWorks при выходе записывает, была ли надстройка загружена: AddinsStartup\{CLSID} = 1 — запускать её вместе
+        # с SolidWorks. Тест выгрузил надстройку (I06) — при выходе записывался 0: у конструктора она переставала
+        # запускаться сама, а следующие прогоны не могли её загрузить (23.09.2026). На время прогона флаг — 1, после
+        # выхода SolidWorks возвращается прежний.
+        startup = "Software\\SolidWorks\\AddinsStartup\\" + paths.ADDIN_CLSID
+        self.addin_startup = RegistrySnapshot(startup, settings_backup_path("HKCU\\" + startup))
         self.eskd_loaded = False
         self._opened = []
         #: Вызывается для каждого открытого или созданного документа (SwTestCase снимает базовый дамп свойств).
@@ -112,25 +180,26 @@ class SwSession:
 
     # ------------------------------------------------------------------ жизненный цикл
     def start(self):
-        if solidworks_processes():
-            raise SessionRefused("SolidWorks уже запущен. Автотесты работают только в собственной сессии: "
-                                 "сохраните работу и закройте SolidWorks.")
+        wait_own_exit(solidworks_processes())
         self.run_dir.mkdir(parents=True, exist_ok=True)
         try:
             self.registry.capture()
             for snapshot in self.addin_com:
                 snapshot.capture()
+            self.addin_startup.capture()
         except RegistryConflict as exc:
             raise SessionRefused(str(exc)) from exc
         if not any(snapshot.existed for snapshot in self.addin_com):
             self.registry.restore()
             for snapshot in self.addin_com:
                 snapshot.restore()
+            self.addin_startup.restore()
             raise SessionRefused("Надстройка ЕСКД не зарегистрирована: запустите окно установки или "
                                  "03_Макросы_и_Плагины/ESKD_Material_Sync_Addin/register_eskd.ps1.")
         for snapshot in self.addin_com:
             if snapshot.existed:
                 snapshot.apply({"CodeBase": self.addin_uri})
+        self.addin_startup.apply({"": 1})
         if self.registry.recovered:
             print(f"ESKD_Settings восстановлены из {self.registry.backup_path}: предыдущий прогон был прерван "
                   "до восстановления настроек пользователя", file=sys.stderr)
@@ -187,6 +256,7 @@ class SwSession:
         exe = solidworks_exe() if self.launch_mode != "com_only" else None
         if exe:
             proc = subprocess.Popen([exe])
+            remember_own(proc.pid)
             deadline = time.time() + timeout
             while time.time() < deadline and proc.poll() is None:
                 app = rot_solidworks(proc.pid)
@@ -198,8 +268,12 @@ class SwSession:
                 proc.wait(30)
             print(f"SolidWorks {exe} не появился в таблице запущенных объектов — запуск через COM", file=sys.stderr)
         raw = win32com.client.Dispatch("SldWorks.Application")
-        procs = solidworks_processes()
-        return raw, (procs[0].pid if procs else None)
+        # Не свой прежний процесс, который мог ещё не исчезнуть из списка после kill выше.
+        procs = [p for p in solidworks_processes() if p.pid not in _OWN_SOLIDWORKS]
+        pid = procs[0].pid if procs else None
+        if pid:
+            remember_own(pid)
+        return raw, pid
 
     def _wait_startup(self, timeout=120):
         t0 = time.time()
@@ -245,12 +319,18 @@ class SwSession:
                     p.kill()
                 except Exception:
                     pass
-            foreign = [p.pid for p in solidworks_processes() if p.pid != self.pid]
+            # kill только начинает завершение: не дождавшись, следующая сессия видит свой же процесс как чужой.
+            if own:
+                _, alive = psutil.wait_procs(own, timeout=30)
+                if alive:
+                    print(f"SolidWorks автотестов (PID {[p.pid for p in alive]}) не завершился после kill", file=sys.stderr)
+            foreign = [p.pid for p in solidworks_processes() if p.pid not in _OWN_SOLIDWORKS]
             if foreign:
                 print(f"SolidWorks с PID {foreign} запущен не тестами и оставлен работать", file=sys.stderr)
             self.registry.restore()
             for snapshot in self.addin_com:
                 snapshot.restore()
+            self.addin_startup.restore()
             if self._com_initialized:
                 pythoncom.CoUninitialize()
                 self._com_initialized = False
@@ -339,12 +419,14 @@ class SwSession:
             self.on_open(doc)
         return doc
 
-    def open(self, path, readonly=False):
+    def open(self, path, readonly=False, lightweight=False, extra_options=0):
+        """extra_options — другие флаги swOpenDocOptions_e, например com.OPEN_DONT_LOAD_HIDDEN."""
         path = str(path)
         if self.sw.GetOpenDocumentByName(path) is not None:
             raise RuntimeError(f"Документ уже открыт в сессии: {path}")
         err, warn = com.ref_int(), com.ref_int()
-        options = com.OPEN_SILENT | (com.OPEN_READONLY if readonly else 0)
+        options = com.OPEN_SILENT | (com.OPEN_READONLY if readonly else 0) | (com.OPEN_LIGHTWEIGHT if lightweight else 0) | \
+            extra_options
         doc = self.sw.OpenDoc6(path, com.doc_type_for(path), options, "", err, warn)
         if doc is None:
             raise RuntimeError(f"OpenDoc6 не открыл {path}: errors={err.value} warnings={warn.value}")

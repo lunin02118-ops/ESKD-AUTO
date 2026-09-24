@@ -1053,37 +1053,18 @@ namespace ESKD.MaterialSync
             return true;
         }
 
+        /// <summary>
+        /// «Сохранить» сохраняет только настройки: открытые документы не меняются (аудит 23.09.2026, SAVE-15, известная
+        /// Н-4) — раньше кнопка синхронизировала активный документ, и он становился изменённым, даже если это был чужой
+        /// эталон. Применить настройки к документу — «Применить сейчас».
+        /// </summary>
         private void BtnSave_Click(object sender, EventArgs e)
         {
             SaveSettings();
-            string syncProblem = null;
-            if (_swApp != null && chkServiceEnabled.Checked)
-            {
-                try
-                {
-                    ModelDoc2 doc = (ModelDoc2)_swApp.ActiveDoc;
-                    if (doc != null)
-                    {
-                        Sw.SyncReport report = Sw.SyncService.SyncExplicit(_swApp, doc);
-                        if (report.Failures > 0) syncProblem = report.ToString();
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Core.Log.Error("BtnSave: синхронизация активного документа", ex);
-                    syncProblem = ex.Message;
-                }
-            }
-            if (syncProblem != null)
-            {
-                MessageBox.Show("Настройки ЕСКД сохранены, но активный документ не синхронизирован: " + syncProblem +
-                    "\n\nПодробности в журнале %TEMP%\\eskd_material_sync.log.", "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                this.Close();
-                return;
-            }
             string statusMsg = chkServiceEnabled.Checked
                 ? "Настройки ЕСКД успешно сохранены и синхронизированы с макросами SWPlus!\n\nФоновая служба ЕСКД: ВКЛЮЧЕНА (автоматическое оформление активно)."
                 : "Настройки ЕСКД успешно сохранены и синхронизированы с макросами SWPlus!\n\nФоновая служба ЕСКД: ОТКЛЮЧЕНА (автоматические фоновые триггеры неактивны, доступен ручной запуск по кнопке «Синхронизировать»).";
+            statusMsg += "\n\nОткрытые документы не изменены. Применить настройки к активному документу — кнопка «Применить сейчас».";
             MessageBox.Show(statusMsg, "Настройки ЕСКД", MessageBoxButtons.OK, MessageBoxIcon.Information);
             this.Close();
         }

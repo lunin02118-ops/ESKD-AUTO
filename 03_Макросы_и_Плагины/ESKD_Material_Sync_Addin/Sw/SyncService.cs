@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using ESKD.MaterialSync.Core;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
@@ -25,13 +26,13 @@ namespace ESKD.MaterialSync.Sw
         public bool DryRun;
 
         /// <summary>
-        /// Обозначение — по имени файла, даже если в свойстве другое значение: конструктор сам отметил деталь в окне
-        /// обхода изделия (замечание владельца 22.09.2026: «Тело5» у тел, выделенных из многотельной детали).
+        /// Обозначение — по имени файла, даже если в свойстве другое значение: конструктор сам выбрал это в окне
+        /// «Проверить изделие» (замечание владельца 22.09.2026: «Тело5» у тел, выделенных из многотельной детали).
         /// </summary>
         public bool DesignationFromFile;
     }
 
-    /// <summary>Обозначение в свойствах расходится с именем файла — вопрос конструктору при обходе изделия.</summary>
+    /// <summary>Обозначение в свойствах расходится с именем файла — вопрос конструктору в окне «Проверить изделие».</summary>
     public sealed class DesignationMismatch
     {
         public string Current = "";
@@ -48,6 +49,8 @@ namespace ESKD.MaterialSync.Sw
         public string SkipReason = "";
         public readonly List<string> Operations = new List<string>();
         public readonly List<string> Warnings = new List<string>();
+        /// <summary>Что ещё ответить конструктору: тот же вопрос о материале в других исполнениях детали.</summary>
+        public readonly List<string> Hints = new List<string>();
 
         /// <summary>Обозначение введено не по имени файла — null, если совпадает или имя файла без обозначения.</summary>
         public DesignationMismatch Designation;
@@ -64,7 +67,7 @@ namespace ESKD.MaterialSync.Sw
             get
             {
                 foreach (StockFinding f in Stock)
-                    if (f.NeedsAssign || f.NeedsChoice) return true;
+                    if ((f.NeedsAssign || f.NeedsChoice) && !f.Kept) return true;
                 return false;
             }
         }
@@ -249,7 +252,9 @@ namespace ESKD.MaterialSync.Sw
                 w.Set("", number, expected);
             }
             else if (designation == Provenance.Manual && now.HasDesignation && !manual &&
-                     !string.Equals((current ?? "").Trim(), expected, StringComparison.Ordinal))
+                     !string.Equals((current ?? "").Trim(), expected, StringComparison.Ordinal) &&
+                     // «Оставить как есть» в окне «Проверить изделие» — ответ помнит сама модель; сменится имя файла — спросим снова.
+                     !ReviewAccepted.Contains(w.Raw("", ReviewAccepted.PropertyName), ReviewAccepted.Designation((current ?? "").Trim(), expected)))
             {
                 string warning = string.Format("Обозначение «{0}» не совпадает с именем файла «{1}» и оставлено без изменений",
                     current, now.BaseName);
@@ -297,8 +302,8 @@ namespace ESKD.MaterialSync.Sw
                         cfgExpected = expected;
                     }
                     w.Set(cfg, number, cfgExpected);
-                    // «Исполнение» — как галочки MProp: «1» («Исполнение» + «Из») — номер из имени конфигурации, «2» — номер
-                    // вписан, «0» — без исполнения; номер из имени файла уже в обозначении документа — «0», иначе MProp удвоит
+                    // «Исполнение» — как галочки MProp: «1» («Исполнение» + «Из») — двузначный номер из имени конфигурации,
+                    // «2» — номер вписан, «0» — без исполнения; номер из имени файла уже в обозначении документа — «0», иначе MProp удвоит
                     // суффикс (FrmMProp:2677–2690, прогон К-1 A-20). Ставится при каждой синхронизации, чтобы конструктору не
                     // отмечать галочки в MProp вручную (замечание владельца 22.09.2026); у детали БЧ — только в пустое.
                     bool fromConfiguration = recognized && !isBase && !string.IsNullOrEmpty(execution);
@@ -491,7 +496,18 @@ namespace ESKD.MaterialSync.Sw
             foreach (string cfg in w.ConfigurationNames())
             {
                 string db;
-                string material = MaterialName(part, model, cfg, out db);
+                List<string> mixed = new List<string>();
+                bool known;
+                string material = ActualMaterial(part, model, cfg, out db, mixed, out known);
+                if (!known)
+                {
+                    // Материал этого исполнения виден только на его телах, когда оно активно: не стирать «Материал_Строка»
+                    // по телам чужого исполнения (ревью 23.09.2026).
+                    Log.Info("Конфигурация «" + cfg + "»: материал тел не узнать без переключения — «Материал_Строка» не тронута");
+                    continue;
+                }
+                if (mixed.Count > 1)
+                    report.Warnings.Add(MixedWarning(cfg, material, mixed));
                 MaterialRecord record = null;
                 if (material != null)
                 {
@@ -561,6 +577,93 @@ namespace ESKD.MaterialSync.Sw
                 "Запустите настройку рабочего места.", cfg, database);
         }
 
+        /// <summary>
+        /// Фактический материал конфигурации: свой материал тела перекрывает материал детали, и массу SolidWorks считает по
+        /// нему. Один на все тела — он (db — его библиотека); у тел своего нет — материал детали <see cref="MaterialName"/>;
+        /// разные — материал детали, как раньше, а различающиеся складываются в mixed («» — тела без материала). Раньше графа 3,
+        /// «Материал_Строка», запись БЧ и проверка «материал не назначен» читали только материал детали (сверка SW API
+        /// 23.09.2026, №33). Что писать в графу 3 у детали из разных материалов, решает владелец (MAT-15).
+        /// </summary>
+        internal static string ActualMaterial(PartDoc part, ModelDoc2 model, string cfg, out string db, List<string> mixed)
+        {
+            bool known;
+            return ActualMaterial(part, model, cfg, out db, mixed, out known);
+        }
+
+        /// <param name="known">false — материал исполнения cfg не узнать без переключения: у детали его нет, тела видны только
+        /// активной конфигурации, а материалы тел в детали в ходу (ревью 23.09.2026). Тогда «Материал_Строка» не трогают, а
+        /// проверка не пишет «не назначен».</param>
+        internal static string ActualMaterial(PartDoc part, ModelDoc2 model, string cfg, out string db, List<string> mixed, out bool known)
+        {
+            string partDb;
+            string whole = MaterialName(part, model, cfg, out partDb);
+            db = partDb;
+            known = true;
+            List<string> own = new List<string>();
+            List<string> dbs = new List<string>();
+            List<string> ownActive = new List<string>();
+            bool belongs;
+            try
+            {
+                // GetBodies2 отдаёт тела активной конфигурации: у другого исполнения тела могут быть свои (ревью 23.09.2026).
+                // Материал тела у технической производной — как у её исполнения-родителя, так же, как MaterialName.
+                Configuration active = model.GetActiveConfiguration() as Configuration;
+                string activeName = active != null ? active.Name ?? "" : "";
+                belongs = BodyMaterials.BodiesBelongTo(cfg, activeName);
+                string bodyCfg = StockService.MaterialConfiguration(model, cfg);
+                object[] bodies = part.GetBodies2((int)swBodyType_e.swSolidBody, false) as object[];
+                if (bodies != null)
+                    foreach (object o in bodies)
+                    {
+                        Body2 body = o as Body2;
+                        if (body == null) continue;
+                        string bodyDb;
+                        own.Add(OwnMaterial(body, bodyCfg, out bodyDb));
+                        dbs.Add(bodyDb);
+                        if (!belongs && activeName.Length > 0) ownActive.Add(OwnMaterial(body, activeName, out bodyDb));
+                    }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Материал тел " + cfg, ex);
+                return whole;
+            }
+            string actual = BodyMaterials.Actual(own, ownActive, whole ?? "", belongs, mixed, out known);
+            if (string.IsNullOrEmpty(actual)) return null;
+            if (!string.Equals(actual, (whole ?? "").Trim(), StringComparison.Ordinal))
+            {
+                int at = own.IndexOf(actual);
+                if (at >= 0) db = dbs[at];
+            }
+            return actual;
+        }
+
+        /// <summary>Свой материал тела в конфигурации; «» — своего нет (материал детали).</summary>
+        internal static string OwnMaterial(Body2 body, string cfg, out string db)
+        {
+            db = "";
+            try
+            {
+                string name = body.GetMaterialPropertyName(cfg, out db);
+                if (string.IsNullOrWhiteSpace(name) || name.IndexOf("<не указан>", StringComparison.OrdinalIgnoreCase) >= 0) return "";
+                return name.Trim();
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Материал тела " + cfg, ex);
+                return "";
+            }
+        }
+
+        /// <summary>Замечание: у тел разные материалы — в графе 3 материал детали, масса — по материалам тел (MAT-15).</summary>
+        internal static string MixedWarning(string cfg, string whole, List<string> mixed)
+        {
+            string list = string.Join("», «", mixed.Select(m => m.Length == 0 ? "без материала" : m).ToArray());
+            return string.Format("Конфигурация «{0}»: у тел разные материалы («{1}») — в графе 3 и «Материал_Строка» {2}, " +
+                "а масса считается по материалам тел", cfg, list,
+                string.IsNullOrEmpty(whole) ? "пусто" : "материал детали «" + whole + "»");
+        }
+
         /// <summary>Материал SolidWorks этой конфигурации (производная — родительской) или null; общий для сохранения и «Детали БЧ» (Д-41).</summary>
         internal static string MaterialName(PartDoc part, ModelDoc2 model, string cfg, out string db)
         {
@@ -606,9 +709,13 @@ namespace ESKD.MaterialSync.Sw
             try
             {
                 List<StockFinding> findings = StockService.Inspect(app, doc);
+                // Ответ «Оставить как есть» (в этом сеансе или в свойстве модели) снимает вопрос: без этого конструктору
+                // при каждом сохранении предлагали бы выбрать материал, который он оставил (ревью 23.09.2026).
+                StockService.PendingDecisions(DocInfo.PathOf(doc), findings, StockService.Accepted(doc));
                 report.Stock.AddRange(findings);
                 foreach (StockFinding finding in findings)
                 {
+                    if (finding.Kept) continue;
                     string message = StockService.Message(finding);
                     if (message.Length > 0) report.Warnings.Add(message);
                 }

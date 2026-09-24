@@ -112,6 +112,8 @@ namespace ESKD.MaterialSync.Sw
                 if (string.IsNullOrWhiteSpace(who)) who = Environment.UserName;
                 MarkIssued(workbook, now.ToString("dd.MM.yyyy HH:mm", CultureInfo.InvariantCulture) + ", " + who);
                 string report = Report(product, cipher, assembly, workbook, sheets.Select(p => p.Value).ToList(), who, now);
+                // Изделие выдано: кнопка «Новая ревизия» его чертежей должна стать доступной сразу, а не через 10 с.
+                RevisionService.ForgetIssued();
                 LastOutcome = string.Join("|", new[] { "ok", report, sheets.Count.ToString(CultureInfo.InvariantCulture), product });
                 Log.Info("Готово к производству: " + LastOutcome);
                 Status(app, "ЕСКД: изделие готово к производству");
@@ -213,18 +215,21 @@ namespace ESKD.MaterialSync.Sw
             sb.AppendLine("Сборка:   " + Path.GetFileName(assembly));
             sb.AppendLine("Отметил:  " + who + ", " + now.ToString("dd.MM.yyyy HH:mm", CultureInfo.GetCultureInfo("ru-RU")));
             sb.AppendLine("Папка:    " + product);
+            // До какой строки дошёл журнал изменений: правка выданного после этого без новой строки журнала — замечание
+            // проверки изделия (аудит 23.09.2026, CHK-13). Журнал не прочитан — номера нет, ревизии сверяются по дате.
+            sb.AppendLine(IssueRecord.JournalText(ChangeLog.LastNumber(ChangeLog.Path(product))));
             sb.AppendLine();
             sb.AppendLine("Выдано (SHA-256):");
             foreach (string file in pdfs.Concat(new[] { workbook }))
                 sb.AppendLine("  " + Checksum(file) + "  " + Path.GetFileName(file));
             sb.AppendLine();
-            sb.AppendLine("Документы изделия:");
+            sb.AppendLine(IssueRecord.DocumentsTitle);
             string models = Path.Combine(product, LzkNaming.ModelsFolder);
             if (Directory.Exists(models))
                 foreach (string model in Directory.GetFiles(models, "*.*", SearchOption.AllDirectories)
-                    .Where(f => f.EndsWith(".sldprt", StringComparison.OrdinalIgnoreCase) ||
-                                f.EndsWith(".sldasm", StringComparison.OrdinalIgnoreCase) ||
-                                f.EndsWith(".slddrw", StringComparison.OrdinalIgnoreCase))
+                    .Where(f => (f.EndsWith(".sldprt", StringComparison.OrdinalIgnoreCase) ||
+                                 f.EndsWith(".sldasm", StringComparison.OrdinalIgnoreCase) ||
+                                 f.EndsWith(".slddrw", StringComparison.OrdinalIgnoreCase)) && IssueRecord.IsDocumentFile(f))
                     .OrderBy(f => f, StringComparer.CurrentCultureIgnoreCase))
                     sb.AppendLine("  " + Checksum(model) + "  " + Path.GetFileName(model));
             foreach (string folder in new[] { ExportNaming.PdfDirectory(product), ExportNaming.LaserDirectory(product), ExportNaming.TubeDirectory(product) })

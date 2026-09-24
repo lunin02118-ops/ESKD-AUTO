@@ -13,6 +13,8 @@ namespace ESKD.MaterialSync.Sw
     /// У моделей без свойства «Операции» галочки предложены по признакам модели — строка помечена «(авто)».
     /// Слева в строке — миниатюра модели, справа — крупный эскиз выделенной строки (З-6): по одним шифрам
     /// расцеховку проверять трудно. Миниатюры грузятся в фоне и окно не задерживают.
+    /// Последний столбец «В модель» (решение владельца 23.09.2026): модель изделия пишется всегда, модель другой папки
+    /// заказа — если галочка стоит (по умолчанию стоит), модель другого заказа — никогда, только в книгу.
     /// </summary>
     public sealed class LzkOperationsForm : Form
     {
@@ -29,8 +31,13 @@ namespace ESKD.MaterialSync.Sw
         private readonly NumericUpDown _quantity = new NumericUpDown();
         private readonly DateTimePicker _deadline = new DateTimePicker();
         private readonly TextBox _color = new TextBox();
+        private readonly Label _summary = new Label();
+        private int _writeColumn;
 
         public Dictionary<string, string> Result { get; private set; }
+
+        /// <summary>Модели, у которых конструктор снял «В модель»: их операции — только в книгу.</summary>
+        public HashSet<string> BookOnly { get; private set; }
 
         public LzkOperationsForm(IList<LzkItem> items, IDictionary<string, ModelTraits> traits)
             : this(items, traits, null)
@@ -51,6 +58,7 @@ namespace ESKD.MaterialSync.Sw
             _inputs = inputs;
             _items = items.OrderBy(i => i.IsAssembly ? 0 : 1).ThenBy(i => i.Designation, StringComparer.CurrentCultureIgnoreCase).ToList();
             Result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            BookOnly = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             Text = "ЕСКД: Ведомость ЛЗК — операции";
             StartPosition = FormStartPosition.CenterParent;
@@ -62,10 +70,11 @@ namespace ESKD.MaterialSync.Sw
             Label hint = new Label
             {
                 Dock = DockStyle.Top,
-                Height = 40,
+                Height = 48,
                 Padding = new Padding(8, 6, 8, 0),
                 Text = "Отметьте операции изготовления. Строки «(авто)» заполнены по модели — проверьте их. " +
-                       "Выбор записывается в свойство «Операции» моделей изделия и сохраняется."
+                       "Операции идут в книгу и в свойство «Операции» моделей (модель сохраняется). «В модель»: модели изделия " +
+                       "записываются всегда, модели другой папки заказа — если галочка стоит, модели других заказов — никогда."
             };
 
             FlowLayoutPanel order = new FlowLayoutPanel
@@ -129,6 +138,13 @@ namespace ESKD.MaterialSync.Sw
                 DataGridViewCheckBoxColumn c = new DataGridViewCheckBoxColumn { HeaderText = op, Width = 82, SortMode = DataGridViewColumnSortMode.NotSortable };
                 _grid.Columns.Add(c);
             }
+            _writeColumn = _grid.Columns.Add(new DataGridViewCheckBoxColumn
+            {
+                HeaderText = "В модель",
+                Width = 70,
+                SortMode = DataGridViewColumnSortMode.NotSortable,
+                ToolTipText = "Записать операции и габарит в файл модели и сохранить его. Снята — только в книгу"
+            });
 
             foreach (LzkItem item in _items)
             {
@@ -136,17 +152,22 @@ namespace ESKD.MaterialSync.Sw
                 if (!traits.TryGetValue(item.Path, out t)) t = new ModelTraits { IsAssembly = item.IsAssembly };
                 bool auto = string.IsNullOrWhiteSpace(item.Operations);
                 List<string> chosen = auto ? LzkOperations.Suggest(t) : LzkOperations.Parse(item.Operations);
-                object[] values = new object[FirstOperationColumn + LzkOperations.All.Length];
+                object[] values = new object[FirstOperationColumn + LzkOperations.All.Length + 1];
                 values[0] = null;
                 values[1] = item.Designation;
                 values[2] = item.Name.Length > 0 ? item.Name : System.IO.Path.GetFileNameWithoutExtension(item.Path);
                 values[3] = auto ? "(авто)" : "";
                 for (int i = 0; i < LzkOperations.All.Length; i++)
                     values[FirstOperationColumn + i] = chosen.Contains(LzkOperations.All[i]);
+                values[_writeColumn] = item.Place != LzkPlace.OtherOrder;
                 int row = _grid.Rows.Add(values);
                 _grid.Rows[row].Tag = item;
                 _grid.Rows[row].Cells[1].ToolTipText = item.Path;
                 if (auto) _grid.Rows[row].DefaultCellStyle.BackColor = Color.FromArgb(255, 248, 225);
+                DataGridViewCell write = _grid.Rows[row].Cells[_writeColumn];
+                write.ReadOnly = item.Place != LzkPlace.Elsewhere;
+                write.ToolTipText = WriteHint(item);
+                if (write.ReadOnly) write.Style.BackColor = SystemColors.Control;
                 // Операции, которых нет в списке (введены вручную), сохраняются как есть.
                 List<string> extra = chosen.Where(o => Array.IndexOf(LzkOperations.All, o) < 0).ToList();
                 if (extra.Count > 0) _grid.Rows[row].Cells[3].ToolTipText = "Также: " + string.Join("; ", extra.ToArray());
@@ -164,6 +185,10 @@ namespace ESKD.MaterialSync.Sw
             ok.Click += OnOk;
             bottom.Controls.Add(cancel);
             bottom.Controls.Add(ok);
+            _summary.AutoSize = true;
+            _summary.Padding = new Padding(0, 6, 12, 0);
+            bottom.Controls.Add(_summary);
+            UpdateSummary();
             AcceptButton = ok;
             CancelButton = cancel;
 
@@ -223,6 +248,72 @@ namespace ESKD.MaterialSync.Sw
             {
                 _mirroring = false;
             }
+            if (e.ColumnIndex == _writeColumn) UpdateSummary();
+        }
+
+        private static string WriteHint(LzkItem item)
+        {
+            switch (item.Place)
+            {
+                case LzkPlace.Product:
+                    return "Модель изделия: операции и габарит записываются в неё";
+                case LzkPlace.OtherOrder:
+                    return "Модель другого заказа: только в книгу, её файл не меняется";
+                default:
+                    return "Модель вне папки изделия: снимите галочку — операции будут только в книге";
+            }
+        }
+
+        private static bool Checked(DataGridViewCell cell)
+        {
+            return cell.Value is bool && (bool)cell.Value;
+        }
+
+        private DataGridViewRow RowOf(string path)
+        {
+            foreach (DataGridViewRow row in _grid.Rows)
+            {
+                LzkItem item = row.Tag as LzkItem;
+                if (item != null && string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase)) return row;
+            }
+            return null;
+        }
+
+        /// <summary>Стоит ли у модели «В модель».</summary>
+        public bool WritesToModel(string path)
+        {
+            DataGridViewRow row = RowOf(path);
+            return row != null && Checked(row.Cells[_writeColumn]);
+        }
+
+        /// <summary>Может ли конструктор поменять «В модель» у модели (только другая папка заказа и вне заказов).</summary>
+        public bool CanChooseWrite(string path)
+        {
+            DataGridViewRow row = RowOf(path);
+            return row != null && !row.Cells[_writeColumn].ReadOnly;
+        }
+
+        /// <summary>Итог под таблицей: сколько моделей получат запись, сколько — только книга.</summary>
+        public string Summary
+        {
+            get { return _summary.Text; }
+        }
+
+        private void UpdateSummary()
+        {
+            HashSet<string> write = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> book = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            HashSet<string> other = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (DataGridViewRow row in _grid.Rows)
+            {
+                LzkItem item = row.Tag as LzkItem;
+                if (item == null) continue;
+                if (item.Place == LzkPlace.OtherOrder) other.Add(item.Path);
+                else if (Checked(row.Cells[_writeColumn])) write.Add(item.Path);
+                else book.Add(item.Path);
+            }
+            _summary.Text = "В модели: " + write.Count + ".  Только в книгу: " + (book.Count + other.Count) +
+                (other.Count > 0 ? " (другой заказ — " + other.Count + ")" : "");
         }
 
         /// <summary>Крупный эскиз и подпись строки — справа от таблицы.</summary>
@@ -322,9 +413,11 @@ namespace ESKD.MaterialSync.Sw
         {
             _grid.EndEdit();
             List<string> empty = new List<string>();
+            BookOnly.Clear();
             foreach (DataGridViewRow row in _grid.Rows)
             {
                 LzkItem item = (LzkItem)row.Tag;
+                if (item.Place != LzkPlace.OtherOrder && !Checked(row.Cells[_writeColumn])) BookOnly.Add(item.Path);
                 List<string> ops = new List<string>();
                 for (int i = 0; i < LzkOperations.All.Length; i++)
                 {

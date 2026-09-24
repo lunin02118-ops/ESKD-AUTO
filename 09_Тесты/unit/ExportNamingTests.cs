@@ -106,6 +106,12 @@ namespace ESKD.Tests
             Assert.IsFalse(ExportLog.IsBenignSkip(skip.Value), "несохранённый PDF — несделанная выгрузка");
             Assert.IsTrue(ExportLog.IsBenignSkip(ExportLog.SplitSkip(back.Skipped[1]).Value), "у детали без чертежа PDF нет по делу");
             Assert.IsTrue(ExportLog.IsBenignSkip("документ выдан в производство, оформите новую ревизию"), "выданное не переписывается");
+            // Подпись исполнения: имя конфигурации с «<», «>» и точкой (ревью 23.09.2026).
+            Assert.AreEqual("Труба", ExportLog.DocumentName("Труба.sldprt [00<Как обработано>]"), "угловые скобки");
+            Assert.AreEqual("Труба", ExportLog.DocumentName("Труба.SLDPRT [1.5]"), "точка в имени исполнения");
+            Assert.AreEqual("ПРТИ.468211.161 Лист", ExportLog.DocumentName("ПРТИ.468211.161 Лист.sldprt"), "без исполнения");
+            Assert.AreEqual("ПРТИ.468211.100 СБ Опора", ExportLog.DocumentName("ПРТИ.468211.100 СБ Опора.sldasm"), "сборка");
+            Assert.AreEqual("ПРТИ.468211.221-01 Стойка", ExportLog.DocumentName("ПРТИ.468211.221-01 Стойка.igs"), "файл выдачи");
 
             ExportLog legacy = ExportLog.Parse("Выгружено (SHA-256):\r\n  --------  А.pdf\r\n");
             Assert.AreEqual(1, legacy.Files.Count, "строка без суммы — файл есть");
@@ -158,6 +164,157 @@ namespace ESKD.Tests
             string[] blank = { "0", "SECTION", "2", "ENTITIES", "0", "ENDSEC" };
             using (StringReader empty = new StringReader(string.Join(Environment.NewLine, blank)))
                 Assert.IsFalse(DxfFrame.Measure(empty, out w2, out l2), "пустая развёртка — не рамка");
+        }
+
+        /// <summary>Рамка тела чертежа «ширинахдлина» в целых мм, как в имени DXF; пусто — рамки нет.</summary>
+        private static string Frame(string[] header, params string[] entities)
+        {
+            List<string> dxf = new List<string>();
+            if (header.Length > 0)
+            {
+                dxf.AddRange(new[] { "0", "SECTION", "2", "HEADER" });
+                dxf.AddRange(header);
+                dxf.AddRange(new[] { "0", "ENDSEC" });
+            }
+            dxf.AddRange(new[] { "0", "SECTION", "2", "ENTITIES" });
+            dxf.AddRange(entities);
+            dxf.AddRange(new[] { "0", "ENDSEC", "0", "EOF" });
+            double width, length;
+            using (StringReader reader = new StringReader(string.Join(Environment.NewLine, dxf.ToArray())))
+                if (!DxfFrame.Measure(reader, out width, out length)) return "";
+            Assert.IsTrue(Math.Abs(width - Math.Round(width)) < 0.005 && Math.Abs(length - Math.Round(length)) < 0.005,
+                "рамка точная, а не приближённая: " + width + " x " + length);
+            return ExportNaming.Round(width) + "х" + ExportNaming.Round(length);
+        }
+
+        private static string[] Line(double x1, double y1, double x2, double y2)
+        {
+            return new[] { "0", "LINE", "8", "0", "10", N(x1), "20", N(y1), "30", "0.0", "11", N(x2), "21", N(y2), "31", "0.0" };
+        }
+
+        private static string N(double value)
+        {
+            return value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        private static string[] Join(params string[][] parts)
+        {
+            List<string> all = new List<string>();
+            foreach (string[] part in parts) all.AddRange(part);
+            return all.ToArray();
+        }
+
+        public static void Test_Dxf_frame_takes_arcs_and_circles_by_their_outline()
+        {
+            // Круглая деталь: одна окружность. Центр — не рамка: раньше выходило «развёртка пустая», и DXF не делался.
+            Assert.AreEqual("150х150", Frame(new string[0], "0", "CIRCLE", "10", "500.0", "20", "300.0", "30", "0.0", "40", "75.0"),
+                "диск Ø150 далеко от начала координат");
+            // Планка с полукруглыми торцами: радиусы — часть длины (было 80х200 вместо 80х280, проверено на SolidWorks 2025).
+            Assert.AreEqual("80х280", Frame(new string[0], Join(Line(-100, -40, 100, -40), Line(100, 40, -100, 40),
+                new[] { "0", "ARC", "10", "100.0", "20", "0.0", "40", "40.0", "50", "270.0", "51", "90.0" },
+                new[] { "0", "ARC", "10", "-100.0", "20", "0.0", "40", "40.0", "50", "90.0", "51", "270.0" })), "планка R40");
+            // SolidWorks пишет часть дуг с нормалью (0, 0, −1): их X в своей системе координат — зеркальный. Торец с одной
+            // стороны: без зеркала дуга легла бы с другого конца, и вышло бы 80х200 (ревью 23.09.2026 — симметричная
+            // планка этого не ловила).
+            Assert.AreEqual("40х80", Frame(new string[0], Join(Line(-100, -40, -100, 40),
+                new[] { "0", "ARC", "10", "100.0", "20", "0.0", "40", "40.0", "210", "0.0", "220", "0.0", "230", "-1.0", "50", "90.0", "51", "270.0" })),
+                "дуга с зеркальной системой координат");
+            // Полный оборот с округлением записи — окружность, а не точка.
+            Assert.AreEqual("150х150", Frame(new string[0], "0", "ARC", "10", "0.0", "20", "0.0", "40", "75.0", "50", "0.0",
+                "51", "360.0000000001"), "дуга 0…360 с округлением");
+        }
+
+        public static void Test_Dxf_frame_is_smallest_rectangle_not_axes()
+        {
+            // Пластина 200х100, построенная под 30°: SolidWorks кладёт развёртку в DXF наискось, а его граничная рамка —
+            // 200х100 (проверено на SolidWorks 2025). По осям DXF выходило 187х223.
+            double a = Math.PI / 6;
+            double[,] corners = { { -100, -50 }, { 100, -50 }, { 100, 50 }, { -100, 50 } };
+            List<string[]> lines = new List<string[]>();
+            for (int i = 0; i < 4; i++)
+            {
+                double x1 = corners[i, 0], y1 = corners[i, 1], x2 = corners[(i + 1) % 4, 0], y2 = corners[(i + 1) % 4, 1];
+                lines.Add(Line(x1 * Math.Cos(a) - y1 * Math.Sin(a) + 1000, x1 * Math.Sin(a) + y1 * Math.Cos(a),
+                    x2 * Math.Cos(a) - y2 * Math.Sin(a) + 1000, x2 * Math.Sin(a) + y2 * Math.Cos(a)));
+            }
+            Assert.AreEqual("100х200", Frame(new string[0], Join(lines.ToArray())), "пластина под 30°");
+            // Косынка — прямоугольный треугольник: рамка по катетам и по гипотенузе равны по площади; берётся та, что
+            // ближе к осям чертежа, — по катетам.
+            Assert.AreEqual("100х200", Frame(new string[0], Join(Line(0, 0, 200, 0), Line(200, 0, 0, 100), Line(0, 100, 0, 0))),
+                "косынка по катетам");
+        }
+
+        public static void Test_Dxf_frame_reads_polylines_splines_ellipses_and_blocks()
+        {
+            // Та же планка одной замкнутой полилинией: дуги торцов — выпуклостью 42 (1 — полуокружность против часовой).
+            Assert.AreEqual("80х280", Frame(new string[0], "0", "LWPOLYLINE", "90", "4", "70", "1",
+                "10", "-100.0", "20", "-40.0", "10", "100.0", "20", "-40.0", "42", "1.0",
+                "10", "100.0", "20", "40.0", "10", "-100.0", "20", "40.0", "42", "1.0"), "полилиния с дугами");
+            // Сплайн: кривая проходит ниже средней управляющей точки, а коды 12/22, 13/23 — касательные, не точки.
+            // Раньше касательные тянули рамку к началу координат: 1000 мм вместо 50х100.
+            Assert.AreEqual("50х100", Frame(new string[0], Join(Line(1000, 1000, 1100, 1000),
+                new[] { "0", "SPLINE", "70", "8", "71", "2", "72", "6", "73", "3", "74", "0",
+                    "12", "0.447", "22", "0.894", "13", "0.447", "23", "-0.894",
+                    "40", "0.0", "40", "0.0", "40", "0.0", "40", "1.0", "40", "1.0", "40", "1.0",
+                    "10", "1000.0", "20", "1000.0", "10", "1050.0", "20", "1100.0", "10", "1100.0", "20", "1000.0" })),
+                "сплайн — по кривой, не по управляющим точкам");
+            // Эллипс: 11/21 — вектор большой полуоси от центра, а не точка.
+            Assert.AreEqual("100х200", Frame(new string[0], "0", "ELLIPSE", "10", "300.0", "20", "300.0", "11", "100.0", "21", "0.0",
+                "40", "0.5", "41", "0.0", "42", "6.283185307179586"), "эллипс 200х100");
+            Assert.AreEqual("100х200", Frame(new string[0], "0", "ELLIPSE", "10", "300.0", "20", "300.0", "11", "100.0", "21", "0.0",
+                "40", "0.5", "41", "0.0", "42", "6.2831853072"), "эллипс с 2π, округлённым до 10 знаков");
+            // Контур внутри блока: вставка с масштабом 2.
+            string[] blocks = { "0", "SECTION", "2", "BLOCKS", "0", "BLOCK", "2", "Контур", "10", "0.0", "20", "0.0" };
+            List<string> dxf = new List<string>(blocks);
+            dxf.AddRange(Join(Line(0, 0, 10, 0), Line(10, 0, 10, 20), Line(10, 20, 0, 20), Line(0, 20, 0, 0)));
+            dxf.AddRange(new[] { "0", "ENDBLK", "0", "ENDSEC", "0", "SECTION", "2", "ENTITIES",
+                "0", "INSERT", "2", "Контур", "10", "500.0", "20", "500.0", "41", "2.0", "42", "2.0", "0", "ENDSEC", "0", "EOF" });
+            double width, length;
+            using (StringReader reader = new StringReader(string.Join(Environment.NewLine, dxf.ToArray())))
+                Assert.IsTrue(DxfFrame.Measure(reader, out width, out length), "блок измерен");
+            Assert.AreEqual("20х40", ExportNaming.Round(width) + "х" + ExportNaming.Round(length), "контур из блока с масштабом");
+            // Блок с базовой точкой (10, 0), вставка под 90° массивом в два столбца через 30 и отрезок рядом: копии
+            // ложатся в X −20…0, Y −10…0 и 20…30, с отрезком x = 60 — рамка 80х40. Без базы, поворота или массива — иная.
+            dxf = new List<string> { "0", "SECTION", "2", "BLOCKS", "0", "BLOCK", "2", "Полоса", "10", "10.0", "20", "0.0" };
+            dxf.AddRange(Join(Line(0, 0, 10, 0), Line(10, 0, 10, 20), Line(10, 20, 0, 20), Line(0, 20, 0, 0)));
+            dxf.AddRange(new[] { "0", "ENDBLK", "0", "ENDSEC", "0", "SECTION", "2", "ENTITIES",
+                "0", "INSERT", "2", "Полоса", "10", "0.0", "20", "0.0", "50", "90.0", "70", "2", "44", "30.0" });
+            dxf.AddRange(Line(60, -10, 60, 30));
+            dxf.AddRange(new[] { "0", "ENDSEC", "0", "EOF" });
+            using (StringReader reader = new StringReader(string.Join(Environment.NewLine, dxf.ToArray())))
+                Assert.IsTrue(DxfFrame.Measure(reader, out width, out length), "массив блока измерен");
+            Assert.AreEqual("40х80", ExportNaming.Round(width) + "х" + ExportNaming.Round(length), "база, поворот и массив вставки");
+            // Чертёж в дюймах ($INSUNITS = 1): в имени — миллиметры.
+            Assert.AreEqual("254х508", Frame(new[] { "9", "$INSUNITS", "70", "1" }, Join(Line(0, 0, 20, 0), Line(20, 0, 20, 10),
+                Line(20, 10, 0, 10), Line(0, 10, 0, 0))), "дюймы в мм");
+        }
+
+        public static void Test_Stale_dxf_is_same_document_and_revision_under_other_name()
+        {
+            const string stem = "ПРТИ.468211.161 Лист";
+            const string now = stem + "_S3мм_2шт_100х250.dxf";
+            Assert.IsTrue(ExportNaming.IsStaleDxf(stem + "_S3мм_1шт_100х200.dxf", stem, 0, now), "другая рамка и количество");
+            Assert.IsTrue(ExportNaming.IsStaleDxf(stem + "_S2.5мм_100х250.dxf", stem, 0, now), "другая толщина, без количества");
+            Assert.IsFalse(ExportNaming.IsStaleDxf(now.ToUpperInvariant(), stem, 0, now), "только что выгруженный");
+            Assert.IsFalse(ExportNaming.IsStaleDxf(stem + "_S3мм_1шт_100х200_Изм1.dxf", stem, 0, now), "другая ревизия");
+            Assert.IsTrue(ExportNaming.IsStaleDxf(stem + "_S3мм_1шт_100х200_Изм1.dxf", stem, 1, stem + "_S3мм_2шт_100х250_Изм1.dxf"),
+                "та же ревизия");
+            Assert.IsFalse(ExportNaming.IsStaleDxf(stem + "_S3мм_1шт_100х200_Изм2.dxf", stem, 1, now), "ревизия 2 — не 1");
+            Assert.IsFalse(ExportNaming.IsStaleDxf("ПРТИ.468211.161 Лист10_S3мм_1шт_100х200.dxf", stem, 0, now), "другой документ");
+            Assert.IsFalse(ExportNaming.IsStaleDxf("ПРТИ.468211.161-01 Лист_S3мм_1шт_100х200.dxf", "ПРТИ.468211.161", 0, now),
+                "исполнение со своим обозначением");
+            Assert.IsFalse(ExportNaming.IsStaleDxf(stem + ".pdf", stem, 0, now), "не развёртка");
+            Assert.IsFalse(ExportNaming.IsStaleDxf("_замер_0a1b.dxf", stem, 0, now), "временный файл");
+        }
+
+        public static void Test_Frame_side_rounds_up()
+        {
+            // Заготовка в имени не меньше детали (ТЗ-02 Т-28, «целые»): 200,4 — «201»; сотые — погрешность замера.
+            Assert.AreEqual("201", ExportNaming.Round(200.4), "вверх");
+            Assert.AreEqual("200", ExportNaming.Round(200.0), "целое остаётся");
+            Assert.AreEqual("200", ExportNaming.Round(199.9995), "замер дуги ломаной");
+            Assert.AreEqual("200", ExportNaming.Round(200.004), "сотые — не деталь");
+            Assert.AreEqual("23", ExportNaming.Round(22.5), "половина — вверх");
         }
 
         public static void Test_Revision_and_archive()

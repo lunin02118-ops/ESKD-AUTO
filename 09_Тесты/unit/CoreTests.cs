@@ -6,12 +6,28 @@ namespace ESKD.Tests
 {
     public static class ParserTests
     {
+        public static void Test_Technical_configuration_names()
+        {
+            // Сверка SW API 23.09.2026, №40: техническая производная — не исполнение, материал ставится её родителю.
+            Assert.IsTrue(DesignationParser.IsTechnicalConfigurationName("00SM-FLAT-PATTERN"), "развёртка");
+            Assert.IsTrue(DesignationParser.IsTechnicalConfigurationName("По умолчанию<Как сварено>"), "как сварено");
+            Assert.IsTrue(DesignationParser.IsTechnicalConfigurationName("По умолчанию<Как обработанный>SM-FLAT-PATTERN"),
+                "развёртка обработанной");
+            Assert.IsFalse(DesignationParser.IsTechnicalConfigurationName("01"), "исполнение");
+            Assert.IsFalse(DesignationParser.IsTechnicalConfigurationName("Покраска"), "конструкторская конфигурация");
+            Assert.IsFalse(DesignationParser.IsTechnicalConfigurationName("00"), "базовое исполнение");
+            Assert.IsFalse(DesignationParser.IsTechnicalConfigurationName(null), "пусто");
+            Assert.AreEqual("00", CheckRules.TechnicalOwner("00SM-FLAT-PATTERN"), "исполнение развёртки — то же правило");
+        }
+
         public static void Test_ExecutionFlag_matches_mprop_checkboxes()
         {
             Assert.AreEqual("1", DesignationParser.ExecutionFlag("01", "01", true), "«Исполнение» + «Из»: номер из имени конфигурации");
             Assert.AreEqual("1", DesignationParser.ExecutionFlag("02 Покраска", "02", true), "первое слово имени — номер");
             Assert.AreEqual("2", DesignationParser.ExecutionFlag("Покраска", "01", true), "номер у родителя — вписан");
             Assert.AreEqual("2", DesignationParser.ExecutionFlag("1", "01", true), "MProp дал бы «-1», а нужно «-01»");
+            Assert.AreEqual("2", DesignationParser.ExecutionFlag("001", "001", true), "SaveDRW при «1» взял бы «-00» — два первых знака");
+            Assert.AreEqual("2", DesignationParser.ExecutionFlag("101 Покраска", "101", true), "трёхзначный номер — вписан");
             Assert.AreEqual("0", DesignationParser.ExecutionFlag("00", "", false), "базовое");
             Assert.AreEqual("0", DesignationParser.ExecutionFlag("01", "01", false), "номер уже в имени файла");
         }
