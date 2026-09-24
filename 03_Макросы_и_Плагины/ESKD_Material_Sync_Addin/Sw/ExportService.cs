@@ -47,6 +47,15 @@ namespace ESKD.MaterialSync.Sw
             public int Revision;
             /// <summary>Свойство «Операции» (галочки ведомости ЛЗК); пусто — ведомость ещё не строилась.</summary>
             public string Operations = "";
+            /// <summary>Основы имён файлов выдачи документа — у каждого исполнения своя (обозначение с «-01»).</summary>
+            public readonly List<string> Stems = new List<string>();
+            /// <summary>Документ уже у цеха, и выгрузка его пропустила (Т-30).</summary>
+            public bool Protected;
+
+            public void AddStem(string stem)
+            {
+                if (!string.IsNullOrEmpty(stem) && !Stems.Contains(stem, StringComparer.OrdinalIgnoreCase)) Stems.Add(stem);
+            }
 
             /// <summary>
             /// Исполнения детали в изделии и сколько штук каждого (конфигурация → количество), в порядке появления.
@@ -132,6 +141,7 @@ namespace ESKD.MaterialSync.Sw
                     log.Warn(Path.GetFileName(path), "выгрузка по непроверенному изделию — " + string.Join("; ", freshness.Reasons.ToArray()) +
                         ": нажмите «Проверить изделие» и выгрузите изделие заново");
                 List<Item> items = Collect(app, doc, path, productFolder, log);
+                foreach (Item item in items) CollectStems(item);
                 HashSet<string> issued = ExportNaming.Issued(productFolder);
                 try
                 {
@@ -167,6 +177,9 @@ namespace ESKD.MaterialSync.Sw
                             ? "деталь выгружена, а " + SwFileVersion.OlderNote : "деталь выгружена с несохранёнными правками")
                         : "деталь изменена после проверки изделия") + " — выгрузка изделия теперь «" + ProductStamp.Unchecked +
                         "»: сохраните деталь, проверьте изделие и выгрузите его заново");
+                // Полная выгрузка изделия наводит порядок в папках выдачи (З-48): только с главной сборки изделия заказа —
+                // выгрузка подсборки или сборки вне структуры заказа не знает всех документов, чьи файлы там лежат.
+                if (assembly && IsProductAssembly(location, path)) Sweep(productFolder, log, items, issued);
                 string reportPath = Write(productFolder, log, !assembly, items, keepVersion);
                 LastOutcome = string.Join("|", new[]
                 {
@@ -207,9 +220,13 @@ namespace ESKD.MaterialSync.Sw
                 // Ревизия принадлежит чертежу (Р0-8): её поднимает К-7 в чертеже, а модель об этом не знает.
                 // Поэтому суффикс «_ИзмN» и право переписать выданное берутся из чертежа, если он есть.
                 item.Revision = Math.Max(item.Revision, DrawingRevision(drawing, drawingPath));
-                // Выданный документ перезаписывать нельзя: цех работает по тому, что у него на руках (Т-30).
-                if (item.Revision == 0 && issued.Contains(Path.GetFileName(item.Path)))
+                // Выданный документ перезаписывать нельзя: цех работает по тому, что у него на руках (Т-30). Выдана модель на
+                // ревизии 0 — или файл документа с его нынешней ревизией: после «Новой ревизии» и повторной выдачи правка без
+                // следующей ревизии молча переписала бы у цеха «_Изм1» (З-48).
+                if ((item.Revision == 0 && issued.Contains(Path.GetFileName(item.Path))) ||
+                    ExportNaming.IssuedAtRevision(issued, item.Stems, item.Revision))
                 {
+                    item.Protected = true;
                     log.Skip(Path.GetFileName(item.Path), "документ выдан в производство, оформите новую ревизию");
                     return;
                 }
@@ -413,6 +430,32 @@ namespace ESKD.MaterialSync.Sw
             if (item.IsPurchased) return null;
             items.Add(item);
             return item;
+        }
+
+        /// <summary>
+        /// Основы имён файлов выдачи документа: активное исполнение и каждое, что стоит в изделии. По ним выгрузка узнаёт
+        /// выданную ревизию документа и его прежние файлы в папках выдачи (З-48).
+        /// </summary>
+        private static void CollectStems(Item item)
+        {
+            item.AddStem(ExportNaming.Stem(item.Designation, item.Name, item.Path));
+            if (item.Model == null || item.Executions.Count == 0) return;
+            try
+            {
+                PropertyWriter w = new PropertyWriter(item.Model, true);
+                foreach (KeyValuePair<string, int> execution in item.Executions)
+                {
+                    if (execution.Key.Length == 0) continue;
+                    string designation = Value(w, execution.Key, "Обозначение");
+                    string name = Value(w, execution.Key, "Наименование");
+                    item.AddStem(ExportNaming.Stem(designation.Length > 0 ? designation : item.Designation,
+                        name.Length > 0 ? name : item.Name, item.Path));
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Выгрузка: основы имён " + item.Path, ex);
+            }
         }
 
         private static string Value(PropertyWriter w, string cfg, string name)
@@ -656,6 +699,7 @@ namespace ESKD.MaterialSync.Sw
                     // Пропуск и замечание исполнения подписываются им самим: «деталь.sldprt [01]» (проверка изделия
                     // сопоставляет их с файлом по имени без расширения).
                     string label = Path.GetFileName(item.Path) + (item.Executions.Count > 1 ? " [" + cfg + "]" : "");
+                    item.AddStem(ExportNaming.Stem(designation, name, item.Path));
                     DxfOne(app, item, designation, name, execution.Value, productFolder, log, label);
                     // Временную СК оси трубы IGS убирает, но деталь не сохраняет: её сохраняет возврат прежнего исполнения —
                     // иначе в файл ушла бы чужая активная конфигурация. СК не убралась — деталь не сохраняется совсем.
@@ -1098,7 +1142,9 @@ namespace ESKD.MaterialSync.Sw
         // ------------------------------------------------------------------ отчёт
         private static string Write(string productFolder, ExportLog log, bool partial, IEnumerable<Item> items, bool keepVersion)
         {
-            foreach (string file in log.Files) log.Checksums[file] = Checksum(file);
+            // Сумма уже есть у файла, который полная выгрузка оставила из прежнего отчёта (Sweep): она — та, что знает цех.
+            foreach (string file in log.Files)
+                if (!log.Checksums.ContainsKey(file)) log.Checksums[file] = Checksum(file);
             string path = ExportNaming.ReportPath(productFolder);
             // Выгрузка одной детали (и «Новая ревизия») дописывает отчёт изделия, а не заменяет его: иначе проверка
             // изделия сочла бы все остальные детали невыгруженными. Прежние файлы остаются, если лежат на месте
@@ -1135,8 +1181,147 @@ namespace ESKD.MaterialSync.Sw
             }
             foreach (string line in previous.Skipped)
                 if (!documents.Contains(ExportLog.DocumentName(ExportLog.SplitSkip(line).Key))) log.Skipped.Add(line);
+            // Замечание «убран в _Аннулировано» — о прошлой выгрузке, а не о документе: дальше оно не переходит.
             foreach (string line in previous.Warnings)
-                if (!documents.Contains(ExportLog.DocumentName(ExportLog.SplitSkip(line).Key))) log.Warnings.Add(line);
+            {
+                KeyValuePair<string, string> note = ExportLog.SplitSkip(line);
+                if (!documents.Contains(ExportLog.DocumentName(note.Key)) && !ExportLog.IsArchiveNote(note.Value)) log.Warnings.Add(line);
+            }
+        }
+
+        /// <summary>
+        /// Главная сборка изделия заказа (<see cref="ProductLocator.MainAssembly"/>): только её выгрузка знает все документы,
+        /// чьи файлы лежат в папках выдачи. Сборка вне «01_3D» или подсборка — нет.
+        /// </summary>
+        private static bool IsProductAssembly(ProductLocation location, string path)
+        {
+            try
+            {
+                if (location == null || location.ModelsFolder.Length == 0 || !Directory.Exists(location.ModelsFolder)) return false;
+                string main = ProductLocator.MainAssembly(location.ProductFolder,
+                    Directory.GetFiles(location.ModelsFolder, "*.sldasm", SearchOption.AllDirectories));
+                return main != null && string.Equals(Path.GetFullPath(main), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Выгрузка: главная сборка изделия " + path, ex);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Полная выгрузка изделия (З-48): файлы папок выдачи, которых в этот раз нет в выгрузке, уходят в «_Аннулировано»
+        /// или остаются и переходят в новый отчёт — выданные цеху и файлы документов, чья выгрузка сорвалась. Решение —
+        /// <see cref="ExportLeftovers"/>; каждый убранный файл — замечанием в отчёте выгрузки. Раньше в папках оставались
+        /// файлы убранных и переименованных деталей, и «Готово к производству» отдавало их цеху вместе с изделием.
+        /// </summary>
+        private static void Sweep(string productFolder, ExportLog log, List<Item> items, HashSet<string> issued)
+        {
+            ExportLeftovers leftovers = new ExportLeftovers();
+            ExportLog previous = null;
+            string report = ExportNaming.ReportPath(productFolder);
+            try
+            {
+                if (File.Exists(report)) previous = ExportLog.Parse(File.ReadAllText(report, Encoding.UTF8));
+            }
+            catch (IOException ex)
+            {
+                Log.Error("Выгрузка: прежний отчёт " + report, ex);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Log.Error("Выгрузка: прежний отчёт " + report, ex);
+            }
+            if (previous != null) leftovers.Previous.UnionWith(previous.Files);
+            leftovers.Issued.UnionWith(issued);
+            HashSet<string> failed = new HashSet<string>(log.Skipped.Select(ExportLog.SplitSkip)
+                .Where(s => !ExportLog.IsBenignSkip(s.Value)).Select(s => ExportLog.DocumentName(s.Key)), StringComparer.OrdinalIgnoreCase);
+            leftovers.Failed.AddRange(failed);
+            foreach (Item item in items)
+            {
+                if (item.Protected) leftovers.Protected.AddRange(item.Stems);
+                else if (failed.Contains(Path.GetFileNameWithoutExtension(item.Path))) leftovers.Failed.AddRange(item.Stems);
+                else leftovers.Exported.AddRange(item.Stems);
+            }
+            leftovers.TopExported = items.Count > 0 && !items[0].Protected &&
+                !failed.Contains(Path.GetFileNameWithoutExtension(items[0].Path));
+
+            HashSet<string> now = new HashSet<string>(log.Files.Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
+            DateTime stamp = DateTime.Now;
+            string[] folders =
+            {
+                ExportNaming.PdfDirectory(productFolder), ExportNaming.LaserDirectory(productFolder),
+                ExportNaming.TubeDirectory(productFolder)
+            };
+            foreach (string folder in folders)
+            {
+                string[] files = Files(folder, log);
+                foreach (string file in files)
+                {
+                    string name = Path.GetFileName(file);
+                    if (now.Contains(name) || !ExportNaming.IsOutputFile(file)) continue;
+                    string reason;
+                    LeftoverAction action = leftovers.Decide(name, out reason);
+                    if (action == LeftoverAction.Carry)
+                    {
+                        string sum;
+                        log.Add(file);
+                        log.Checksums[file] = previous != null && previous.Checksums.TryGetValue(name, out sum) ? sum : Checksum(file);
+                        if (reason.Length > 0) log.Warn(name, reason);
+                    }
+                    else if (action == LeftoverAction.Archive) Retire(file, stamp, reason, log);
+                }
+            }
+        }
+
+        /// <summary>Файлы папки выдачи; папку не прочитать (сеть, права) — замечание в отчёт и пустой список.</summary>
+        private static string[] Files(string folder, ExportLog log)
+        {
+            string problem;
+            try
+            {
+                return Directory.Exists(folder) ? Directory.GetFiles(folder) : new string[0];
+            }
+            catch (IOException ex)
+            {
+                Log.Error("Выгрузка: папка выдачи " + folder, ex);
+                problem = ex.Message;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Log.Error("Выгрузка: папка выдачи " + folder, ex);
+                problem = ex.Message;
+            }
+            log.Warn(Path.GetFileName(folder), "папка выдачи не прочитана (" + problem.Trim() +
+                "): прежние файлы в ней не убраны — проверьте её сами");
+            return new string[0];
+        }
+
+        /// <summary>Файл папки выдачи — в «_Аннулировано» рядом с ним; не вышло (файл открыт у цеха) — замечание, файл на месте.</summary>
+        private static void Retire(string file, DateTime stamp, string reason, ExportLog log)
+        {
+            string name = Path.GetFileName(file);
+            string problem;
+            try
+            {
+                string archive = ExportNaming.ArchivePath(file, stamp);
+                Directory.CreateDirectory(Path.GetDirectoryName(archive) ?? "");
+                File.Move(file, archive);
+                log.Warn(name, ExportLog.ArchiveNote + ": " + reason);
+                return;
+            }
+            catch (IOException ex)
+            {
+                Log.Error("Выгрузка: перенос в " + ExportNaming.ArchiveFolder + " " + file, ex);
+                problem = ex.Message;
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Log.Error("Выгрузка: перенос в " + ExportNaming.ArchiveFolder + " " + file, ex);
+                problem = ex.Message;
+            }
+            log.Warn(name, "не убран в «" + ExportNaming.ArchiveFolder + "» (" + problem.Trim() + "): " + reason +
+                " — уберите его сами, иначе проверка изделия его не пропустит");
         }
 
         private static void Show(ISldWorks app, ExportLog log, string productFolder)
