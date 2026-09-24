@@ -358,5 +358,88 @@ namespace ESKD.Tests
             Assert.IsTrue(ExportNaming.TooLong(ok + "b").StartsWith("путь 241 знаков, больше 240"), "241 — отказ с причиной");
             Assert.AreEqual("", ExportNaming.TooLong(null), "нет пути — не отказ");
         }
+
+        /// <summary>З-48: файл выдачи — по своей папке; заметки и служебные файлы Windows выгрузка не трогает.</summary>
+        public static void Test_Output_files_by_their_folder()
+        {
+            Assert.IsTrue(ExportNaming.IsOutputFile(Product + @"\02_PDF\ТС-52.00.01.004 Заглушка.pdf"), "PDF в 02_PDF");
+            Assert.IsTrue(ExportNaming.IsOutputFile(Product + @"\03_ЧПУ\Лазер_Лист\Х_S3мм_1шт_10х20.DXF"), "DXF в Лазер_Лист, регистр любой");
+            Assert.IsTrue(ExportNaming.IsOutputFile(Product + @"\03_ЧПУ\Лазер_Лист\Эскиз заказчика.dwg"), "DWG в Лазер_Лист");
+            Assert.IsTrue(ExportNaming.IsOutputFile(Product + @"\03_ЧПУ\Труборез\Стойка.igs"), "IGS в Труборез");
+            Assert.IsTrue(ExportNaming.IsOutputFile(Product + @"\03_ЧПУ\Труборез\Стойка.step"), "STEP в Труборез");
+            Assert.IsFalse(ExportNaming.IsOutputFile(Product + @"\02_PDF\Для цеха.txt"), "заметка — не файл выдачи");
+            Assert.IsFalse(ExportNaming.IsOutputFile(Product + @"\02_PDF\Thumbs.db"), "служебный файл Windows");
+            Assert.IsFalse(ExportNaming.IsOutputFile(Product + @"\02_PDF\~$Заглушка.pdf"), "метка открытого файла");
+            Assert.IsFalse(ExportNaming.IsOutputFile(Product + @"\03_ЧПУ\Лазер_Лист\Заглушка.pdf"), "PDF не в своей папке");
+            Assert.IsFalse(ExportNaming.IsOutputFile(Product + @"\01_3D\Заглушка.pdf"), "не папка выдачи");
+            Assert.IsTrue(ExportNaming.IsLzkSheet("ЛЗК_ТС-52_Расход.pdf"), "лист ЛЗК от «Готово к производству»");
+            Assert.IsFalse(ExportNaming.IsLzkSheet("ЛЗК_ТС-52.xlsx"), "книга — не PDF листа");
+        }
+
+        /// <summary>З-48: выданная ревизия документа — по его файлам в отчётах выдачи; ревизия 0 — файлы без «_ИзмN».</summary>
+        public static void Test_Issued_revision_of_document()
+        {
+            Assert.AreEqual(0, ExportNaming.RevisionOf("Х Деталь.pdf"), "без суффикса");
+            Assert.AreEqual(2, ExportNaming.RevisionOf("Х Деталь_Изм2.pdf"), "PDF второй ревизии");
+            Assert.AreEqual(1, ExportNaming.RevisionOf("Х Деталь_S3мм_1шт_10х20_Изм1.dxf"), "DXF первой ревизии");
+            Assert.AreEqual(0, ExportNaming.RevisionOf("Х Изм1 Деталь.pdf"), "«Изм» в наименовании — не суффикс");
+            string[] stems = { "ПРТИ.468211.241 Пластина", "ПРТИ.468211.241-01 Пластина" };
+            string[] issued = { "ПРТИ.468211.241 Пластина.pdf", "ПРТИ.468211.241-01 Пластина_S3мм_1шт_100х200_Изм1.dxf",
+                "ПРТИ.468211.2410 Пластина_Изм2.pdf", "ПРТИ.468211.241 Пластина.sldprt" };
+            Assert.IsTrue(ExportNaming.IssuedAtRevision(issued, stems, 0), "ревизия 0 выдана PDF");
+            Assert.IsTrue(ExportNaming.IssuedAtRevision(issued, stems, 1), "ревизия 1 выдана развёрткой исполнения -01");
+            Assert.IsFalse(ExportNaming.IssuedAtRevision(issued, stems, 2), "«…2410» — чужой документ, ревизия 2 не выдана");
+            Assert.IsFalse(ExportNaming.IssuedAtRevision(issued, new string[0], 0), "без основ имён — не выдан");
+        }
+
+        /// <summary>
+        /// З-48: полная выгрузка изделия — что остаётся в папках выдачи. Прежние файлы убранной и переименованной детали и
+        /// чужие файлы — в «_Аннулировано»; выданное цеху, файлы сорвавшейся выгрузки и листы ЛЗК — на месте.
+        /// </summary>
+        public static void Test_Leftovers_after_full_export()
+        {
+            ExportLeftovers l = new ExportLeftovers();
+            l.Previous.UnionWith(new[] { "ПРТИ.468211.262 Косынка_S3мм_1шт_100х200.dxf", "ПРТИ.468211.264 Ребро.pdf" });
+            l.Issued.UnionWith(new[] { "ПРТИ.468211.270 Опора.pdf", "ПРТИ.468211.271 Упор.pdf", "ПРТИ.468211.272 Рёбра.pdf",
+                "ЛЗК_ПРТИ.468211.260_Расход.pdf" });
+            l.Exported.AddRange(new[] { "ПРТИ.468211.261 Пластина", "ПРТИ.468211.270 Опора" });
+            l.Protected.Add("ПРТИ.468211.271 Упор");
+            l.Failed.AddRange(new[] { "ПРТИ.468211.264 Ребро" });
+            string reason;
+
+            Assert.AreEqual(LeftoverAction.Keep, l.Decide("ЛЗК_ПРТИ.468211.260_Расход.pdf", out reason), "лист ЛЗК — не выгрузки");
+            Assert.AreEqual(LeftoverAction.Archive, l.Decide("ПРТИ.468211.262 Косынка_S3мм_1шт_100х200.dxf", out reason),
+                "прежняя развёртка убранной детали");
+            Assert.IsTrue(reason.StartsWith("прежний файл выгрузки"), reason);
+            Assert.AreEqual(LeftoverAction.Archive, l.Decide("Эскиз заказчика.dxf", out reason), "чужой файл");
+            Assert.IsTrue(reason.StartsWith("не из выгрузки"), reason);
+            Assert.AreEqual(LeftoverAction.Carry, l.Decide("ПРТИ.468211.264 Ребро.pdf", out reason), "выгрузка сорвалась — прежний на месте");
+            Assert.AreEqual("", reason, "о сорвавшейся выгрузке скажет пропуск");
+            Assert.AreEqual(LeftoverAction.Carry, l.Decide("ПРТИ.468211.271 Упор.pdf", out reason), "выданный документ пропущен — файл у цеха");
+            Assert.AreEqual(LeftoverAction.Carry, l.Decide("ПРТИ.468211.271 Упор_S3мм_1шт_10х20.dxf", out reason),
+                "файл выданного документа, которого нет в отчётах выдачи, — тоже его");
+            Assert.AreEqual(LeftoverAction.Archive, l.Decide("ПРТИ.468211.270 Опора.pdf", out reason), "выдан ревизией 0, выгружена новая");
+            Assert.IsTrue(reason.StartsWith("выдан прежней ревизией"), reason);
+            Assert.AreEqual(LeftoverAction.Carry, l.Decide("ПРТИ.468211.272 Рёбра.pdf", out reason),
+                "выданный файл документа, которого в изделии нет, без новой ревизии сборки — на месте");
+            Assert.IsTrue(reason.StartsWith(ExportLeftovers.OrphanIssued), "замечание — то, что читает проверка: " + reason);
+            Assert.IsTrue(reason.Contains("оформите новую ревизию сборочного чертежа"), reason);
+            l.TopExported = true;
+            Assert.AreEqual(LeftoverAction.Archive, l.Decide("ПРТИ.468211.272 Рёбра.pdf", out reason),
+                "новая ревизия сборки убрала документ — его выданный файл в архив");
+        }
+
+        /// <summary>З-48: убранный в «_Аннулировано» файл — сведения в окне итога, не забота.</summary>
+        public static void Test_Archive_note_is_information()
+        {
+            List<Notice> list = Notices.FromExport(new string[0], new[]
+            {
+                "Х Косынка_S3мм_1шт_100х200.dxf — " + ExportLog.ArchiveNote + ": прежний файл выгрузки, сейчас его нет",
+                "Х Стойка.igs — IGS не по оси трубы"
+            });
+            Assert.AreEqual(NoticeLevel.Info, list[0].Level, "убранный файл — сведения");
+            Assert.AreEqual("Х Косынка_S3мм_1шт_100х200.dxf", list[0].Document, "файл назван");
+            Assert.AreEqual(NoticeLevel.Warning, list[1].Level, "прочие замечания выгрузки — как раньше");
+        }
     }
 }

@@ -594,6 +594,131 @@ class Export(SwTestCase):
         self.assertIn("прежняя развёртка «ПРТИ.468211.241 Пластина_S3мм_1шт_100х200.dxf» убрана в _Аннулировано", text, text)
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
+    def _plate_product(self, number):
+        """Пустая папка изделия ПРТИ.468211.<number> в структуре заказа; возвращает (изделие, 01_3D)."""
+        short = self._case_name().split("_")[1]
+        models = self.s.run_dir / f"{short}/_Заявки/2026-001/02_Металл/И01_ПРТИ.468211.{number}/01_3D"
+        if models.exists():
+            shutil.rmtree(models.parent, ignore_errors=True)
+        models.mkdir(parents=True)
+        return models.parent, models
+
+    def _check(self):
+        com.call(self.s.eskd(), "CheckProductSilent")
+        deadline = time.time() + TIMEOUT
+        status = ""
+        while time.time() < deadline:
+            status = str(com.call(self.s.eskd(), "CheckStatus"))
+            if status:
+                break
+            time.sleep(1)
+        return status
+
+    def test_X22_full_reexport_retires_files_of_removed_part_and_foreign_files(self):
+        """X22 (замечание владельца 24.09.2026, З-48): вторая итерация опытного образца — пластину в сборке заменили
+        косынкой и выгрузили изделие снова. В «Лазер_Лист» — только развёртка косынки: прежняя развёртка пластины и
+        чужой «Эскиз заказчика.dxf» убраны в «_Аннулировано», в отчёте о каждом замечание. PDF листа ЛЗК и заметка для
+        цеха не тронуты. Раньше развёртка убранной детали оставалась, и «Готово к производству» отдавало её цеху. Проверка
+        после выгрузки лишних файлов в папках выдачи не находит."""
+        from eskd_e2e import build
+        product, models = self._plate_product(260)
+        plate = models / "ПРТИ.468211.261 Пластина.sldprt"
+        gusset = models / "ПРТИ.468211.262 Косынка.sldprt"
+        self.s.save_as(build.sheet_metal_plate(self.s, 200, 100, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97"), plate)
+        self.s.save_as(build.sheet_metal_plate(self.s, 150, 80, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97"), gusset)
+        asm_path = models / "ПРТИ.468211.260 СБ Опора.sldasm"
+        laser = product / "03_ЧПУ" / "Лазер_Лист"
+        pdf = product / "02_PDF"
+        for part in (plate, gusset):
+            asm, _ = build.assembly(self.s, [(part, 0, 0, 0)])
+            self.s.save_as(asm, asm_path)
+            self.s.close_all()
+            if part == gusset:
+                (laser / "Эскиз заказчика.dxf").write_text("0\nEOF\n", encoding="ascii")
+                pdf.mkdir(parents=True, exist_ok=True)
+                (pdf / "ЛЗК_ПРТИ.468211.260_Расход.pdf").write_bytes(b"%PDF-1.4 lzk")
+                (pdf / "Для цеха.txt").write_text("заметка", encoding="utf-8")
+            doc = self.s.open(asm_path)
+            self.s.activate(doc)
+            status = self._export()
+            self.assertTrue(status.startswith("ok|"), status)
+            if part == plate:
+                self.assertEqual(["ПРТИ.468211.261 Пластина_S3мм_1шт_100х200.dxf"], sorted(p.name for p in laser.glob("*.dxf")),
+                                 "первая итерация — развёртка пластины")
+                self.s.close_all()
+
+        left = sorted(p.name for p in laser.glob("*.dxf"))
+        self.assertEqual(1, len(left), left)
+        self.assertTrue(left[0].startswith("ПРТИ.468211.262 Косынка_S3мм_1шт_"), left)
+        archived = sorted(p.name for p in (laser / "_Аннулировано").glob("*.dxf"))
+        self.assertEqual(2, len(archived), archived)
+        self.assertTrue(any(n.startswith("ПРТИ.468211.261 Пластина_S3мм_1шт_100х200_") for n in archived), archived)
+        self.assertTrue(any(n.startswith("Эскиз заказчика_") for n in archived), archived)
+        self.assertTrue((pdf / "ЛЗК_ПРТИ.468211.260_Расход.pdf").is_file(), "PDF листа ЛЗК — дело «Готово к производству»")
+        self.assertTrue((pdf / "Для цеха.txt").is_file(), "заметка — не файл выдачи")
+        text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
+        self.assertIn("ПРТИ.468211.261 Пластина_S3мм_1шт_100х200.dxf — убран в «_Аннулировано»: прежний файл выгрузки", text, text)
+        self.assertIn("Эскиз заказчика.dxf — убран в «_Аннулировано»: не из выгрузки", text, text)
+        files = text.split("Выгружено (SHA-256):", 1)[1].split("\n\n", 1)[0]
+        self.assertNotIn("ПРТИ.468211.261", files, "убранного файла нет среди выгруженных")
+        self.assertNotIn("ЛЗК_", files, "лист ЛЗК в отчёт выгрузки не попадает")
+
+        status = self._check()
+        self.assertTrue(status.startswith("ok|"), status)
+        report = (product / "_Проверка.txt").read_text(encoding="utf-8-sig")
+        self.assertNotIn("лежит в папке выдачи", report, report)
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_X23_issued_revision_is_kept_and_next_revision_retires_it(self):
+        """X23 (З-48): деталь выдана цеху ревизией 1 («…_Изм1.dxf» в отчёте выдачи). Выгрузка изделия её не переписывает —
+        раньше защищалась только ревизия 0, и правка без новой ревизии молча меняла файл у цеха: документ пропущен с
+        просьбой оформить ревизию, выданный файл на месте и в отчёте выгрузки. Ревизия 2 выгружает «…_Изм2.dxf», а
+        выданный «…_Изм1.dxf» уходит в «_Аннулировано»."""
+        from eskd_e2e import build
+        product, models = self._plate_product(280)
+        part = models / "ПРТИ.468211.281 Пластина.sldprt"
+        doc = build.sheet_metal_plate(self.s, 200, 100, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97")
+        build.props(doc, {"Revision": "1"})
+        self.s.save_as(doc, part)
+        asm_path = models / "ПРТИ.468211.280 СБ Рама.sldasm"
+        asm, _ = build.assembly(self.s, [(part, 0, 0, 0)])
+        self.s.save_as(asm, asm_path)
+        self.s.close_all()
+        laser = product / "03_ЧПУ" / "Лазер_Лист"
+        laser.mkdir(parents=True)
+        issued = laser / "ПРТИ.468211.281 Пластина_S3мм_1шт_100х200_Изм1.dxf"
+        issued.write_text("выдано цеху", encoding="utf-8")
+        (product / "_Выдано_2026-09-20_1000.txt").write_text("\n".join([
+            "Готово к производству", "", "Документы изделия:",
+            "  " + "0" * 64 + "  " + part.name, "  " + "0" * 64 + "  " + issued.name, ""]), encoding="utf-8")
+
+        doc = self.s.open(asm_path)
+        self.s.activate(doc)
+        status = self._export()
+        self.assertTrue(status.startswith("ok|"), status)
+        text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
+        self.assertIn((part.name + " — документ выдан в производство, оформите новую ревизию").lower(), text.lower(), text)
+        self.assertEqual("выдано цеху", issued.read_text(encoding="utf-8"), "выданный файл не переписан")
+        self.assertIn(issued.name, text.split("Выгружено (SHA-256):", 1)[-1], "выданный файл остаётся в отчёте выгрузки")
+        self.s.close_all()
+
+        doc = self.s.open(part)
+        build.props(doc, {"Revision": "2"})
+        self.s.save(doc)
+        self.s.close_all()
+        doc = self.s.open(asm_path)
+        self.s.activate(doc)
+        status = self._export()
+        self.assertTrue(status.startswith("ok|"), status)
+        self.assertEqual(["ПРТИ.468211.281 Пластина_S3мм_1шт_100х200_Изм2.dxf"], sorted(p.name for p in laser.glob("*.dxf")),
+                         "в «Лазер_Лист» — только новая ревизия")
+        archived = sorted(p.name for p in (laser / "_Аннулировано").glob("*.dxf"))
+        self.assertEqual(1, len(archived), archived)
+        self.assertTrue(archived[0].startswith("ПРТИ.468211.281 Пластина_S3мм_1шт_100х200_Изм1_"), archived)
+        text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
+        self.assertIn(issued.name + " — убран в «_Аннулировано»: выдан прежней ревизией", text, text)
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
     def _sheet_and_tube(self, number):
         """Изделие ПРТИ.468211.<number> из листовой пластины и наклонной трубы, как в X05; сборка сохранена и закрыта."""
         from eskd_e2e import build

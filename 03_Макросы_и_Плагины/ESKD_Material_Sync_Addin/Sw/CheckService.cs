@@ -608,6 +608,54 @@ namespace ESKD.MaterialSync.Sw
                     report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), exported,
                         "файл изменён после выгрузки: выгрузите изделие заново");
             }
+            // В папках выдачи — только выгруженное (З-48): цех забирает папки целиком, а «Готово к производству» вписывает в
+            // отчёт выдачи всё, что в них лежит. Лишний файл — прежняя развёртка убранной или переименованной детали или
+            // чужой файл; его убирает полная выгрузка изделия с главной сборки.
+            HashSet<string> listed = new HashSet<string>(log.Files.Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
+            foreach (string folder in folders)
+            {
+                string problem;
+                foreach (string file in OutputFiles(folder, out problem))
+                {
+                    string name = Path.GetFileName(file);
+                    if (listed.Contains(name) || ExportNaming.IsLzkSheet(name)) continue;
+                    report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), name,
+                        "лежит в папке выдачи, но его нет в отчёте выгрузки — цех получил бы его вместе с изделием: выгрузите " +
+                        "изделие с главной сборки (прежние и лишние файлы уйдут в «" + ExportNaming.ArchiveFolder + "»)");
+                }
+                if (problem.Length > 0)
+                    report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), Path.GetFileName(folder),
+                        "папка выдачи не прочитана (" + problem + "): лишние файлы в ней не проверены — проверьте изделие снова");
+            }
+            // Выданный файл документа, которого в изделии больше нет, выгрузка оставляет на месте (он у цеха) с замечанием:
+            // без новой ревизии сборки «Готово к производству» выдало бы его снова (З-48).
+            foreach (string line in log.Warnings)
+            {
+                KeyValuePair<string, string> note = ExportLog.SplitSkip(line);
+                if (note.Value.StartsWith(ExportLeftovers.OrphanIssued, StringComparison.Ordinal))
+                    report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), note.Key, note.Value);
+            }
+        }
+
+        /// <summary>Файлы выдачи в папке (<see cref="ExportNaming.IsOutputFile"/>); папку не прочитать — пусто и причина.</summary>
+        private static IEnumerable<string> OutputFiles(string folder, out string problem)
+        {
+            problem = "";
+            try
+            {
+                return Directory.Exists(folder) ? Directory.GetFiles(folder).Where(ExportNaming.IsOutputFile).ToArray() : new string[0];
+            }
+            catch (IOException ex)
+            {
+                Log.Error("Проверка изделия: папка выдачи " + folder, ex);
+                problem = ex.Message.Trim();
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Log.Error("Проверка изделия: папка выдачи " + folder, ex);
+                problem = ex.Message.Trim();
+            }
+            return new string[0];
         }
 
         /// <summary>

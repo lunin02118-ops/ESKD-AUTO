@@ -89,6 +89,15 @@ namespace ESKD.MaterialSync.Core
                 r.StartsWith("документ выдан в производство", StringComparison.OrdinalIgnoreCase);
         }
 
+        /// <summary>Начало замечания о файле, который полная выгрузка убрала из папки выдачи (З-48).</summary>
+        public const string ArchiveNote = "убран в «" + ExportNaming.ArchiveFolder + "»";
+
+        /// <summary>Замечание «убран в _Аннулировано»: событие прошлой выгрузки, а не забота документа — дальше не переносится.</summary>
+        public static bool IsArchiveNote(string reason)
+        {
+            return (reason ?? "").Trim().StartsWith(ArchiveNote, StringComparison.Ordinal);
+        }
+
         /// <summary>
         /// Разбор `_Экспорт.txt` обратно: выгруженные файлы с суммами и пропуски «документ — причина».
         /// Проверка изделия (Т-32е) сверяет по ним наличие файлов и суммы, а не ищет имя по всему тексту.
@@ -412,6 +421,58 @@ namespace ESKD.MaterialSync.Core
             return path;
         }
 
+        /// <summary>
+        /// Файл выдачи по своей папке: PDF в «02_PDF», DXF и DWG в «Лазер_Лист», IGS, IGES и STEP в «Труборез». Прочее
+        /// (заметки, служебные файлы Windows, метки «~$» открытых файлов) выгрузка не трогает, и проверка его не считает.
+        /// </summary>
+        public static bool IsOutputFile(string path)
+        {
+            string name = Path.GetFileName(path ?? "") ?? "";
+            if (name.Length == 0 || name.StartsWith("~$", StringComparison.Ordinal) || name.StartsWith(".", StringComparison.Ordinal))
+                return false;
+            string folder = Path.GetFileName(Path.GetDirectoryName(path ?? "") ?? "") ?? "";
+            string extension = (Path.GetExtension(name) ?? "").ToLowerInvariant();
+            if (string.Equals(folder, PdfFolder, StringComparison.OrdinalIgnoreCase)) return extension == ".pdf";
+            if (string.Equals(folder, LaserFolder, StringComparison.OrdinalIgnoreCase)) return extension == ".dxf" || extension == ".dwg";
+            if (string.Equals(folder, TubeFolder, StringComparison.OrdinalIgnoreCase))
+                return extension == ".igs" || extension == ".iges" || extension == ".step" || extension == ".stp";
+            return false;
+        }
+
+        /// <summary>PDF листа книги ЛЗК «ЛЗК_&lt;шифр&gt;_&lt;лист&gt;.pdf»: его делает и заменяет «Готово к производству», а не выгрузка.</summary>
+        public static bool IsLzkSheet(string fileName)
+        {
+            string name = fileName ?? "";
+            return name.StartsWith(LzkNaming.WorkbookPrefix, StringComparison.OrdinalIgnoreCase) &&
+                name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>Ревизия файла выдачи по суффиксу «_ИзмN» перед расширением; без суффикса — 0.</summary>
+        public static int RevisionOf(string fileName)
+        {
+            Match m = Regex.Match(fileName ?? "", @"_Изм(\d+)\.[^.\\/]+$", RegexOptions.IgnoreCase);
+            int number;
+            return m.Success && int.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out number)
+                ? number : 0;
+        }
+
+        /// <summary>
+        /// Ревизия revision документа уже у цеха: среди выданных есть его файл (по одной из основ имён stems) с этой
+        /// ревизией. Выгрузка такой документ не переписывает — ни на ревизии 0, ни на «_Изм1» после повторной выдачи
+        /// (замечание владельца 24.09.2026, З-48; раньше защищалась только ревизия 0).
+        /// </summary>
+        public static bool IssuedAtRevision(IEnumerable<string> issued, IEnumerable<string> stems, int revision)
+        {
+            List<string> bases = new List<string>(stems ?? new string[0]);
+            foreach (string name in issued ?? new string[0])
+            {
+                if (RevisionOf(name) != Math.Max(0, revision)) continue;
+                foreach (string stem in bases)
+                    if (BelongsTo(name, stem)) return true;
+            }
+            return false;
+        }
+
         /// <summary>Имя файла выдачи: «_Выдано_&lt;дата&gt;.txt» пишет кнопка «Готово к производству» в папке изделия.</summary>
         public const string IssuedPrefix = "_Выдано_";
 
@@ -463,6 +524,90 @@ namespace ESKD.MaterialSync.Core
             int number;
             return m.Success && int.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out number)
                 ? number : 0;
+        }
+    }
+
+    /// <summary>Что полная выгрузка изделия делает с файлом папки выдачи, который в этот раз не выгружен.</summary>
+    public enum LeftoverAction
+    {
+        /// <summary>Не файл выгрузки: остаётся на месте, в отчёт выгрузки не идёт (PDF листов ЛЗК).</summary>
+        Keep,
+        /// <summary>Остаётся на месте и переходит в новый отчёт выгрузки: он у цеха или выгрузка его документа сорвалась.</summary>
+        Carry,
+        /// <summary>Уходит в «_Аннулировано».</summary>
+        Archive
+    }
+
+    /// <summary>
+    /// Порядок в папках выдачи после полной выгрузки изделия с главной сборки (замечание владельца 24.09.2026, З-48): в них
+    /// остаётся выгруженное сейчас и то, что уже у цеха, а прежние файлы убранных, переименованных и изменённых документов
+    /// и файлы не из выгрузки уходят в «_Аннулировано». Раньше они оставались: выгрузка убирала только прежнюю развёртку
+    /// под тем же обозначением, а «Готово к производству» вписывает в отчёт выдачи всё, что лежит в папках, — цех получил
+    /// бы развёртку детали, которой в изделии уже нет. Решение принимается по имени файла; основы имён — <see cref="ExportNaming.Stem"/>.
+    /// </summary>
+    public sealed class ExportLeftovers
+    {
+        /// <summary>
+        /// Начало замечания выгрузки о выданном файле документа, которого в изделии больше нет. Проверка изделия делает из
+        /// него замечание правила «е»: без новой ревизии сборки «Готово к производству» отдало бы файл цеху снова.
+        /// </summary>
+        public const string OrphanIssued = "выдан в производство, а его документа в изделии больше нет";
+
+        /// <summary>Имена файлов прежнего отчёта выгрузки.</summary>
+        public readonly HashSet<string> Previous = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Выданное в производство — имена из отчётов «_Выдано_…» (<see cref="ExportNaming.Issued"/>).</summary>
+        public readonly HashSet<string> Issued = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        /// <summary>Основы имён документов, выгруженных сейчас.</summary>
+        public readonly List<string> Exported = new List<string>();
+        /// <summary>Основы имён выданных документов, которые выгрузка пропустила: их файлы у цеха.</summary>
+        public readonly List<string> Protected = new List<string>();
+        /// <summary>Основы имён документов, чья выгрузка сорвалась, и имена их моделей без расширения.</summary>
+        public readonly List<string> Failed = new List<string>();
+        /// <summary>
+        /// Главная сборка выгружена сейчас, а не пропущена как выданная: на неё оформлена новая ревизия, и выданные файлы
+        /// документов, которых в изделии больше нет, она уже заменила.
+        /// </summary>
+        public bool TopExported;
+
+        /// <summary>
+        /// Решение по файлу, который лежит в папке выдачи, но сейчас не выгружен. reason — строка для отчёта выгрузки:
+        /// почему файл убран или почему оставлен, хотя документа в изделии нет; пусто — сказать нечего.
+        /// </summary>
+        public LeftoverAction Decide(string fileName, out string reason)
+        {
+            reason = "";
+            string name = fileName ?? "";
+            if (ExportNaming.IsLzkSheet(name)) return LeftoverAction.Keep;
+            // Выгрузка документа сорвалась — его прежний файл ждёт повторной выгрузки на месте; «выгрузка не сделана»
+            // проверка скажет сама, и «Готово к производству» до повторной выгрузки не пройдёт.
+            if (Belongs(name, Failed) || Belongs(name, Protected)) return LeftoverAction.Carry;
+            if (Issued.Contains(name))
+            {
+                if (Belongs(name, Exported))
+                {
+                    reason = "выдан прежней ревизией — новая ревизия выгружена";
+                    return LeftoverAction.Archive;
+                }
+                if (TopExported)
+                {
+                    reason = "выдан, но его документа в изделии больше нет — его убрала новая ревизия сборки";
+                    return LeftoverAction.Archive;
+                }
+                reason = OrphanIssued + " (убран или переименован после выдачи): оформите новую ревизию сборочного чертежа — " +
+                    "выгрузка уберёт файл в «" + ExportNaming.ArchiveFolder + "»";
+                return LeftoverAction.Carry;
+            }
+            reason = Previous.Contains(name)
+                ? "прежний файл выгрузки, сейчас его нет — документ убран из изделия, переименован или изменился"
+                : "не из выгрузки — в папках выдачи остаются только выгруженные файлы";
+            return LeftoverAction.Archive;
+        }
+
+        private static bool Belongs(string name, IEnumerable<string> stems)
+        {
+            foreach (string stem in stems)
+                if (ExportNaming.BelongsTo(name, stem)) return true;
+            return false;
         }
     }
 }

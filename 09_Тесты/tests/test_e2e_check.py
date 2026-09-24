@@ -84,6 +84,47 @@ class Check(SwTestCase):
         text = Path(report_path).read_text(encoding="utf-8-sig")
         self.assertIn("БРАК — ", text, "строка брака")
 
+    def test_K09_foreign_file_in_issue_folder_is_flagged(self):
+        """K09 (замечание владельца 24.09.2026, З-48): в папках выдачи — только выгруженное. Развёртка, которой нет в отчёте
+        выгрузки (прежняя развёртка убранной детали, чужой файл), — замечание: «Готово к производству» вписало бы её в
+        отчёт выдачи, и цех получил бы её вместе с изделием. PDF листа ЛЗК, выгруженный файл и заметка — не замечание.
+        Выданный файл документа, которого в изделии больше нет (выгрузка оставила его с замечанием), — тоже замечание:
+        без новой ревизии сборки его выдали бы снова."""
+        import hashlib
+        product, asm = self._product()
+        pdf = product / "02_PDF"
+        laser = product / "03_ЧПУ" / "Лазер_Лист"
+        pdf.mkdir(parents=True)
+        laser.mkdir(parents=True)
+        exported = pdf / "ПРТИ.468211.101 Пластина опорная.pdf"
+        exported.write_bytes(b"%PDF-1.4 exported")
+        orphan = pdf / "ПРТИ.468211.198 Ребро.pdf"
+        orphan.write_bytes(b"%PDF-1.4 issued")
+        (pdf / "ЛЗК_ПРТИ.468211.100_Расход.pdf").write_bytes(b"%PDF-1.4 lzk")
+        (pdf / "Для цеха.txt").write_text("заметка", encoding="utf-8")
+        (laser / "ПРТИ.468211.199 Косынка_S3мм_1шт_80х150.dxf").write_text("0\nEOF\n", encoding="ascii")
+        (product / "_Экспорт.txt").write_text("\n".join([
+            "Выгрузка для производства", "Изделие:  ПРТИ.468211.100", "Файлов:   2, пропущено: 0", "",
+            "Выгружено (SHA-256):",
+            "  " + hashlib.sha256(exported.read_bytes()).hexdigest() + "  " + exported.name,
+            "  " + hashlib.sha256(orphan.read_bytes()).hexdigest() + "  " + orphan.name, "",
+            "Замечания:",
+            "  " + orphan.name + " — выдан в производство, а его документа в изделии больше нет (убран или переименован " +
+            "после выдачи): оформите новую ревизию сборочного чертежа — выгрузка уберёт файл в «_Аннулировано»", ""]),
+            encoding="utf-8-sig")
+        doc = self.s.open(asm)
+        self.s.activate(doc)
+        status = self._check()
+        self.assertTrue(status.startswith("ok|"), status)
+        text = (product / "_Проверка.txt").read_text(encoding="utf-8-sig")
+        flagged = [line for line in text.splitlines() if "лежит в папке выдачи" in line]
+        self.assertEqual(1, len(flagged), "\n".join(flagged) or text)
+        self.assertIn("ПРТИ.468211.199 Косынка_S3мм_1шт_80х150.dxf", flagged[0])
+        orphans = [line for line in text.splitlines() if "а его документа в изделии больше нет" in line]
+        self.assertEqual(1, len(orphans), "\n".join(orphans) or text)
+        self.assertIn(orphan.name, orphans[0])
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
     def test_K03_second_run_keeps_previous_report(self):
         """K03: повторная проверка сохраняет прежний отчёт в _Проверка_пред.txt."""
         product, asm = self._product()

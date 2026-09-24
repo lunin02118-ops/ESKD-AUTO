@@ -257,7 +257,9 @@ namespace ESKD.MaterialSync.Core
             {
                 string document, reason;
                 SplitDocument(line, out document, out reason);
-                list.Add(Of(NoticeLevel.Warning, document, reason, "Проверьте файл перед резкой"));
+                // Убранный в «_Аннулировано» прежний файл — сведения, а не забота: в папке выдачи его уже нет (З-48).
+                if (ExportLog.IsArchiveNote(reason)) list.Add(Of(NoticeLevel.Info, document, reason, ""));
+                else list.Add(Of(NoticeLevel.Warning, document, reason, "Проверьте файл перед резкой"));
             }
             foreach (string line in skipped ?? Enumerable.Empty<string>())
             {
