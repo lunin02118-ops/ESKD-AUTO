@@ -145,6 +145,11 @@ class Issue(SwTestCase):
             bch = int(com.call(self.s.eskd(), "EnableBchCommand"))
             if model.suffix.lower() == ".sldprt" and not model.with_suffix(".SLDDRW").exists() and bch != 3:
                 self.assertEqual(1, int(com.call(self.s.eskd(), "ToggleDrawinglessSilent")), model.name)
+            # Рама сварная фикстуры — три тела в одной детали: в IGS она не идёт, и с «Лазерная резка трубы» проверка
+            # изделия её не пропустит (З-51, её проверяет K10). Здесь конструктор решил резать раму не на труборезе.
+            if model.name == "ПРТИ.468211.105 Рама сварная.sldprt":
+                from eskd_e2e import build
+                build.props(doc, {"Операции": "Покраска"})
             self.s.save(doc)
             self.s.close(doc)
         norms = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / "Нормативы_производства.xlsx"

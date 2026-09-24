@@ -99,6 +99,39 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>
+        /// Начало замечания о многотельной детали с «Лазерная резка трубы» (решение владельца 24.09.2026, З-51): в IGS для
+        /// трубореза она не идёт — в файл ушли бы все её тела, сварная рама целиком. Проверка изделия делает из него
+        /// замечание правила «е»: ведомость ЛЗК обещает цеху IGS, которого нет.
+        /// </summary>
+        public const string MultibodyNoIgs = "многотельная деталь в IGS не идёт";
+
+        /// <summary>Начало замечания о многотельной детали — с резкой трубы и без неё (<see cref="MultibodyReason"/>).</summary>
+        private const string Multibody = "многотельная деталь";
+
+        /// <summary>
+        /// Замечание выгрузки о многотельной детали (З-51): тел всего, из них поверхностей и скрытых — конструктор находит
+        /// лишнее тело и в дереве, и среди скрытых. tubeCutting — в «Операциях» стоит «Лазерная резка трубы»: тогда IGS
+        /// ждёт цех и проверка изделия не пропустит; без неё — только предупреждение.
+        /// </summary>
+        public static string MultibodyReason(int bodies, int surfaces, int hidden, bool tubeCutting)
+        {
+            string count = "тел " + bodies + (surfaces > 0 ? ", из них поверхностей " + surfaces : "") +
+                (hidden > 0 ? (surfaces > 0 ? ", скрытых " : ", из них скрытых ") + hidden : "");
+            if (tubeCutting)
+                return MultibodyNoIgs + " (" + count + "): проверьте чертёж и сборку — труба для трубореза должна быть " +
+                    "отдельной деталью из одного тела; если резать на труборезе не нужно, снимите «" +
+                    LzkOperations.TubeCutting + "» в ведомости ЛЗК";
+            return Multibody + " из трубы (" + count + "), «" + LzkOperations.TubeCutting + "» в «Операциях» нет: IGS не " +
+                "делается — проверьте чертёж и сборку";
+        }
+
+        /// <summary>Замечание о многотельной детали (<see cref="MultibodyReason"/>) — в окне итога с подсказкой про чертёж.</summary>
+        public static bool IsMultibodyNote(string reason)
+        {
+            return (reason ?? "").Trim().StartsWith(Multibody, StringComparison.Ordinal);
+        }
+
+        /// <summary>
         /// Разбор `_Экспорт.txt` обратно: выгруженные файлы с суммами и пропуски «документ — причина».
         /// Проверка изделия (Т-32е) сверяет по ним наличие файлов и суммы, а не ищет имя по всему тексту.
         /// </summary>

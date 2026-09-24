@@ -933,6 +933,46 @@ namespace ESKD.MaterialSync.Sw
             return new List<SheetBody>();
         }
 
+        /// <summary>Тела детали в показанном исполнении: все, из них поверхностей и скрытых.</summary>
+        private sealed class BodyCount
+        {
+            public int All;
+            public int Surfaces;
+            public int Hidden;
+        }
+
+        /// <summary>
+        /// Тела детали в показанном исполнении (З-51) — твёрдые и поверхности, скрытые тоже: SaveAs IGS пишет модель
+        /// целиком, и лишнее тело попало бы труборезу. GetBodies2 отдаёт тела активной конфигурации — PartFiles уже
+        /// показал нужное исполнение. Null — тела не прочитаны: такую деталь нельзя ни выгрузить, ни назвать многотельной.
+        /// </summary>
+        private static BodyCount Bodies(PartDoc part)
+        {
+            if (part == null) return null;
+            try
+            {
+                // Сразу после смены окна или исполнения SolidWorks перестраивает дерево в фоне (FeatureWalk).
+                return FeatureWalk.Retry(() =>
+                {
+                    int solids = BodiesOf(part, swBodyType_e.swSolidBody, false);
+                    int surfaces = BodiesOf(part, swBodyType_e.swSheetBody, false);
+                    int shown = BodiesOf(part, swBodyType_e.swSolidBody, true) + BodiesOf(part, swBodyType_e.swSheetBody, true);
+                    return new BodyCount { All = solids + surfaces, Surfaces = surfaces, Hidden = solids + surfaces - shown };
+                }, "тела детали");
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Выгрузка: тела детали", ex);
+                return null;
+            }
+        }
+
+        private static int BodiesOf(PartDoc part, swBodyType_e type, bool visibleOnly)
+        {
+            object[] bodies = part.GetBodies2((int)type, visibleOnly) as object[];
+            return bodies == null ? 0 : bodies.Count(b => b is Body2);
+        }
+
         /// <summary>
         /// Развёртка одного листового тела (body ≥ 1) или всей однотельной детали (body = 0): экспорт во временный файл,
         /// замер рамки, имя «…[_телоN]_S&lt;толщина&gt;мм[_Nшт]_&lt;ширина&gt;х&lt;длина&gt;.dxf», прежние развёртки — в архив.
@@ -1073,16 +1113,36 @@ namespace ESKD.MaterialSync.Sw
             // Решает галочка «Лазерная резка трубы» в операциях; без операций — признак профиля в модели. Материал —
             // активного исполнения: у исполнений он может быть разный (решение владельца 23.09.2026).
             bool tube = IsStructuralMember(item.Model) || IsTubeByMaterial(item.Model);
-            if (!LzkOperations.WantsTubeFile(operations, tube))
+            bool cutting = LzkOperations.WantsTubeFile(operations, tube);
+            if (!cutting && !tube) return true;
+            string target = ExportNaming.IgsPath(productFolder, designation, name, item.Path, item.Revision);
+            // Многотельная деталь в IGS не идёт (решение владельца 24.09.2026, З-51): в файл ушли бы все тела — сварная
+            // рама целиком или труба с лишним телом. Тела — показанного исполнения: у исполнений их может быть разное число.
+            // Прежний IGS такой детали цеху отдавать нельзя — он уходит в «_Аннулировано»; выгруженный в этот раз (тем же
+            // именем у исполнения без своего обозначения) не трогается.
+            BodyCount bodies = Bodies(item.Model as PartDoc);
+            if (bodies != null && bodies.All > 1)
+            {
+                log.Warn(label, ExportLog.MultibodyReason(bodies.All, bodies.Surfaces, bodies.Hidden, cutting));
+                if (File.Exists(target) && !log.Files.Contains(target, StringComparer.OrdinalIgnoreCase))
+                    Retire(target, DateTime.Now, "IGS многотельной детали — на труборез она не идёт", log);
+                return true;
+            }
+            if (!cutting)
             {
                 // Галочку снял конструктор — или «Операции» записала ЛЗК до 24.09.2026, не узнав трубу по материалу
                 // SolidWorks. Молча пропускать нельзя: в «Труборез» не попала бы труба, и никто бы не заметил.
-                if (tube)
-                    log.Warn(label, "деталь из трубы, а в «Операциях» нет «" + LzkOperations.TubeCutting +
-                        "»: IGS не сделан — если он нужен, поставьте эту операцию в ведомости ЛЗК и выгрузите заново");
+                log.Warn(label, "деталь из трубы, а в «Операциях» нет «" + LzkOperations.TubeCutting +
+                    "»: IGS не сделан — если он нужен, поставьте эту операцию в ведомости ЛЗК и выгрузите заново");
                 return true;
             }
-            string target = ExportNaming.IgsPath(productFolder, designation, name, item.Path, item.Revision);
+            if (bodies == null || bodies.All == 0)
+            {
+                // Непрочитанные тела могли оказаться многотельной деталью — наугад IGS не делается.
+                log.Skip(label, bodies == null ? "тела детали не прочитаны: IGS не сделан — выгрузите изделие заново"
+                    : "в исполнении нет тел: IGS не сделан");
+                return true;
+            }
             if (ExportNaming.TooLong(target).Length > 0)
             {
                 log.Skip(label, "IGS не сделан: " + ExportNaming.TooLong(target));

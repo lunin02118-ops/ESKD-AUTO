@@ -441,5 +441,39 @@ namespace ESKD.Tests
             Assert.AreEqual("Х Косынка_S3мм_1шт_100х200.dxf", list[0].Document, "файл назван");
             Assert.AreEqual(NoticeLevel.Warning, list[1].Level, "прочие замечания выгрузки — как раньше");
         }
+
+        /// <summary>
+        /// З-51 (решение владельца 24.09.2026): многотельная деталь в IGS не идёт. Замечание с «Лазерная резка трубы» проверка
+        /// изделия читает из отчёта выгрузки (правило «е»); без резки трубы — только предупреждение. В окне итога подсказка —
+        /// про модель: файла нет, проверять нечего.
+        /// </summary>
+        public static void Test_Multibody_note_is_read_back_by_check()
+        {
+            string reason = ExportLog.MultibodyReason(3, 0, 0, true);
+            Assert.IsTrue(reason.StartsWith(ExportLog.MultibodyNoIgs + " (тел 3): проверьте чертёж и сборку"), reason);
+            Assert.IsTrue(reason.Contains("снимите «" + LzkOperations.TubeCutting + "» в ведомости ЛЗК"), "как снять замечание: " + reason);
+            ExportLog log = new ExportLog();
+            log.Warn("А.105 Рама.sldprt [00]", reason);
+            ExportLog back = ExportLog.Parse(log.Text());
+            Assert.AreEqual(1, back.Warnings.Count, "замечание в отчёте");
+            KeyValuePair<string, string> note = ExportLog.SplitSkip(back.Warnings[0]);
+            Assert.AreEqual("А.105 Рама.sldprt [00]", note.Key, "документ с исполнением");
+            Assert.IsTrue(note.Value.StartsWith(ExportLog.MultibodyNoIgs), "то, что читает проверка: " + note.Value);
+            Assert.AreEqual(0, back.Skipped.Count, "не пропуск: деталь выгружена, прежние файлы её полная выгрузка убирает");
+
+            string unticked = ExportLog.MultibodyReason(2, 1, 1, false);
+            Assert.IsFalse(unticked.StartsWith(ExportLog.MultibodyNoIgs), "без резки трубы проверка не останавливает: " + unticked);
+            Assert.IsTrue(unticked.Contains("(тел 2, из них поверхностей 1, скрытых 1)"), unticked);
+            Assert.IsFalse(unticked.Contains("поставьте"), "совета поставить резку трубы нет — IGS всё равно не будет: " + unticked);
+            Assert.IsTrue(ExportLog.MultibodyReason(2, 0, 1, true).Contains("(тел 2, из них скрытых 1)"), "скрытое тело названо");
+
+            Assert.IsTrue(ExportLog.IsMultibodyNote(reason) && ExportLog.IsMultibodyNote(unticked), "оба — о многотельной детали");
+            Assert.IsFalse(ExportLog.IsMultibodyNote("многотельная листовая деталь: листовых тел 2 — DXF на каждое тело"),
+                "замечание о развёртках листовых тел — другое");
+            List<Notice> list = Notices.FromExport(new string[0], new[] { "А.105 Рама.sldprt — " + reason, "А.106 Рама.sldprt — " + unticked });
+            Assert.AreEqual(NoticeLevel.Warning, list[0].Level, "замечание");
+            Assert.AreEqual("Проверьте чертёж и сборку детали", list[0].Hint, "подсказка — про модель");
+            Assert.AreEqual("Проверьте чертёж и сборку детали", list[1].Hint, "и без резки трубы");
+        }
     }
 }

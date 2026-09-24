@@ -14,6 +14,9 @@ PRODUCT = "И01_ПРТИ.468211.100"
 ASM = "ПРТИ.468211.100 СБ Кондуктор сварочный.sldasm"
 SHEET_PART = "ПРТИ.468211.101 Пластина опорная.sldprt"
 TIMEOUT = 900
+# Рама сварная фикстуры A — три тела в одной детали: в IGS она не идёт, выгрузка пишет замечание (решение владельца
+# 24.09.2026, З-51).
+MULTIBODY_FRAME = "ПРТИ.468211.105 Рама сварная.sldprt — многотельная деталь в IGS не идёт (тел 3)"
 
 
 def igs_line_extents(path):
@@ -117,10 +120,9 @@ class Export(SwTestCase):
         self.assertTrue(all("_S" in p.name and "мм_" in p.name for p in dxfs),
                         f"в имени DXF толщина и рамка: {[p.name for p in dxfs]}")
         # Трубы фикстуры построены вытягиванием, без элемента конструкции: выгрузка не делала их активными, и в IGS
-        # уходила вся сборка или соседняя пластина (замечание владельца 24.09.2026).
-        self.assertEqual(["ПРТИ.468211.102 Стойка.igs", "ПРТИ.468211.105 Рама сварная.igs"], [p.name for p in igs])
+        # уходила вся сборка или соседняя пластина (замечание владельца 24.09.2026). Многотельная рама в IGS не идёт (З-51).
+        self.assertEqual(["ПРТИ.468211.102 Стойка.igs"], [p.name for p in igs])
         iges.assert_part(self, igs[0], 1, (80, 80, 300))
-        iges.assert_part(self, igs[1], 3, (40, 240, 500))
 
         report = product / "_Экспорт.txt"
         self.assertEqual(str(report).lower(), report_path.lower(), "отчёт в папке изделия")
@@ -130,6 +132,7 @@ class Export(SwTestCase):
             self.assertIn(path.name, text, f"{path.name} в отчёте")
         self.assertIn("Файлов:   " + files, text, "число файлов в шапке отчёта")
         self.assertIn("пропущено: " + skipped, text, "число пропусков в шапке отчёта")
+        self.assertIn(MULTIBODY_FRAME, text, "замечание о многотельной раме")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_X05_exports_flat_pattern_dxf_and_tube_igs(self):
@@ -750,7 +753,8 @@ class Export(SwTestCase):
         всю сборку (после PDF чертежа активна она) или пластину, развёрнутую перед этим; заголовок IGS при этом называл
         трубу. Что попадёт в файл, зависело от порядка обхода и открытых окон — первый и второй раз выходило по-разному.
         Теперь при каждой выгрузке — первой, второй подряд и после того, как конструктор смотрел пластину в своём окне, —
-        у каждой трубы свой IGS только с её телами, развёртки те же, и в «_Аннулировано» ничего не уходит."""
+        у каждой однотельной трубы свой IGS только с её телом, развёртки те же, и в «_Аннулировано» ничего не уходит.
+        Многотельная рама в IGS не идёт ни разу — о ней замечание (З-51)."""
         product, asm = self._product()
         runs = []
         doc = self.s.open(asm)
@@ -763,10 +767,9 @@ class Export(SwTestCase):
             status = self._export()
             self.assertTrue(status.startswith("ok|"), f"выгрузка {attempt}: {status}")
             igs = sorted((product / "03_ЧПУ" / "Труборез").glob("*.igs"))
-            self.assertEqual(["ПРТИ.468211.102 Стойка.igs", "ПРТИ.468211.105 Рама сварная.igs"], [p.name for p in igs])
+            self.assertEqual(["ПРТИ.468211.102 Стойка.igs"], [p.name for p in igs])
             with self.subTest(выгрузка=attempt):
                 iges.assert_part(self, igs[0], 1, (80, 80, 300))
-                iges.assert_part(self, igs[1], 3, (40, 240, 500))
             runs.append(self._cnc_files(product))
             # Файл сделан этой выгрузкой, а не остался от прошлой: он в её отчёте; пропущены только PDF деталей без чертежа.
             report = Path(status.split("|")[3]).read_text(encoding="utf-8-sig")
@@ -775,6 +778,7 @@ class Export(SwTestCase):
             skipped = report.split("Пропущено:", 1)[-1].split("Замечания:", 1)[0] if "Пропущено:" in report else ""
             self.assertEqual([], [ln.strip() for ln in skipped.splitlines() if ln.strip() and "нет чертежа" not in ln],
                              f"выгрузка {attempt}: пропущено только то, у чего нет чертежа")
+            self.assertIn(MULTIBODY_FRAME, report, f"выгрузка {attempt}: замечание о многотельной раме")
         files, archived = runs[0]
         self.assertEqual(["ПРТИ.468211.101 Пластина опорная_S4мм_2шт_100х200.dxf",
                           "ПРТИ.468211.103 Планка_S4мм_1шт_40х100.dxf",
@@ -922,6 +926,85 @@ class Export(SwTestCase):
         asm, _ = build.assembly(self.s, [(sheet, 0, 0, 0), (tube, 0, 0.2, 0)])
         asm_path = models / f"ПРТИ.468211.{number} СБ Рама.sldasm"
         return models.parent, asm, asm_path, sheet, tube
+
+    def test_X27_multibody_tube_execution_gets_no_igs(self):
+        """X27 (решение владельца 24.09.2026, З-51): многотельная деталь в IGS не идёт — в файл ушли бы все её тела. «Рама»
+        из трубы: в «00» два элемента конструкции (два тела), в «01» первый погашен (одно тело); в сборке стоят оба
+        исполнения, файл сохранён с активным «01» — выгрузка переходит в многотельное исполнение и обратно. IGS получают
+        только «-01» и однотельная «Стойка»; о «00» — замечание, а не пропуск; IGS «Рамы» от прежней выгрузки уходит
+        в «_Аннулировано». Выгрузка одной детали, без полной выгрузки изделия, тоже убирает прежний IGS."""
+        from eskd_e2e import build
+        product, models = self._plate_product(370)
+        material = "Труба 30х30х1,5 ГОСТ 8639-82 / 08пс ГОСТ 13663-86"
+        frame = models / "ПРТИ.468211.371 Рама.sldprt"
+        doc = build.structural_tube(self.s, 400, build.tube_profile(), material)
+        build.add_structural_member(doc, 250, build.tube_profile(), 90, (-100, 0))
+        doc.ForceRebuild3(False)
+        base = str(doc.GetActiveConfiguration.Name)
+        build.add_configuration(doc, "01")
+        first = build.features_of_type(doc, "WeldMemberFeat")[0]
+        # 0 — погасить, 3 — в указанных конфигурациях.
+        self.assertTrue(com.dyn(first).SetSuppression2(0, 3, com.str_array(["01"])), "первый элемент погашен в «01»")
+        build.show_configuration(doc, "01")
+        doc.ForceRebuild3(False)
+        self.s.save_as(doc, frame)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.s.save(doc)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.assertEqual("ПРТИ.468211.371-01", com.prop_get(doc.Extension.CustomPropertyManager("01"), "Обозначение")[0],
+                         "у исполнения своё обозначение")
+        post = models / "ПРТИ.468211.372 Стойка.sldprt"
+        self.s.save_as(build.structural_tube(self.s, 500, build.tube_profile(), material), post)
+        self.s.wait_addin_idle(timeout=60.0)
+        asm, _ = build.assembly(self.s, [(frame, 0, 0, 0), (frame, 0, 0.5, 0), (post, 0, 1.0, 0)])
+        frames = [c for c in (com.dyn(c) for c in com.as_list(asm.GetComponents(True)))
+                  if Path(str(c.GetPathName or "")).name.lower() == frame.name.lower()]
+        self.assertEqual(2, len(frames), "два экземпляра рамы")
+        frames[0].ReferencedConfiguration = base
+        frames[1].ReferencedConfiguration = "01"
+        asm.ForceRebuild3(False)
+        asm_path = models / "ПРТИ.468211.370 СБ Рама.sldasm"
+        self.s.save_as(asm, asm_path)
+        self.s.close_all()
+        tubes = product / "03_ЧПУ" / "Труборез"
+        tubes.mkdir(parents=True)
+        stale = tubes / "ПРТИ.468211.371 Рама.igs"
+        stale.write_text("IGS прежней выгрузки: вся рама", encoding="utf-8")
+        doc = self.s.open(asm_path)
+        self.s.activate(doc)
+
+        status = self._export()
+        self.assertTrue(status.startswith("ok|"), status)
+        igs = sorted(tubes.glob("*.igs"))
+        self.assertEqual(["ПРТИ.468211.371-01 Рама.igs", "ПРТИ.468211.372 Стойка.igs"], [p.name for p in igs],
+                         "IGS — у однотельного исполнения и однотельной трубы")
+        iges.assert_part(self, igs[0], 1, (40, 40, 250))
+        iges.assert_part(self, igs[1], 1, (40, 40, 500))
+        self.assertEqual(["ПРТИ.468211.371 Рама"], [p.name.split("_")[0] for p in (tubes / "_Аннулировано").glob("*.igs")],
+                         "прежний IGS рамы — в «_Аннулировано»")
+        # Имя документа в отчёте — как у файла модели: SolidWorks сохраняет «.SLDPRT».
+        raw = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
+        text = raw.lower()
+        self.assertIn(f"ПРТИ.468211.371 Рама.sldprt [{base}] — многотельная деталь в IGS не идёт (тел 2)".lower(), text)
+        notes = [ln.strip() for ln in text.splitlines() if "многотельная" in ln]
+        self.assertEqual(1, len(notes), f"замечание только о многотельном исполнении: {notes}")
+        skipped = raw.split("Пропущено:", 1)[-1].split("Замечания:", 1)[0] if "Пропущено:" in raw else ""
+        self.assertEqual([], [ln.strip() for ln in skipped.splitlines() if ln.strip() and "нет чертежа" not in ln],
+                         "многотельное исполнение — замечание, а не пропуск")
+        self.s.close_all()
+        part = self.s.open(frame)
+        self.assertEqual("01", str(part.GetActiveConfiguration.Name), "конфигурация детали возвращена")
+
+        # Выгрузка одной детали — полной выгрузки изделия с её уборкой нет, прежний IGS убирает сама выгрузка трубы.
+        stale.write_text("IGS прежней выгрузки: вся рама", encoding="utf-8")
+        build.show_configuration(part, base)
+        self.s.activate(part)
+        status = self._export()
+        self.assertTrue(status.startswith("ok|"), status)
+        self.assertFalse(stale.exists(), "прежний IGS многотельного исполнения убран и при выгрузке одной детали")
+        text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig").lower()
+        self.assertIn("ПРТИ.468211.371 Рама.sldprt — многотельная деталь в IGS не идёт (тел 2)".lower(), text)
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_X16_blocked_folder_does_not_abort_export(self):
         """X16 (сверка SW API 23.09.2026, №29): на месте папок «Лазер_Лист» и «Труборез» лежат файлы — папку не создать.
