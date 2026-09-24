@@ -297,7 +297,7 @@ try {
     New-Item -ItemType Directory -Path $build, $share -Force | Out-Null
     $setup = Join-Path $build "SWTools-1.1.109-LOCAL-TEST-Setup.exe"
     [System.IO.File]::WriteAllBytes($setup, [byte[]](1..64))
-    $sha = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sha = Get-EskdFileSha256 -Path $setup  # не Get-FileHash: 5.1, запущенный из PowerShell 7, его теряет
     $eula = "ab" * 32
     $manifest = @{ product_version = "1.1.109"; source_commit = "72ba847"; artifact_kind = "local-test-installer";
                    setup = @{ sha256 = $sha }; installer_behavior = @{ silent_install_eula_sha256 = $eula } }

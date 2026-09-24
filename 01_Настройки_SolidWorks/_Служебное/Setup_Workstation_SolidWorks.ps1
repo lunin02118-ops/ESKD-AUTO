@@ -84,6 +84,8 @@ if ($sandbox -and $RegistryRoot -notmatch '^HKCU:\\Software\\ESKD_DeployTest_') 
 $U = $RegistryRoot
 
 Import-Module (Join-Path $PSScriptRoot "EskdDeploy.psm1") -Force -DisableNameChecking
+# Запуск из PowerShell 7 (или из программы, запущенной из него): чужие пути модулей — до первой команды из модулей.
+$psModulePathFixed = Reset-EskdPowerShellEnvironment
 
 #region Вспомогательные функции
 
@@ -252,6 +254,7 @@ Write-Host "Локальная копия:      $LocalRoot" -ForegroundColor Whi
 Write-Host "SolidWorks:           $SwVersion" -ForegroundColor White
 if ($sandbox) { Write-Host "Тестовый корень реестра: $U" -ForegroundColor Magenta }
 if ($logPath) { Write-Host "Журнал:               $logPath" -ForegroundColor White }
+if ($psModulePathFixed) { Write-Info "Запуск из PowerShell 7: его пути модулей убраны из окружения установщика." }
 $install = "$U\SolidWorks\ESKD_Install"
 
 if ($Mode -eq "Check") {
@@ -763,11 +766,18 @@ if ($sandbox -or $SkipDrew) {
     $drewInstallKey = "$U\SolidWorks\ESKD_Install"
     $drewDir = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation"
     $drewExe = @(Get-ChildItem -LiteralPath $drewDir -Filter "*AUTO.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
-    $autoHash = if ($drewExe.Count) { (Get-FileHash -LiteralPath $drewExe[0].FullName -ErrorAction SilentlyContinue).Hash } else { $null }
+    # Хэши — только через Get-EskdFileSha256 (.NET): пустой хэш из-за пропавшего Get-FileHash означал «не совпало» и
+    # удаление с переустановкой Drew (20.09.2026). Хэш сборки лицензии не вычислился — Drew не трогаем вовсе.
+    $autoHash = if ($drewExe.Count) { Get-EskdFileSha256OrNull -Path $drewExe[0].FullName } else { $null }
     $recordedAuto = (Get-ItemProperty -LiteralPath $drewInstallKey -Name "DrewInstaller" -ErrorAction SilentlyContinue).DrewInstaller
     $licPresent = Test-Path -LiteralPath $licDll
-    $licMatches = $licPresent -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)
+    $licNow = if ($licPresent) { Get-EskdFileSha256OrNull -Path $licDll } else { $null }
+    $licMatches = $licPresent -and $licNow -and ($licNow -eq $licHash)
     $drewOk = $licMatches -or ($licPresent -and $autoHash -and $recordedAuto -eq $autoHash)
+    if (-not $drewOk -and $licPresent -and -not $licNow) {
+        $drewOk = $true
+        Write-Warn "Drew установлен, но сверить его сборку не удалось (файл занят или недоступен): $licDll. Переустановка не выполняется."
+    }
     if ($drewOk) {
         Write-Info "Drew уже установлен $(if ($licMatches) { '(сборка верная, хэш совпал)' } else { '(поставлен этим же установщиком)' })."
     } else {
@@ -791,7 +801,7 @@ if ($sandbox -or $SkipDrew) {
                 }
             })
             foreach ($old in $oldDrew) {
-                $current = if (Test-Path -LiteralPath $licDll) { (Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash } else { "нет файла" }
+                $current = if (Test-Path -LiteralPath $licDll) { Get-EskdFileSha256OrNull -Path $licDll } else { "нет файла" }
                 Write-Info "Удаление прежней сборки Drew $($old.Version) $($old.Code) (хэш лицензии $current). Подтвердите запрос прав администратора."
                 try {
                     $msi = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x", $old.Code, "/qn", "/norestart" -Verb RunAs -Wait -PassThru
@@ -826,7 +836,7 @@ if ($sandbox -or $SkipDrew) {
                     $installed = $false
                     while ((Get-Date) -lt $deadline) {
                         Start-Sleep -Seconds 3
-                        if ((Test-Path -LiteralPath $licDll) -and ((Get-FileHash -LiteralPath $licDll -ErrorAction SilentlyContinue).Hash -ceq $licHash)) { $installed = $true; break }
+                        if ((Get-EskdFileSha256OrNull -Path $licDll) -eq $licHash) { $installed = $true; break }
                         if ($setup.HasExited) {
                             # Установщик мог передать работу установщику Windows и выйти раньше — даём ему 20 секунд.
                             if (-not $exitedAt) { $exitedAt = Get-Date } elseif (((Get-Date) - $exitedAt).TotalSeconds -gt 20) { break }
@@ -923,7 +933,7 @@ if ($sandbox -or $SkipSwTools) {
         $swToolsSetup = Join-Path $swToolsTemp (Split-Path -Leaf $swToolsRelease.SetupPath)
         try {
             Copy-Item -LiteralPath $swToolsRelease.SetupPath -Destination $swToolsSetup -Force -ErrorAction Stop
-            if ((Get-FileHash -LiteralPath $swToolsSetup -Algorithm SHA256).Hash.ToLowerInvariant() -ne $swToolsRelease.Sha256) {
+            if ((Get-EskdFileSha256 -Path $swToolsSetup) -ne $swToolsRelease.Sha256) {
                 $failures++
                 Write-Fail "Установщик SWTools не совпадает с выпуском (SHA-256) — не запускается: $($swToolsRelease.SetupPath)"
             } else {

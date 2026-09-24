@@ -16,6 +16,11 @@ namespace ESKD.MaterialSync.Core
         public string Product = "";
         public string User = "";
         public DateTime Time = DateTime.Now;
+        /// <summary>
+        /// Версия изделия, по которой сделана выгрузка (<see cref="ProductStamp"/>); пусто — изделие не проверено или
+        /// изменено после проверки; null — отчёт до 23.09.2026, без строки версии.
+        /// </summary>
+        public string Version;
         public readonly System.Collections.Generic.List<string> Files = new System.Collections.Generic.List<string>();
         public readonly System.Collections.Generic.List<string> Skipped = new System.Collections.Generic.List<string>();
         /// <summary>Выгружено, но с оговоркой: цеху стоит проверить файл (например, IGS не по оси трубы, Т-29).</summary>
@@ -45,6 +50,8 @@ namespace ESKD.MaterialSync.Core
             sb.AppendLine("Выгрузка для производства");
             sb.AppendLine("Изделие:  " + Product);
             sb.AppendLine("Выгрузил: " + User + ", " + Time.ToString("dd.MM.yyyy HH:mm", CultureInfo.GetCultureInfo("ru-RU")));
+            if (Version != null)
+                sb.AppendLine(ProductStamp.VersionLabel + "   " + (Version.Length > 0 ? Version : ProductStamp.Unchecked));
             sb.AppendLine("Файлов:   " + Files.Count + ", пропущено: " + Skipped.Count);
             sb.AppendLine();
             if (Files.Count == 0) sb.AppendLine("Ничего не выгружено.");
@@ -96,6 +103,11 @@ namespace ESKD.MaterialSync.Core
                 if (line.Length == 0) continue;
                 if (!line.StartsWith("  ", StringComparison.Ordinal))
                 {
+                    if (line.StartsWith(ProductStamp.VersionLabel, StringComparison.Ordinal))
+                    {
+                        string version = line.Substring(ProductStamp.VersionLabel.Length).Trim();
+                        log.Version = version == ProductStamp.Unchecked ? "" : version;
+                    }
                     block = line.StartsWith("Выгружено", StringComparison.Ordinal) ? "files"
                         : line.StartsWith("Пропущено", StringComparison.Ordinal) ? "skipped"
                         : line.StartsWith("Замечания", StringComparison.Ordinal) ? "warnings" : "";
@@ -115,6 +127,92 @@ namespace ESKD.MaterialSync.Core
                 else if (block == "warnings") log.Warnings.Add(body);
             }
             return log;
+        }
+
+        /// <summary>
+        /// Отчёт выгрузки больше не по проверенной версии изделия: строка «Версия:» становится «не проверено». changed —
+        /// строка была с версией. Прочее в тексте не трогается.
+        /// </summary>
+        public static string MarkUnchecked(string text, out bool changed)
+        {
+            changed = false;
+            string source = text ?? "";
+            string newline = source.Contains("\r\n") ? "\r\n" : "\n";
+            string[] lines = source.Replace("\r\n", "\n").Split('\n');
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (!lines[i].StartsWith(ProductStamp.VersionLabel, StringComparison.Ordinal)) continue;
+                string version = lines[i].Substring(ProductStamp.VersionLabel.Length).Trim();
+                if (version.Length == 0 || version == ProductStamp.Unchecked) return source;
+                lines[i] = ProductStamp.VersionLabel + "   " + ProductStamp.Unchecked;
+                changed = true;
+                return string.Join(newline, lines);
+            }
+            return source;
+        }
+
+        /// <summary>
+        /// Файлы, перенесённые в «_Аннулировано» после выгрузки, — из блока «Выгружено» и из счёта «Файлов:». Кнопка
+        /// «Новая ревизия» уносит прежние файлы уже после того, как выгрузка записала отчёт, и отчёт ссылался на файл,
+        /// которого в папке выдачи нет (ревью 23.09.2026, REV-2). Прочее в тексте не трогается.
+        /// </summary>
+        public static string RemoveFiles(string text, IEnumerable<string> names, out bool changed)
+        {
+            changed = false;
+            string source = text ?? "";
+            HashSet<string> drop = new HashSet<string>(names ?? new string[0], StringComparer.OrdinalIgnoreCase);
+            if (drop.Count == 0) return source;
+            string newline = source.Contains("\r\n") ? "\r\n" : "\n";
+            List<string> lines = new List<string>(source.Replace("\r\n", "\n").Split('\n'));
+            bool files = false;
+            int header = -1;
+            for (int i = 0; i < lines.Count; i++)
+            {
+                string line = lines[i];
+                if (line.Length > 0 && !line.StartsWith("  ", StringComparison.Ordinal))
+                {
+                    files = line.StartsWith("Выгружено", StringComparison.Ordinal);
+                    if (files) header = i;
+                    continue;
+                }
+                if (!files) continue;
+                string body = line.Trim();
+                int gap = body.IndexOf("  ", StringComparison.Ordinal);
+                if (gap <= 0 || !drop.Contains(body.Substring(gap).Trim())) continue;
+                lines.RemoveAt(i--);
+                changed = true;
+            }
+            if (!changed) return source;
+            ExportLog left = Parse(string.Join("\n", lines.ToArray()));
+            if (left.Files.Count == 0 && header >= 0) lines[header] = "Ничего не выгружено.";
+            int count = lines.FindIndex(l => l.StartsWith("Файлов:", StringComparison.Ordinal));
+            if (count >= 0) lines[count] = "Файлов:   " + left.Files.Count + ", пропущено: " + left.Skipped.Count;
+            return string.Join(newline, lines.ToArray());
+        }
+
+        /// <summary>
+        /// Имя документа из подписи строки отчёта — без исполнения и расширения: «Труба.sldprt [01]» → «Труба». Имя
+        /// конфигурации SolidWorks бывает с «&lt;», «&gt;» и точкой («По умолчанию&lt;Как сварено&gt;», «1.5»): Path.* на «&lt;»
+        /// бросал исключение — проверка изделия и выгрузка одной детали падали, а точку принимал за расширение — пропуск
+        /// исполнения терялся (ревью 23.09.2026).
+        /// </summary>
+        public static string DocumentName(string label)
+        {
+            string s = (label ?? "").Trim();
+            foreach (string extension in new[] { ".sldprt", ".sldasm", ".slddrw" })
+            {
+                int at = s.IndexOf(extension + " [", StringComparison.OrdinalIgnoreCase);
+                if (at > 0) return s.Substring(0, at);
+            }
+            if (s.EndsWith("]", StringComparison.Ordinal))
+            {
+                int open = s.IndexOf(" [", StringComparison.Ordinal);
+                if (open > 0) s = s.Substring(0, open);
+            }
+            int slash = s.LastIndexOfAny(new[] { '\\', '/' });
+            if (slash >= 0) s = s.Substring(slash + 1);
+            int dot = s.LastIndexOf('.');
+            return dot > 0 ? s.Substring(0, dot) : s;
         }
 
         /// <summary>Документ и причина из строки пропуска «документ — причина».</summary>
@@ -232,9 +330,46 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>Сторона рамки развёртки: целые миллиметры, вверх — деталь меньше рамки не бывает.</summary>
+        /// <remarks>
+        /// Округлялось до ближайшего — 200,4 мм давали «200», заготовка в имени меньше детали (сверка 23.09.2026, находка 13).
+        /// Сотые доли миллиметра — погрешность замера, а не деталь: 200,004 остаются «200».
+        /// </remarks>
         public static string Round(double mm)
         {
-            return Math.Max(0, Math.Round(mm, MidpointRounding.AwayFromZero)).ToString("0", CultureInfo.InvariantCulture);
+            return Math.Max(0, Math.Ceiling(mm - 0.01)).ToString("0", CultureInfo.InvariantCulture);
+        }
+
+        /// <summary>
+        /// Файл выдачи именно этого документа: имя — основа (<see cref="Stem"/>), за ней расширение, суффикс ревизии «_ИзмN»
+        /// или толщина развёртки «_S3мм_». Просто «начинается с основы» захватывало чужие файлы: «Деталь1» — и «Деталь10 …»
+        /// (аудит 23.09.2026, REV-2).
+        /// </summary>
+        public static bool BelongsTo(string fileName, string stem)
+        {
+            string name = fileName ?? "";
+            if (string.IsNullOrEmpty(stem) || !name.StartsWith(stem, StringComparison.OrdinalIgnoreCase)) return false;
+            string rest = name.Substring(stem.Length);
+            return rest.StartsWith(".", StringComparison.Ordinal) ||
+                Regex.IsMatch(rest, @"^_Изм\d+\.", RegexOptions.IgnoreCase) ||
+                Regex.IsMatch(rest, @"^_S\d+(\.\d+)?мм_", RegexOptions.IgnoreCase);
+        }
+
+        /// <summary>
+        /// Прежняя развёртка того же документа и той же ревизии под другим именем: в имени DXF — толщина, количество и рамка,
+        /// и после правки детали (или нового округления рамки — вверх, сверка SW API 23.09.2026) выгрузка кладёт файл с
+        /// новым именем, а старый оставался рядом: в «Лазер_Лист» две развёртки одной детали. current — только что
+        /// выгруженный файл, он не прежний. Файлы другой ревизии («_ИзмN») и других документов — не её.
+        /// </summary>
+        public static bool IsStaleDxf(string fileName, string stem, int revision, string current)
+        {
+            string name = fileName ?? "";
+            if (!name.EndsWith(".dxf", StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(stem) ||
+                string.Equals(name, current ?? "", StringComparison.OrdinalIgnoreCase)) return false;
+            if (!name.StartsWith(stem, StringComparison.OrdinalIgnoreCase) ||
+                !Regex.IsMatch(name.Substring(stem.Length), @"^_S\d+(\.\d+)?мм_", RegexOptions.IgnoreCase)) return false;
+            Match suffix = Regex.Match(name, @"_Изм(\d+)\.dxf$", RegexOptions.IgnoreCase);
+            int found = suffix.Success ? int.Parse(suffix.Groups[1].Value, CultureInfo.InvariantCulture) : 0;
+            return found == Math.Max(0, revision);
         }
 
         /// <summary>Куда убрать прежний файл выдачи при новой ревизии: _Аннулировано рядом с ним (Т-30).</summary>

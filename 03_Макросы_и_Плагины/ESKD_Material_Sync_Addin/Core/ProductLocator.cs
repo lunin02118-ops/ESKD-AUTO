@@ -153,6 +153,55 @@ namespace ESKD.MaterialSync.Core
             return location;
         }
 
+        /// <summary>Папки внутри корня заказов, которые сами заказом не являются, а хранят заказы (сданные).</summary>
+        public static readonly string[] OrderShelves = { "_Сдано" };
+
+        /// <summary>
+        /// Папка заказа, в которой лежит файл: первая папка под корнем заказов («_Заявки», «03_ЗАКАЗЫ»; «_Сдано»
+        /// пропускается — в ней лежат сданные заказы), без корня — родитель «02_Металл» (диск подключён прямо к папке
+        /// заказов). Любое место заказа, а не только изделие: «Общие детали» заказа — тоже этот заказ. Пусто — файл не в
+        /// заказе.
+        /// </summary>
+        public static string OrderOf(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return "";
+            string full;
+            try
+            {
+                full = Path.GetFullPath(path);
+            }
+            catch (ArgumentException)
+            {
+                return "";
+            }
+            catch (NotSupportedException)
+            {
+                return "";
+            }
+            string[] parts = full.Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar });
+            int last = parts.Length - 1; // имя самого файла
+            for (int i = 0; i < last; i++)
+            {
+                if (!OrderRoots.Any(r => string.Equals(parts[i], r, StringComparison.OrdinalIgnoreCase))) continue;
+                int j = i + 1;
+                while (j < last && OrderShelves.Any(s => string.Equals(parts[j], s, StringComparison.OrdinalIgnoreCase))) j++;
+                return j < last && parts[j].Length > 0 ? string.Join("\\", parts, 0, j + 1) : "";
+            }
+            for (int i = 1; i < last; i++)
+                if (string.Equals(parts[i], SectionFolder, StringComparison.OrdinalIgnoreCase)) return string.Join("\\", parts, 0, i);
+            return "";
+        }
+
+        /// <summary>
+        /// Один и тот же заказ: сравниваются имена папок заказа («778_Школа»). Номер заказа в имени единственный, а путь к
+        /// нему бывает разный — «Z:\03_ЗАКАЗЫ» и сетевой «\\Synology_TR\…» у одного файла.
+        /// </summary>
+        public static bool SameOrder(string order, string other)
+        {
+            return !string.IsNullOrEmpty(order) && !string.IsNullOrEmpty(other) &&
+                string.Equals(Path.GetFileName(order.TrimEnd('\\', '/')), Path.GetFileName(other.TrimEnd('\\', '/')), StringComparison.OrdinalIgnoreCase);
+        }
+
         /// <summary>Папка изделия по имени «И&lt;nn&gt;_…», если «01_3D» нет (заказ ещё не разложен).</summary>
         private static string ProductByName(string dir)
         {

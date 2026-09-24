@@ -1,9 +1,15 @@
 // Минимальный раннер юнит-тестов для C# 5 без внешних библиотек.
 // Тест — public static void метод с именем Test_… в классе, чьё имя заканчивается на Tests.
 // Вывод в формате TAP: "ok N имя" / "not ok N имя # сообщение". Код выхода — число провалов.
+// Временные файлы тестов и журнал надстройки — в личной папке прогона (ESKD_UNIT_TEMP или %TEMP%\eskd_unit_…),
+// не в общем %TEMP%: тесты нарочно вызывают ошибки, а e2e-харнесс соседних прогонов читает ERROR-строки
+// из %TEMP%\eskd_material_sync.log (addin_log_errors в X01/P07/X06/R01).
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Reflection;
+using ESKD.MaterialSync.Core;
 
 namespace ESKD.Tests
 {
@@ -51,6 +57,8 @@ namespace ESKD.Tests
         public static int Main(string[] args)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
+            if (!UsePrivateTemp()) return 1;
+            Console.WriteLine("# журнал надстройки: " + Log.FilePath);
             string filter = args.Length > 0 ? args[0] : "";
             List<MethodInfo> tests = new List<MethodInfo>();
             foreach (Type type in typeof(UnitRunner).Assembly.GetTypes())
@@ -87,6 +95,29 @@ namespace ESKD.Tests
                 }
             }
             return failed;
+        }
+
+        /// <summary>
+        /// Переводит TMP/TEMP процесса в личную папку: Path.GetTempPath() читает их при каждом вызове,
+        /// поэтому туда уходят и Log.FilePath, и временные папки тестов. False — перевести не удалось.
+        /// </summary>
+        private static bool UsePrivateTemp()
+        {
+            string folder = Environment.GetEnvironmentVariable("ESKD_UNIT_TEMP");
+            if (string.IsNullOrEmpty(folder))
+                folder = Path.Combine(Path.GetTempPath(), "eskd_unit_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + "_" +
+                                      Process.GetCurrentProcess().Id);
+            folder = Path.GetFullPath(folder);
+            Directory.CreateDirectory(folder);
+            Environment.SetEnvironmentVariable("TMP", folder);
+            Environment.SetEnvironmentVariable("TEMP", folder);
+            string logFolder = Path.GetDirectoryName(Log.FilePath);
+            if (!string.Equals(logFolder.TrimEnd('\\'), folder.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Bail out! журнал надстройки остался в " + Log.FilePath + ", а не в " + folder);
+                return false;
+            }
+            return true;
         }
     }
 }

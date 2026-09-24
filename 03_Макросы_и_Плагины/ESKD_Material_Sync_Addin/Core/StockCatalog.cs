@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 
 namespace ESKD.MaterialSync.Core
@@ -88,6 +89,94 @@ namespace ESKD.MaterialSync.Core
         }
 
         /// <summary>Толщина листа в мм — в типоразмер: 8,0 → «8», 1,5 → «1.5». Округление до 0,001 мм гасит дрожь double.</summary>
+        /// <summary>
+        /// Толщины тел листовой детали (NaN — тело не листовое): одна на все листовые тела и нелистовых нет — пусто, single —
+        /// эта толщина (вся деталь, как раньше). Разные или есть нелистовые — чем деталь неясна; материал по толщине тогда не
+        /// подбирается (сверка SW API 23.09.2026, №39): раньше толщина первого «Листового металла» шла всей детали, и тела
+        /// 8 мм получали «Лист 3». Листовых тел нет — пусто и NaN.
+        /// </summary>
+        public static string SheetBodiesProblem(IList<double> bodyMm, out double single)
+        {
+            single = double.NaN;
+            List<string> sizes = new List<string>();
+            bool plain = false;
+            foreach (double mm in bodyMm ?? new double[0])
+            {
+                string size = SizeFromThickness(mm);
+                if (size.Length == 0)
+                {
+                    plain = true;
+                    continue;
+                }
+                if (double.IsNaN(single)) single = mm;
+                if (!sizes.Contains(size)) sizes.Add(size);
+            }
+            if (sizes.Count == 0 || sizes.Count == 1 && !plain)
+            {
+                if (sizes.Count == 0) single = double.NaN;
+                return "";
+            }
+            single = double.NaN;
+            string list = string.Join(", ", sizes.ToArray()).Replace('.', ',');
+            return sizes.Count > 1 ? "тела разной толщины (" + list + " мм)" : "рядом с листовым телом " + list + " мм — не листовые тела";
+        }
+
+        /// <summary>
+        /// Многотельная листовая деталь уже решена конструктором (ревью 23.09.2026): у каждого листового тела — материал,
+        /// подходящий его толщине (fits), у не листового (NaN) — свой, не материал листа. Тогда замечание «тела разной толщины —
+        /// назначьте телам сами» не нужно: раньше оно повторялось при каждом сохранении и после того, как материалы
+        /// назначены. actual — фактический материал каждого тела (свой или детали), по порядку bodyMm.
+        /// </summary>
+        public static bool SheetBodiesSettled(IList<double> bodyMm, IList<string> actual, Func<double, string, bool> fits)
+        {
+            if (bodyMm == null || actual == null || fits == null || bodyMm.Count == 0 || bodyMm.Count != actual.Count) return false;
+            List<double> sheets = new List<double>();
+            foreach (double mm in bodyMm)
+                if (SizeFromThickness(mm).Length > 0) sheets.Add(mm);
+            for (int i = 0; i < bodyMm.Count; i++)
+            {
+                string material = (actual[i] ?? "").Trim();
+                if (material.Length == 0) return false;
+                if (SizeFromThickness(bodyMm[i]).Length > 0)
+                {
+                    if (!fits(bodyMm[i], material)) return false;
+                }
+                // Не листовое тело с материалом листа — это материал детали, выбранный для листа: за это тело никто не решал.
+                else if (sheets.Any(mm => fits(mm, material))) return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Итог назначения материала детали целиком (ревью 23.09.2026). before — материал детали до назначения, now —
+        /// прочитанный обратно. Сменился на нужный — назначен (applied): графа 3 должна видеть новый материал детали, а тела
+        /// со своим материалом (bodiesProblem) — замечанием «назначен детали, но …». Взят из чужой библиотеки
+        /// (libraryProblem) — тоже назначен, но в другие исполнения не переносится (propagate = false). Уже стоял, а
+        /// помешали тела или библиотека, — ничего не изменилось: «не назначен … уже стоит, но …» (иначе вопрос «заменить»
+        /// возвращался бы при каждой проверке с «назначен» и лишним сохранением). Не встал — «не назначен» с тем, что
+        /// оставил SolidWorks. Пусто — замечания нет.
+        /// </summary>
+        public static string WholePartResult(string before, string now, string target, string libraryProblem, string bodiesProblem,
+            out bool applied, out bool propagate)
+        {
+            string got = (now ?? "").Trim();
+            string wanted = (target ?? "").Trim();
+            string problem = !string.IsNullOrEmpty(libraryProblem) ? libraryProblem : bodiesProblem ?? "";
+            applied = false;
+            propagate = false;
+            if (got.Length == 0 || !string.Equals(got, wanted, StringComparison.Ordinal))
+                return "Материал «" + wanted + "» не назначен: " +
+                    (got.Length == 0 ? "SolidWorks его не поставил" : "SolidWorks оставил «" + got + "»");
+            if (problem.Length > 0 && string.Equals((before ?? "").Trim(), wanted, StringComparison.Ordinal))
+                return "Материал «" + wanted + "» не назначен: у детали он уже стоит, но " + problem;
+            applied = true;
+            propagate = string.IsNullOrEmpty(libraryProblem);
+            if (!string.IsNullOrEmpty(libraryProblem))
+                return "Материал «" + wanted + "» назначен детали, но " + libraryProblem + " — назначьте его из нужной библиотеки " +
+                    "вручную; в другие исполнения он не переносится";
+            return problem.Length == 0 ? "" : "Материал «" + wanted + "» назначен детали, но " + problem;
+        }
+
         public static string SizeFromThickness(double millimetres)
         {
             if (double.IsNaN(millimetres) || millimetres <= 0) return "";
@@ -213,6 +302,32 @@ namespace ESKD.MaterialSync.Core
             string gost = (info.GostMaterial ?? "").Trim();
             if (gost.Length == 0) return true;  // сортамент без ГОСТа материала сверять не с чем
             return (info.Name ?? "").IndexOf(gost, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        /// <summary>
+        /// Стоящий материал позиции по материалам её тел (сверка SW API 23.09.2026, №31): у тела — свой, без своего — материал
+        /// детали, «» — никакого. Все одинаковые — он. Есть не подходящий геометрии — первый такой: заменить его можно только
+        /// с согласия конструктора. Остальные подходят, а у части тел материала нет — пусто (подбор дозаполнит). Все подходят
+        /// и разные — первый. Раньше при разных материалах тел выходило «материала нет», и материал конструктора заменялся
+        /// молча.
+        /// </summary>
+        /// <param name="fits">Материал подходит геометрии позиции; null — не подходит ни один.</param>
+        public static string PositionCurrent(IList<string> bodies, Func<string, bool> fits)
+        {
+            List<string> distinct = new List<string>();
+            bool gap = false;
+            if (bodies != null)
+                foreach (string raw in bodies)
+                {
+                    string name = (raw ?? "").Trim();
+                    if (name.Length == 0) gap = true;
+                    else if (!distinct.Contains(name)) distinct.Add(name);
+                }
+            if (distinct.Count == 0) return "";
+            if (distinct.Count == 1 && !gap) return distinct[0];
+            foreach (string name in distinct)
+                if (fits == null || !fits(name)) return name;
+            return gap ? "" : distinct[0];
         }
 
         /// <summary>Самый поздний год в имени материала: «ГОСТ 14637-89» — 1989, «ГОСТ 14637-2024» — 2024.</summary>

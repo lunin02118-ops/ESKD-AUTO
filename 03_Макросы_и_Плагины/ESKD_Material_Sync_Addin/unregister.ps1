@@ -13,6 +13,13 @@ $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot "Register-EskdAddin.ps1")
 
+# Под чужой учёткой снялась бы регистрация администратора, а не конструктора (сверка SW API 23.09.2026, №2).
+$foreign = Get-EskdForeignAccountMessage -Action Unregister -ScriptPath $PSCommandPath
+if ($foreign) {
+    Write-Host "[ОШИБКА] $foreign" -ForegroundColor Red
+    exit 1
+}
+
 Unregister-EskdAddin -SystemWide:(Test-EskdAdministrator)
 
 $guids = @($script:EskdAddin.Guid) + $script:EskdAddin.ObsoleteGuids

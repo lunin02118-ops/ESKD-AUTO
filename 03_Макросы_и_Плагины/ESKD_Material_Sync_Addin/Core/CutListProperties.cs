@@ -14,6 +14,25 @@ namespace ESKD.MaterialSync.Core
     /// </summary>
     public static class CutListProperties
     {
+        /// <summary>
+        /// Число из свойства списка вырезов: вычисленное значение, а записанное — только если это не ссылка SolidWorks
+        /// («LENGTH@@@Элемент списка вырезов1@…»), то есть вписано руками. Из ссылки выходило 1 — номер папки (или 40 из
+        /// «Труба 40х20…»), и это «1 мм» шло в «Расход» и в признак профиля выгрузки, а длина по телу уже не мерилась
+        /// (сверка SW API 23.09.2026, №35). NaN — числа нет.
+        /// </summary>
+        public static double Number(string raw, string resolved)
+        {
+            double v = IsLink(resolved) ? double.NaN : LzkOperations.ParseNumber(resolved);
+            if (!double.IsNaN(v)) return v;
+            return IsLink(raw) ? double.NaN : LzkOperations.ParseNumber(raw);
+        }
+
+        /// <summary>Значение — ссылка SolidWorks на величину («…@@@…»), а не само число.</summary>
+        public static bool IsLink(string value)
+        {
+            return (value ?? "").IndexOf("@@@", StringComparison.Ordinal) >= 0;
+        }
+
         /// <summary>Длина заготовки: то, что уйдёт в «Расход» книги ЛЗК.</summary>
         public static readonly string[] LengthSpellings = { "LENGTH", "ДЛИНА" };
 

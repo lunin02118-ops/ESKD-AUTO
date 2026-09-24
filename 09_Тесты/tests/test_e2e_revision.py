@@ -4,13 +4,17 @@
 Изделие «выдаётся» отчётом `_Выдано_<дата>.txt` — так же, как его пишет кнопка «Выдать в производство»:
 до выдачи чертёж правят свободно и ревизия не нужна.
 """
+import hashlib
+import os
 import shutil
+import stat
+import time
 import unittest
 from pathlib import Path
 
 import openpyxl
 
-from eskd_e2e import com, oracles, paths
+from eskd_e2e import com, guards, oracles, paths
 from eskd_e2e.testing import SwTestCase
 
 PRODUCT = "И01_ПРТИ.468211.100"
@@ -26,8 +30,9 @@ class Revision(SwTestCase):
         short = self._case_name().split("_")[1]
         subdir = f"{short}/_Заявки/2026-001/02_Металл/{PRODUCT}/01_3D"
         models = self.s.run_dir / subdir
-        if models.exists():
-            shutil.rmtree(models, ignore_errors=True)
+        # Каталог теста — целиком: журнал и отчёты прежнего прогона в папке изделия иначе остаются.
+        if (self.s.run_dir / short).exists():
+            shutil.rmtree(self.s.run_dir / short, ignore_errors=True)
         for src in sorted(Path(paths.FIXTURES_A).iterdir()):
             if src.suffix.lower() in (".sldprt", ".sldasm", ".slddrw"):
                 self.s.workspace_copy(src, subdir=subdir)
@@ -91,6 +96,129 @@ class Revision(SwTestCase):
         archived = sorted(p.name for p in (product / "02_PDF" / "_Аннулировано").glob("*.pdf"))
         self.assertTrue(archived, "прежний PDF перенесён в _Аннулировано")
 
+    def test_V05_bch_part_revision_reexports_and_archives_only_its_files(self):
+        """V05 (аудит 23.09.2026, NAME-1, REV-2): у детали БЧ ревизия — её свойство «Ревизия», а выгрузка читала только
+        «Revision»: после новой ревизии выданная БЧ-деталь пропускалась («оформите новую ревизию»), а её прежняя развёртка
+        уже лежала в «_Аннулировано» — у цеха не оставалось ничего. Теперь развёртка выгружается с «_Изм1», прежняя
+        уходит в архив только после этого, а файл другого документа с похожим именем («… усиленная») остаётся на месте."""
+        from eskd_e2e import build
+        short = self._case_name().split("_")[1]
+        if (self.s.run_dir / short).exists():
+            shutil.rmtree(self.s.run_dir / short, ignore_errors=True)
+        models = self.s.run_dir / f"{short}/_Заявки/2026-001/02_Металл/И01_ПРТИ.468211.190/01_3D"
+        models.mkdir(parents=True)
+        product = models.parent
+        part = models / "ПРТИ.468211.191 Косынка.sldprt"
+        doc = build.sheet_metal_plate(self.s, 200, 100, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97")
+        self.s.save_as(doc, part)
+        self.s.activate(doc)
+        self.assertEqual(1, int(com.call(self.s.eskd(), "ToggleDrawinglessSilent")), "деталь стала БЧ")
+        self.s.save(doc)
+
+        # Черновая выгрузка — развёртка без суффикса; рядом файл другого документа с тем же началом имени.
+        com.call(self.s.eskd(), "ExportProductSilent")
+        self.assertTrue(str(com.call(self.s.eskd(), "ExportStatus")).startswith("ok|"), "черновая выгрузка")
+        drafts = [p for p in (product / "03_ЧПУ").rglob("*.dxf") if "_Аннулировано" not in p.parts]
+        self.assertEqual(1, len(drafts), f"развёртка черновика: {drafts}")
+        draft = drafts[0]
+        self.assertNotIn("_Изм", draft.name, draft.name)
+        decoy = draft.parent / "ПРТИ.468211.191 Косынка усиленная_S3мм_100х50.dxf"
+        decoy.write_bytes(draft.read_bytes())
+        (product / "_Выдано_2026-09-10.txt").write_text(
+            "Выдано в производство\n\nab12cd  " + part.name + "\n", encoding="utf-8")
+
+        self.s.activate(doc)
+        status = self._revision()
+        self.assertTrue(status.startswith("ok|"), status)
+        self.assertEqual("1", status.split("|")[1], status)
+        self.assertNotIn("остались файлы прежней ревизии", status, status)
+        current = sorted(p.name for p in draft.parent.glob("*.dxf"))
+        self.assertTrue(any(name.endswith("_Изм1.dxf") and "усиленная" not in name for name in current),
+                        f"развёртка новой ревизии БЧ-детали: {current}")
+        self.assertFalse(draft.exists(), "прежняя развёртка ушла из папки выдачи")
+        archived = sorted(p.name for p in (draft.parent / "_Аннулировано").glob("*.dxf"))
+        self.assertTrue(any(name.startswith(draft.stem) for name in archived), f"прежняя развёртка в архиве: {archived}")
+        self.assertTrue(decoy.exists(), "файл другого документа («… усиленная») не тронут")
+        exported = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
+        self.path("export.txt").write_text(exported, encoding="utf-8")
+        self.assertNotIn("оформите новую ревизию", exported, "БЧ-деталь с ревизией не пропущена как выданная")
+        # Прежняя развёртка унесена в архив уже после записи отчёта выгрузки — ссылки на неё в отчёте нет (ревью 23.09.2026).
+        self.assertNotIn(draft.name, exported, "отчёт выгрузки не ссылается на файл из «_Аннулировано»")
+        self.assertTrue(any(name.endswith("_Изм1.dxf") and name in exported for name in current), exported)
+        self.s.close_all()
+        self.assertEqual("1", oracles.value(self.persisted(part), "Ревизия"), "ревизия БЧ — в её «Ревизии»")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_V06_unsaved_stamp_is_rolled_back(self):
+        """V06 (аудит 23.09.2026, SAVE-9): штамп ревизии не сохранился (файл чертежа стал только для чтения уже после
+        открытия). Раньше строка журнала оставалась, а новый номер — в открытом чертеже: следующее сохранение записало
+        бы ревизию без выгрузки. Теперь штамп в открытом чертеже прежний, строка журнала помечена «ОТМЕНЕНО», файлы
+        выдачи не тронуты."""
+        product, models = self._product()
+        drawing = models / DRAWING
+        doc = self.s.open(drawing)
+        self.s.activate(doc)
+        cpm = com.dyn(doc).Extension.CustomPropertyManager("")
+        before = com.prop_get(cpm, "Revision")
+        os.chmod(drawing, stat.S_IREAD)
+        try:
+            status = self._revision()
+        finally:
+            os.chmod(drawing, stat.S_IREAD | stat.S_IWRITE)
+        self.path("status.txt").write_text(status, encoding="utf-8")
+        self.assertTrue(status.startswith("error|"), status)
+        self.assertIn("не сохранён", status, status)
+        self.assertIn("ОТМЕНЕНО", status, status)
+        self.assertEqual(before, com.prop_get(com.dyn(doc).Extension.CustomPropertyManager(""), "Revision"),
+                         "свойство ревизии в открытом чертеже — прежнее")
+        rows = list(openpyxl.load_workbook(product / "Изменения.xlsx")["Изменения"].iter_rows(values_only=True))
+        self.assertEqual(2, len(rows), f"строка журнала не удалена: {rows}")
+        self.assertTrue(str(rows[1][5]).startswith("ОТМЕНЕНО: "), f"строка помечена отменённой: {rows[1]}")
+        self.assertFalse((product / "02_PDF").exists() and list((product / "02_PDF").glob("*_Изм1.pdf")),
+                         "выгрузки новой ревизии нет")
+        self.s.close_all()
+
+    def test_V07_check_flags_issued_document_changed_without_revision(self):
+        """V07 (аудит 23.09.2026, CHK-13): изделие выдано (`_Выдано_…` с суммами), потом деталь поправили и сохранили без
+        новой ревизии — цех работает по старому, а правка до него не дойдёт. Проверка изделия даёт замечание и называет
+        чертёж, на котором поднять ревизию; после «Новой ревизии» замечания нет."""
+        product, models = self._product(issued=False)
+        lines = ["Готово к производству", "Изделие:  ПРТИ.468211.100", "Отметил:  Тестов Т.Т., 10.09.2026 12:00",
+                 "Журнал:   строка 0 (Изменения.xlsx)", "", "Документы изделия:"]
+        for f in sorted(models.iterdir()):
+            lines.append("  " + hashlib.sha256(f.read_bytes()).hexdigest() + "  " + f.name)
+        (product / "_Выдано_2026-09-10_1200.txt").write_text("\n".join(lines) + "\n", encoding="utf-8-sig")
+
+        part = self.s.open(models / PART)
+        com.prop_set(com.dyn(part).Extension.CustomPropertyManager(""), "Примечание", "правка после выдачи")
+        com.dyn(part).SetSaveFlag()
+        self.s.save(part)
+        self.s.close_all()
+
+        def check():
+            asm = self.s.open(models / ASM)
+            self.s.activate(asm)
+            com.call(self.s.eskd(), "CheckProductSilent")
+            status = str(com.call(self.s.eskd(), "CheckStatus"))
+            self.assertTrue(status.startswith("ok|"), status)
+            return (product / "_Проверка.txt").read_text(encoding="utf-8-sig")
+
+        report = check()
+        self.path("check1.txt").write_text(report, encoding="utf-8")
+        self.assertEqual(1, report.count("изменён после выдачи"), report)
+        self.assertIn(PART + " — изменён после выдачи в производство (_Выдано_2026-09-10_1200.txt)", report, report)
+        self.assertIn("«Новая ревизия» в «" + DRAWING + "»", report, report)
+
+        drawing = self.s.open(models / DRAWING)
+        self.s.activate(drawing)
+        status = self._revision()
+        self.assertTrue(status.startswith("ok|"), status)
+        self.s.close_all()
+        report = check()
+        self.path("check2.txt").write_text(report, encoding="utf-8")
+        self.assertNotIn("изменён после выдачи", report, "ревизия оформлена — замечания нет")
+        self.s.close_all()
+
     def test_V03_draft_document_needs_no_revision(self):
         """V03: изделие не выдано — кнопка серая, вызов отказывает и ничего не пишет (Т-48)."""
         product, models = self._product(issued=False)
@@ -101,6 +229,64 @@ class Revision(SwTestCase):
         status = self._revision()
         self.assertTrue(status.startswith("error|"), status)
         self.assertFalse((product / "Изменения.xlsx").exists(), "журнал не заведён")
+
+    def test_V08_button_poll_does_not_wait_for_issue_reports(self):
+        """V08 (сверка SW API 23.09.2026, №1): SolidWorks опрашивает доступность «Новой ревизии» на каждую перерисовку, а
+        «выдан ли документ» — это чтение отчётов выдачи с NAS. Раньше отчёт читался в потоке SolidWorks раз в 2 с:
+        на подвисшем NAS замирал весь SolidWorks. Теперь опрос отвечает из памяти, отчёты читаются в фоне."""
+        product, models = self._product()
+        doc = self.s.open(models / DRAWING)
+        self.s.activate(doc)
+        deadline = time.monotonic() + 10.0
+        while int(com.call(self.s.eskd(), "EnableRevisionCommand")) != 1:
+            self.assertLess(time.monotonic(), deadline, "у чертежа выданной детали кнопка стала доступна")
+            time.sleep(0.2)
+        time.sleep(11.0)   # запомненный ответ устарел — опрос обязан перечитать отчёт
+        with guards.stalled_open(product / "_Выдано_2026-09-10.txt", 4.0):
+            started = time.monotonic()
+            enabled = int(com.call(self.s.eskd(), "EnableRevisionCommand"))
+            spent = time.monotonic() - started
+        self.assertLess(spent, 1.0, "опрос кнопки ждал подвисший отчёт выдачи")
+        self.assertEqual(1, enabled, "пока фон перечитывает — прежний ответ")
+        self.assertEqual("", str(com.call(self.s.eskd(), "RevisionUnavailable")), "нажатие читает отчёты само: выдан")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_V09_revision_export_closes_model_window_it_opened(self):
+        """V09 (сверка SW API 23.09.2026, №15): новая ревизия выгружает модель чертежа — для этого её окно открывается.
+        Раньше окно оставалось; теперь закрывается, модель остаётся загруженной в чертеже, активен снова чертёж.
+        Кроме модели с правками: ревизия сохраняет чертёж, и тот пишет в модель свой формат («*)», листы А4 и А3), —
+        окно такой модели остаётся. CloseDoc снимает с модели отметку «изменена», и правка молча пропала бы при
+        закрытии чертежа (проба 23.09.2026)."""
+        product, models = self._product()
+        doc = self.s.open(models / DRAWING)
+        self.s.activate(doc)
+        model = self.s.sw.GetOpenDocumentByName(str(models / PART))
+        self.assertIsNotNone(model, "модель загружена чертежом")
+        self.assertFalse(bool(com.dyn(model).Visible), "до ревизии у модели окна нет")
+        status = self._revision()
+        self.assertTrue(status.startswith("ok|"), status)
+        model = self.s.sw.GetOpenDocumentByName(str(models / PART))
+        self.assertIsNotNone(model, "модель по-прежнему загружена")
+        self.assertTrue(bool(com.dyn(model).GetSaveFlag), "формат чертежа записан в модель — она изменена")
+        self.assertTrue(bool(com.dyn(model).Visible), "окно изменённой модели остаётся: закрытие стёрло бы правку")
+
+        # Конструктор сохраняет модель и закрывает её окно; следующая ревизия модель не меняет.
+        ok, err, _ = self.s.save(model)
+        self.assertTrue(ok and err == 0, f"модель сохранена: ошибка {err}")
+        self.s.wait_addin_idle(timeout=60.0)
+        self.s.sw.CloseDoc(str(models / PART))
+        self.s.activate(doc)
+        model = self.s.sw.GetOpenDocumentByName(str(models / PART))
+        self.assertIsNotNone(model, "модель осталась загруженной в чертеже")
+        self.assertFalse(bool(com.dyn(model).Visible), "перед второй ревизией у модели окна нет")
+        status = self._revision(what="отверстие 10 → 12 мм")
+        self.assertTrue(status.startswith("ok|2|"), status)
+        model = self.s.sw.GetOpenDocumentByName(str(models / PART))
+        self.assertIsNotNone(model, "модель по-прежнему загружена")
+        self.assertFalse(bool(com.dyn(model).GetSaveFlag), "формат уже в модели — ревизия её не изменила")
+        self.assertFalse(bool(com.dyn(model).Visible), "окно модели, открытое ревизией, закрыто")
+        active = com.dyn(self.s.sw.ActiveDoc)
+        self.assertEqual(str(models / DRAWING).lower(), str(active.GetPathName).lower(), "активен снова чертёж")
 
     def test_V04_assembly_has_no_revision(self):
         """V04: у сборки ревизии нет — ревизия принадлежит чертежу (Р0-8)."""

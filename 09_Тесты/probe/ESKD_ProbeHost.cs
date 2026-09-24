@@ -234,9 +234,9 @@ namespace ESKD.TestProbe
             public string Path = "";
             public bool Destroyed;
             public bool Detached;
-            public DPartDocEvents_FileSaveNotifyEventHandler PSave; public DPartDocEvents_FileSaveAsNotify2EventHandler PSaveAs; public DPartDocEvents_FileSavePostNotifyEventHandler PPost; public DPartDocEvents_FileSavePostCancelNotifyEventHandler PCancel; public DPartDocEvents_AddCustomPropertyNotifyEventHandler PAdd; public DPartDocEvents_ChangeCustomPropertyNotifyEventHandler PChange; public DPartDocEvents_DeleteCustomPropertyNotifyEventHandler PDelete; public DPartDocEvents_DestroyNotifyEventHandler PDestroy;
-            public DAssemblyDocEvents_FileSaveNotifyEventHandler ASave; public DAssemblyDocEvents_FileSaveAsNotify2EventHandler ASaveAs; public DAssemblyDocEvents_FileSavePostNotifyEventHandler APost; public DAssemblyDocEvents_FileSavePostCancelNotifyEventHandler ACancel; public DAssemblyDocEvents_AddCustomPropertyNotifyEventHandler AAdd; public DAssemblyDocEvents_ChangeCustomPropertyNotifyEventHandler AChange; public DAssemblyDocEvents_DeleteCustomPropertyNotifyEventHandler ADelete; public DAssemblyDocEvents_DestroyNotifyEventHandler ADestroy;
-            public DDrawingDocEvents_FileSaveNotifyEventHandler DSave; public DDrawingDocEvents_FileSaveAsNotify2EventHandler DSaveAs; public DDrawingDocEvents_FileSavePostNotifyEventHandler DPost; public DDrawingDocEvents_FileSavePostCancelNotifyEventHandler DCancel; public DDrawingDocEvents_AddCustomPropertyNotifyEventHandler DAdd; public DDrawingDocEvents_ChangeCustomPropertyNotifyEventHandler DChange; public DDrawingDocEvents_DeleteCustomPropertyNotifyEventHandler DDelete; public DDrawingDocEvents_DestroyNotifyEventHandler DDestroy;
+            public DPartDocEvents_FileSaveNotifyEventHandler PSave; public DPartDocEvents_FileSaveAsNotify2EventHandler PSaveAs; public DPartDocEvents_FileSavePostNotifyEventHandler PPost; public DPartDocEvents_FileSavePostCancelNotifyEventHandler PCancel; public DPartDocEvents_AddCustomPropertyNotifyEventHandler PAdd; public DPartDocEvents_ChangeCustomPropertyNotifyEventHandler PChange; public DPartDocEvents_DeleteCustomPropertyNotifyEventHandler PDelete; public DPartDocEvents_DestroyNotifyEventHandler PDestroy; public DPartDocEvents_DestroyNotify2EventHandler PDestroy2;
+            public DAssemblyDocEvents_FileSaveNotifyEventHandler ASave; public DAssemblyDocEvents_FileSaveAsNotify2EventHandler ASaveAs; public DAssemblyDocEvents_FileSavePostNotifyEventHandler APost; public DAssemblyDocEvents_FileSavePostCancelNotifyEventHandler ACancel; public DAssemblyDocEvents_AddCustomPropertyNotifyEventHandler AAdd; public DAssemblyDocEvents_ChangeCustomPropertyNotifyEventHandler AChange; public DAssemblyDocEvents_DeleteCustomPropertyNotifyEventHandler ADelete; public DAssemblyDocEvents_DestroyNotifyEventHandler ADestroy; public DAssemblyDocEvents_DestroyNotify2EventHandler ADestroy2;
+            public DDrawingDocEvents_FileSaveNotifyEventHandler DSave; public DDrawingDocEvents_FileSaveAsNotify2EventHandler DSaveAs; public DDrawingDocEvents_FileSavePostNotifyEventHandler DPost; public DDrawingDocEvents_FileSavePostCancelNotifyEventHandler DCancel; public DDrawingDocEvents_AddCustomPropertyNotifyEventHandler DAdd; public DDrawingDocEvents_ChangeCustomPropertyNotifyEventHandler DChange; public DDrawingDocEvents_DeleteCustomPropertyNotifyEventHandler DDelete; public DDrawingDocEvents_DestroyNotifyEventHandler DDestroy; public DDrawingDocEvents_DestroyNotify2EventHandler DDestroy2;
         }
 
         public ProbeCore(string journal, string workspaceRoot)
@@ -440,6 +440,17 @@ namespace ESKD.TestProbe
             return 0;
         }
 
+        /// <summary>
+        /// DestroyNotify2 с типом: 0 — документ разрушается, 1 — скрыт (окно закрыто, документ остался в памяти как
+        /// компонент открытой сборки). Контракт C08 (сверка SW API 23.09.2026, №9): приходит ли старый DestroyNotify при
+        /// скрытии. К документу не обращаемся — пишем кэшированные имя и путь.
+        /// </summary>
+        private int OnDestroy2(DocHooks h, int destroyType)
+        {
+            WriteRaw("DestroyNotify2", h.Title, h.Path, "null", "\"destroyType\":" + destroyType);
+            return 0;
+        }
+
         // ------------------------------------------------------------ подписки
         public int DetachByTitle(string title)
         {
@@ -474,18 +485,21 @@ namespace ESKD.TestProbe
                     if (h.PSave != null) { h.Part.FileSaveNotify -= h.PSave; h.Part.FileSaveAsNotify2 -= h.PSaveAs; h.Part.FileSavePostNotify -= h.PPost; h.Part.FileSavePostCancelNotify -= h.PCancel; }
                     if (h.PAdd != null) { h.Part.AddCustomPropertyNotify -= h.PAdd; h.Part.ChangeCustomPropertyNotify -= h.PChange; h.Part.DeleteCustomPropertyNotify -= h.PDelete; }
                     if (h.PDestroy != null) h.Part.DestroyNotify -= h.PDestroy;
+                    if (h.PDestroy2 != null) h.Part.DestroyNotify2 -= h.PDestroy2;
                 }
                 else if (h.Asm != null)
                 {
                     if (h.ASave != null) { h.Asm.FileSaveNotify -= h.ASave; h.Asm.FileSaveAsNotify2 -= h.ASaveAs; h.Asm.FileSavePostNotify -= h.APost; h.Asm.FileSavePostCancelNotify -= h.ACancel; }
                     if (h.AAdd != null) { h.Asm.AddCustomPropertyNotify -= h.AAdd; h.Asm.ChangeCustomPropertyNotify -= h.AChange; h.Asm.DeleteCustomPropertyNotify -= h.ADelete; }
                     if (h.ADestroy != null) h.Asm.DestroyNotify -= h.ADestroy;
+                    if (h.ADestroy2 != null) h.Asm.DestroyNotify2 -= h.ADestroy2;
                 }
                 else if (h.Drw != null)
                 {
                     if (h.DSave != null) { h.Drw.FileSaveNotify -= h.DSave; h.Drw.FileSaveAsNotify2 -= h.DSaveAs; h.Drw.FileSavePostNotify -= h.DPost; h.Drw.FileSavePostCancelNotify -= h.DCancel; }
                     if (h.DAdd != null) { h.Drw.AddCustomPropertyNotify -= h.DAdd; h.Drw.ChangeCustomPropertyNotify -= h.DChange; h.Drw.DeleteCustomPropertyNotify -= h.DDelete; }
                     if (h.DDestroy != null) h.Drw.DestroyNotify -= h.DDestroy;
+                    if (h.DDestroy2 != null) h.Drw.DestroyNotify2 -= h.DDestroy2;
                 }
             }
             catch { }
@@ -553,6 +567,7 @@ namespace ESKD.TestProbe
                             h.PDelete = delegate(string n, string c, string v, int t) { return OnDeleteProp(h, n, c, v, t); }; h.Part.DeleteCustomPropertyNotify += h.PDelete;
                         }
                         if (DestroyEvents) { h.PDestroy = delegate() { return OnDestroy(h); }; h.Part.DestroyNotify += h.PDestroy; }
+                        if (DestroyEvents) { h.PDestroy2 = delegate(int t) { return OnDestroy2(h, t); }; h.Part.DestroyNotify2 += h.PDestroy2; }
                     }
                     else if (type == (int)swDocumentTypes_e.swDocASSEMBLY)
                     {
@@ -571,6 +586,7 @@ namespace ESKD.TestProbe
                             h.ADelete = delegate(string n, string c, string v, int t) { return OnDeleteProp(h, n, c, v, t); }; h.Asm.DeleteCustomPropertyNotify += h.ADelete;
                         }
                         if (DestroyEvents) { h.ADestroy = delegate() { return OnDestroy(h); }; h.Asm.DestroyNotify += h.ADestroy; }
+                        if (DestroyEvents) { h.ADestroy2 = delegate(int t) { return OnDestroy2(h, t); }; h.Asm.DestroyNotify2 += h.ADestroy2; }
                     }
                     else if (type == (int)swDocumentTypes_e.swDocDRAWING)
                     {
@@ -589,6 +605,7 @@ namespace ESKD.TestProbe
                             h.DDelete = delegate(string n, string c, string v, int t) { return OnDeleteProp(h, n, c, v, t); }; h.Drw.DeleteCustomPropertyNotify += h.DDelete;
                         }
                         if (DestroyEvents) { h.DDestroy = delegate() { return OnDestroy(h); }; h.Drw.DestroyNotify += h.DDestroy; }
+                        if (DestroyEvents) { h.DDestroy2 = delegate(int t) { return OnDestroy2(h, t); }; h.Drw.DestroyNotify2 += h.DDestroy2; }
                     }
                     else
                     {

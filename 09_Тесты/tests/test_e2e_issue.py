@@ -151,9 +151,14 @@ class Issue(SwTestCase):
         (order / norms.name).write_bytes(norms.read_bytes())
         doc = self.s.open(asm)
         self.s.activate(doc)
-        self.assertTrue(self._wait("ExportProductSilent", "ExportStatus", running="").startswith("ok|"), "выгрузка")
+        # Порядок работы (решение владельца 23.09.2026, З-27): проверка → ЛЗК → выгрузка → «Готово». Книга и выгрузка
+        # помнят версию изделия, по которой сделаны; «Готово» требует, чтобы она была текущей.
+        # Первая проверка — как у конструктора, «Применить и сохранить»: она дописывает реквизиты сборки. Сохранения ЛЗК
+        # и выгрузки синхронизацию при сохранении не запускают.
+        self.assertTrue(self._wait("CheckProductApplySilent", "CheckStatus", running="").startswith("ok|"), "проверка")
         lzk = self._wait("BuildLzkSilent", "LzkStatus")
         self.assertTrue(lzk.startswith("ok|"), lzk)
+        self.assertTrue(self._wait("ExportProductSilent", "ExportStatus", running="").startswith("ok|"), "выгрузка")
         check = self._wait("CheckProductSilent", "CheckStatus", running="")
         report = product / "_Проверка.txt"
         self.assertTrue(check.startswith("ok|ГОТОВО|"),
@@ -231,6 +236,44 @@ class Issue(SwTestCase):
         self.assertIn("открыт", status, status)
         self.assertTrue(order.is_dir(), "папка заказа на месте")
         self.assertEqual([], list(archive.iterdir()), "в архиве пусто")
+
+    def test_Y06_namesake_from_other_order_stops_closing(self):
+        """Y06 (сверка SW API 23.09.2026, №16): в SolidWorks открыта сборка другого заказа с теми же именами файлов.
+        SolidWorks берёт компонент сначала из открытых документов — по имени, а не по пути, — и Pack and Go заказа А
+        упаковал бы в архив деталь заказа Б. Теперь «Закрыть заказ» отказывает до любых действий с файлами; когда
+        чужие документы закрыты, в архив уходит своя деталь."""
+        from eskd_e2e import build, oracles
+
+        order, product, asm = self._order(issued=True)
+        archive = self.s.run_dir / self._case_name() / "archive"
+        archive.mkdir(parents=True, exist_ok=True)
+        short = self._case_name().split("_")[1]
+        other = f"{short}/_Заявки/2026-011 Другой/02_Металл/{PRODUCT}/01_3D"
+        for src in sorted(Path(paths.FIXTURES_A).iterdir()):
+            if src.suffix.lower() in (".sldprt", ".sldasm"):
+                self.s.workspace_copy(src, subdir=other)
+        stand = "ПРТИ.468211.102 Стойка.sldprt"
+        # Сначала деталь: открытая сборка уже держит её в памяти, и второй раз её не открыть.
+        part = self.s.open(self.s.run_dir / other / stand)
+        build.props(part, {"Заказ": "Б"})
+        self.s.save(part)
+        foreign = self.s.open(self.s.run_dir / other / ASM)
+        self.s.activate(foreign)
+
+        status = self._close(order, archive)
+        self.assertTrue(status.startswith("error|"), status)
+        self.assertIn("одноимённ", status, status)
+        self.assertIn(stand, status, status)
+        self.assertTrue(order.is_dir(), "папка заказа на месте")
+        self.assertEqual([], list(archive.iterdir()), "в архиве пусто")
+        self.assertFalse((order.parent / "_tmp" / ORDER).exists(), "временная папка не заведена")
+
+        self.s.close_all()
+        status = self._close(order, archive)
+        self.assertTrue(status.startswith("ok|"), status)
+        kit = Path(status.split("|")[1]) / "Комплекты" / CIPHER
+        self.assertIsNone(oracles.value(oracles.read_persisted(self.s, kit / stand), "Заказ"), "в архив ушла своя Стойка")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_Y03_unavailable_archive_keeps_order_untouched(self):
         """Y03: архивный диск недоступен — заказ не тронут, объяснение понятное (Т-46)."""

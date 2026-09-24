@@ -18,6 +18,12 @@ $ErrorActionPreference = "Stop"
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 . (Join-Path $PSScriptRoot "Register-EskdAddin.ps1")
 
+$foreign = Get-EskdForeignAccountMessage
+if ($foreign) {
+    Write-Host "[ОШИБКА] $foreign" -ForegroundColor Red
+    exit 1
+}
+
 $dll = Join-Path $PSScriptRoot "ESKD_Material_Sync_v5.dll"
 if (-not (Test-Path -LiteralPath $dll)) {
     Write-Host "Сборка надстройки не найдена — сборка из исходников (build.ps1)..." -ForegroundColor Yellow
@@ -30,4 +36,5 @@ if (-not ($state.UserDllExists -and $state.UserAddIn -and $state.UserStartup)) {
     Write-Host "[ОШИБКА] Регистрация неполная — см. значения выше." -ForegroundColor Red
     exit 1
 }
-Write-Host "[OK] Надстройка ЕСКД зарегистрирована. Запустите SolidWorks заново, чтобы она загрузилась." -ForegroundColor Green
+Write-Host ("[OK] Надстройка ЕСКД зарегистрирована для учётной записи {0}. Запустите SolidWorks заново, чтобы она загрузилась." -f
+            [Security.Principal.WindowsIdentity]::GetCurrent().Name) -ForegroundColor Green

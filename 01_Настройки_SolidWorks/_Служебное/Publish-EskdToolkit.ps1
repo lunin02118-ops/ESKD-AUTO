@@ -38,6 +38,7 @@ $setup = Split-Path -Path $PSScriptRoot -Parent
 $repo = Split-Path -Path $setup -Parent
 $Target = $Target.TrimEnd('\')
 Import-Module (Join-Path $PSScriptRoot "EskdDeploy.psm1") -Force -DisableNameChecking
+[void](Reset-EskdPowerShellEnvironment)  # запуск из PowerShell 7: его пути модулей не для 5.1 и не для дочерних процессов
 
 # Сборка и автотесты пишут ход работы в stderr; при ErrorActionPreference=Stop PowerShell считает это ошибкой
 # и обрывает публикацию на первой же строке. Внешние программы запускаются со снятым режимом, а код возврата
