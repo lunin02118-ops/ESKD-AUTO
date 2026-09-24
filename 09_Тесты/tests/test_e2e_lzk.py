@@ -754,6 +754,43 @@ class Lzk(SwTestCase):
         self.assertEqual("L=500", V(disk, "Габарит", base), "«Габарит» записан в модель")
         self.assertEqual("L=700", V(disk, "Габарит", other), "«Габарит» исполнения записан в модель")
 
+    def test_L18_tube_rows_get_own_igs_on_every_export(self):
+        """L18 (замечание владельца 24.09.2026): детали, которым ЛЗК поставила «Лазерная резка трубы», получают при
+        выгрузке каждая свой IGS — только со своими телами, при первой и при повторной выгрузке одинаковый; других IGS
+        в «Труборез» нет. Раньше IGS трубы, построенной без элемента конструкции, содержал всю сборку или соседнюю
+        деталь, а заголовок IGS называл трубу."""
+        import openpyxl
+        from eskd_e2e import iges
+
+        product, asm = self._product()
+        doc = self.s.open(asm)
+        self.s.activate(doc)
+        status = self._build()
+        self.assertTrue(status.startswith("ok|"), status)
+        main = openpyxl.load_workbook(product / DOCS / BOOK)["Ведомость"]
+        rows = [r for r in range(7, main.max_row + 1) if main.cell(r, 10).value]
+        tubes = sorted(f"{main.cell(r, 3).value} {main.cell(r, 4).value}.igs" for r in rows
+                       if "Лазерная резка трубы" in str(main.cell(r, 9).value or ""))
+        self.assertEqual(["ПРТИ.468211.102 Стойка.igs", "ПРТИ.468211.105 Рама сварная.igs"], tubes, "трубы в ЛЗК")
+        shape = {"ПРТИ.468211.102 Стойка.igs": (1, (80, 80, 300)), "ПРТИ.468211.105 Рама сварная.igs": (3, (40, 240, 500))}
+        digests = []
+        for attempt in (1, 2):
+            self.s.activate(doc)
+            com.call(self.s.eskd(), "ExportProductSilent")
+            deadline, export = time.time() + TIMEOUT, ""
+            while time.time() < deadline and not export:
+                export = str(com.call(self.s.eskd(), "ExportStatus"))
+                time.sleep(0 if export else 1)
+            self.assertTrue(export.startswith("ok|"), f"выгрузка {attempt}: {export}")
+            files = sorted((product / "03_ЧПУ" / "Труборез").glob("*.igs"))
+            self.assertEqual(tubes, [p.name for p in files], f"выгрузка {attempt}: IGS — ровно у строк ЛЗК с резкой трубы")
+            with self.subTest(выгрузка=attempt):
+                for path in files:
+                    iges.assert_part(self, path, *shape[path.name])
+            digests.append({p.name: iges.Iges(p).geometry_digest for p in files})
+        self.assertEqual(digests[0], digests[1], "повторная выгрузка — та же геометрия")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
     def test_L03_refuses_non_assembly(self):
         """L03: у детали кнопка отказывает без изменений файлов."""
         path, doc = self.open_copy(SHEET_PART)

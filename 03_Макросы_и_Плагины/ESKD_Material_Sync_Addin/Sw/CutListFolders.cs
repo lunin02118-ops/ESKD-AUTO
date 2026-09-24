@@ -17,18 +17,23 @@ namespace ESKD.MaterialSync.Sw
         /// <summary>Папки списка вырезов (CutListFolder) с телами в активном исполнении, вместе с вложенными в подсварки.</summary>
         public static List<Feature> Active(ModelDoc2 model)
         {
-            List<Feature> folders = new List<Feature>();
-            if (model == null) return folders;
+            if (model == null) return new List<Feature>();
             try
             {
-                for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
-                    if (f.GetTypeName2() == "SolidBodyFolder") Walk(f, folders, 0);
+                // Фоновая перестройка дерева после открытия окна — обход повторяется целиком (FeatureWalk).
+                return FeatureWalk.Retry(() =>
+                {
+                    List<Feature> folders = new List<Feature>();
+                    for (Feature f = model.FirstFeature() as Feature; f != null; f = f.GetNextFeature() as Feature)
+                        if (f.GetTypeName2() == "SolidBodyFolder") Walk(f, folders, 0);
+                    return folders;
+                }, "список вырезов");
             }
             catch (COMException ex)
             {
                 Log.Error("Список вырезов: обход " + DocInfo.TitleOf(model), ex);
             }
-            return folders;
+            return new List<Feature>();
         }
 
         private static void Walk(Feature parent, List<Feature> folders, int depth)

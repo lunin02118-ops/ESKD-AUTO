@@ -323,13 +323,22 @@ class Performance(SwTestCase):
 
 class PropertyOrderOnSave(SwTestCase):
     """Единый порядок пользовательских свойств (сверка SW API 23.09.2026, №23; решение владельца 24.09.2026): при
-    сохранении по команде конструктора — словарь SWPlus по порядку строк, затем служебные, в конце свои свойства
-    конструктора в прежнем порядке. Кнопки и открытие порядок не трогают; покупные и файлы других заказов — тоже."""
+    сохранении по команде конструктора — словарь SWPlus по порядку строк, затем служебные, затем свои свойства
+    конструктора в прежнем порядке, последними — «Примечание», «Формат», «Раздел», как их оставляет «Применить» MProp.
+    Кнопки и открытие порядок не трогают; покупные и файлы других заказов — тоже."""
 
     def assertCanonical(self, dump, what):
-        master = oracles.property_master()
+        master, tail = oracles.property_master(), oracles.property_tail()
         for level, names in oracles.property_orders(dump).items():
-            self.assertEqual(oracles.canonical(names, master)[0], names, f"{what}: уровень «{level or 'общие'}»")
+            self.assertEqual(oracles.canonical(names, master, tail)[0], names, f"{what}: уровень «{level or 'общие'}»")
+
+    @staticmethod
+    def _orders(doc):
+        """{уровень: [имена в порядке SolidWorks]} — только GetNames, без пересчёта значений."""
+        out = {"": com.prop_names(doc.Extension.CustomPropertyManager(""))}
+        for cfg in com.as_list(doc.GetConfigurationNames):
+            out[str(cfg)] = com.prop_names(doc.Extension.CustomPropertyManager(str(cfg)))
+        return out
 
     def _types(self, path, level, names):
         with self.s.eskd_muted():
@@ -371,7 +380,8 @@ class PropertyOrderOnSave(SwTestCase):
     def test_P22_ctrl_s_puts_properties_in_single_order(self):
         """P22: «Обозначение» (общие) и первое свойство исполнения «00» перенесены в конец, как это делает MProp, и
         добавлены свои свойства конструктора трёх типов. После Ctrl+S каждый уровень на диске в едином порядке, свои
-        свойства — в конце в прежнем порядке, с прежними типом и значением; масса осталась выражением."""
+        свойства — в прежнем порядке сразу перед «Примечание», «Формат», «Раздел», с прежними типом и значением; масса
+        осталась выражением."""
         path, doc = self.open_copy(A01)
         general = doc.Extension.CustomPropertyManager("")
         execution = doc.Extension.CustomPropertyManager("00")
@@ -387,7 +397,10 @@ class PropertyOrderOnSave(SwTestCase):
         self.s.close(doc)
         disk = self.persisted(path)
         self.assertCanonical(disk, "после Ctrl+S")
-        self.assertEqual(["P22_моё", "P22_дата", "P22_число"], list(disk["general"])[-3:], "свои — в конце, как завёл конструктор")
+        general_names = list(disk["general"])
+        tail = [n for n in oracles.property_tail() if n in general_names]
+        self.assertEqual(["P22_моё", "P22_дата", "P22_число"] + tail, general_names[-3 - len(tail):],
+                         "свои — как завёл конструктор, за ними «Примечание», «Формат», «Раздел»")
         self.assertEqual(types, self._types(path, "", [n for n, _, _ in own]), "тип и значение своих свойств")
         self.assertIn("SW-Mass@@00@", V(disk, "Масса_Таблица", "00") or "", "масса — выражение")
         self.assertRegex(re.sub(r"<[^>]*>", "", V(disk, "Масса_Таблица", "00", resolved=True) or ""), r"^\s*0\.\d+", "масса — число")
@@ -452,6 +465,40 @@ class PropertyOrderOnSave(SwTestCase):
         self.assertCanonical(own, "своя скрытая деталь")
         foreign = list(self.persisted(foreign_path)["general"])
         self.assertEqual(orders[foreign_path], foreign[:len(orders[foreign_path])], "деталь другого заказа — порядок прежний")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+
+    def test_P25_save_after_mprop_like_tail_moves_nothing(self):
+        """P25 (решение владельца 24.09.2026): после Ctrl+S «Примечание», «Формат», «Раздел» уже последние. Их удаляют и
+        дописывают в конец, как «Применить» MProp (FrmMProp 3021–3053), — порядок тот же, и следующий Ctrl+S ничего не
+        переставляет. Раньше сохранение возвращало их на строки словаря, а MProp снова уносил в конец — по кругу."""
+        path, doc = self.open_copy(A01)
+        own = doc.Extension.CustomPropertyManager("00")
+        self.assertEqual(0, int(own.Add3("P25_моё", com.CUSTOM_INFO_TEXT, "x", com.PROP_DELETE_AND_ADD)), "своё свойство")
+        doc.SetSaveFlag()
+        self.s.run_command(doc, 2)
+        self.s.wait_addin_idle(timeout=60.0)
+        stable = self._orders(doc)
+        # У A01 «Формат» — в общих свойствах, в «00» хвоста нет: проверяются все уровни, где он есть.
+        tails = {level: [n for n in oracles.property_tail() if n in names] for level, names in stable.items()}
+        self.assertTrue(any(tails.values()), f"«Примечание», «Формат» или «Раздел» есть хотя бы на одном уровне: {stable}")
+        for level, tail in tails.items():
+            if tail:
+                self.assertEqual(tail, stable[level][-len(tail):], f"на уровне «{level or 'общие'}» они последние")
+        self.assertEqual(len(stable["00"]) - len(tails["00"]) - 1, stable["00"].index("P25_моё"),
+                         f"своё свойство в «00» — последним перед хвостом: {stable['00']}")
+        for level in ("", "00"):
+            cpm = doc.Extension.CustomPropertyManager(level)
+            for name in oracles.property_tail():
+                if name in stable[level]:
+                    self._to_end(cpm, name)
+        self.assertEqual(stable, self._orders(doc), "как после MProp: порядок тот же")
+        doc.SetSaveFlag()
+        self.s.run_command(doc, 2)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.assertEqual(stable, self._orders(doc), "сохранение ничего не переставило")
+        self.s.close(doc)
+        self.assertEqual(stable, oracles.property_orders(self.persisted(path)), "на диске тот же порядок")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
 

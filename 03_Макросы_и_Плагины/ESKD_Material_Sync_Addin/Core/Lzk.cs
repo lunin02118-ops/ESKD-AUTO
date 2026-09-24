@@ -180,7 +180,7 @@ namespace ESKD.MaterialSync.Core
         public bool IsStructuralMember;
         public bool HasWeldBeads;
         public bool IsWeldment;
-        /// <summary>Материал детали («Материал_Строка»): по нему решается покраска.</summary>
+        /// <summary>Материал детали («Материал_Строка», пока он не записан, — материал SolidWorks): по нему решаются резка и покраска.</summary>
         public string Material = "";
         /// <summary>Покупное или стандартное изделие: приходит готовым, ничего с ним не делают.</summary>
         public bool IsPurchased;

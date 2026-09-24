@@ -613,7 +613,32 @@ class StaticRepository(StaticTestCase):
         split = lambda v: v.split("|") if v else []  # noqa: E731
         for current, want, move in cases:
             with self.subTest(current=current):
-                self.assertEqual((split(want), split(move)), oracles.canonical(split(current), master))
+                self.assertEqual((split(want), split(move)), oracles.canonical(split(current), master, oracles.property_tail()))
+
+    def test_T0_property_order_tail_is_mprop_apply_order(self):
+        """T0 (решение владельца 24.09.2026): последние в едином порядке — ровно те свойства, которые «Применить» MProp
+        удаляет и дописывает заново в том же исполнении, и в том же порядке. Тогда MProp и сохранение надстройки не
+        переставляют их друг за другом. Правка MProp или надстройки, которая это разведёт, ломает тест."""
+        from eskd_e2e import oracles
+
+        form = paths.ROOT / "03_Макросы_и_Плагины" / "Макросы_SW_ZTool" / "_VBA_выгрузка" / "MProp" / "FrmMProp.frm.txt"
+        text = form.read_text(encoding="utf-8-sig")
+        apply = re.search(r"Private Sub Внести_изменения_Click\(\)(.*?)^End Sub", text, flags=re.S | re.M).group(1)
+        readded = []
+        for m in re.finditer(r"AddCustomInfo3\(sConfigName, (prp\w+)", apply):
+            deleted = re.search(r"DeleteCustomInfo2\(sConfigName, %s\)" % m.group(1), apply[:m.start()])
+            if deleted and m.group(1) not in readded:
+                readded.append(m.group(1))
+        self.assertEqual(["prpRemark", "prpFormat", "prpSection"], readded, "MProp удаляет и дописывает в исполнении")
+        # Строка словаря каждого prp — по порядку чтения в Sub MyProperties: «Line Input», затем «prpX = strTemp».
+        reader = re.search(r"Private Sub MyProperties\(\)(.*?)^End Sub", text, flags=re.S | re.M).group(1)
+        order = re.findall(r"^\s*(prp\w+) = strTemp", reader, flags=re.M)
+        ini = paths.SWPLUS_DICTIONARY.read_text(encoding="cp1251").splitlines()
+        self.assertEqual([ini[order.index(prp)].strip() for prp in readded], oracles.property_tail(),
+                         "хвост оракула — имена этих строк словаря")
+        code = (ADDIN / "Core" / "PropertyOrder.cs").read_text(encoding="utf-8-sig")
+        tail = re.search(r"public static List<string> Tail\(.*?\{(.*?)^        \}", code, flags=re.S | re.M).group(1)
+        self.assertEqual(["Remark", "Format", "Section"], re.findall(r"Role\.(\w+)", tail), "хвост надстройки — те же роли")
 
     def test_T0_export_opens_drawings_without_window(self):
         """T0 (сверка SW API 23.09.2026, №28, шаг 2; e2e X20): выгрузка открывает чертёж без окна и возвращает прежнюю
@@ -1282,6 +1307,25 @@ class StaticRepository(StaticTestCase):
                 elif digest(path) != expected:
                     wrong.append(f"{fid}: {name} изменён после сборки корпуса")
         self.assertEqual([], wrong)
+
+    def test_T0_document_templates_in_single_order(self):
+        """T0 (решение владельца 24.09.2026: «поставь тот же порядок свойств в шаблонах деталей и сборки»): свойства
+        шаблонов детали и сборки на каждом уровне стоят в едином порядке — так, как их ставит надстройка при сохранении.
+        Первое сохранение новой детали ничего не переставляет. Читается сам файл шаблона, без SolidWorks."""
+        from eskd_e2e import offline_props, oracles
+
+        master, tail = oracles.property_master(), oracles.property_tail()
+        expected = {
+            paths.PART_TEMPLATE: [["Обозначение", "Наименование", "Масса", "Материал", "Формат"], ["UNIT_OF_MEASURE"]],
+            paths.ASSEMBLY_TEMPLATE: [["Обозначение", "Наименование", "Масса", "Формат"],
+                                      ["Сборка1_ФБ", "UNIT_OF_MEASURE", "Раздел"]],
+        }
+        for template, levels in expected.items():
+            props = offline_props.read(template)
+            names = [[n for n, _ in level] for level in [props["general"]] + props["configs"]]
+            self.assertEqual(levels, names, f"{template.name}: общие, затем исполнение «00»")
+            for level in names:
+                self.assertEqual(oracles.canonical(level, master, tail)[0], level, f"{template.name}: единый порядок")
 
     def test_T0_dll_built_from_current_sources(self):
         """T0: build_manifest.json — хеши исходников совпадают с текущими файлами (Д-24)."""

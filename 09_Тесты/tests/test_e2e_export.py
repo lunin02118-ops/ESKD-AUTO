@@ -7,7 +7,7 @@ import time
 import unittest
 from pathlib import Path
 
-from eskd_e2e import com, paths
+from eskd_e2e import com, iges, paths
 from eskd_e2e.testing import SwTestCase, tags
 
 PRODUCT = "И01_ПРТИ.468211.100"
@@ -83,6 +83,15 @@ class Export(SwTestCase):
             time.sleep(1)
         return status
 
+    def _cnc_files(self, product):
+        """Файлы для ЧПУ после выгрузки: {имя: сумма} — у IGS сумма геометрии (без имени и времени записи), у DXF
+        пусто (рамку в имени надстройка мерит по самому файлу). Плюс всё, что попало в «_Аннулировано»."""
+        cnc = product / "03_ЧПУ"
+        files = {p.name: iges.Iges(p).geometry_digest for p in (cnc / "Труборез").glob("*.igs")}
+        files.update({p.name: "" for p in (cnc / "Лазер_Лист").glob("*.dxf")})
+        archived = sorted(p.name for p in cnc.glob("*/_Аннулировано/*") if p.is_file())
+        return files, archived
+
     @tags("smoke")
     def test_X01_exports_pdf_dxf_and_report(self):
         """X01: выгрузка изделия даёт PDF чертежей, DXF развёртки листовой детали и отчёт с контрольными суммами."""
@@ -107,6 +116,11 @@ class Export(SwTestCase):
         self.assertTrue(dxfs, "DXF развёрток листовых деталей")
         self.assertTrue(all("_S" in p.name and "мм_" in p.name for p in dxfs),
                         f"в имени DXF толщина и рамка: {[p.name for p in dxfs]}")
+        # Трубы фикстуры построены вытягиванием, без элемента конструкции: выгрузка не делала их активными, и в IGS
+        # уходила вся сборка или соседняя пластина (замечание владельца 24.09.2026).
+        self.assertEqual(["ПРТИ.468211.102 Стойка.igs", "ПРТИ.468211.105 Рама сварная.igs"], [p.name for p in igs])
+        iges.assert_part(self, igs[0], 1, (80, 80, 300))
+        iges.assert_part(self, igs[1], 3, (40, 240, 500))
 
         report = product / "_Экспорт.txt"
         self.assertEqual(str(report).lower(), report_path.lower(), "отчёт в папке изделия")
@@ -257,7 +271,7 @@ class Export(SwTestCase):
         product = models.parent
         igs = sorted((product / "03_ЧПУ" / "Труборез").glob("*.igs"))
         self.assertEqual(["ПРТИ.468211.171 Стойка.igs"], [p.name for p in igs], "IGS трубы без сварной конструкции")
-        self.assertGreater(igs[0].stat().st_size, 1000, "IGS непустой")
+        iges.assert_part(self, igs[0], 1, (30, 30, 600))
         self.assertEqual([], list((product / "03_ЧПУ" / "Лазер_Лист").glob("*.dxf")) if (product / "03_ЧПУ" / "Лазер_Лист").exists() else [],
                          "развёртки у не листовой детали нет")
         text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
@@ -290,8 +304,17 @@ class Export(SwTestCase):
 
         status = self._export()
         self.assertTrue(status.startswith("ok|"), status)
-        igs = sorted(p.name for p in (models.parent / "03_ЧПУ" / "Труборез").glob("*.igs"))
-        self.assertEqual(["ПРТИ.468211.192 Вставка.igs"], igs, "IGS — только у детали с галочкой")
+        igs = sorted((models.parent / "03_ЧПУ" / "Труборез").glob("*.igs"))
+        self.assertEqual(["ПРТИ.468211.192 Вставка.igs"], [p.name for p in igs], "IGS — только у детали с галочкой")
+        iges.assert_part(self, igs[0], 1, (3, 100, 200))
+        # Трубу без галочки выгрузка не пропускает молча (24.09.2026): «Операции» могла записать прежняя ЛЗК, не узнав трубу.
+        report = Path(status.split("|")[3]).read_text(encoding="utf-8-sig")
+        self.path("export.txt").write_text(report, encoding="utf-8")
+        # Имя компонента SolidWorks отдаёт с расширением в своём регистре («.SLDPRT») — сравнение без регистра.
+        notes = (report.split("Замечания:", 1)[-1] if "Замечания:" in report else "").lower()
+        self.assertIn(f"{unchecked.name} — деталь из трубы, а в «операциях» нет «лазерная резка трубы»".lower(), notes,
+                      "замечание о трубе без галочки")
+        self.assertNotIn("ПРТИ.468211.192 Вставка.sldprt — деталь из трубы".lower(), notes, "у детали с галочкой замечания нет")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def test_X21_multibody_sheet_part_gets_dxf_for_every_body(self):
@@ -416,6 +439,8 @@ class Export(SwTestCase):
         names = sorted(p.name for p in (product / "03_ЧПУ" / "Труборез").glob("*.igs"))
         self.assertEqual(["ПРТИ.468211.201 Укосина.igs", "ПРТИ.468211.201-01 Укосина.igs"], names,
                          "по IGS на каждое исполнение из сборки")
+        for name in names:
+            iges.assert_part(self, product / "03_ЧПУ" / "Труборез" / name, 1, (40, 40, 400))
         text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
         for name in names:
             self.assertIn(name, text, f"{name} в отчёте")
@@ -717,6 +742,166 @@ class Export(SwTestCase):
         self.assertTrue(archived[0].startswith("ПРТИ.468211.281 Пластина_S3мм_1шт_100х200_Изм1_"), archived)
         text = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig")
         self.assertIn(issued.name + " — убран в «_Аннулировано»: выдан прежней ревизией", text, text)
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_X24_every_export_gives_each_tube_its_own_igs(self):
+        """X24 (замечание владельца 24.09.2026): при повторной «Выгрузить в производство» в IGS трубы легла вся сборка.
+        IGS сохранялся из модели детали, которую выгрузка не делала активной, а SolidWorks пишет в IGS активный документ:
+        всю сборку (после PDF чертежа активна она) или пластину, развёрнутую перед этим; заголовок IGS при этом называл
+        трубу. Что попадёт в файл, зависело от порядка обхода и открытых окон — первый и второй раз выходило по-разному.
+        Теперь при каждой выгрузке — первой, второй подряд и после того, как конструктор смотрел пластину в своём окне, —
+        у каждой трубы свой IGS только с её телами, развёртки те же, и в «_Аннулировано» ничего не уходит."""
+        product, asm = self._product()
+        runs = []
+        doc = self.s.open(asm)
+        for attempt in (1, 2, 3):
+            if attempt == 3:
+                self.s.close_all()
+                self.s.activate(self.s.open(asm.parent / SHEET_PART))
+                doc = self.s.open(asm)
+            self.s.activate(doc)
+            status = self._export()
+            self.assertTrue(status.startswith("ok|"), f"выгрузка {attempt}: {status}")
+            igs = sorted((product / "03_ЧПУ" / "Труборез").glob("*.igs"))
+            self.assertEqual(["ПРТИ.468211.102 Стойка.igs", "ПРТИ.468211.105 Рама сварная.igs"], [p.name for p in igs])
+            with self.subTest(выгрузка=attempt):
+                iges.assert_part(self, igs[0], 1, (80, 80, 300))
+                iges.assert_part(self, igs[1], 3, (40, 240, 500))
+            runs.append(self._cnc_files(product))
+            # Файл сделан этой выгрузкой, а не остался от прошлой: он в её отчёте; пропущены только PDF деталей без чертежа.
+            report = Path(status.split("|")[3]).read_text(encoding="utf-8-sig")
+            self.path(f"export{attempt}.txt").write_text(report, encoding="utf-8")
+            self.assertEqual([], [n for n in runs[-1][0] if n not in report], f"выгрузка {attempt}: файлы в её отчёте")
+            skipped = report.split("Пропущено:", 1)[-1].split("Замечания:", 1)[0] if "Пропущено:" in report else ""
+            self.assertEqual([], [ln.strip() for ln in skipped.splitlines() if ln.strip() and "нет чертежа" not in ln],
+                             f"выгрузка {attempt}: пропущено только то, у чего нет чертежа")
+        files, archived = runs[0]
+        self.assertEqual(["ПРТИ.468211.101 Пластина опорная_S4мм_2шт_100х200.dxf",
+                          "ПРТИ.468211.103 Планка_S4мм_1шт_40х100.dxf",
+                          "ПРТИ.468211.104 Кронштейн направляющий удлинённый_S6мм_1шт_60х150.dxf"],
+                         sorted(n for n in files if n.endswith(".dxf")), "развёртки листовых деталей")
+        self.assertEqual([], archived, "первая выгрузка ничего не убирает")
+        for attempt, (again, archived_again) in enumerate(runs[1:], 2):
+            self.assertEqual(files, again, f"выгрузка {attempt} дала те же файлы и ту же геометрию, что первая")
+            self.assertEqual([], archived_again, f"выгрузка {attempt} ничего не убрала в «_Аннулировано»")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_X25_plain_tube_executions_get_own_igs_on_every_export(self):
+        """X25 (замечание владельца 24.09.2026): труба без элемента конструкции в двух исполнениях — «00» длиной 600,
+        активное в файле, и «01» длиной 300, — распорка с одним исполнением и листовая пластина. IGS исполнения,
+        активного в файле, и IGS распорки выгрузка писала, не делая деталь активной, — в файл попадала сборка или
+        пластина. Теперь у каждого исполнения свой IGS со своей длиной, при первой и повторной выгрузке одинаковый;
+        развёртка пластины та же; исполнение трубы после выгрузки прежнее."""
+        from eskd_e2e import build
+        product, models = self._plate_product(350)
+        sheet = models / "ПРТИ.468211.351 Лист опорный.sldprt"
+        post = models / "ПРТИ.468211.352 Стойка.sldprt"
+        brace = models / "ПРТИ.468211.353 Распорка.sldprt"
+        doc = build.sheet_metal_plate(self.s, 200, 100, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 16523-97")
+        self.s.save_as(doc, sheet)
+        doc, feat = build.square_tube(self.s, 30, 1.5, 600, "Труба 30х30х1,5 ГОСТ 8639-82 / 08пс ГОСТ 13663-86")
+        active = str(doc.GetActiveConfiguration.Name)
+        build.add_configuration(doc, "01")
+        build.show_configuration(doc, "01")
+        # 1 — только в этой конфигурации: у «00» длина остаётся 600.
+        com.dyn(doc.Parameter("D1@" + str(feat.Name))).SetSystemValue3(0.3, 1, None)
+        doc.ForceRebuild3(False)
+        build.show_configuration(doc, active)
+        doc.ForceRebuild3(False)
+        self.s.save_as(doc, post)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.s.save(doc)
+        self.s.wait_addin_idle(timeout=60.0)
+        self.assertEqual("ПРТИ.468211.352-01", com.prop_get(doc.Extension.CustomPropertyManager("01"), "Обозначение")[0],
+                         "у исполнения своё обозначение")
+        doc, _ = build.square_tube(self.s, 40, 2, 500, "Труба 40х40х2,0 ГОСТ 8639-82 / Ст3сп ГОСТ 13663-86")
+        self.s.save_as(doc, brace)
+        asm, _ = build.assembly(self.s, [(sheet, 0, 0, 0), (post, 0, 0.2, 0), (post, 0, 0.4, 0), (brace, 0, 0.6, 0)])
+        com.dyn(com.as_list(asm.GetComponents(True))[2]).ReferencedConfiguration = "01"
+        asm.ForceRebuild3(False)
+        asm_path = models / "ПРТИ.468211.350 СБ Рама.sldasm"
+        self.s.save_as(asm, asm_path)
+        self.s.close_all()
+
+        expected = {"ПРТИ.468211.352 Стойка.igs": (30, 30, 600), "ПРТИ.468211.352-01 Стойка.igs": (30, 30, 300),
+                    "ПРТИ.468211.353 Распорка.igs": (40, 40, 500)}
+        runs = []
+        doc = self.s.open(asm_path)
+        for attempt in (1, 2):
+            self.s.activate(doc)
+            status = self._export()
+            self.assertTrue(status.startswith("ok|"), f"выгрузка {attempt}: {status}")
+            igs = {p.name: p for p in (product / "03_ЧПУ" / "Труборез").glob("*.igs")}
+            self.assertEqual(sorted(expected), sorted(igs), "по IGS на каждое исполнение из изделия")
+            with self.subTest(выгрузка=attempt):
+                for name, extents in expected.items():
+                    iges.assert_part(self, igs[name], 1, extents)
+            runs.append(self._cnc_files(product))
+        self.assertEqual(["ПРТИ.468211.351 Лист опорный_S3мм_1шт_100х200.dxf"],
+                         sorted(n for n in runs[0][0] if n.endswith(".dxf")), "развёртка пластины")
+        self.assertEqual(runs[0], runs[1], "повторная выгрузка — те же файлы и та же геометрия, ничего не убрано")
+        self.assertEqual([], runs[1][1], "в «_Аннулировано» ничего")
+        self.s.close_all()
+        self.assertEqual(active, str(self.s.open(post).GetActiveConfiguration.Name), "исполнение трубы возвращено")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
+    def test_X26_every_sheet_execution_gets_its_own_flat_on_every_export(self):
+        """X26 (замечание владельца 24.09.2026): развёртки всех исполнений, которые стоят в изделии, — каждое своей
+        длины. Планка в исполнениях 00/01/02 (100/150/200×40) и регулировочная планка 00 (дважды) и 01 (40/140×40):
+        у каждого исполнения свой DXF со своей рамкой и количеством, первая и повторная выгрузка дают одно и то же,
+        в «_Аннулировано» ничего не уходит, исполнения деталей после выгрузки прежние. X07 такого не видел: там оба
+        исполнения одного размера, и развёртку не того исполнения по имени не отличить."""
+        from eskd_e2e import build
+        product, models = self._plate_product(360)
+        subdir = str(models.relative_to(self.s.run_dir))
+        planks = {}
+        for fixture, executions in (("ПРТИ.468211.103 Планка.sldprt", ("01", "02")),
+                                    ("ПРТИ.468211.114 Планка регулировочная.sldprt", ("01",))):
+            path = self.s.workspace_copy(Path(paths.FIXTURES_A) / fixture, subdir=subdir)
+            doc = self.s.open(path)
+            planks[path] = str(doc.GetActiveConfiguration.Name)
+            # Обозначения исполнений («…-01») надстройка пишет при сохранении конструктором — как у детали заказа (X07).
+            for _ in range(2):
+                self.s.save(doc)
+                self.s.wait_addin_idle(timeout=60.0)
+            for cfg in executions:
+                self.assertTrue(com.prop_get(doc.Extension.CustomPropertyManager(cfg), "Обозначение")[0].endswith("-" + cfg),
+                                f"{fixture}: у исполнения {cfg} своё обозначение")
+        plank, adjuster = list(planks)
+        asm, _ = build.assembly(self.s, [(plank, 0, 0, 0), (plank, 0, 0.1, 0), (plank, 0, 0.2, 0),
+                                         (adjuster, 0.3, 0, 0), (adjuster, 0.3, 0.1, 0), (adjuster, 0.3, 0.2, 0)])
+        # Компоненты — по файлу модели: порядок GetComponents не обязан совпадать с порядком вставки.
+        by_model = {}
+        for comp in com.as_list(asm.GetComponents(True)):
+            comp = com.dyn(comp)
+            by_model.setdefault(Path(str(comp.GetPathName or "")).name.lower(), []).append(comp)
+        for model, index, cfg in ((plank, 1, "01"), (plank, 2, "02"), (adjuster, 2, "01")):
+            by_model[model.name.lower()][index].ReferencedConfiguration = cfg
+        asm.ForceRebuild3(False)
+        placed = {name: sorted(str(c.ReferencedConfiguration) for c in comps) for name, comps in by_model.items()}
+        self.assertEqual({plank.name.lower(): sorted([planks[plank], "01", "02"]),
+                          adjuster.name.lower(): sorted([planks[adjuster], planks[adjuster], "01"])}, placed,
+                         "исполнения компонентов в сборке")
+        asm_path = models / "ПРТИ.468211.360 СБ Регулятор.sldasm"
+        self.s.save_as(asm, asm_path)
+        self.s.close_all()
+
+        expected = ["ПРТИ.468211.103 Планка_S4мм_1шт_40х100.dxf",
+                    "ПРТИ.468211.103-01 Планка_S4мм_1шт_40х150.dxf",
+                    "ПРТИ.468211.103-02 Планка_S4мм_1шт_40х200.dxf",
+                    "ПРТИ.468211.114 Планка регулировочная_S4мм_2шт_40х40.dxf",
+                    "ПРТИ.468211.114-01 Планка регулировочная_S4мм_1шт_40х140.dxf"]
+        doc = self.s.open(asm_path)
+        for attempt in (1, 2):
+            self.s.activate(doc)
+            status = self._export()
+            self.assertTrue(status.startswith("ok|"), f"выгрузка {attempt}: {status}")
+            files, archived = self._cnc_files(product)
+            self.assertEqual(expected, sorted(files), f"выгрузка {attempt}: развёртка каждого исполнения со своей рамкой")
+            self.assertEqual([], archived, f"выгрузка {attempt}: в «_Аннулировано» ничего")
+        self.s.close_all()
+        for path, active in planks.items():
+            self.assertEqual(active, str(self.s.open(path).GetActiveConfiguration.Name), f"{path.name}: исполнение возвращено")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
     def _sheet_and_tube(self, number):

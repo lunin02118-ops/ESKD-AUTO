@@ -124,13 +124,23 @@ def property_master():
     return master
 
 
-def canonical(names, master):
+def property_tail():
+    """«Примечание», «Формат», «Раздел» — строки 8, 7, 12 словаря SWPlus в том порядке, в каком «Применить» MProp
+    дописывает их в конец (FrmMProp 3040–3045). В едином порядке они последние (решение владельца 24.09.2026)."""
+    lines = paths.SWPLUS_DICTIONARY.read_text(encoding="cp1251").splitlines()
+    defaults = {7: "Примечание", 6: "Формат", 11: "Раздел"}
+    return [(lines[i].strip() if i < len(lines) else "") or defaults[i] for i in (7, 6, 11)]
+
+
+def canonical(names, master, tail=()):
     """(канонический порядок уровня, что перенести в конец): известные имена — в порядке мастер-списка, свои — в
-    прежнем порядке; на месте остаётся самое длинное начало канона, уже стоящее в том же порядке."""
-    rank = {n: i for i, n in reversed(list(enumerate(master)))}
+    прежнем порядке, имена tail — последними в своём порядке; на месте остаётся самое длинное начало канона, уже
+    стоящее в том же порядке."""
+    last = {n: i for i, n in enumerate(tail)}
+    rank = {n: i for i, n in reversed(list(enumerate(master))) if n not in last}
     present = list(dict.fromkeys(n for n in names if n is not None))
     known = sorted((n for n in present if n in rank), key=rank.get)
-    order = known + [n for n in present if n not in rank]
+    order = known + [n for n in present if n not in rank and n not in last] + sorted((n for n in present if n in last), key=last.get)
     kept = 0
     for n in present:
         if kept < len(order) and n == order[kept]:
