@@ -51,6 +51,11 @@ namespace ESKD.MaterialSync.Sw
             public readonly List<string> Stems = new List<string>();
             /// <summary>Документ уже у цеха, и выгрузка его пропустила (Т-30).</summary>
             public bool Protected;
+            /// <summary>
+            /// Исполнения, которые выгрузка показывала в этот раз: строки прежнего отчёта о других исполнениях документа
+            /// выгрузка одной детали оставляет (<see cref="ExportLog.CarriesOver"/>).
+            /// </summary>
+            public readonly HashSet<string> Shown = new HashSet<string>(StringComparer.Ordinal);
 
             public void AddStem(string stem)
             {
@@ -686,6 +691,7 @@ namespace ESKD.MaterialSync.Sw
             if (item.Executions.Count == 0)
             {
                 string file = Path.GetFileName(item.Path);
+                item.Shown.Add(ActiveConfiguration(item.Model));
                 bool dirtyBefore = DocumentGuard.HasUserEdits(item.Model);
                 DxfOne(app, item, item.Designation, item.Name, 0, productFolder, log, file);
                 bool clean = IgsOne(app, item, item.Designation, item.Name, item.Operations, productFolder, log, saves, file);
@@ -706,6 +712,7 @@ namespace ESKD.MaterialSync.Sw
                 foreach (KeyValuePair<string, int> execution in item.Executions)
                 {
                     string cfg = execution.Key.Length > 0 ? execution.Key : original;
+                    item.Shown.Add(cfg);
                     if (!string.Equals(cfg, ActiveConfiguration(item.Model), StringComparison.Ordinal))
                     {
                         // Флаг — до переключения: сорвавшееся посередине переключение тоже возвращается (№29).
@@ -795,6 +802,20 @@ namespace ESKD.MaterialSync.Sw
             {
                 Log.Error("Выгрузка: активная конфигурация", ex);
                 return "";
+            }
+        }
+
+        /// <summary>Сколько конфигураций в модели; не прочитано — 2: подпись исполнением лишней не бывает.</summary>
+        private static int ConfigurationCount(ModelDoc2 model)
+        {
+            try
+            {
+                return model.GetConfigurationCount();
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Выгрузка: число конфигураций", ex);
+                return 2;
             }
         }
 
@@ -931,6 +952,46 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Выгрузка: листовые тела", ex);
             }
             return new List<SheetBody>();
+        }
+
+        /// <summary>Тела детали в показанном исполнении: все, из них поверхностей и скрытых.</summary>
+        private sealed class BodyCount
+        {
+            public int All;
+            public int Surfaces;
+            public int Hidden;
+        }
+
+        /// <summary>
+        /// Тела детали в показанном исполнении (З-51) — твёрдые и поверхности, скрытые тоже: SaveAs IGS пишет модель
+        /// целиком, и лишнее тело попало бы труборезу. GetBodies2 отдаёт тела активной конфигурации — PartFiles уже
+        /// показал нужное исполнение. Null — тела не прочитаны: такую деталь нельзя ни выгрузить, ни назвать многотельной.
+        /// </summary>
+        private static BodyCount Bodies(PartDoc part)
+        {
+            if (part == null) return null;
+            try
+            {
+                // Сразу после смены окна или исполнения SolidWorks перестраивает дерево в фоне (FeatureWalk).
+                return FeatureWalk.Retry(() =>
+                {
+                    int solids = BodiesOf(part, swBodyType_e.swSolidBody, false);
+                    int surfaces = BodiesOf(part, swBodyType_e.swSheetBody, false);
+                    int shown = BodiesOf(part, swBodyType_e.swSolidBody, true) + BodiesOf(part, swBodyType_e.swSheetBody, true);
+                    return new BodyCount { All = solids + surfaces, Surfaces = surfaces, Hidden = solids + surfaces - shown };
+                }, "тела детали");
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Выгрузка: тела детали", ex);
+                return null;
+            }
+        }
+
+        private static int BodiesOf(PartDoc part, swBodyType_e type, bool visibleOnly)
+        {
+            object[] bodies = part.GetBodies2((int)type, visibleOnly) as object[];
+            return bodies == null ? 0 : bodies.Count(b => b is Body2);
         }
 
         /// <summary>
@@ -1073,16 +1134,40 @@ namespace ESKD.MaterialSync.Sw
             // Решает галочка «Лазерная резка трубы» в операциях; без операций — признак профиля в модели. Материал —
             // активного исполнения: у исполнений он может быть разный (решение владельца 23.09.2026).
             bool tube = IsStructuralMember(item.Model) || IsTubeByMaterial(item.Model);
-            if (!LzkOperations.WantsTubeFile(operations, tube))
+            bool cutting = LzkOperations.WantsTubeFile(operations, tube);
+            if (!cutting && !tube) return true;
+            string target = ExportNaming.IgsPath(productFolder, designation, name, item.Path, item.Revision);
+            // Многотельная деталь в IGS не идёт (решение владельца 24.09.2026, З-51): в файл ушли бы все тела — сварная
+            // рама целиком или труба с лишним телом. Тела — показанного исполнения: у исполнений их может быть разное число.
+            // Прежний IGS такой детали цеху отдавать нельзя — он уходит в «_Аннулировано»; выгруженный в этот раз (тем же
+            // именем у исполнения без своего обозначения) не трогается.
+            BodyCount bodies = Bodies(item.Model as PartDoc);
+            if (bodies != null && bodies.All > 1)
+            {
+                // Замечание подписано исполнением, даже когда выгружается одна деталь: у другого исполнения тел может быть
+                // одно, и выгрузка его не должна стереть замечание об этом (ExportLog.CarriesOver).
+                string note = label.Contains(" [") || ConfigurationCount(item.Model) < 2 ? label
+                    : label + " [" + ActiveConfiguration(item.Model) + "]";
+                log.Warn(note, ExportLog.MultibodyReason(bodies.All, bodies.Surfaces, bodies.Hidden, cutting));
+                if (File.Exists(target) && !log.Files.Contains(target, StringComparer.OrdinalIgnoreCase))
+                    Retire(target, DateTime.Now, "IGS многотельной детали — на труборез она не идёт", log);
+                return true;
+            }
+            if (!cutting)
             {
                 // Галочку снял конструктор — или «Операции» записала ЛЗК до 24.09.2026, не узнав трубу по материалу
                 // SolidWorks. Молча пропускать нельзя: в «Труборез» не попала бы труба, и никто бы не заметил.
-                if (tube)
-                    log.Warn(label, "деталь из трубы, а в «Операциях» нет «" + LzkOperations.TubeCutting +
-                        "»: IGS не сделан — если он нужен, поставьте эту операцию в ведомости ЛЗК и выгрузите заново");
+                log.Warn(label, "деталь из трубы, а в «Операциях» нет «" + LzkOperations.TubeCutting +
+                    "»: IGS не сделан — если он нужен, поставьте эту операцию в ведомости ЛЗК и выгрузите заново");
                 return true;
             }
-            string target = ExportNaming.IgsPath(productFolder, designation, name, item.Path, item.Revision);
+            if (bodies == null || bodies.All == 0)
+            {
+                // Непрочитанные тела могли оказаться многотельной деталью — наугад IGS не делается.
+                log.Skip(label, bodies == null ? "тела детали не прочитаны: IGS не сделан — выгрузите изделие заново"
+                    : "в исполнении нет тел: IGS не сделан");
+                return true;
+            }
             if (ExportNaming.TooLong(target).Length > 0)
             {
                 log.Skip(label, "IGS не сделан: " + ExportNaming.TooLong(target));
@@ -1256,6 +1341,9 @@ namespace ESKD.MaterialSync.Sw
             HashSet<string> now = new HashSet<string>(log.Files.Select(Path.GetFileName), StringComparer.OrdinalIgnoreCase);
             HashSet<string> documents = new HashSet<string>(
                 items.Select(i => Path.GetFileNameWithoutExtension(i.Path)), StringComparer.OrdinalIgnoreCase);
+            Func<string, ICollection<string>> shown = document => new HashSet<string>(items
+                .Where(i => string.Equals(Path.GetFileNameWithoutExtension(i.Path), document, StringComparison.OrdinalIgnoreCase))
+                .SelectMany(i => i.Shown), StringComparer.Ordinal);
             string[] folders =
             {
                 ExportNaming.PdfDirectory(productFolder), ExportNaming.LaserDirectory(productFolder),
@@ -1263,20 +1351,23 @@ namespace ESKD.MaterialSync.Sw
             };
             foreach (string name in previous.Files)
             {
-                if (now.Contains(name)) continue;
+                // Файл, который выгрузка не смогла убрать в «_Аннулировано», выгруженным не числится: его найдёт проверка.
+                if (now.Contains(name) || log.Unretired.Contains(name)) continue;
                 string found = folders.Select(f => Path.Combine(f, name)).FirstOrDefault(File.Exists);
                 if (found == null) continue;
                 log.Files.Add(found);
                 string sum;
                 if (previous.Checksums.TryGetValue(name, out sum)) log.Checksums[found] = sum;
             }
+            // Строки о документах, выгруженных сейчас, заменяются новыми — кроме строк об их исполнениях, которые сейчас не
+            // показывались (З-51: замечание о многотельном исполнении пропало бы от выгрузки другого).
             foreach (string line in previous.Skipped)
-                if (!documents.Contains(ExportLog.DocumentName(ExportLog.SplitSkip(line).Key))) log.Skipped.Add(line);
+                if (ExportLog.CarriesOver(ExportLog.SplitSkip(line).Key, documents, shown)) log.Skipped.Add(line);
             // Замечание «убран в _Аннулировано» — о прошлой выгрузке, а не о документе: дальше оно не переходит.
             foreach (string line in previous.Warnings)
             {
                 KeyValuePair<string, string> note = ExportLog.SplitSkip(line);
-                if (!documents.Contains(ExportLog.DocumentName(note.Key)) && !ExportLog.IsArchiveNote(note.Value)) log.Warnings.Add(line);
+                if (ExportLog.CarriesOver(note.Key, documents, shown) && !ExportLog.IsArchiveNote(note.Value)) log.Warnings.Add(line);
             }
         }
 
@@ -1411,6 +1502,7 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Выгрузка: перенос в " + ExportNaming.ArchiveFolder + " " + file, ex);
                 problem = ex.Message;
             }
+            log.Unretired.Add(name);
             log.Warn(name, "не убран в «" + ExportNaming.ArchiveFolder + "» (" + problem.Trim() + "): " + reason +
                 " — уберите его сами, иначе проверка изделия его не пропустит");
         }

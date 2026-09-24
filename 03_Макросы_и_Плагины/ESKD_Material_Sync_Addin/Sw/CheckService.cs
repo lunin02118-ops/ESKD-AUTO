@@ -628,12 +628,16 @@ namespace ESKD.MaterialSync.Sw
                         "папка выдачи не прочитана (" + problem + "): лишние файлы в ней не проверены — проверьте изделие снова");
             }
             // Выданный файл документа, которого в изделии больше нет, выгрузка оставляет на месте (он у цеха) с замечанием:
-            // без новой ревизии сборки «Готово к производству» выдало бы его снова (З-48).
+            // без новой ревизии сборки «Готово к производству» выдало бы его снова (З-48). Многотельная деталь с «Лазерная
+            // резка трубы» в IGS не идёт (З-51): ведомость ЛЗК обещает цеху файл, которого нет, — деталь разбивают на
+            // однотельные или снимают резку трубы.
+            // Строка делится по « — » перед замечанием: « — » бывает и в имени файла или исполнения.
             foreach (string line in log.Warnings)
             {
-                KeyValuePair<string, string> note = ExportLog.SplitSkip(line);
-                if (note.Value.StartsWith(ExportLeftovers.OrphanIssued, StringComparison.Ordinal))
-                    report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), note.Key, note.Value);
+                string document, reason;
+                if (ExportLog.SplitNote(line, ExportLeftovers.OrphanIssued, out document, out reason) ||
+                    ExportLog.SplitNote(line, ExportLog.MultibodyNoIgs, out document, out reason))
+                    report.Add(CheckRules.Export, CheckRules.LevelOf(CheckRules.Export), document, reason);
             }
         }
 

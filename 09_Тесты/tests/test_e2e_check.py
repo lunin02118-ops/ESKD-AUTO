@@ -45,6 +45,57 @@ class Check(SwTestCase):
             time.sleep(1)
         return status
 
+    def _export(self):
+        com.call(self.s.eskd(), "ExportProductSilent")
+        deadline = time.time() + 900
+        status = ""
+        while time.time() < deadline:
+            status = str(com.call(self.s.eskd(), "ExportStatus"))
+            if status:
+                break
+            time.sleep(1)
+        return status
+
+    def test_K10_multibody_tube_part_is_flagged_until_resolved(self):
+        """K10 (решение владельца 24.09.2026, З-51): многотельная деталь в IGS не идёт. С «Лазерная резка трубы» ведомость
+        ЛЗК обещает цеху IGS, которого нет, — проверка изделия ставит замечание правила «е» по отчёту выгрузки. Сама
+        проверка тел не считает и исполнений не переключает (Т-6). Конструктор разбивает деталь на однотельные или
+        снимает резку трубы — после новой выгрузки замечания нет, выгрузка только предупреждает, не советуя поставить
+        резку трубы."""
+        from eskd_e2e import build
+        product, asm = self._product()
+        frame_name = "ПРТИ.468211.105 Рама сварная.sldprt"
+        doc = self.s.open(asm)
+        self.s.activate(doc)
+        export = self._export()
+        self.assertTrue(export.startswith("ok|"), export)
+        status = self._check()
+        self.assertTrue(status.startswith("ok|"), status)
+        text = (product / "_Проверка.txt").read_text(encoding="utf-8-sig")
+        # Имя документа в отчётах — как у файла модели: после сохранения SolidWorks пишет «.SLDPRT».
+        flagged = [ln.strip().lower() for ln in text.splitlines() if "многотельная" in ln]
+        self.assertEqual(1, len(flagged), "\n".join(flagged) or text)
+        self.assertIn(("ЗАМЕЧАНИЕ — " + frame_name + " — многотельная деталь в IGS не идёт (тел 3)").lower(), flagged[0])
+        self.assertIn("ЗАМЕЧАНИЯ", status, "замечание не даёт «Готово к производству»")
+
+        # Рама загружена сборкой — конструктор снимает резку трубы в ней самой и сохраняет.
+        frame = com.dyn(self.s.sw.GetOpenDocumentByName(str(asm.parent / frame_name)))
+        build.props(frame, {"Операции": "Покраска"})
+        self.assertTrue(self.s.save(frame)[0], "рама сохранена")
+        self.s.activate(doc)
+        export = self._export()
+        self.assertTrue(export.startswith("ok|"), export)
+        report = (product / "_Экспорт.txt").read_text(encoding="utf-8-sig").lower()
+        notes = [ln.strip() for ln in report.splitlines() if ln.strip().startswith(frame_name.lower())]
+        self.assertEqual([(frame_name + " — многотельная деталь из трубы (тел 3), «Лазерная резка трубы» в «Операциях» нет: "
+                           "IGS не делается — проверьте чертёж и сборку").lower()],
+                         [n for n in notes if "igs" in n], "предупреждение без совета поставить резку трубы")
+        status = self._check()
+        self.assertTrue(status.startswith("ok|"), status)
+        text = (product / "_Проверка.txt").read_text(encoding="utf-8-sig")
+        self.assertEqual([], [ln.strip() for ln in text.splitlines() if "многотельная" in ln], "замечания нет")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
     @tags("smoke")
     def test_K01_report_lists_issues_and_outcome(self):
         """K01: проверка изделия без чертежей и выгрузки — «ЗАМЕЧАНИЯ», отчёт _Проверка.txt с правилами и суммами."""

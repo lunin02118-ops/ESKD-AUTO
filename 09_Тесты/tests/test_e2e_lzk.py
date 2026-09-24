@@ -758,7 +758,8 @@ class Lzk(SwTestCase):
         """L18 (замечание владельца 24.09.2026): детали, которым ЛЗК поставила «Лазерная резка трубы», получают при
         выгрузке каждая свой IGS — только со своими телами, при первой и при повторной выгрузке одинаковый; других IGS
         в «Труборез» нет. Раньше IGS трубы, построенной без элемента конструкции, содержал всю сборку или соседнюю
-        деталь, а заголовок IGS называл трубу."""
+        деталь, а заголовок IGS называл трубу. Многотельной детали ЛЗК оставляет резку трубы, а IGS выгрузка не делает —
+        в отчёте замечание (решение владельца 24.09.2026, З-51)."""
         import openpyxl
         from eskd_e2e import iges
 
@@ -772,7 +773,9 @@ class Lzk(SwTestCase):
         tubes = sorted(f"{main.cell(r, 3).value} {main.cell(r, 4).value}.igs" for r in rows
                        if "Лазерная резка трубы" in str(main.cell(r, 9).value or ""))
         self.assertEqual(["ПРТИ.468211.102 Стойка.igs", "ПРТИ.468211.105 Рама сварная.igs"], tubes, "трубы в ЛЗК")
-        shape = {"ПРТИ.468211.102 Стойка.igs": (1, (80, 80, 300)), "ПРТИ.468211.105 Рама сварная.igs": (3, (40, 240, 500))}
+        # Рама сварная — три тела в одной детали.
+        single = ["ПРТИ.468211.102 Стойка.igs"]
+        shape = {"ПРТИ.468211.102 Стойка.igs": (1, (80, 80, 300))}
         digests = []
         for attempt in (1, 2):
             self.s.activate(doc)
@@ -783,7 +786,12 @@ class Lzk(SwTestCase):
                 time.sleep(0 if export else 1)
             self.assertTrue(export.startswith("ok|"), f"выгрузка {attempt}: {export}")
             files = sorted((product / "03_ЧПУ" / "Труборез").glob("*.igs"))
-            self.assertEqual(tubes, [p.name for p in files], f"выгрузка {attempt}: IGS — ровно у строк ЛЗК с резкой трубы")
+            self.assertEqual(single, [p.name for p in files],
+                             f"выгрузка {attempt}: IGS — ровно у однотельных строк ЛЗК с резкой трубы")
+            # Имя документа в отчёте — как у файла модели (у этого изделия «.SLDPRT»).
+            report = Path(export.split("|")[3]).read_text(encoding="utf-8-sig").lower()
+            self.assertIn("ПРТИ.468211.105 Рама сварная.sldprt — многотельная деталь в IGS не идёт (тел 3)".lower(), report,
+                          f"выгрузка {attempt}: замечание о многотельной раме")
             with self.subTest(выгрузка=attempt):
                 for path in files:
                     iges.assert_part(self, path, *shape[path.name])
