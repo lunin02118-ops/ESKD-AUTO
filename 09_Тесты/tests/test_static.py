@@ -162,6 +162,16 @@ class StaticRepository(StaticTestCase):
         self.assertIn("if (-not $Publish) {", text, "архив выкладывается на GitHub без явного ключа -Publish")
         for secret in ("ghp_", "github_pat_", "-Password", "AccessToken", "PersonalAccessToken"):
             self.assertNotIn(secret, text, "в сборщике архива хранится секрет: " + secret)
+        # gh без -R ищет репозиторий в текущей папке, а не в папке скрипта: запуск из не-git папки обрывался на
+        # «not a git repository», а сборщик сваливал это на занятую метку (выпуск 2026.09.24.1252, 24.09.2026).
+        self.assertIn("git -C $repo remote get-url origin", text, "репозиторий для gh не берётся из origin копии")
+        gh_release = [line.strip() for line in text.splitlines() if re.search(r'& \$gh release|"release", "create"', line)]
+        self.assertTrue(gh_release, "вызовы gh release не найдены")
+        self.assertEqual([], [line for line in gh_release if not re.search(r'-R"?,? \$ghRepo', line)],
+                         "gh release зовётся без -R — зависит от текущей папки")
+        self.assertNotIn("уже занята?", text, "отказ gh сваливается на занятую метку без проверки")
+        self.assertLess(text.index("$existing = Get-ReleaseUrl"), text.index("& $gh @ghArgs"),
+                        "занятость метки не проверяется до выкладки")
 
     def test_T0_graphics_settings_do_not_depend_on_developer_pc(self):
         """Замечание владельца 20.09.2026: на другом ПК SolidWorks не запускался после настройки. Аппаратный конвейер

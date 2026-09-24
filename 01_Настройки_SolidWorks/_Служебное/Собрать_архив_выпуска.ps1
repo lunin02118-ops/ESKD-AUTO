@@ -216,6 +216,26 @@ if (-not $gh) {
 Invoke-Native { & $gh auth status 2>&1 | Out-Null }
 if ($LASTEXITCODE -ne 0) { Stop-Release "gh не выполнил вход. Один раз: gh auth login" }
 
+# Репозиторий для gh называется явно (-R) — по origin той копии, из которой собран выпуск. Без -R gh ищет
+# репозиторий в текущей папке, а не в папке скрипта: запуск из не-git папки обрывался на «not a git repository»,
+# а сборщик сваливал это на занятую метку (выпуск 2026.09.24.1252, 24.09.2026).
+$origin = (Invoke-Native { & git -C $repo remote get-url origin }) | Select-Object -First 1
+if ("$origin" -notmatch '^(?:[a-z+]+://)?(?:[^@/]+@)?(?<host>[^/:]+)(?::\d+)?[:/](?<owner>[^/]+)/(?<name>[^/]+?)(?:\.git)?/?$') {
+    Stop-Release "Не определить репозиторий на GitHub по origin копии $repo (git remote get-url origin)."
+}
+$ghRepo = "$($Matches['host'])/$($Matches['owner'])/$($Matches['name'])"
+
+# Страница выпуска с меткой $tag, если он уже есть на GitHub (черновик тоже); иначе пусто.
+function Get-ReleaseUrl {
+    $url = (Invoke-Native { & $gh release view $tag -R $ghRepo --json url --jq .url 2>$null }) | Select-Object -First 1
+    if ($LASTEXITCODE -eq 0 -and $url) { "$url" }
+}
+
+# Про занятую метку говорится, только если выпуск с ней на GitHub действительно есть.
+$existing = Get-ReleaseUrl
+if ($existing) { Stop-Release "Метка $tag уже занята: выпуск есть на GitHub — $existing" }
+Info "Репозиторий на GitHub: $ghRepo"
+
 # Изменения с прошлого выпуска: метки выпусков называются v<версия>
 $previous = @(Invoke-Native { & git -C $repo tag --list "v20*" --sort=-creatordate } | Where-Object { $_ -and $_ -ne $tag }) |
             Select-Object -First 1
@@ -240,14 +260,24 @@ $notes = @("**Коммит:** ``$commit`` (ветка ``$branch``)", "",
 $notesFile = Join-Path $OutDir "$name.notes.md"
 [System.IO.File]::WriteAllText($notesFile, (($notes -join "`r`n") + "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
 
-$ghArgs = @("release", "create", $tag, $zip, "$zip.sha256",
+$ghArgs = @("release", "create", $tag, $zip, "$zip.sha256", "-R", $ghRepo,
             "--title", "Инструментарий ЕСКД $Version",
             "--notes-file", $notesFile,
             "--target", $head)
 if ($Draft) { $ghArgs += "--draft" }
 Invoke-Native { & $gh @ghArgs }
-if ($LASTEXITCODE -ne 0) { Stop-Release "gh не создал выпуск (код $LASTEXITCODE). Метка $tag уже занята?" }
+if ($LASTEXITCODE -ne 0) {
+    $code = $LASTEXITCODE
+    # До вызова выпуска с этой меткой не было. Если он появился, его создали параллельно или gh не убрал
+    # за собой черновик — тогда на странице Releases уже не «ничего не изменилось».
+    $existing = Get-ReleaseUrl
+    if (-not $existing) { Stop-Release "gh не создал выпуск (код $code) — причина в его сообщении выше." }
+    Write-Host "[ОШИБКА] gh не довёл выпуск до конца (код $code), но выпуск $tag на GitHub есть: $existing" -ForegroundColor Red
+    Write-Host "Проверьте его вручную: всё ли выложено и не остался ли он черновиком." -ForegroundColor Yellow
+    exit 1
+}
 
 Ok "Выпуск $tag выложен$(if ($Draft) { ' черновиком' })"
-Invoke-Native { & $gh release view $tag --json url --jq .url } | ForEach-Object { Write-Host "`nСтраница выпуска: $_" -ForegroundColor White }
+$url = Get-ReleaseUrl
+if ($url) { Write-Host "`nСтраница выпуска: $url" -ForegroundColor White }
 exit 0
