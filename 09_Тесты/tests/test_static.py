@@ -543,7 +543,8 @@ class StaticRepository(StaticTestCase):
     def test_T0_sw_block_expected_matches_package(self):
         """T0 (ревью 24.09.2026): шаг 8 установщика «Отучение SolidWorks от сети». Установщик ждёт столько правил, сколько
         создаёт пакет (SLDWORKS.exe пропускается в обе стороны, как в Test-SldWorksConflict), а сбой пакета или нехватка
-        правил в ветке «уже администратор» дают [ВНИМАНИЕ], не [OK]. Брандмауэр, hosts и реестр не затрагиваются:
+        правил в ветке «уже администратор» дают [ВНИМАНИЕ], не [OK], и ошибкой установки не считаются (решение владельца
+        25.09.2026: это примечание). Брандмауэр, hosts и реестр не затрагиваются:
         программы и пакет подменяются временными файлами, счёт правил — заглушкой."""
         out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                               str(paths.TESTS / "tools" / "check_sw_internet_block.ps1"), "-RepoRoot", str(ROOT)],

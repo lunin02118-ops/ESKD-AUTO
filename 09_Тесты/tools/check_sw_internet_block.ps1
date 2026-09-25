@@ -5,7 +5,8 @@
     1. Ожидаемое число правил (Get-EskdSwBlockExpectedRules модуля EskdDeploy.psm1) совпадает с тем, что создаёт пакет:
        правило Test-SldWorksConflict берётся из самого Set-SwInternetBlock.ps1, записи — из настоящего манифеста, а
        программы подменяются пустыми файлами во временной папке (часть — нарочно без файла).
-    2. Ветка установщика «уже администратор» при сбое пакета или нехватке правил пишет [ВНИМАНИЕ], а не [OK]: её текст
+    2. Ветка установщика «уже администратор» при сбое пакета или нехватке правил пишет [ВНИМАНИЕ], а не [OK], и ошибкой
+       установки это не считает (решение владельца 25.09.2026): её текст
        берётся из Setup_Workstation_SolidWorks.ps1 и выполняется с поддельным пакетом (только выводит строку и выходит с
        заданным кодом) и заглушкой Get-NetFirewallRule. Настоящий пакет не запускается, брандмауэр и hosts не меняются.
     Вывод — JSON с результатом; код выхода 0 при успехе.
@@ -95,8 +96,11 @@ try {
         $script:log.Clear()
         $script:rules = $case.rules
         $sbExpected = 10
+        $failures = 0
         $env:ESKD_SWBLOCK_FAIL = $case.fail
         . ([scriptblock]::Create($adminBranch))
+        # Решение владельца 25.09.2026: сбой отучения от сети — примечание, а не ошибка установки.
+        if ($failures -ne 0) { $problems.Add("$($case.label): сбой отучения от сети посчитан ошибкой установки") }
         $okLines = @($script:log | Where-Object { $_.StartsWith("[OK]") })
         $warnLines = @($script:log | Where-Object { $_.StartsWith("[ВНИМАНИЕ]") })
         $verdicts += [pscustomobject]@{ case = $case.label; ok = $okLines; warn = $warnLines }

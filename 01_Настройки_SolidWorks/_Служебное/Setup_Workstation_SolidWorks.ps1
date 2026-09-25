@@ -1008,6 +1008,7 @@ if ($SwInternetBlock) {
     } elseif ($machine) {
         # Не $mode: переменные PowerShell без учёта регистра, а у параметра $Mode ValidateSet Install/Check/Uninstall.
         # Код выхода пакета читается: «FATAL» (hosts занят, правило не создано) не должен кончаться [OK] (ревью 24.09.2026).
+        # Сбой — примечание [ВНИМАНИЕ], установка ошибкой не считается (решение владельца 25.09.2026).
         $sbFailed = @()
         foreach ($sbMode in "apply", "hosts-apply") {
             $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sb -Mode $sbMode 2>&1
