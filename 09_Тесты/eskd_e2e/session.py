@@ -44,6 +44,9 @@ TEST_SETTINGS = {
     "Organization": "ООО «Испытание»",
 }
 
+#: Сколько секунд ждать подключения надстройки после LoadAddIn (SolidWorks может подключить её уже после возврата).
+ADDIN_CONNECT_TIMEOUT = 30
+
 
 class SessionRefused(RuntimeError):
     pass
@@ -346,8 +349,15 @@ class SwSession:
         if self.eskd_loaded:
             return
         rc = self.sw.LoadAddIn(str(self.eskd_dll))
-        if self.sw.GetAddInObject(paths.ADDIN_PROGID) is None:
-            raise RuntimeError(f"Надстройка ЕСКД не загрузилась из {self.eskd_dll} (LoadAddIn={rc})")
+        # SolidWorks может подключить надстройку не внутри LoadAddIn, а через 2–3 с после возврата: 25.09.2026
+        # LoadAddIn = 0, ConnectToSW — через 2 с, объект надстройки — на следующем опросе. Без ожидания все классы
+        # e2e падали в setUpClass (прогон r59). Ждём до ADDIN_CONNECT_TIMEOUT.
+        deadline = time.monotonic() + ADDIN_CONNECT_TIMEOUT
+        while self.sw.GetAddInObject(paths.ADDIN_PROGID) is None:
+            if time.monotonic() > deadline:
+                raise RuntimeError(f"Надстройка ЕСКД не загрузилась из {self.eskd_dll} за {ADDIN_CONNECT_TIMEOUT} с "
+                                   f"(LoadAddIn={rc})")
+            time.sleep(0.5)
         self.eskd_loaded = True
 
     def unload_eskd(self):
