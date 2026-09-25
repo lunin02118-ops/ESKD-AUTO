@@ -799,6 +799,85 @@ class Lzk(SwTestCase):
         self.assertEqual(digests[0], digests[1], "повторная выгрузка — та же геометрия")
         self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
 
+    def test_L19_flat_pattern_drawing_keeps_product_clean(self):
+        """L19 (заказ NC3-7R, 25.09.2026): SolidWorks отмечает листовую деталь изменённой, когда открывается её чертёж с
+        видом развёртки (перестраивает развёртку; так и без надстройки). Проверка изделия открывает чертежи (оборванные
+        размеры) и потом сама называла деталь «несохранённые правки»: перед выгрузкой изделие не сходилось с проверкой,
+        сколько его ни проверяй, а «Готово к производству» не проходило вовсе. Выгрузка открывает чертёж ради PDF раньше,
+        чем запоминала, чистая ли деталь, и тоже оставляла её изменённой. Теперь такие документы проверка и выгрузка
+        сохраняют снова своим сохранением: всё чистое, версия изделия одна, выгрузка — по проверенному изделию."""
+        from eskd_e2e import build
+
+        product = self.case_dir / PRODUCT
+        models = product / "01_3D"
+        models.mkdir(parents=True, exist_ok=True)
+        for name in ("Нормативы_производства.xlsx", "ЛЗК_бланки.xlsx"):
+            ref = paths.ROOT / "02_Шаблоны_и_Форматки" / "Справочники" / name
+            (self.case_dir / ref.name).write_bytes(ref.read_bytes())
+        angle = models / "ПРТИ.468211.174 Закладная.sldprt"
+        part = build.sheet_metal_angle(self.s, 100, 20, 25, 3, "Лист 3,0 ГОСТ 19903-2015 / Ст3сп ГОСТ 14637-89")
+        self.s.save_as(part, angle)
+        self.s.wait_addin_idle(timeout=60.0)
+        drw = self.s.new_doc(paths.DRAWING_TEMPLATE)
+        build.set_sheet_format(drw, build.sheet_format("A3-A-1"), 420, 297)
+        view = drw.CreateFlatPatternViewFromModelView3(str(angle), "", 0.2, 0.15, 0.0, False, False)
+        self.assertIsNotNone(view, "вид развёртки вставлен")
+        drawing = angle.with_suffix(".slddrw")
+        self.assertTrue(self.s.save_as(drw, drawing)[0], "чертёж сохранён")
+        self.s.close(drw)
+        # Деталь изменили после чертежа (как у NC3-7R): чертёж устарел, и первое его открытие перестраивает развёртку.
+        # Второе открытие в той же сессии деталь уже не отмечает — поэтому предпосылку тест видит по журналу проверки.
+        sheet = next(iter(build.features_of_type(part, "SheetMetal")))
+        data = com.dyn(sheet.GetDefinition)
+        data.Thickness = 0.004
+        self.assertTrue(com.call(sheet, "ModifyDefinition", data, part, com.null_dispatch()), "толщина изменена")
+        com.call(part, "EditRebuild3")
+        self.assertTrue(self.s.save(part)[0], "деталь сохранена после чертежа")
+        self.s.wait_addin_idle(timeout=60.0)
+        asm, opened = build.assembly(self.s, [(angle, 0, 0, 0)])
+        self.assertTrue(self.s.save_as(asm, models / ASM)[0], "сборка сохранена")
+        for d in opened:
+            self.s.close(d)
+        self.s.wait_addin_idle(timeout=60.0)
+        for d in (part, asm):
+            if d.GetSaveFlag:
+                self.assertTrue(self.s.save(d)[0], "до проверки всё сохранено")
+
+        self.s.activate(asm)
+        _, text, version = self._checked()
+        self.path("check1.txt").write_text(text, encoding="utf-8")
+        resaved = [ln for ln in self.addin_log.new_lines() if "сохранён снова" in ln]
+        self.assertTrue(any(angle.name.lower() in ln.lower() for ln in resaved),
+                        f"SolidWorks отметил деталь при открытии чертежа, проверка сохранила её снова: {resaved}")
+        self.assertNotIn("несохранённые правки", text, text)
+        self.assertFalse(bool(part.GetSaveFlag), "после проверки деталь не изменена")
+        self.assertFalse(bool(asm.GetSaveFlag), "после проверки сборка не изменена")
+
+        lzk = self._build()
+        notices = str(com.call(self.s.eskd(), "LastNotices"))
+        self.assertTrue(lzk.startswith("ok|"), f"{lzk}\n{notices}")
+        self.assertNotIn("непроверенному", notices, notices)
+
+        self.s.activate(asm)
+        com.call(self.s.eskd(), "ExportProductSilent")
+        export = str(com.call(self.s.eskd(), "ExportStatus"))
+        self.assertTrue(export.startswith("ok|"), export)
+        exported = Path(export.split("|")[3]).read_text(encoding="utf-8-sig")
+        self.path("export.txt").write_text(exported, encoding="utf-8")
+        self.assertNotIn("непроверенному", exported, exported)
+        self.assertIn("Версия:   " + version, exported, "выгрузка по проверенной версии")
+        self.assertFalse(bool(part.GetSaveFlag), "после выгрузки деталь не изменена")
+        self.assertFalse(bool(asm.GetSaveFlag), "после выгрузки сборка не изменена")
+
+        self.s.activate(asm)
+        _, text, again = self._checked()
+        self.path("check2.txt").write_text(text, encoding="utf-8")
+        self.assertEqual(version, again, "свои сохранения проверки, ЛЗК и выгрузки версию не меняют")
+        for wrong in ("несохранённые правки", "другой версии", "непроверенному"):
+            self.assertNotIn(wrong, text, text)
+        self.assertFalse(bool(part.GetSaveFlag), "после второй проверки деталь не изменена")
+        self.assertEqual([], self.addin_errors(), "ошибки в журнале надстройки")
+
     def test_L03_refuses_non_assembly(self):
         """L03: у детали кнопка отказывает без изменений файлов."""
         path, doc = self.open_copy(SHEET_PART)

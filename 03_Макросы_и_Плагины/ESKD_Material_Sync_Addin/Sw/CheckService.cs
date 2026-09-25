@@ -18,7 +18,10 @@ namespace ESKD.MaterialSync.Sw
     /// <summary>Как запущена проверка изделия.</summary>
     public enum CheckMode
     {
-        /// <summary>Только отчёт: модели не меняются (Т-6) — «Готово к производству», автотесты.</summary>
+        /// <summary>
+        /// Только отчёт: модели не меняются (Т-6) — «Готово к производству», автотесты. Документ, который SolidWorks сам
+        /// пометил изменённым при чтении (чертёж листовой детали с развёрткой), сохраняется снова как есть.
+        /// </summary>
         Report = 0,
         /// <summary>Кнопка: одно окно с вопросами, обновлениями, замечаниями и списком сохранения.</summary>
         Interactive = 1,
@@ -117,6 +120,10 @@ namespace ESKD.MaterialSync.Sw
                         report = Recheck(app, nodes, productFolder, assemblyPath, session, report);
                     }
                 }
+                // Документы, которые SolidWorks пометил изменёнными сам, пока проверка их читала, — сохраняются снова до сумм
+                // файлов. Их новые суммы — в прежний отчёт и в выдачу, как у сохранений ЛЗК: версия изделия от них не меняется.
+                ToolSaves saves = ResaveDirtiedByCheck(nodes, session);
+                ProductFreshness.Restamp(productFolder, saves.Changes, "проверка изделия");
                 // Несохранённые правки в своих документах изделия (З-27): версия изделия считается по файлам, а проверено то,
                 // что открыто, — пока правки не сохранены, «Готово к производству» не пройдёт.
                 foreach (ProductNode node in nodes.Where(ProductFreshness.Own))
@@ -151,6 +158,74 @@ namespace ESKD.MaterialSync.Sw
                 Log.Error("Проверка изделия", ex);
                 Fail(app, interactive, "Проверка не выполнена: " + ex.Message);
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// Документы, которые пометил изменёнными сам SolidWorks, пока проверка их читала, сохраняются снова (25.09.2026).
+        /// Открытие чертежа листовой детали с видом развёртки перестраивает развёртку, и SolidWorks отмечает деталь
+        /// изменённой, хотя в ней ничего не поменялось (воспроизведено на копии заказа NC3-7R и без надстройки); сборку —
+        /// при открытии её чертежа после пересохранённых деталей. Проверка открывает чертежи (оборванные размеры, «Формат»),
+        /// а потом сама называла эти документы «несохранённые правки»: изделие не сходилось с проверкой перед ЛЗК и
+        /// выгрузкой, сколько его ни проверяй, а «Готово к производству» не проходило вовсе. Сохраняются только свои
+        /// документы изделия, чистые до проверки и не оставленные окном несохранёнными («Применить без сохранения», снятая
+        /// галочка); правки конструктора — никогда (З-25).
+        /// </summary>
+        private static ToolSaves ResaveDirtiedByCheck(List<ProductNode> nodes, ReviewSession session)
+        {
+            ToolSaves saves = new ToolSaves();
+            HashSet<string> keep = new HashSet<string>(session.Targets.Where(t => t.Touched && !t.Saved).Select(t => t.Node.Path),
+                StringComparer.OrdinalIgnoreCase);
+            // Состав идёт сверху вниз: главная сборка первой, подсборка — раньше своих деталей.
+            List<ProductNode> own = nodes.Where(n => ProductFreshness.Own(n) && !n.Edited && n.Model != null && !keep.Contains(n.Path))
+                .ToList();
+            // Второй круг — на случай, если сохранение одного документа снова отметит другой.
+            for (int round = 0; round < 2 && own.Any(n => DocumentGuard.HasUserEdits(n.Model)); round++)
+            {
+                // Сначала все перестроения (SolidWorks без них сохраняет с вопросом «перестроить?», X05), потом сохранения.
+                // Перестроение главной сборки отмечает изменённой подсборку, оба исполнения которой стоят в изделии
+                // («Укосина» 00 и 01 в NC3-7R): сохранённая до него подсборка оставалась бы «изменённой».
+                foreach (ProductNode node in own.Where(n => !n.IsAssembly).Concat(own.Where(n => n.IsAssembly)))
+                    Rebuild(node);
+                // Детали, потом сборки снизу вверх — с конца состава, главная сборка последней.
+                foreach (ProductNode node in own.Where(n => !n.IsAssembly)) Resave(node, saves);
+                for (int i = own.Count - 1; i >= 0; i--)
+                    if (own[i].IsAssembly) Resave(own[i], saves);
+            }
+            List<string> left = own.Where(n => DocumentGuard.HasUserEdits(n.Model)).Select(n => Path.GetFileName(n.Path)).ToList();
+            if (left.Count > 0)
+                Log.Warn("Проверка изделия: после своих сохранений остались изменёнными — " + string.Join(", ", left.ToArray()));
+            return saves;
+        }
+
+        private static void Rebuild(ProductNode node)
+        {
+            try
+            {
+                node.Model.EditRebuild3();
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Проверка изделия: перестроение " + Path.GetFileName(node.Path), ex);
+            }
+        }
+
+        private static void Resave(ProductNode node, ToolSaves saves)
+        {
+            string name = Path.GetFileName(node.Path);
+            try
+            {
+                if (!DocumentGuard.HasUserEdits(node.Model)) return;
+                int errors;
+                if (saves.Save(node.Model, out errors))
+                    Log.Info("Проверка изделия: " + name + " сохранён снова — изменённым его пометил SolidWorks, пока проверка " +
+                             "его читала");
+                else
+                    Log.Warn("Проверка изделия: " + name + " после чтения не сохранён (" + SwCodes.SaveProblem(errors) + ")");
+            }
+            catch (COMException ex)
+            {
+                Log.Error("Проверка изделия: сохранение после чтения " + name, ex);
             }
         }
 
