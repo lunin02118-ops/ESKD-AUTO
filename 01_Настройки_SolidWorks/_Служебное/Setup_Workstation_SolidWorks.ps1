@@ -41,7 +41,10 @@
     иначе русский. SolidWorks берёт язык из регионального формата пользователя Windows: для русского на ПК с другим
     форматом установщик переключает формат пользователя на «Русский (Россия)» (Set-Culture, без прав администратора),
     если в SolidWorks установлен русский язык. Системную кодовую страницу для макросов SWPlus только проверяет.
-    -DrewRussian — прежний синоним -Language Russian.
+    -DrewRussian — прежний синоним -Language Russian. Если русский интерфейс не включится (в SolidWorks нет русского
+    языка той же версии, формат не переключился), установка завершается кодом 4: всё остальное настроено, причина —
+    в шаге [9/9] и в ESKD_Install\LanguageIssue. Запуск под чужой учётной записью (не той, что вошла в Windows) —
+    отказ до изменений, код 1.
 .PARAMETER LocalRoot
     Локальная копия (по умолчанию %LOCALAPPDATA%\ESKD\Toolkit).
 .PARAMETER RegistryRoot
@@ -368,6 +371,24 @@ Write-Host "Организация:          $Firm" -ForegroundColor White
 Write-Host "Язык интерфейса:      $(if ($Language -eq 'English') { 'английский' } else { 'русский' })" -ForegroundColor White
 
 $failures = 0
+# Для русского интерфейса, который не удалось включить, — причина: итог тогда не «готово», а код выхода 4 (разбор 25.09.2026:
+# шаг [9/9] писал [ВНИМАНИЕ] в середине журнала, а окно — зелёное «Готово»).
+$languageIssue = ""
+
+# Чужая учётная запись («Запуск от имени администратора» с паролем ИТ): всё ниже ушло бы в её HKCU и формат Windows, а
+# SolidWorks конструктора, который вошёл в Windows, остался бы прежним (разбор 25.09.2026). Модуль не прочитался — отказ,
+# а не установка без проверки.
+try {
+    . (Join-Path $layout.SourceAddin "Register-EskdAddin.ps1")
+    $foreignAccount = Get-EskdForeignAccountMessage -Action Setup
+} catch {
+    Write-Fail "Папка инструментария неполная (модуль регистрации надстройки): $($_.Exception.Message). Изменения не вносились — сообщите администратору."
+    exit 2
+}
+if ($foreignAccount) {
+    Write-Fail $foreignAccount
+    exit 1
+}
 
 # 1. SolidWorks
 Write-Step "[1/9] Проверка SolidWorks..."
@@ -690,7 +711,9 @@ if (-not $sandbox -and -not $machine) {
     $localUri = "file:///" + ([string]$layout.LocalAddinDll).Replace('\', '/')
     if ($machineDll -and $machineDll -ne $localUri) {
         Write-Warn ("Регистрация надстройки ЕСКД в HKLM указывает на другую DLL ($machineDll): SolidWorks, запущенный от имени " +
-                    "администратора, загрузит её. Запустите установку один раз от имени администратора — регистрация перепишется.")
+                    "администратора, загрузит её. Переписать её может администратор этого ПК: войти в Windows под своей " +
+                    "учётной записью и запустить установку от имени администратора. Запуск «от имени администратора» с " +
+                    "паролем ИТ, когда в Windows вошёл конструктор, установка отклоняет.")
     }
 }
 $current = if (Test-Path -LiteralPath $settingsKey) { Get-ItemProperty -LiteralPath $settingsKey } else { $null }
@@ -1055,21 +1078,39 @@ if ($SwInternetBlock) {
 Write-Step "[9/9] Язык интерфейса SolidWorks и Drew: $(if ($Language -eq 'English') { 'английский' } else { 'русский' })..."
 $swFolder = [string](Get-RegValue "HKLM:\SOFTWARE\SolidWorks\$SwVersion\Setup" "SolidWorks Folder")
 $ruLangDir = if ($swFolder) { Join-Path $swFolder "lang\russian" } else { "" }
-$ruPack = [bool]$ruLangDir -and @(Get-ChildItem -LiteralPath $ruLangDir -Filter "*.dll" -File -ErrorAction SilentlyContinue).Count -gt 0
+# Русский язык SolidWorks — главная библиотека ресурсов lang\russian\sldresu.dll той же версии, что SLDWORKS.exe. Прежде
+# хватало любой DLL в папке: неполная копия или папка от другой версии проходили проверку (разбор 25.09.2026).
+$ruMain = if ($ruLangDir) { Join-Path $ruLangDir "sldresu.dll" } else { "" }
+# SolidWorks установлен, если есть SLDWORKS.exe: папка из реестра (и скопированный в неё русский язык) может остаться после
+# удаления SolidWorks (проверка изменений 25.09.2026).
+$swExe = if ($swFolder) { Join-Path $swFolder "SLDWORKS.exe" } else { "" }
+$swFound = [bool]$swExe -and (Test-Path -LiteralPath $swExe)
+$ruPack = $swFound -and (Test-Path -LiteralPath $ruMain)
+$ruOtherVersion = ""
+if ($ruPack) {
+    $packMajor = (Get-Item -LiteralPath $ruMain).VersionInfo.FileMajorPart
+    $swMajor = (Get-Item -LiteralPath $swExe).VersionInfo.FileMajorPart
+    if ($packMajor -ne $swMajor) {
+        $ruOtherVersion = "русский язык в $ruLangDir от другой версии SolidWorks (sldresu.dll $packMajor, SLDWORKS.exe $swMajor)"
+        $ruPack = $false
+    }
+}
 $culture = Get-Culture
 $acp = [string](Get-RegValue "HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage" "ACP")
 $plan = Get-EskdLanguagePlan -Language $Language -UserLcid $culture.LCID -RussianPack $ruPack -Acp $acp
 Set-Reg "$swRoot\General" "Use English language" $plan.UseEnglish "DWord"
 if ($Language -eq "English") {
     Write-Ok "SolidWorks: английский интерфейс («Use English language» = 1). Формат Windows не меняется."
-} elseif (-not $swFolder -or -not (Test-Path -LiteralPath $swFolder)) {
-    # Папка из реестра может остаться после удаления SolidWorks: тогда это не «нет русского пакета».
+} elseif (-not $swFound) {
+    # Нет SLDWORKS.exe — SolidWorks не установлен: это не «нет русского пакета».
     Write-Warn ("SolidWorks $SwVersion не найден на этом ПК (HKLM\SOFTWARE\SolidWorks\$SwVersion\Setup, " +
                 "«SolidWorks Folder» = «$swFolder») - русский язык не проверен, формат Windows не меняется.")
+    $languageIssue = "$SwVersion не найден на этом ПК"
 } elseif (-not $ruPack) {
-    Write-Warn ("В SolidWorks не установлен русский язык (нет $ruLangDir): интерфейс останется английским, формат Windows " +
-                "не меняется. Администратору: Панель управления -> Программы и компоненты -> SOLIDWORKS -> Изменить -> " +
-                "Языки SOLIDWORKS -> Русский (нужен дистрибутив той же версии).")
+    $ruProblem = if ($ruOtherVersion) { $ruOtherVersion } else { "в SolidWorks не установлен русский язык (нет $ruMain)" }
+    Write-Warn ("$ruProblem`: интерфейс останется английским, формат Windows не меняется. Администратору: Панель управления -> " +
+                "Программы и компоненты -> SOLIDWORKS -> Изменить -> Языки SOLIDWORKS -> Русский (нужен дистрибутив той же версии).")
+    $languageIssue = $ruProblem
 } elseif ($plan.RussianFormat) {
     Write-Ok "SolidWorks: русский интерфейс (формат Windows «$($culture.Name)» русский, «Use English language» = 0)."
 } elseif ($sandbox) {
@@ -1083,10 +1124,14 @@ if ($Language -eq "English") {
                   "Во всех программах пользователя теперь десятичная запятая, даты ДД.ММ.ГГГГ, рубль в денежном формате.")
         $ps51 = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
         $lcid = "$(& $ps51 -NoProfile -Command '[Globalization.CultureInfo]::CurrentCulture.LCID' 2>$null)".Trim()
-        if ($lcid -ne "1049") { Write-Warn "Новые программы формат ещё не видят - выйдите из учётной записи Windows и войдите снова." }
+        if ($lcid -ne "1049") {
+            Write-Warn "Новые программы формат ещё не видят - выйдите из учётной записи Windows и войдите снова."
+            $languageIssue = "формат Windows «ru-RU» новые программы увидят только после выхода из учётной записи Windows и входа снова"
+        }
     } catch {
         Write-Warn ("Формат Windows не переключён: $($_.Exception.Message) Вручную (Windows 10 и 11): Win+R -> intl.cpl -> " +
                     "вкладка «Форматы» -> Русский (Россия) -> ОК, затем перезапустить SolidWorks.")
+        $languageIssue = "формат Windows «$($culture.Name)» не переключён на «Русский (Россия)»"
     }
 }
 if ($sandbox) {
@@ -1121,6 +1166,7 @@ Set-Reg $install "Author" $Author
 Set-Reg $install "Language" $Language
 Set-Reg $install "InstalledAt" (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Set-Reg $install "LastResult" $(if ($failures) { "FAILED" } else { "OK" })
+Set-Reg $install "LanguageIssue" $languageIssue
 Set-Reg $install "LastLog" $logPath
 
 Write-Host ""
@@ -1131,6 +1177,14 @@ if ($failures) {
     Write-Host " НАСТРОЙКА ЗАВЕРШЕНА С ОШИБКАМИ: $failures. Сообщения выше." -ForegroundColor Red
     Write-Host "=================================================================" -ForegroundColor Red
     exit 1
+}
+if ($languageIssue) {
+    # Код 4: всё настроено, но выбранный русский интерфейс не включится — окно показывает это жёлтым, а не «Готово».
+    Write-Host "=================================================================" -ForegroundColor Yellow
+    Write-Host " НАСТРОЙКА ЗАВЕРШЕНА, НО SOLIDWORKS ОСТАНЕТСЯ АНГЛИЙСКИМ:" -ForegroundColor Yellow
+    Write-Host " $languageIssue. Что сделать — в строке [ВНИМАНИЕ] шага [9/9]." -ForegroundColor Yellow
+    Write-Host "=================================================================" -ForegroundColor Yellow
+    exit 4
 }
 Write-Host "=================================================================" -ForegroundColor Green
 Write-Host " НАСТРОЙКА ЗАВЕРШЕНА. Запустите SolidWorks." -ForegroundColor Green

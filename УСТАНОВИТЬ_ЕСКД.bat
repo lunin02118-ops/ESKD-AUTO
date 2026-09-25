@@ -35,6 +35,7 @@ set RC=%errorlevel%
 popd
 echo.
 echo ============================================================
-if %RC% equ 0 (echo  SETUP FINISHED SUCCESSFULLY) else (echo  SETUP FINISHED WITH CODE %RC% - check messages above)
+rem Code 4: everything is set up, but the chosen Russian interface will not switch on (reason in step [9/9]).
+if %RC% equ 0 (echo  SETUP FINISHED SUCCESSFULLY) else if %RC% equ 4 (echo  SETUP FINISHED, BUT SOLIDWORKS STAYS IN ENGLISH - see the warning in step [9/9]) else (echo  SETUP FINISHED WITH CODE %RC% - check messages above)
 echo ============================================================
 pause

@@ -121,8 +121,15 @@ try {
         $p.WaitForExit()
         return @($p.ExitCode, $out)
     }
+    # Русский язык SolidWorks 2025 на этом ПК — по правилу шага [9/9]. Без него (ПК публикации без SolidWorks) первая установка
+    # честно заканчивается кодом 4 (проверка изменений 25.09.2026).
+    $swDir = [string](Read-Value "HKLM:\SOFTWARE\SolidWorks\SOLIDWORKS 2025\Setup" "SolidWorks Folder")
+    $swExe = if ($swDir) { Join-Path $swDir "SLDWORKS.exe" } else { "" }
+    $ruDll = if ($swDir) { Join-Path $swDir "lang\russian\sldresu.dll" } else { "" }
+    $ruReady = [bool]$swExe -and (Test-Path -LiteralPath $swExe) -and (Test-Path -LiteralPath $ruDll) -and
+               ((Get-Item -LiteralPath $ruDll).VersionInfo.FileMajorPart -eq (Get-Item -LiteralPath $swExe).VersionInfo.FileMajorPart)
     $code, $output = & $run
-    Expect "код выхода установки" $code 0
+    Expect "код выхода установки (русский язык SolidWorks: $ruReady)" $code $(if ($ruReady) { 0 } else { 4 })
 
     $sheetFormats = Join-Path $source "02_Шаблоны_и_Форматки\Основные надписи"
     $localSwPlus = Join-Path $local $swplusRel
@@ -153,6 +160,8 @@ try {
     Expect "организация" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Organization") "ООО «Проверка»"
     Expect "ESKD_Install: источник" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "SourceRoot") $source
     Expect "ESKD_Install: итог" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "LastResult") "OK"
+    # В тестовом корне формат Windows не меняется: причина для кода 4 — только отсутствие русского языка SolidWorks.
+    Expect "ESKD_Install: причина, если русский не включится" ([bool](Read-Value "$sandbox\SolidWorks\ESKD_Install" "LanguageIssue")) (-not $ruReady)
     Expect "язык: по умолчанию русский" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "Language") "Russian"
     Expect "язык: «Use English language» = 0" (Read-Value "$swKey\General" "Use English language") 0
     Expect "язык: шаг [9/9] в выводе" ($output.Contains("[9/9] Язык интерфейса SolidWorks и Drew: русский")) $true
@@ -299,6 +308,15 @@ try {
     Expect "Uninstall: фамилия осталась" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
     $code, $out = & $run @("-Mode", "Check")
     Expect "Check после удаления: не установлено" $code 10
+    # Код 4 (замечание владельца 25.09.2026): русский интерфейс не включится — здесь SolidWorks этой версии на ПК нет.
+    # Итог не зелёное «Готово», а жёлтый с причиной; причина — в ESKD_Install. Прежде — [ВНИМАНИЕ] в середине и код 0.
+    $argsBefore = $setupArgs
+    $setupArgs = @($setupArgs | ForEach-Object { if ($_ -eq "SOLIDWORKS 2025") { "SOLIDWORKS 1999" } else { $_ } })
+    try { $code4, $out4 = & $run @("-Language", "Russian") } finally { $setupArgs = $argsBefore }
+    Expect "язык не включится — код 4" $code4 4
+    Expect "язык не включится — причина в ESKD_Install" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "LanguageIssue") "SOLIDWORKS 1999 не найден на этом ПК"
+    Expect "язык не включится — итог называет это" ($out4.Contains("ОСТАНЕТСЯ АНГЛИЙСКИМ")) $true
+    Expect "язык не включится — не зелёное «Запустите SolidWorks»" ($out4.Contains("НАСТРОЙКА ЗАВЕРШЕНА. Запустите SolidWorks.")) $false
 } catch {
     $problems.Add("исключение: $($_.Exception.Message) @ $($_.InvocationInfo.ScriptLineNumber)")
 } finally {

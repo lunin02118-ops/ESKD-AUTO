@@ -421,6 +421,66 @@ class StaticRepository(StaticTestCase):
         guide = (ROOT / "06_Документация" / "РУКОВОДСТВО_ПОЛЬЗОВАТЕЛЯ_И_АДМИНИСТРАТОРА.md").read_text(encoding="utf-8")
         self.assertIn("`-Language`", guide, "ключ -Language описан в руководстве")
 
+    def test_T0_language_not_switched_is_not_green(self):
+        """T0 (замечание владельца 25.09.2026: «выбор языка установки не работает»): шаг [9/9] писал [ВНИМАНИЕ] в середине
+        журнала, а итог — зелёное «Готово», код 0. Теперь невключённый русский интерфейс — код 4 и жёлтый итог с причиной;
+        русский язык SolidWorks — lang\\russian\\sldresu.dll той же версии, что SLDWORKS.exe (прежде — любая DLL)."""
+        service = ROOT / "01_Настройки_SolidWorks" / "_Служебное"
+        setup = (service / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        step9 = setup[setup.index("[9/9] Язык интерфейса"):setup.index('Set-Reg $install "SourceRoot"')]
+        self.assertIn('Join-Path $ruLangDir "sldresu.dll"', step9, "русский язык — главная библиотека ресурсов")
+        self.assertIn("FileMajorPart", step9, "версия русского языка сверяется с SLDWORKS.exe")
+        self.assertNotIn('-Filter "*.dll"', step9, "любая DLL в lang\\russian больше не считается русским языком")
+        self.assertIn("$ruPack = $swFound -and", step9, "без SLDWORKS.exe русский язык не считается установленным")
+        self.assertIn("} elseif (-not $swFound) {", step9, "папка без SLDWORKS.exe — «SolidWorks не найден»")
+        # Каждая ветка, после которой SolidWorks останется английским, называет причину.
+        for branch in ('$languageIssue = "$SwVersion не найден на этом ПК"', "$languageIssue = $ruProblem", "только после выхода из учётной записи",
+                       "не переключён на «Русский (Россия)»"):
+            self.assertIn(branch, step9, f"ветка без причины: {branch}")
+        self.assertEqual(4, step9.count("$languageIssue = "), "четыре ветки, после которых интерфейс останется английским")
+        self.assertIn('Set-Reg $install "LanguageIssue" $languageIssue', setup, "причина — в ESKD_Install")
+        tail = setup[setup.rindex("if ($failures) {"):]
+        self.assertLess(tail.index("exit 1"), tail.index("if ($languageIssue)"), "ошибки важнее языка")
+        self.assertIn("exit 4", tail[tail.index("if ($languageIssue)"):tail.index("exit 0")], "невключённый язык — код 4")
+        self.assertIn("ОСТАНЕТСЯ АНГЛИЙСКИМ", tail, "итог называет, что не так")
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("configurator", ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py")
+        configurator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(configurator)
+        self.assertIn("английским", configurator.EXIT_MESSAGES[4], "окно: код 4 — не «Готово»")
+        self.assertEqual({0: "ok", 4: "warn"}, configurator.EXIT_TONES, "код 4 — жёлтым, остальные ненулевые — красным")
+        self.assertEqual("warn", configurator.line_level(" НАСТРОЙКА ЗАВЕРШЕНА, НО SOLIDWORKS ОСТАНЕТСЯ АНГЛИЙСКИМ:"))
+        window = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
+        self.assertIn("EXIT_TONES.get(value", window, "цвет итога — по коду выхода")
+        self.assertIn("Изменить → Языки → Русский", window, "подпись в окне: русский язык ставится в самом SolidWorks")
+        bat = (ROOT / "УСТАНОВИТЬ_ЕСКД.bat").read_bytes()
+        self.assertTrue(all(c < 128 for c in bat), "УСТАНОВИТЬ_ЕСКД.bat — только ASCII")
+        self.assertIn(b"if %RC% equ 4", bat, "консольный запуск тоже различает код 4")
+        guide = (ROOT / "06_Документация" / "РУКОВОДСТВО_ПОЛЬЗОВАТЕЛЯ_И_АДМИНИСТРАТОРА.md").read_text(encoding="utf-8")
+        self.assertIn("4 — всё настроено, но выбранный русский интерфейс не включится", guide, "код 4 в руководстве")
+        self.assertIn("`LanguageIssue`", guide)
+
+    def test_T0_setup_refuses_foreign_account(self):
+        """T0 (разбор 25.09.2026): установщик, запущенный «от имени администратора» под другой учётной записью, писал
+        профиль SolidWorks, язык и формат Windows в её HKCU — у конструктора SolidWorks оставался прежним. Теперь отказ
+        до изменений, как у register_eskd.ps1."""
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        check = setup.index("Get-EskdForeignAccountMessage -Action Setup")
+        self.assertLess(check, setup.index('Write-Step "[1/9]'), "проверка учётки до первого шага")
+        guard = setup[setup.index("$failures = 0"):setup.index('Write-Step "[1/9]')]
+        self.assertLess(guard.index('. (Join-Path $layout.SourceAddin "Register-EskdAddin.ps1")'), guard.index("-Action Setup"), "модуль подключён до проверки")
+        self.assertIn("exit 2", guard[guard.index("} catch {"):], "модуль не прочитался — отказ, а не установка без проверки")
+        self.assertIn("exit 1", setup[check:setup.index('Write-Step "[1/9]')], "отказ — код 1")
+        out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                              str(paths.TESTS / "tools" / "check_registration_account.ps1"),
+                              "-ModulePath", str(ADDIN / "Register-EskdAddin.ps1")], capture_output=True, timeout=120)
+        lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+        self.assertTrue(lines, out.stdout.decode("utf-8", errors="replace") + out.stderr.decode("cp866", errors="replace"))
+        result = json.loads(lines[-1])
+        self.assertIn("Настройка запущена от имени", result["foreign_setup"] or "", "текст отказа — об установке")
+        self.assertIn("Настройка не выполнялась", result["foreign_setup"] or "")
+        self.assertFalse(result["same_setup"], "своя учётка — без отказа")
+
     def test_T0_mprop_firm_is_pairs(self):
         """T0: общие списки MProp пусты — фамилию и организацию каждый вписывает при установке (решение владельца
         15.09.2026); если в MProp_Firm.txt что-то есть, это пары «организация / код» с непустыми именами (Д-25)."""
@@ -964,7 +1024,8 @@ print(json.dumps(result))
     def test_T0_registration_refuses_foreign_account(self):
         """T0 (сверка SW API 23.09.2026, №2): скрипт регистрации, запущенный не от имени того, кто работает за компьютером
         («Запуск от имени администратора» с паролем ИТ), отказывает до записи в реестр: автозагрузка надстройки ушла бы в
-        профиль администратора, а скрипт писал «[OK]». «[OK]» называет учётную запись. Установщик не меняется."""
+        профиль администратора, а скрипт писал «[OK]». «[OK]» называет учётную запись. Установщик проверяет учётку сам
+        (test_T0_setup_refuses_foreign_account)."""
         out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                               str(paths.TESTS / "tools" / "check_registration_account.ps1"),
                               "-ModulePath", str(ADDIN / "Register-EskdAddin.ps1")], capture_output=True, timeout=120)
