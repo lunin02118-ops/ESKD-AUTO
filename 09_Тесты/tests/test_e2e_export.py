@@ -821,8 +821,15 @@ class Export(SwTestCase):
         doc, _ = build.square_tube(self.s, 40, 2, 500, "Труба 40х40х2,0 ГОСТ 8639-82 / Ст3сп ГОСТ 13663-86")
         self.s.save_as(doc, brace)
         asm, _ = build.assembly(self.s, [(sheet, 0, 0, 0), (post, 0, 0.2, 0), (post, 0, 0.4, 0), (brace, 0, 0.6, 0)])
-        com.dyn(com.as_list(asm.GetComponents(True))[2]).ReferencedConfiguration = "01"
+        # Стойка — по файлу модели: порядок GetComponents не обязан совпадать с порядком вставки, а «01» у листа или
+        # распорки SolidWorks молча не ставит — обе стойки оставались в «00» (прогон 25.09.2026, З-54).
+        posts = [c for c in (com.dyn(c) for c in com.as_list(asm.GetComponents(True)))
+                 if Path(str(c.GetPathName or "")).name.lower() == post.name.lower()]
+        self.assertEqual(2, len(posts), "два экземпляра стойки")
+        posts[1].ReferencedConfiguration = "01"
         asm.ForceRebuild3(False)
+        self.assertEqual(sorted([active, "01"]), sorted(str(c.ReferencedConfiguration) for c in posts),
+                         "в изделии оба исполнения стойки")
         asm_path = models / "ПРТИ.468211.350 СБ Рама.sldasm"
         self.s.save_as(asm, asm_path)
         self.s.close_all()
