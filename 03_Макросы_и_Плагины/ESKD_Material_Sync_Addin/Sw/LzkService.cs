@@ -65,6 +65,11 @@ namespace ESKD.MaterialSync.Sw
         /// </summary>
         private readonly HashSet<string> _editedBefore = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>Модели изделия в порядке состава сверху вниз (главная сборка первой).</summary>
+        private readonly List<KeyValuePair<string, ModelDoc2>> _order = new List<KeyValuePair<string, ModelDoc2>>();
+        /// <summary>Модели, которые кнопке можно сохранять: главная сборка и те, куда пишутся «Операции» и «Габарит».</summary>
+        private readonly HashSet<string> _writable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         /// <summary>Активное исполнение модели до кнопки: замер его переключает, и сохранять можно, только если оно вернулось.</summary>
         private readonly Dictionary<string, string> _activeBefore = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private bool _finishing;
@@ -246,6 +251,7 @@ namespace ESKD.MaterialSync.Sw
             top.IsTop = true;
             byKey[_assemblyPath] = top;
             models[_assemblyPath] = _doc;
+            _order.Add(new KeyValuePair<string, ModelDoc2>(_assemblyPath, _doc));
 
             object[] comps = asm.GetComponents(false) as object[] ?? new object[0];
             foreach (object o in comps)
@@ -273,6 +279,7 @@ namespace ESKD.MaterialSync.Sw
                     {
                         if (DocumentGuard.HasUserEdits(model)) _editedBefore.Add(path);
                         _activeBefore[path] = ActiveName(model);
+                        _order.Add(new KeyValuePair<string, ModelDoc2>(path, model));
                     }
                     item = Describe(model, path, cfg, model.GetType() == (int)swDocumentTypes_e.swDocASSEMBLY, traits, comp);
                     byKey[key] = item;
@@ -324,7 +331,10 @@ namespace ESKD.MaterialSync.Sw
                     "модель базы: операции предложены по модели и записаны только в книгу, файл базы не изменён"));
             }
 
-            WriteProperties(ModelsToWrite(editable, bookOnly), models);
+            List<LzkItem> toWrite = ModelsToWrite(editable, bookOnly);
+            _writable.Add(_assemblyPath);
+            foreach (LzkItem i in toWrite) _writable.Add(i.Path);
+            WriteProperties(toWrite, models);
             ExportOutdated();
             MarkPaintedUnits(instances, top);
             PaintedAssemblyAreas(instances, top, byKey, traits);
@@ -1810,6 +1820,14 @@ namespace ESKD.MaterialSync.Sw
             }
             finally
             {
+                try
+                {
+                    ResaveUnchanged();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("Ведомость ЛЗК: сохранение после чтения", ex);
+                }
                 Cleanup();
             }
             try
@@ -1820,6 +1838,22 @@ namespace ESKD.MaterialSync.Sw
             {
                 Log.Error("Ведомость ЛЗК: итог", ex);
             }
+        }
+
+        /// <summary>
+        /// После SWTools: модели, которые кнопка застала чистыми, а SolidWorks пометил изменёнными, пока их читали кнопка и
+        /// SWTools, сохраняются снова (З-55: у NC3-7R — подсборка «Укосина», оба исполнения которой стоят в изделии, после
+        /// сохранённой кнопкой её детали), их суммы — в отчёт проверки. Только модели, которые кнопке можно сохранять, без
+        /// правок конструктора (З-25) и с прежним активным исполнением.
+        /// </summary>
+        private void ResaveUnchanged()
+        {
+            List<ModelDoc2> models = _order
+                .Where(m => _writable.Contains(m.Key) && m.Value != null &&
+                            SaveRefusal(_editedBefore.Contains(m.Key), Before(m.Key), ActiveName(m.Value)).Length == 0)
+                .Select(m => m.Value).ToList();
+            _saves.ResaveUnchanged(models, "Ведомость ЛЗК");
+            RecordSaves();
         }
 
         /// <summary>

@@ -92,6 +92,8 @@ namespace ESKD.MaterialSync.Sw
             /// <summary>Замечания по прокату, которые окно не решает: типоразмера нет в библиотеке.</summary>
             public readonly List<string> StockNotes = new List<string>();
             public bool Touched;
+            /// <summary>Окно записало и сохранило документ. Touched без Saved — правки окна оставлены несохранёнными.</summary>
+            public bool Saved;
         }
 
         /// <summary>Синхронизация вхолостую документа; null — документ не в плане.</summary>
@@ -562,6 +564,7 @@ namespace ESKD.MaterialSync.Sw
                         batch.Failed += order.Failures;
                     }
                     if (!Save(t, batch)) continue;
+                    t.Saved = true;
                     // Главный документ — деталь у «Синхронизировать» в детали: он считается среди сохранённых деталей.
                     if (t.Node.IsTop && t.Node.IsAssembly) batch.AssemblySaved = true;
                     else batch.Saved++;

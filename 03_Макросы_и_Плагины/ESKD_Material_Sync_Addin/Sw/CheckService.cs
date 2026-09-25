@@ -18,7 +18,10 @@ namespace ESKD.MaterialSync.Sw
     /// <summary>Как запущена проверка изделия.</summary>
     public enum CheckMode
     {
-        /// <summary>Только отчёт: модели не меняются (Т-6) — «Готово к производству», автотесты.</summary>
+        /// <summary>
+        /// Только отчёт: модели не меняются (Т-6) — «Готово к производству», автотесты. Документ, который SolidWorks сам
+        /// пометил изменённым при чтении (чертёж листовой детали с развёрткой), сохраняется снова как есть.
+        /// </summary>
         Report = 0,
         /// <summary>Кнопка: одно окно с вопросами, обновлениями, замечаниями и списком сохранения.</summary>
         Interactive = 1,
@@ -117,6 +120,10 @@ namespace ESKD.MaterialSync.Sw
                         report = Recheck(app, nodes, productFolder, assemblyPath, session, report);
                     }
                 }
+                // Документы, которые SolidWorks пометил изменёнными сам, пока проверка их читала, — сохраняются снова до сумм
+                // файлов. Их новые суммы — в прежний отчёт и в выдачу, как у сохранений ЛЗК: версия изделия от них не меняется.
+                ToolSaves saves = ResaveDirtiedByCheck(nodes, session);
+                ProductFreshness.Restamp(productFolder, saves.Changes, "проверка изделия");
                 // Несохранённые правки в своих документах изделия (З-27): версия изделия считается по файлам, а проверено то,
                 // что открыто, — пока правки не сохранены, «Готово к производству» не пройдёт.
                 foreach (ProductNode node in nodes.Where(ProductFreshness.Own))
@@ -152,6 +159,27 @@ namespace ESKD.MaterialSync.Sw
                 Fail(app, interactive, "Проверка не выполнена: " + ex.Message);
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Документы, которые пометил изменёнными сам SolidWorks, пока проверка их читала, сохраняются снова (З-55,
+        /// <see cref="ToolSaves.ResaveUnchanged"/>). Первое открытие устаревшего чертежа листовой детали с видом развёртки
+        /// перестраивает развёртку, и SolidWorks отмечает деталь изменённой, хотя в ней ничего не поменялось (воспроизведено
+        /// на копии заказа NC3-7R и без надстройки). Проверка открывает чертежи (оборванные размеры, «Формат»), а потом сама
+        /// называла эти документы «несохранённые правки»: изделие не сходилось с проверкой перед ЛЗК и выгрузкой, сколько его
+        /// ни проверяй, а «Готово к производству» не проходило вовсе. Сохраняются только свои документы изделия, чистые до
+        /// проверки и не оставленные окном несохранёнными («Применить без сохранения», снятая галочка); правки конструктора —
+        /// никогда (З-25).
+        /// </summary>
+        private static ToolSaves ResaveDirtiedByCheck(List<ProductNode> nodes, ReviewSession session)
+        {
+            ToolSaves saves = new ToolSaves();
+            HashSet<string> keep = new HashSet<string>(session.Targets.Where(t => t.Touched && !t.Saved).Select(t => t.Node.Path),
+                StringComparer.OrdinalIgnoreCase);
+            // Состав идёт сверху вниз: главная сборка первой, подсборка — раньше своих деталей.
+            saves.ResaveUnchanged(nodes.Where(n => ProductFreshness.Own(n) && !n.Edited && n.Model != null && !keep.Contains(n.Path))
+                .Select(n => n.Model).ToList(), "Проверка изделия");
+            return saves;
         }
 
         private static CheckReport NewReport(string assemblyPath, string cipher)

@@ -42,6 +42,11 @@ namespace ESKD.MaterialSync.Sw
             public bool HadWindow = true;
             public bool IsAssembly;
             public bool IsPurchased;
+            /// <summary>
+            /// До выгрузки в документе были несохранённые правки конструктора. Снимок — до первого открытого чертежа:
+            /// SolidWorks отмечает листовую деталь изменённой уже при открытии её чертежа с видом развёртки (25.09.2026).
+            /// </summary>
+            public bool Edited;
             public string Designation = "";
             public string Name = "";
             public int Revision;
@@ -146,10 +151,14 @@ namespace ESKD.MaterialSync.Sw
                     log.Warn(Path.GetFileName(path), "выгрузка по непроверенному изделию — " + string.Join("; ", freshness.Reasons.ToArray()) +
                         ": нажмите «Проверить изделие» и выгрузите изделие заново");
                 List<Item> items = Collect(app, doc, path, productFolder, log);
-                foreach (Item item in items) CollectStems(item);
+                foreach (Item item in items)
+                {
+                    CollectStems(item);
+                    item.Edited = DocumentGuard.HasUserEdits(item.Model);
+                }
                 HashSet<string> issued = ExportNaming.Issued(productFolder);
                 // Сборки, чистые до выгрузки: после неё они сохраняются снова, если выгрузка их изменила (ResaveAssemblies).
-                HashSet<Item> clean = new HashSet<Item>(items.Where(i => i.IsAssembly && !DocumentGuard.HasUserEdits(i.Model)));
+                HashSet<Item> clean = new HashSet<Item>(items.Where(i => i.IsAssembly && !i.Edited));
                 try
                 {
                     foreach (Item item in items)
@@ -236,9 +245,8 @@ namespace ESKD.MaterialSync.Sw
                 {
                     item.Protected = true;
                     log.Skip(Path.GetFileName(item.Path), "документ выдан в производство, оформите новую ревизию");
-                    return;
                 }
-                Pdf(app, item, productFolder, log, drawingPath, drawing, problem);
+                else Pdf(app, item, productFolder, log, drawingPath, drawing, problem);
             }
             finally
             {
@@ -255,7 +263,23 @@ namespace ESKD.MaterialSync.Sw
                     }
                 }
             }
-            if (!item.IsAssembly) PartFiles(app, item, productFolder, log, saves);
+            if (item.IsAssembly) return;
+            if (item.Protected) ResaveAfterDrawing(item, log, saves);
+            else PartFiles(app, item, productFolder, log, saves);
+        }
+
+        /// <summary>
+        /// Выданная деталь пропущена, но её чертёж открывался ради ревизии: чертёж с видом развёртки отметил листовую деталь
+        /// изменённой (25.09.2026). Чистая до выгрузки деталь сохраняется снова — исполнения не переключались, в ней ничего
+        /// не поменялось.
+        /// </summary>
+        private static void ResaveAfterDrawing(Item item, ExportLog log, ToolSaves saves)
+        {
+            if (item.Edited || !DocumentGuard.HasUserEdits(item.Model)) return;
+            int errors;
+            if (!saves.Save(item.Model, out errors))
+                log.Warn(Path.GetFileName(item.Path), "деталь не сохранена (" + SwCodes.SaveProblem(errors) + ") — в ней ничего не " +
+                    "изменилось: закройте её без сохранения (на вопрос SolidWorks ответьте «Нет»)");
         }
 
         /// <summary>
@@ -268,6 +292,20 @@ namespace ESKD.MaterialSync.Sw
         /// </summary>
         private static void ResaveAssemblies(List<Item> items, HashSet<Item> clean, ExportLog log, ToolSaves saves)
         {
+            // Сначала все перестроения, сверху вниз, потом сохранения: перестроение главной сборки отмечает изменённой
+            // подсборку, оба исполнения которой стоят в изделии («Укосина» 00 и 01 в NC3-7R, 25.09.2026), — сохранённая до
+            // него подсборка оставалась бы «изменённой».
+            foreach (Item item in items.Where(i => clean.Contains(i) && i.Model != null))
+            {
+                try
+                {
+                    item.Model.EditRebuild3();
+                }
+                catch (COMException ex)
+                {
+                    Log.Error("Выгрузка: перестроение сборки " + item.Path, ex);
+                }
+            }
             // Сначала подсборки, потом главная сборка: её сохранение изменённые подсборки не пишет.
             for (int i = items.Count - 1; i >= 0; i--)
             {
@@ -276,7 +314,6 @@ namespace ESKD.MaterialSync.Sw
                 string file = Path.GetFileName(item.Path);
                 try
                 {
-                    item.Model.EditRebuild3();
                     if (!DocumentGuard.HasUserEdits(item.Model)) continue;
                     int errors;
                     if (!saves.Save(item.Model, out errors))
@@ -692,20 +729,21 @@ namespace ESKD.MaterialSync.Sw
             {
                 string file = Path.GetFileName(item.Path);
                 item.Shown.Add(ActiveConfiguration(item.Model));
-                bool dirtyBefore = DocumentGuard.HasUserEdits(item.Model);
                 DxfOne(app, item, item.Designation, item.Name, 0, productFolder, log, file);
                 bool clean = IgsOne(app, item, item.Designation, item.Name, item.Operations, productFolder, log, saves, file);
                 // Экспорт развёртки SolidWorks отмечает листовую деталь изменённой, хотя в ней ничего не поменялось: сохранённая
                 // до выгрузки деталь сохраняется снова, как после переключения исполнений. Иначе новая ревизия оставляла окно
-                // «изменённой» модели открытым, а закрытие чертежа спрашивало «Сохранить?» (V09, 24.09.2026).
+                // «изменённой» модели открытым, а закрытие чертежа спрашивало «Сохранить?» (V09, 24.09.2026). Чистая ли она
+                // была — по снимку до PDF: чертёж с видом развёртки отмечает деталь изменённой ещё раньше (25.09.2026).
                 string active = ActiveConfiguration(item.Model);
-                if (clean && !dirtyBefore && active.Length > 0 && DocumentGuard.HasUserEdits(item.Model))
+                if (clean && !item.Edited && active.Length > 0 && DocumentGuard.HasUserEdits(item.Model))
                     RestoreConfiguration(item, active, false, log, saves);
                 return;
             }
             string original = ActiveConfiguration(item.Model);
             // SolidWorks не ответил — «правки есть»: такую деталь выгрузка не сохраняет (сверка SW API 23.09.2026, №29).
-            bool wasDirty = DocumentGuard.HasUserEdits(item.Model);
+            // Снимок — до PDF: чертёж с видом развёртки уже отметил деталь изменённой (25.09.2026).
+            bool wasDirty = item.Edited;
             bool switched = false, leftover = false;
             try
             {
