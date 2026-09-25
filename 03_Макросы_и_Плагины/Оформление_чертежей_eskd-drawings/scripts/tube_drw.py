@@ -33,11 +33,18 @@ SWPLUS_DIR = toolkit_dir(r"03_Макросы_и_Плагины\Макросы_SW
 TT_DIR = os.path.join(SWPLUS_DIR, "ТТ")
 
 
+def require_root():
+    """Папка 01_3D изделия из ESKD_DRW_ROOT; без неё — отказ. Скрипт, который строит путь от ROOT не через find_model,
+    зовёт её сам: пустой ROOT дал бы путь относительно текущей папки, а там может оказаться чужой заказ (ревью 24.09.2026)."""
+    if not ROOT or not os.path.isdir(ROOT):
+        raise SystemExit("Задайте ESKD_DRW_ROOT — папку 01_3D изделия (сейчас: %r)" % ROOT)
+    return ROOT
+
+
 def find_model(part, ext):
     """Единственная модель в ESKD_DRW_ROOT, в имени которой есть part. Несколько совпадений — отказ: иначе чертёж
     ляжет не на ту деталь (аудит 24.09.2026). Возвращает путь без расширения, относительно ROOT."""
-    if not ROOT or not os.path.isdir(ROOT):
-        raise SystemExit("Задайте ESKD_DRW_ROOT — папку 01_3D изделия (сейчас: %r)" % ROOT)
+    require_root()
     cand = [p for p in glob.glob(os.path.join(ROOT, "**", "*" + ext), recursive=True)
             if part in os.path.basename(p) and not os.path.basename(p).startswith("~$")]
     exact = [p for p in cand if os.path.splitext(os.path.basename(p))[0] == part]
