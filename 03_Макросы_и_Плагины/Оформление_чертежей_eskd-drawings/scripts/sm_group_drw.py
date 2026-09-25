@@ -310,6 +310,11 @@ def sheet_content(drw, sheet, cfg, designation, bend_r):
 
 
 def run(final=False):
+    # PART строится от ESKD_DRW_ROOT без find_model: без папки изделия или модели — отказ до обращения к SolidWorks,
+    # а не AttributeError в bend_params (ревью 24.09.2026).
+    T.require_root()
+    if not os.path.isfile(PART):
+        raise SystemExit("Нет модели %s — поправьте PART под деталь" % PART)
     # swInputDimValOnCreate — окно «Изменить» при создании размера вешает скрипт. Настройка пользовательская и живёт в
     # реестре: после работы вернуть как было (аудит 24.09.2026).
     was = sw.GetUserPreferenceToggle(10)

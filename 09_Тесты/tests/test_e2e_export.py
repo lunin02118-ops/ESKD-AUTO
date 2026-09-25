@@ -822,7 +822,7 @@ class Export(SwTestCase):
         self.s.save_as(doc, brace)
         asm, _ = build.assembly(self.s, [(sheet, 0, 0, 0), (post, 0, 0.2, 0), (post, 0, 0.4, 0), (brace, 0, 0.6, 0)])
         # Стойка — по файлу модели: порядок GetComponents не обязан совпадать с порядком вставки, а «01» у листа или
-        # распорки SolidWorks молча не ставит — обе стойки оставались в «00» (прогон 25.09.2026, З-54).
+        # распорки SolidWorks молча не ставит — обе стойки оставались в «00» (прогон 25.09.2026, З-55).
         posts = [c for c in (com.dyn(c) for c in com.as_list(asm.GetComponents(True)))
                  if Path(str(c.GetPathName or "")).name.lower() == post.name.lower()]
         self.assertEqual(2, len(posts), "два экземпляра стойки")

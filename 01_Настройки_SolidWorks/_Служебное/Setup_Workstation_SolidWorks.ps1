@@ -997,26 +997,28 @@ Write-Step "[8/9] Отучение SolidWorks от сети..."
 if ($SwInternetBlock) {
     $sbDir = Join-Path (Split-Path -Path $PSScriptRoot -Parent) "SwInternetBlock"  # пакет лежит в 01_Настройки_SolidWorks, сценарий — в _Служебное
     $sb = Join-Path $sbDir "Set-SwInternetBlock.ps1"
-    # Сколько правил должно быть: записи манифеста, чьи программы есть на этом ПК (SLDWORKS.exe наружу не блокируется —
-    # иначе ломается «Поделиться настройками» Drew). Прежний порог 300 был недостижим (аудит 19.09, У-В2).
+    # Сколько правил должно быть: записи манифеста, чьи программы есть на этом ПК, без SLDWORKS.exe (пакет не
+    # блокирует его ни наружу, ни внутрь). Прежний порог 300 был недостижим (аудит 19.09, У-В2).
     $sbExpected = 0
     try {
-        foreach ($e in @(Get-Content -LiteralPath (Join-Path $sbDir "SWInternetBlock.manifest.json") -Raw -Encoding UTF8 | ConvertFrom-Json)) {
-            if (-not (Test-Path -LiteralPath $e.path)) { continue }
-            if (($e.path -match 'SLDWORKS\.exe$') -and ($e.direction -ceq 'Outbound')) { continue }
-            $sbExpected++
-        }
+        $sbExpected = @(Get-EskdSwBlockExpectedRules -ManifestPath (Join-Path $sbDir "SWInternetBlock.manifest.json")).Count
     } catch { Write-Warn "Манифест SwInternetBlock не прочитан: $($_.Exception.Message)" }
     if (-not (Test-Path -LiteralPath $sb)) {
         Write-Warn "Пакет SwInternetBlock не найден: $sb"
     } elseif ($machine) {
         # Не $mode: переменные PowerShell без учёта регистра, а у параметра $Mode ValidateSet Install/Check/Uninstall.
+        # Код выхода пакета читается: «FATAL» (hosts занят, правило не создано) не должен кончаться [OK] (ревью 24.09.2026).
+        # Сбой — примечание [ВНИМАНИЕ], установка ошибкой не считается (решение владельца 25.09.2026).
+        $sbFailed = @()
         foreach ($sbMode in "apply", "hosts-apply") {
             $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sb -Mode $sbMode 2>&1
             foreach ($l in $out) { if ("$l".Trim()) { Write-Info "  $l" } }
+            if ($LASTEXITCODE -ne 0) { $sbFailed += "$sbMode (код $LASTEXITCODE)" }
         }
         $cnt = @(Get-NetFirewallRule -DisplayName 'Block SW Internet*' -ErrorAction SilentlyContinue).Count
-        Write-Ok "Правил Block SW Internet: $cnt; домены SW заглушены в hosts. Drew и его облако настроек не затронуты."
+        if ($sbFailed) { Write-Warn "Отучение от сети завершилось с ошибкой: $($sbFailed -join ', '); правил Block SW Internet: $cnt из $sbExpected. Сообщения пакета выше." }
+        elseif ($cnt -lt $sbExpected) { Write-Warn "Правил Block SW Internet: $cnt из $sbExpected - отучение от сети завершилось не полностью." }
+        else { Write-Ok "Правил Block SW Internet: $cnt из $sbExpected; домены SW заглушены в hosts. Drew и его облако настроек не затронуты." }
     } else {
         Write-Info "Нужны права администратора - откроется запрос UAC (два раза не потребуется)..."
         # У повышенного процесса нет подключённых сетевых дисков: пакет запускается из локальной копии (аудит 19.09, У-К4).

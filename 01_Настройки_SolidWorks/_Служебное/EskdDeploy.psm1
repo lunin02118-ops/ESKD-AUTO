@@ -512,6 +512,20 @@ function Get-EskdLanguagePlan {
     }
 }
 
+# ------------------------------------------------------------------ Отучение SolidWorks от сети
+
+function Get-EskdSwBlockExpectedRules {
+    # Записи манифеста SwInternetBlock, по которым Set-SwInternetBlock.ps1 -Mode apply создаёт правила на этом ПК:
+    # программа есть, и это не SLDWORKS.exe. SLDWORKS.exe пакет пропускает в обе стороны (Test-SldWorksConflict,
+    # 20.09.2026): наружу — ради «Поделиться настройками» Drew, внутрь — мешало лицензированию. Правила держит вместе
+    # тест T0 test_T0_sw_block_expected_matches_package.
+    param([Parameter(Mandatory = $true)][string]$ManifestPath)
+    $entries = [System.IO.File]::ReadAllText($ManifestPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
+    foreach ($e in @($entries)) {
+        if ((Test-Path -LiteralPath $e.path) -and ($e.path -notmatch 'SLDWORKS\.exe$')) { $e }
+    }
+}
+
 # ------------------------------------------------------------------ SWTools
 # Установщик SWTools не хранится в репозитории: Publish-EskdToolkit -SwToolsSetup кладёт его в общую папку
 # (03_Макросы_и_Плагины\SWTools_Установщик) вместе с описанием swtools_release.json, установщик рабочего места ставит его оттуда.
