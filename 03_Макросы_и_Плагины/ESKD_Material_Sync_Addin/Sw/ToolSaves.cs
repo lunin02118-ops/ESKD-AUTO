@@ -77,6 +77,82 @@ namespace ESKD.MaterialSync.Sw
             return saved;
         }
 
+        /// <summary>
+        /// Документы, которые кнопка застала чистыми, а SolidWorks пометил изменёнными, пока она их читала, сохраняются снова
+        /// (З-55, 25.09.2026): первое открытие устаревшего чертежа с видом развёртки перестраивает развёртку детали,
+        /// подсборка с двумя исполнениями в изделии отмечается при перестроении и чтении главной сборки. В них ничего не
+        /// менялось, но следующая кнопка называла их «несохранённые правки». models — только те, что кнопке можно
+        /// сохранять, в порядке состава сверху вниз (главная сборка первой). Сначала все перестроения — без них SolidWorks
+        /// сохраняет с вопросом «перестроить?» (X05), а перестроение главной сборки снова отметило бы сохранённую до него
+        /// подсборку, — потом детали и сборки снизу вверх; второй круг — если сохранение одного документа снова отметило
+        /// другой. Возвращает имена документов, оставшихся изменёнными.
+        /// </summary>
+        public List<string> ResaveUnchanged(IList<ModelDoc2> models, string step)
+        {
+            List<ModelDoc2> parts = new List<ModelDoc2>(), assemblies = new List<ModelDoc2>();
+            foreach (ModelDoc2 model in models)
+            {
+                if (model == null) continue;
+                if (TypeOf(model) == (int)swDocumentTypes_e.swDocASSEMBLY) assemblies.Add(model);
+                else parts.Add(model);
+            }
+            for (int round = 0; round < 2 && Dirty(parts, assemblies).Count > 0; round++)
+            {
+                foreach (ModelDoc2 model in parts) Rebuild(model, step);
+                foreach (ModelDoc2 model in assemblies) Rebuild(model, step);
+                foreach (ModelDoc2 model in parts) Resave(model, step);
+                for (int i = assemblies.Count - 1; i >= 0; i--) Resave(assemblies[i], step);
+            }
+            List<string> left = Dirty(parts, assemblies);
+            if (left.Count > 0) Log.Warn(step + ": после своих сохранений остались изменёнными — " + string.Join(", ", left.ToArray()));
+            return left;
+        }
+
+        private static List<string> Dirty(List<ModelDoc2> parts, List<ModelDoc2> assemblies)
+        {
+            List<string> dirty = new List<string>();
+            foreach (ModelDoc2 model in parts)
+                if (DocumentGuard.HasUserEdits(model)) dirty.Add(System.IO.Path.GetFileName(DocInfo.PathOf(model)));
+            foreach (ModelDoc2 model in assemblies)
+                if (DocumentGuard.HasUserEdits(model)) dirty.Add(System.IO.Path.GetFileName(DocInfo.PathOf(model)));
+            return dirty;
+        }
+
+        private static int TypeOf(ModelDoc2 model)
+        {
+            try
+            {
+                return model.GetType();
+            }
+            catch (COMException)
+            {
+                return 0;
+            }
+        }
+
+        private static void Rebuild(ModelDoc2 model, string step)
+        {
+            try
+            {
+                model.EditRebuild3();
+            }
+            catch (COMException ex)
+            {
+                Log.Error(step + ": перестроение " + DocInfo.PathOf(model), ex);
+            }
+        }
+
+        private void Resave(ModelDoc2 model, string step)
+        {
+            if (!DocumentGuard.HasUserEdits(model)) return;
+            string name = System.IO.Path.GetFileName(DocInfo.PathOf(model));
+            int errors;
+            if (Save(model, out errors))
+                Log.Info(step + ": " + name + " сохранён снова — изменённым его пометил SolidWorks, пока кнопка его читала");
+            else
+                Log.Warn(step + ": " + name + " после чтения не сохранён (" + SwCodes.SaveProblem(errors) + ")");
+        }
+
         private static bool OpenedReadOnly(ModelDoc2 model)
         {
             try
