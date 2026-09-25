@@ -540,6 +540,73 @@ class StaticRepository(StaticTestCase):
         self.assertEqual([], result["problems"])
         self.assertTrue(result["sandboxRemoved"], "временный раздел реестра не удалён")
 
+    def test_T0_sw_block_expected_matches_package(self):
+        """T0 (ревью 24.09.2026): шаг 8 установщика «Отучение SolidWorks от сети». Установщик ждёт столько правил, сколько
+        создаёт пакет (SLDWORKS.exe пропускается в обе стороны, как в Test-SldWorksConflict), а сбой пакета или нехватка
+        правил в ветке «уже администратор» дают [ВНИМАНИЕ], не [OK], и ошибкой установки не считаются (решение владельца
+        25.09.2026: это примечание). Брандмауэр, hosts и реестр не затрагиваются:
+        программы и пакет подменяются временными файлами, счёт правил — заглушкой."""
+        out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                              str(paths.TESTS / "tools" / "check_sw_internet_block.ps1"), "-RepoRoot", str(ROOT)],
+                             capture_output=True, timeout=300)
+        lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+        self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
+        result = json.loads(lines[-1])
+        self.assertEqual([], result["problems"])
+        self.assertEqual({"Block SW Internet 096 - SLDWORKS", "Block SW Internet IN 096 - SLDWORKS"},
+                         set(result["skippedByPolicy"]), "пакет пропускает SLDWORKS.exe в обе стороны и только его")
+        self.assertEqual(result["package"], result["expected"])
+        self.assertTrue(result["tempRemoved"], "временная папка не удалена")
+
+    def test_T0_drawing_scripts_refuse_without_product_folder(self):
+        """T0 (ревью 24.09.2026): скрипты eskd-drawings без ESKD_DRW_ROOT отказываются работать (SKILL.md, «Порядок»),
+        а не падают и не берут текущую папку. sm_group_drw строит путь к модели сам, без find_model: без папки изделия
+        или без модели в ней он отказывает до обращения к SolidWorks. SolidWorks не нужен — COM подменяется заглушкой,
+        которая сообщает о любом открытии документа или смене настройки."""
+        import sys
+        import tempfile
+        scripts = ROOT / "03_Макросы_и_Плагины" / "Оформление_чертежей_eskd-drawings" / "scripts"
+        child = r'''
+import json, sys, types
+from unittest import mock
+sys.path.insert(0, sys.argv[1])
+client = mock.MagicMock()
+sw = client.GetActiveObject.return_value
+for name in ("OpenDoc6", "GetOpenDocumentByName", "GetUserPreferenceToggle", "SetUserPreferenceToggle"):
+    getattr(sw, name).side_effect = RuntimeError("обращение к SolidWorks: " + name)
+package = types.ModuleType("win32com")
+package.client = client
+sys.modules.update({"win32com": package, "win32com.client": client, "pythoncom": mock.MagicMock()})
+import sm_group_drw as G
+result = {}
+for name, call in (("sm_group_drw", lambda: G.run(False)), ("find_model", lambda: G.T.find_model("Кронштейн", ".SLDPRT"))):
+    try:
+        call()
+        result[name] = "нет отказа"
+    except SystemExit as e:
+        result[name] = "SystemExit: %s" % e
+    except Exception as e:
+        result[name] = "%s: %s" % (type(e).__name__, e)
+print(json.dumps(result))
+'''
+
+        def refusals(root):
+            env = {k: v for k, v in os.environ.items() if k != "ESKD_DRW_ROOT"}
+            if root is not None:
+                env["ESKD_DRW_ROOT"] = root
+            out = subprocess.run([sys.executable, "-c", child, str(scripts)], capture_output=True, timeout=120, env=env)
+            lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+            self.assertTrue(lines, out.stdout.decode("utf-8", errors="replace") + out.stderr.decode("utf-8", errors="replace"))
+            return json.loads(lines[-1])
+
+        result = refusals(None)
+        self.assertTrue(result["sm_group_drw"].startswith("SystemExit: Задайте ESKD_DRW_ROOT"), result)
+        self.assertTrue(result["find_model"].startswith("SystemExit: Задайте ESKD_DRW_ROOT"), result)
+        with tempfile.TemporaryDirectory() as empty:
+            result = refusals(empty)
+        self.assertTrue(result["sm_group_drw"].startswith("SystemExit: Нет модели " + empty), result)
+        self.assertTrue(result["find_model"].startswith("SystemExit: «Кронштейн»: нет модели"), result)
+
     def test_T0_command_callbacks_are_guarded(self):
         """T0 (сверка SW API 23.09.2026, №7): тело каждой кнопки надстройки — в Guarded или try: исключение, ушедшее в
         SolidWorks, он проглатывает молча, и кнопка «ничего не сделала» без записи в журнал."""
