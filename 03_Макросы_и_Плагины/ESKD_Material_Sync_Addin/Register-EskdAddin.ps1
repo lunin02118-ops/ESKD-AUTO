@@ -81,11 +81,19 @@ function Get-EskdForeignAccountMessage {
     # Сравниваются SID: повышение прав под своей учёткой SID не меняет.
     param([string]$CurrentSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
           [string]$SessionSid = (Get-EskdSessionUserSid),
-          [ValidateSet("Register", "Unregister")][string]$Action = "Register",
+          [ValidateSet("Register", "Unregister", "Setup")][string]$Action = "Register",
           [string]$ScriptPath = "unregister.ps1")
     if (-not $SessionSid -or $SessionSid -eq $CurrentSid) { return "" }
     $me = Get-EskdAccountName $CurrentSid
     $owner = Get-EskdAccountName $SessionSid
+    if ($Action -eq "Setup") {
+        # Установщик рабочего места (разбор 25.09.2026, язык не переключался): профиль SolidWorks, язык интерфейса,
+        # формат Windows и надстройка пишутся в профиль того, кто запустил, а не того, кто работает в SolidWorks.
+        return ("Настройка запущена от имени {0}, а в Windows сейчас вошёл {1}: профиль SolidWorks, язык интерфейса и " +
+                "надстройка ЕСКД записались бы в профиль {0}, а не того, кто работает в SolidWorks. Настройка не выполнялась. " +
+                "Войдите в Windows под учётной записью конструктора и запустите настройку оттуда обычным двойным щелчком — " +
+                "права администратора для неё не нужны.") -f $me, $owner
+    }
     if ($Action -eq "Unregister") {
         # Команда целиком: двойной щелчок по .ps1 открывает Блокнот, а по умолчанию сценарии в PowerShell запрещены.
         # С правами администратора под своей же учётной записью можно — тогда снимется и регистрация для всех.

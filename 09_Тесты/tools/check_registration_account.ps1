@@ -17,5 +17,7 @@ $ErrorActionPreference = "Stop"
     unknown = Get-EskdForeignAccountMessage -CurrentSid 'S-1-5-21-1-2-3-500' -SessionSid ''
     here    = Get-EskdForeignAccountMessage
     foreign_unreg = Get-EskdForeignAccountMessage -CurrentSid 'S-1-5-21-1-2-3-500' -SessionSid 'S-1-5-21-1-2-3-1001' -Action Unregister -ScriptPath 'C:\ЕСКД\unregister.ps1'
-    session_is_me = ((Get-EskdSessionUserSid) -eq [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
+    foreign_setup = Get-EskdForeignAccountMessage -CurrentSid 'S-1-5-21-1-2-3-500' -SessionSid 'S-1-5-21-1-2-3-1001' -Action Setup
+    same_setup    = Get-EskdForeignAccountMessage -CurrentSid 'S-1-5-21-1-2-3-1001' -SessionSid 'S-1-5-21-1-2-3-1001' -Action Setup
+    session_is_me =((Get-EskdSessionUserSid) -eq [Security.Principal.WindowsIdentity]::GetCurrent().User.Value)
 } | ConvertTo-Json -Compress

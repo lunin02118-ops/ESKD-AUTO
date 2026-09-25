@@ -34,7 +34,10 @@ EXIT_MESSAGES = {
     1: "Настройка завершена с ошибками — см. сообщения выше.",
     2: "Папка инструментария неполная или выпуск не опубликован — сообщите администратору.",
     3: "SolidWorks не закрыт — настройка не выполнялась.",
+    4: "Готово, но SolidWorks останется английским — см. [ВНИМАНИЕ] в шаге [9/9].",
 }
+# Код 4 — не ошибка настройки, а невключённый русский интерфейс (разбор 25.09.2026): жёлтым, а не зелёным «Готово».
+EXIT_TONES = {0: "ok", 4: "warn"}
 
 
 # ---------------------------------------------------------------- логика без окна (проверяется автотестом)
@@ -214,7 +217,7 @@ def line_level(line):
         return "ok"
     if text.startswith("[ОШИБКА]") or "С ОШИБКАМИ" in text:
         return "error"
-    if text.startswith("[ВНИМАНИЕ]"):
+    if text.startswith("[ВНИМАНИЕ]") or "ОСТАНЕТСЯ АНГЛИЙСКИМ" in text:
         return "warn"
     if text.startswith("[ИНФО]"):
         return "info"
@@ -310,8 +313,9 @@ class ConfiguratorApp:
         ttk.Radiobutton(lang, text="Русский", value="Russian", variable=self.var_lang).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Radiobutton(lang, text="Английский", value="English", variable=self.var_lang).pack(side=tk.LEFT, padx=(8, 0))
         # SolidWorks берёт язык из формата Windows пользователя, а не из языка Windows (разбор 25.09.2026).
-        ttk.Label(comp, text="Русский: если формат Windows не «Русский (Россия)», он будет переключён — иначе SolidWorks "
-                             "останется английским. Язык сменится после перезапуска SolidWorks.",
+        ttk.Label(comp, text="Русский: нужен русский язык в самом SolidWorks (его установщик: Изменить → Языки → Русский). "
+                             "Если формат Windows не «Русский (Россия)», он будет переключён. Язык сменится после "
+                             "перезапуска SolidWorks, иногда — после выхода из Windows и входа снова.",
                   foreground="#6b7682", font=("Segoe UI", 8), wraplength=760, justify=tk.LEFT).pack(anchor=tk.W)
         # Замечание владельца 22.09.2026: из подписи не было понятно, что галочка выключает аппаратное ускорение.
         ttk.Checkbutton(comp, text="Безопасная графика — выключает аппаратное ускорение "
@@ -330,12 +334,13 @@ class ConfiguratorApp:
 
         bottom = ttk.Frame(root, padding="16 4 16 14")
         bottom.pack(fill=tk.X)
-        self.status = ttk.Label(bottom, text="", font=("Segoe UI", 10, "bold"))
-        self.status.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # Кнопки размещаются первыми, итог переносится по строкам: длинный итог не сжимает кнопки (проверка 25.09.2026).
+        self.status = ttk.Label(bottom, text="", font=("Segoe UI", 10, "bold"), wraplength=380)
         self.btn_close = ttk.Button(bottom, text="Закрыть", command=self.on_close)
         self.btn_close.pack(side=tk.RIGHT)
         self.btn_install = ttk.Button(bottom, text="Установить / Обновить", command=self.start)
         self.btn_install.pack(side=tk.RIGHT, padx=(0, 8))
+        self.status.pack(side=tk.LEFT, fill=tk.X, expand=True)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
         if not self.source or not self.engine:
             self.btn_install.state(["disabled"])
@@ -419,7 +424,7 @@ class ConfiguratorApp:
                     self.process = None
                     self.btn_install.state(["!disabled"])
                     self.set_status(EXIT_MESSAGES.get(value, "Установщик завершился с кодом {}.".format(value)),
-                                    "ok" if value == 0 else "error")
+                                    EXIT_TONES.get(value, "error"))
         except queue.Empty:
             pass
         self.root.after(100, self.pump)
