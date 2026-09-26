@@ -571,16 +571,33 @@ function Get-EskdDrewPlan {
 
 # ------------------------------------------------------------------ Отучение SolidWorks от сети
 
-function Get-EskdSwBlockExpectedRules {
-    # Записи манифеста SwInternetBlock, по которым Set-SwInternetBlock.ps1 -Mode apply создаёт правила на этом ПК:
-    # программа есть, и это не SLDWORKS.exe. SLDWORKS.exe пакет пропускает в обе стороны (Test-SldWorksConflict,
-    # 20.09.2026): наружу — ради «Поделиться настройками» Drew, внутрь — мешало лицензированию. Правила держит вместе
-    # тест T0 test_T0_sw_block_expected_matches_package.
-    param([Parameter(Mandatory = $true)][string]$ManifestPath)
-    $entries = [System.IO.File]::ReadAllText($ManifestPath, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
-    foreach ($e in @($entries)) {
-        if ((Test-Path -LiteralPath $e.path) -and ($e.path -notmatch 'SLDWORKS\.exe$')) { $e }
+function Get-EskdSwOfflineSettings {
+    # Сетевые функции SolidWorks, которые выключаются вместе с отучением от сети (раздел версии в HKCU): новости в панели
+    # задач, проверка исправлений сбоев, онлайн-учебник, отправка отзывов (журнал событий SW), 3DEXPERIENCE и Connected.
+    # Правила брандмауэра их и так не пускают; выключенные функции не пытаются выйти в сеть и не ждут ответа.
+    foreach ($v in @(
+        @("General", "Show Latest News feeds In task pane"), @("General", "Check Crash Fixes"),
+        @("General", "Show Online Tutorial"), @("General", "Enable 3DEXPERIENCE Integration"),
+        @("General", "Enable SOLIDWORKS Connected Integration"), @("SW Event Log", "Send Feedback Enabled"))) {
+        [pscustomobject]@{ Key = $v[0]; Name = $v[1]; Value = 0 }
     }
+}
+
+function Invoke-EskdSwBlock {
+    # Запуск пакета Set-SwInternetBlock.ps1 в Windows PowerShell 5.1: код выхода (0 — закрыто, 3 — неполно, 4 — правила не
+    # действуют, 1 — сбой), строки вывода и итоговая строка «ИТОГ: …».
+    param(
+        [Parameter(Mandatory = $true)][string]$Script,
+        [Parameter(Mandatory = $true)][ValidateSet("audit", "apply", "roots")][string]$Mode,
+        [string]$ExtraRootFile = ""
+    )
+    $ps = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+    $arguments = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $Script, "-Mode", $Mode)
+    if ($ExtraRootFile) { $arguments += @("-ExtraRootFile", $ExtraRootFile) }
+    $lines = @(& $ps @arguments 2>&1 | ForEach-Object { "$_" } | Where-Object { $_.Trim() })
+    $code = $LASTEXITCODE
+    $verdict = [string](@($lines | Where-Object { $_.StartsWith("ИТОГ:") }) | Select-Object -Last 1)
+    return [pscustomobject]@{ Code = $code; Lines = $lines; Verdict = $verdict }
 }
 
 # ------------------------------------------------------------------ SWTools
