@@ -443,6 +443,126 @@ class StaticRepository(StaticTestCase):
         self.assertEqual(["machine", "peruser"], result["cases"], "проверены оба режима установщика")
         self.assertTrue(result["tempRemoved"], "временная папка не удалена")
 
+    def test_T0_drew_temp_leftovers_cleaned(self):
+        """T0 (замечание владельца 26.09.2026: во временной папке копились хвосты установки Drew — 306 МБ за день):
+        шаг [7/9] в начале убирает копию установщика ESKD_Drew_<guid> и его распаковку DrewGovSetup_<id> от прежних
+        переустановок, пока ни один установщик Drew не работает. Случаи правила (установщик работает, похожие имена,
+        файлы, ссылки) — в check_deploy_engine.ps1 (test_T0_deploy_from_readonly_toolkit_folder)."""
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        module = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
+        rule = module[module.index("function Clear-EskdDrewTempLeftovers"):]
+        rule = rule[:rule.index("\n}")]
+        self.assertIn("'^(ESKD_Drew_[0-9a-f]{32}|DrewGovSetup_[0-9a-f]{8})$'", rule, "убираются не только папки хвостов Drew")
+        self.assertIn("if (& $InstallerRunning) { $result.Busy = $true; return $result }", rule,
+                      "хвосты убираются, пока установщик Drew работает")
+        self.assertIn("ReparsePoint", rule, "папки со ссылками удаляются — удаление ушло бы за пределы временной папки")
+        self.assertIn("[timespan]$MinAge = [timespan]::FromHours(1)", rule,
+                      "свежая распаковка удаляется — из неё ещё может работать установщик Windows")
+        self.assertIn("if (-not $sandbox) {\n    $drewTempLeft = Clear-EskdDrewTempLeftovers", setup,
+                      "шаг [7/9] не убирает хвосты прежних установок Drew")
+        self.assertLess(setup.index("$drewTempLeft = Clear-EskdDrewTempLeftovers"), setup.index("if ($sandbox -or $SkipDrew)"),
+                        "при снятой галочке Drew хвосты не убираются")
+        self.assertIn("закройте его кнопкой «Готово»", setup, "подсказка называет кнопку, которой нет в окне установщика Drew")
+        engine = (ROOT / "09_Тесты" / "tools" / "check_deploy_engine.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn("Clear-EskdDrewTempLeftovers -TempRoot $dt -InstallerRunning { $true }", engine,
+                      "нет случая «установщик Drew работает — ничего не удаляется»")
+
+    def test_T0_configurator_starts_only_by_button(self):
+        """T0 (решение владельца 26.09.2026): окно настройки само ничего не запускает — настройка и обновление только по
+        кнопке «Установить / Обновить». Прежде на ПК с установкой через 5 с обновление начиналось само, а первое
+        «Закрыть» лишь отменяло отсчёт. Окно строится по-настоящему (Tk, скрыто) на подменённом реестре «установка есть,
+        фамилия и организация заполнены»; всё, что окно поставило в очередь, выполняется — установка не должна начаться
+        ни от какого таймера; «Закрыть» закрывает сразу; кнопка запускает. Подсказка говорит, есть ли новый выпуск."""
+        import importlib.util
+        from unittest import mock
+        try:
+            import tkinter
+        except ImportError as exc:
+            self.skipTest(f"нет tkinter: {exc}")
+        source = ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py"
+        self.assertNotIn("AUTO_UPDATE_SECONDS", source.read_text(encoding="utf-8"), "остался отсчёт автообновления")
+        spec = importlib.util.spec_from_file_location("configurator_by_button", source)
+        configurator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(configurator)
+        # Подсказка при открытии — без окна
+        status = configurator.startup_status
+        who = ("Иванов И.И.", "АО Завод")
+        self.assertEqual("error", status(False, "", "", *who)[1], "нет папки инструментария — не ошибка")
+        self.assertIn("Впишите", status(True, "2026.09.26.1849", "2026.09.26.1849", "", "АО Завод")[0])
+        newer = status(True, "2026.09.26.1849", "2026.09.27.0900", *who)
+        self.assertEqual(("warn", True), (newer[1], "новый выпуск 2026.09.27.0900" in newer[0]), "не видно, что в папке новый выпуск")
+        older = status(True, "2026.09.27.0900", "2026.09.26.1849", *who)[0]
+        self.assertNotIn("новый", older, "более ранний выпуск в папке назван новым — конструктор откатит ПК")
+        self.assertIn("2026.09.26.1849", older)
+        self.assertIn("текущий выпуск", status(True, "2026.09.26.1849", "2026.09.26.1849", *who, "OK")[0])
+        failed = status(True, "2026.09.26.1849", "2026.09.26.1849", *who, "FAILED")
+        self.assertEqual(("warn", False), (failed[1], "текущий выпуск" in failed[0]),
+                         "после настройки с ошибками окно говорит «установлен текущий выпуск»")
+        for installed_version, folder_version in (("", "2026.09.26.1849"), ("2026.09.26.1849", ""), ("2026.09.26.1849", "2026.09.27.0900")):
+            self.assertIn("«Установить / Обновить»", status(True, installed_version, folder_version, *who)[0])
+        # Окно на ПК, где установка уже есть
+        registry = {
+            "ESKD_Install": {"ReleaseVersion": "2026.09.20.0800", "InstalledAt": "20.09.2026 08:00", "SourceRoot": str(ROOT),
+                             "LastResult": "OK", "Language": "Russian", "SwInternetBlock": "1", "Graphics": ""},
+            "ESKD_Settings": {"Author": "Иванов И.И.", "Organization": "АО Завод"},
+        }
+        calls, queued, destroyed = [], [], []
+        try:
+            root = tkinter.Tk()
+        except tkinter.TclError as exc:
+            # При публикации (ESKD_REQUIRE_BUILD=1) пропуск — провал: иначе вернувшийся автозапуск ушёл бы к конструкторам
+            if os.environ.get("ESKD_REQUIRE_BUILD") == "1":
+                self.fail(f"окно не проверено — публикация требует проверки окна: {exc}")
+            self.skipTest(f"нет рабочего стола для окна: {exc}")
+        # Окно закрывается внутри подмен (ниже, finally): событие, пришедшее после них, дошло бы до настоящего установщика —
+        # так 26.09.2026 проверочная копия этого теста 32 раза запустила установку на ПК владельца.
+        real_destroy = root.destroy
+        root.withdraw()
+        root.after = lambda ms, func=None, *args: queued.append((func, args))
+        root.destroy = lambda: destroyed.append(True)
+
+        def record(name):
+            def stub(*args, **kwargs):
+                calls.append(name)
+                raise AssertionError(f"окно само вызвало {name}")
+            return stub
+
+        # Любой путь к установщику в обход кнопки: start, run_engine, Popen, поток или таймер — записывается и не выполняется
+        threading_stub = mock.MagicMock()
+        threading_stub.Thread.side_effect = record("threading.Thread")
+        threading_stub.Timer.side_effect = record("threading.Timer")
+        import contextlib
+        with contextlib.ExitStack() as stack:
+            for target, name, value in (
+                    (configurator, "read_registry", lambda subkey, names: {n: registry.get(subkey, {}).get(n, "") for n in names}),
+                    (configurator, "program_dir", lambda: str(ROOT / "01_Настройки_SolidWorks")),
+                    (configurator.ConfiguratorApp, "start", lambda app: calls.append("start")),
+                    (configurator.ConfiguratorApp, "run_engine", record("run_engine")),
+                    (configurator.subprocess, "Popen", record("Popen")),
+                    (configurator, "solidworks_running", lambda: False),
+                    (configurator, "threading", threading_stub)):
+                stack.enter_context(mock.patch.object(target, name, value))
+            stack.callback(real_destroy)  # выполняется первым — пока подмены ещё действуют
+            app = configurator.ConfiguratorApp(root)
+            self.assertTrue(app.source and app.engine, "окно не нашло папку инструментария и установщик")
+            shown = {"<Map>", "<Visibility>", "<FocusIn>", "<Activate>", "<Configure>", "<Expose>"}
+            self.assertEqual(set(), shown & set(root.bind()), "окно запускает что-то при показе или фокусе")
+            for _ in range(50):  # «время идёт»: всё, что окно поставило в очередь (опрос вывода и любые таймеры)
+                if not queued:
+                    break
+                func, args = queued.pop(0)
+                try:
+                    func(*args)
+                except AssertionError:
+                    pass  # вызов уже записан в calls
+            self.assertEqual([], calls, "окно само запустило установку")
+            self.assertNotIn("через", app.status.cget("text"), "подсказка обещает запуск по таймеру")
+            self.assertIn("«Установить / Обновить»", app.status.cget("text"))
+            app.on_close()
+            self.assertEqual([True], destroyed, "«Закрыть» не закрыло окно с первого раза")
+            app.btn_install.invoke()
+            self.assertEqual(["start"], calls, "кнопка «Установить / Обновить» не запускает настройку")
+
     def test_T0_language_choice_at_deploy(self):
         """T0 (решение владельца 25.09.2026): при развёртывании выбирается язык интерфейса SolidWorks и Drew.
         SolidWorks 2025 берёт язык из регионального формата пользователя (sldutu.dll LangUtils::GetLangSubdir:
@@ -682,7 +802,7 @@ class StaticRepository(StaticTestCase):
         self.assertTrue(result["tempRemoved"], "временная папка не удалена")
         configurator = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
         # Галочка включена по умолчанию, снятая — запоминается; «Безопасная графика» — прежний выбор этого ПК
-        # (проверка перед слиянием 26.09.2026: автообновление через 5 с ставило правила снова и включало конвейер графики).
+        # (проверка перед слиянием 26.09.2026: обновление из окна ставило правила снова и включало конвейер графики).
         self.assertIn('self.var_block = tk.BooleanVar(value=installed["SwInternetBlock"] != "0")', configurator,
                       "галочка отучения от сети: включена по умолчанию, снятая запоминается")
         self.assertIn('self.var_safe_gfx = tk.BooleanVar(value=(installed["Graphics"] or "").lower() == "safe")', configurator,

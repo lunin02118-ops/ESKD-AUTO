@@ -569,6 +569,46 @@ function Get-EskdDrewPlan {
     return "Replace"
 }
 
+function Clear-EskdDrewTempLeftovers {
+    # Хвосты переустановок Drew во временной папке пользователя, ~50 МБ на каждую (разбор 26.09.2026: за день на ПК
+    # скопилось 306 МБ): копия установщика ESKD_Drew_<guid> — шаг [7/9] убирает её, только если окно установщика уже
+    # закрыто, а оно открыто до «Готово»; распаковка самого установщика DrewGovSetup_<id> — он её не удаляет.
+    # Убираются только папки с такими именами, только когда ни одно окно установщика Drew не открыто и только старше
+    # часа: из распаковки работают ещё повышенный powershell (install-flat.ps1) и установщик Windows, их по имени не
+    # узнать — окно Drew могли закрыть «Отменой» посреди установки (его собственный предел — 10 минут, настройка ждёт 6).
+    # Папки со ссылками (junction, symlink) не трогаются: удаление ушло бы за пределы временной папки.
+    param(
+        [string]$TempRoot = $env:TEMP,
+        [scriptblock]$InstallerRunning = {
+            @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+                $_.ProcessName -like "УСТАНОВЩИК_Drew*" -or $_.ProcessName -like "*Drew*AUTO*" -or
+                "$($_.Path)" -like "$TempRoot\ESKD_Drew_*" -or "$($_.Path)" -like "$TempRoot\DrewGovSetup_*" }).Count -gt 0
+        },
+        [datetime]$Now = (Get-Date),
+        [timespan]$MinAge = [timespan]::FromHours(1)
+    )
+    $result = [pscustomobject]@{ Found = 0; Removed = 0; Recent = 0; Bytes = [long]0; Busy = $false }
+    $cutoff = $Now - $MinAge
+    if (-not $TempRoot) { return $result }
+    $found = @(Get-ChildItem -LiteralPath $TempRoot -Directory -Force -ErrorAction SilentlyContinue |
+               Where-Object { $_.Name -match '^(ESKD_Drew_[0-9a-f]{32}|DrewGovSetup_[0-9a-f]{8})$' })
+    $result.Found = $found.Count
+    if (-not $found.Count) { return $result }
+    if (& $InstallerRunning) { $result.Busy = $true; return $result }
+    foreach ($dir in $found) {
+        $reparse = [IO.FileAttributes]::ReparsePoint
+        if ($dir.Attributes -band $reparse) { continue }
+        if ($dir.CreationTime -gt $cutoff -or $dir.LastWriteTime -gt $cutoff) { $result.Recent++; continue }
+        $items = @(Get-ChildItem -LiteralPath $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue)
+        if (@($items | Where-Object { $_.Attributes -band $reparse }).Count) { continue }
+        if (@($items | Where-Object { $_.LastWriteTime -gt $cutoff }).Count) { $result.Recent++; continue }
+        $size = [long](@($items | Where-Object { -not $_.PSIsContainer }) | Measure-Object -Property Length -Sum).Sum
+        Remove-Item -LiteralPath $dir.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $dir.FullName)) { $result.Removed++; $result.Bytes += $size }
+    }
+    return $result
+}
+
 # ------------------------------------------------------------------ Отучение SolidWorks от сети
 
 function Get-EskdSwOfflineSettings {

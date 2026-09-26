@@ -11,8 +11,8 @@
       3. Вызывает Publish-EskdToolkit.ps1: собирает надстройку, гоняет автотесты и только после них
          раскладывает выпуск в общую папку и пишет toolkit_release.json.
 
-    Конструкторы после этого запускают у себя «Настройка_Рабочего_Места_SolidWorks.exe» из общей папки —
-    как обычно. Их порядок работы не меняется.
+    Конструкторы после этого запускают у себя «Настройка_Рабочего_Места_SolidWorks.exe» из общей папки и нажимают
+    «Установить / Обновить» — само окно ничего не запускает.
 
     Ничего не публикуется, если автотесты не прошли: в общей папке остаётся прежний выпуск.
 
@@ -200,5 +200,5 @@ if (-not (Test-Path -LiteralPath $releaseFile)) { Stop-Update "Публикац�
 $result = [System.IO.File]::ReadAllText($releaseFile, [System.Text.Encoding]::UTF8) | ConvertFrom-Json
 Ok "В общей папке выпуск $($result.version), коммит $($result.commit)"
 Write-Host ""
-Write-Host "Конструкторам: запустить $Target\01_Настройки_SolidWorks\Настройка_Рабочего_Места_SolidWorks.exe" -ForegroundColor White
+Write-Host "Конструкторам: запустить $Target\01_Настройки_SolidWorks\Настройка_Рабочего_Места_SolidWorks.exe и нажать «Установить / Обновить»" -ForegroundColor White
 exit 0

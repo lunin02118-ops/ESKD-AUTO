@@ -802,6 +802,15 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wPa
     Write-Ok "Шрифты ГОСТ: установлено $installed, уже были $present$(if (-not $isAdmin) { ' (в профиль пользователя)' })."
 }
 
+# Хвосты прежних переустановок Drew во временной папке (копия установщика и его распаковка) — и при снятой галочке Drew.
+if (-not $sandbox) {
+    $drewTempLeft = Clear-EskdDrewTempLeftovers
+    if ($drewTempLeft.Removed) {
+        Write-Info ("Убраны временные файлы прежних установок Drew: папок {0}, {1:N0} МБ." -f $drewTempLeft.Removed, ($drewTempLeft.Bytes / 1MB))
+    } elseif ($drewTempLeft.Busy) {
+        Write-Info "Временные файлы прежних установок Drew остаются: установщик Drew ещё работает. Их уберёт следующая настройка."
+    }
+}
 if ($sandbox -or $SkipDrew) {
     Write-Info "Drew пропущен."
 } else {
@@ -998,7 +1007,7 @@ if ($sandbox -or $SkipDrew) {
                     }
                     elseif ($setup.HasExited) { $failures++; Write-Fail "Установщик Drew завершился, а Drew не установлен - запустите настройку снова или $($drewExe[0].Name) вручную." }
                     else { $failures++; Write-Fail "Drew не установился за 6 минут - проверьте окно установщика." }
-                    if ($drewOk -and -not $setup.HasExited) { Write-Info "Окно установщика Drew ещё открыто - закройте его кнопкой «Закрыть»." }
+                    if ($drewOk -and -not $setup.HasExited) { Write-Info "Окно установщика Drew ещё открыто - закройте его кнопкой «Готово»." }
                 }
             }
             # Копию убираем, только когда установщик закончил: работающему процессу она ещё нужна.
@@ -1191,7 +1200,7 @@ if ($SwInternetBlock) {
     if ([string](Get-RegValue $install "SwInternetBlock") -eq "1") {
         Write-Info "Правила прежнего отучения от сети остаются. Снять: SwInternetBlock\Set-SwInternetBlock.ps1 -Mode remove (администратор)."
     }
-    # Выбор запоминается: окно при следующем открытии (и автообновление через 5 с) не ставит галочку снова.
+    # Выбор запоминается: окно при следующем открытии не ставит галочку снова.
     Set-Reg $install "SwInternetBlock" "0"
 }
 
@@ -1286,7 +1295,7 @@ Set-Reg $install "ReleaseCommit" $release.Commit
 Set-Reg $install "SwVersion" $SwVersion
 Set-Reg $install "Author" $Author
 Set-Reg $install "Language" $Language
-Set-Reg $install "Graphics" $Graphics   # окно помнит «Безопасную графику»: автообновление не включает конвейер снова
+Set-Reg $install "Graphics" $Graphics   # окно помнит «Безопасную графику»: следующее обновление не включает конвейер снова
 Set-Reg $install "InstalledAt" (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Set-Reg $install "LastResult" $(if ($failures) { "FAILED" } else { "OK" })
 Set-Reg $install "LanguageIssue" $languageIssue

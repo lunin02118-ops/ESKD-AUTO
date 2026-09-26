@@ -140,6 +140,39 @@ try {
     Expect "Drew, запись: метка «из будущего» (часы ПК убегали) — новая всё равно последняя" (DrewRecorded @($future, $stamp)) $newAuto
     Expect "Drew, запись: разбирается тем же правилом (отпечаток с именем ПК)" (DrewRecorded @("${t1}_$oldAuto", "${stamp}_PC1")) $newAuto
     Expect "класс: папка «SWPlusMacro_v_2018_SP0.0 2» не путается с папкой SWPlus" (Resolve-EskdProfilePath -Relative "${swplusRel} 2\x.swp" -SourceRoot "S" -LocalRoot "L") "S\${swplusRel} 2\x.swp"
+    # Хвосты переустановок Drew во временной папке (разбор 26.09.2026): копия установщика ESKD_Drew_<guid> и распаковка
+    # DrewGovSetup_<id> убираются, пока установщик Drew не работает; похожие имена, файлы и ссылки не трогаются.
+    $dt = Join-Path $temp "drewtmp"
+    $copyDir = Join-Path $dt ("ESKD_Drew_" + "0123456789abcdef" * 2)
+    $unpackDir = Join-Path $dt "DrewGovSetup_0a1b2c3d"
+    $keepDirs = @((Join-Path $dt "ESKD_Drew_short"), (Join-Path $dt "DrewGovSetup_0a1b2c3"), (Join-Path $dt "Прочее"))
+    $target = Join-Path $dt "цель ссылки"
+    $linked = Join-Path $dt "DrewGovSetup_1a2b3c4d"
+    $nested = Join-Path $dt ("ESKD_Drew_" + "fedcba9876543210" * 2)
+    foreach ($d in @($copyDir, (Join-Path $unpackDir "lib")) + $keepDirs + @($target, $nested)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+    [System.IO.File]::WriteAllBytes((Join-Path $copyDir "УСТАНОВЩИК_Drew_AUTO.exe"), (New-Object byte[] 1000))
+    [System.IO.File]::WriteAllBytes((Join-Path $unpackDir "lib\Drew.dll"), (New-Object byte[] 500))
+    [System.IO.File]::WriteAllBytes((Join-Path $target "нужный.txt"), (New-Object byte[] 7))
+    [System.IO.File]::WriteAllBytes((Join-Path $dt ("ESKD_Drew_" + "abcdef0123456789" * 2)), (New-Object byte[] 3))
+    New-Item -ItemType Junction -Path $linked -Target $target | Out-Null
+    New-Item -ItemType Junction -Path (Join-Path $nested "ссылка") -Target $target | Out-Null
+    try {
+        $later = (Get-Date).AddHours(2)
+        $busy = Clear-EskdDrewTempLeftovers -TempRoot $dt -InstallerRunning { $true } -Now $later
+        Expect "Drew, временные файлы: установщик работает — ничего не удаляется" ("{0}|{1}|{2}|{3}" -f $busy.Busy, $busy.Removed, (Test-Path $copyDir), (Test-Path $unpackDir)) "True|0|True|True"
+        # Моложе часа — возможно, текущая установка: окно Drew закрыли, а установщик Windows ещё работает из распаковки
+        $fresh = Clear-EskdDrewTempLeftovers -TempRoot $dt -InstallerRunning { $false }
+        Expect "Drew, временные файлы: моложе часа — не удаляются" ("{0}|{1}|{2}|{3}" -f $fresh.Recent, $fresh.Removed, (Test-Path $copyDir), (Test-Path $unpackDir)) "3|0|True|True"
+        $left = Clear-EskdDrewTempLeftovers -TempRoot $dt -InstallerRunning { $false } -Now $later
+        Expect "Drew, временные файлы: копия и распаковка убраны" ("{0}|{1}|{2}|{3}" -f $left.Found, $left.Removed, (Test-Path $copyDir), (Test-Path $unpackDir)) "4|2|False|False"
+        Expect "Drew, временные файлы: размер убранного" $left.Bytes 1500
+        Expect "Drew, временные файлы: похожие имена и файл с таким именем не тронуты" (@($keepDirs | Where-Object { -not (Test-Path $_) }).Count + [int](-not (Test-Path (Join-Path $dt ("ESKD_Drew_" + "abcdef0123456789" * 2))))) 0
+        Expect "Drew, временные файлы: папка-ссылка и папка со ссылкой внутри не тронуты, цель ссылки цела" ("{0}|{1}|{2}" -f (Test-Path $linked), (Test-Path $nested), (Test-Path (Join-Path $target "нужный.txt"))) "True|True|True"
+        Expect "Drew, временные файлы: нет папки — ничего" (Clear-EskdDrewTempLeftovers -TempRoot (Join-Path $dt "нет такой") -InstallerRunning { $false }).Found 0
+    } finally {
+        # Ссылки — только сами ссылки (удаление папки со ссылкой в PowerShell 5.1 может пройти по ней)
+        foreach ($j in @($linked, (Join-Path $nested "ссылка"))) { if (Test-Path -LiteralPath $j) { [System.IO.Directory]::Delete($j) } }
+    }
 
     $setup = Join-Path $source "01_Настройки_SolidWorks\_Служебное\Setup_Workstation_SolidWorks.ps1"
     $setupArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $setup, "-Author", "Тестов Т.Т.", "-Firm", "ООО «Проверка»",
