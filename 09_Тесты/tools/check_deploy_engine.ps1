@@ -173,6 +173,60 @@ try {
         # Ссылки — только сами ссылки (удаление папки со ссылкой в PowerShell 5.1 может пройти по ней)
         foreach ($j in @($linked, (Join-Path $nested "ссылка"))) { if (Test-Path -LiteralPath $j) { [System.IO.Directory]::Delete($j) } }
     }
+    # Профиль оформления Drew (решение владельца 26.09.2026, З-61): эталон всегда главный. Равный эталону файл не трогается
+    # и в копию не кладётся; файл, который записала настройка (отпечаток прошлой записи или эталон — нынешний или прежний —
+    # при любой папке инструментария и концах строк), молча становится новым эталоном; правка после настройки заменяется
+    # эталоном, а сама правка остаётся в копии (настройка предупреждает).
+    $dp = Join-Path $temp "drewprof"
+    $dpMaster = Join-Path $dp "Drew-Blueprints.xml"; $dpTarget = Join-Path $dp "Профиль\Drew-Blueprints.xml"; $dpBackups = Join-Path $dp "Backups"
+    New-Item -ItemType Directory -Path (Split-Path -Parent $dpTarget) -Force | Out-Null
+    $bom = New-Object System.Text.UTF8Encoding($true)
+    $masterXml = "<?xml version=`"1.0`" encoding=`"utf-8`"?>`r`n<SheetStylesExport><Path>%TOOLKIT%\02_Шаблоны_и_Форматки\А4.slddrt</Path></SheetStylesExport>`r`n"
+    $newXml = $masterXml.Replace("А4.slddrt", "А4-1.slddrt")
+    $oldXml = $masterXml.Replace("</Path>", "</Path><Scale>2</Scale>")
+    [System.IO.File]::WriteAllText($dpMaster, $masterXml, $bom)
+    $root1 = "\\Сервер\КТО & Ко\Инструменты\"; $root2 = "Z:\Инструменты"
+    $tick = [datetime]"2026-09-26 22:00:00"
+    function DrewProfile($Root, $Last, $Minute) {
+        Update-EskdDrewProfile -Master $dpMaster -Target $dpTarget -SourceRoot $Root -BackupDir $dpBackups -LastHash $Last `
+            -KnownMasterKeys @(Get-EskdDrewProfileKey -Text $oldXml) -Now $tick.AddMinutes($Minute)
+    }
+    function DrewBackups { @(Get-ChildItem -LiteralPath $dpBackups -File -ErrorAction SilentlyContinue).Count }
+    # Как писала настройка до З-61: эталон с папкой инструментария, UTF-8 с BOM
+    function WriteRendered($Xml, $Root, [switch]$Lf) {
+        $text = $Xml.Replace("%TOOLKIT%", [System.Security.SecurityElement]::Escape($Root.TrimEnd('\')))
+        if ($Lf) { $text = $text.Replace("`r`n", "`n") }
+        [System.IO.File]::WriteAllText($dpTarget, $text, $bom)
+    }
+    $r = DrewProfile $root1 "" 0
+    $written = [System.IO.File]::ReadAllText($dpTarget)
+    Expect "Drew, профиль: файла не было — записан, копии нет" ("{0}|{1}" -f $r.Action, (DrewBackups)) "Written|0"
+    Expect "Drew, профиль: папка инструментария подставлена и экранирована для XML" $written.Contains('<Path>\\Сервер\КТО &amp; Ко\Инструменты\02_Шаблоны_и_Форматки\А4.slddrt</Path>') "True"
+    Expect "Drew, профиль: отпечаток — SHA-256 записанного файла (с BOM)" $r.Hash (Get-EskdFileSha256 -Path $dpTarget)
+    $h1 = $r.Hash
+    $r = DrewProfile $root1 $h1 1
+    Expect "Drew, профиль: равен эталону — не трогается, копия не множится" ("{0}|{1}" -f $r.Action, (DrewBackups)) "Same|0"
+    [System.IO.File]::WriteAllText($dpTarget, $written.Replace("А4.slddrt", "А3 своя.slddrt"), $bom)
+    $r = DrewProfile $root1 $h1 2
+    Expect "Drew, профиль: правка в окне Drew — заменена эталоном, правка в копии" ("{0}|{1}|{2}|{3}" -f $r.Action, (DrewBackups), ((Get-EskdFileSha256 -Path $dpTarget) -eq $h1), [System.IO.File]::ReadAllText($r.Backup).Contains("А3 своя.slddrt")) "Replaced|1|True|True"
+    [System.IO.File]::WriteAllText($dpMaster, $newXml, $bom)
+    $r = DrewProfile $root1 $h1 3
+    Expect "Drew, профиль: новый эталон — файл прошлой настройки обновлён без предупреждения" ("{0}|{1}|{2}" -f $r.Action, (DrewBackups), [System.IO.File]::ReadAllText($dpTarget).Contains("А4-1.slddrt")) "Updated|2|True"
+    # Настройка до З-61 отпечаток не писала: свой файл узнаётся по содержимому при любой папке инструментария
+    WriteRendered $newXml $root2
+    $r = DrewProfile $root1 "" 4
+    Expect "Drew, профиль: отпечатка нет, папка инструментария сменилась — обновлён без предупреждения" ("{0}|{1}" -f $r.Action, [System.IO.File]::ReadAllText($dpTarget).Contains("<Path>\\Сервер\КТО &amp; Ко\Инструменты\02_")) "Updated|True"
+    WriteRendered $newXml $root1 -Lf
+    Expect "Drew, профиль: отпечатка нет, другие концы строк — обновлён без предупреждения" (DrewProfile $root1 "" 5).Action "Updated"
+    WriteRendered $oldXml $root2
+    Expect "Drew, профиль: отпечатка нет, файл прежнего эталона — обновлён без предупреждения" (DrewProfile $root1 "" 6).Action "Updated"
+    [System.IO.File]::WriteAllText($dpTarget, $written.Replace("А4.slddrt", "А3 своя.slddrt"), $bom)
+    Expect "Drew, профиль: чужой файл без отпечатка — считается правкой" (DrewProfile $root1 "" 7).Action "Replaced"
+    Expect "Drew, профиль: каждая замена — со своей копией" (DrewBackups) 6
+    [System.IO.File]::WriteAllText($dpMaster, "<SheetStylesExport><Path>", $bom)
+    $keep = Get-EskdFileSha256 -Path $dpTarget; $threw = $false
+    try { DrewProfile $root1 "" 8 | Out-Null } catch { $threw = $true }
+    Expect "Drew, профиль: эталон не XML — исключение, файл пользователя и копии не тронуты" ("{0}|{1}|{2}" -f $threw, ((Get-EskdFileSha256 -Path $dpTarget) -eq $keep), (DrewBackups)) "True|True|6"
 
     $setup = Join-Path $source "01_Настройки_SolidWorks\_Служебное\Setup_Workstation_SolidWorks.ps1"
     $setupArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $setup, "-Author", "Тестов Т.Т.", "-Firm", "ООО «Проверка»",
@@ -363,6 +417,7 @@ try {
     # базовые кнопки SolidWorks и кнопка пользователя в панели быстрого доступа остаются.
     # Отпечаток установщика Drew переживает удаление: иначе следующая установка переставила бы тот же Drew (26.09.2026).
     Set-ItemProperty -LiteralPath "$sandbox\SolidWorks\ESKD_Install" -Name "DrewInstaller" -Value "A9CEE78D"
+    Set-ItemProperty -LiteralPath "$sandbox\SolidWorks\ESKD_Install" -Name "DrewProfileHash" -Value "0123abcd"
     $code, $out = & $run @("-Mode", "Uninstall")
     $output += "`n--- удаление ---`n" + $out
     Expect "Uninstall: код выхода" $code 0
@@ -373,8 +428,9 @@ try {
     Expect "Uninstall: кнопка пользователя осталась" (Read-Value $qat "Btn20") "1,40001"
     Expect "Uninstall: макросы на локальную копию убраны" (Read-Value "$swKey\User Defined Macros\01 - Macro Folder" "Source Path") $null
     Expect "Uninstall: локальная копия удалена" (Test-Path -LiteralPath $local) $false
-    Expect "Uninstall: сведения об установке удалены" (@((Get-Item -LiteralPath "$sandbox\SolidWorks\ESKD_Install").Property) -join ",") "DrewInstaller"
+    Expect "Uninstall: сведения об установке удалены" (@((Get-Item -LiteralPath "$sandbox\SolidWorks\ESKD_Install").Property | Sort-Object) -join ",") "DrewInstaller,DrewProfileHash"
     Expect "Uninstall: отпечаток установщика Drew сохранён" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "DrewInstaller") "A9CEE78D"
+    Expect "Uninstall: отпечаток профиля Drew сохранён" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "DrewProfileHash") "0123abcd"
     Expect "Uninstall: фамилия осталась" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
     $code, $out = & $run @("-Mode", "Check")
     Expect "Check после удаления: не установлено" $code 10

@@ -344,10 +344,13 @@ if ($Mode -eq "Uninstall") {
     } elseif (Test-Path -LiteralPath $LocalRoot) {
         Write-Warn "Папка $LocalRoot не похожа на локальную копию ЕСКД — не удалена."
     }
-    # Отпечаток установщика Drew остаётся: Drew не удаляется, и следующая установка не должна переставлять его заново.
+    # Отпечатки установщика и профиля Drew остаются: Drew и его профиль не удаляются, и следующая установка не должна
+    # переставлять Drew заново или принимать записанный ею профиль за правку конструктора.
     $keepDrewInstaller = Get-RegValue $install "DrewInstaller"
+    $keepDrewProfile = Get-RegValue $install "DrewProfileHash"
     Remove-Item -LiteralPath $install -Recurse -Force -ErrorAction SilentlyContinue
     if ($keepDrewInstaller) { Set-Reg $install "DrewInstaller" $keepDrewInstaller }
+    if ($keepDrewProfile) { Set-Reg $install "DrewProfileHash" $keepDrewProfile }
     Write-Ok "Сведения об установке удалены. Фамилия и настройки ЕСКД, шрифты, Drew оставлены."
     exit 0
 }
@@ -811,6 +814,7 @@ if (-not $sandbox) {
         Write-Info "Временные файлы прежних установок Drew остаются: установщик Drew ещё работает. Их уберёт следующая настройка."
     }
 }
+$drewProfileNote = ""
 if ($sandbox -or $SkipDrew) {
     Write-Info "Drew пропущен."
 } else {
@@ -1034,26 +1038,30 @@ if ($sandbox -or $SkipDrew) {
         if (Test-Path -LiteralPath $marker) { Write-Ok "Лицензия Drew: встроенная, активация не требуется." }
         else { Write-Warn "Лицензия Drew: нет файла-маркера ($marker) - переустановите Drew галочкой." }
 
-        # Профиль оформления Drew (форматки ГОСТ, шаблон чертежа) — всегда из инструментария, чтобы результат не зависел от
-        # того, что было на ПК. В эталоне пути записаны через %TOOLKIT% и заменяются папкой инструментария (источником);
-        # прежний файл пользователя сохраняется в резервную копию.
+        # Профиль оформления Drew (форматки ГОСТ, шаблон чертежа) — всегда эталон инструментария, чтобы у всех конструкторов
+        # он был один и не зависел от того, что было на ПК (Update-EskdDrewProfile, решение владельца 26.09.2026, З-61).
+        # Отпечаток записанного файла — в ESKD_Install\DrewProfileHash: по нему (и по совпадению с эталоном при любой папке
+        # инструментария) следующая настройка отличает правку в окне Drew (предупреждение, прежний файл — в копии) от
+        # эталона, который записала сама. Предупреждение повторяется перед итогом.
         $drewConfigDir = Join-Path $env:APPDATA "CAD Booster\Drew"
         $drewBlueprintsTarget = Join-Path $drewConfigDir "Drew-Blueprints.xml"
         $drewBlueprintsMaster = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation\Drew-Blueprints.xml"
         if (Test-Path -LiteralPath $drewBlueprintsMaster) {
             try {
                 New-Item -ItemType Directory -Path $drewConfigDir -Force | Out-Null
-                if (Test-Path -LiteralPath $drewBlueprintsTarget) {
-                    $drewBackup = Join-Path $env:LOCALAPPDATA ("ESKD\Backups\Drew-Blueprints_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".xml")
-                    New-Item -ItemType Directory -Path (Split-Path -Parent $drewBackup) -Force | Out-Null
-                    Copy-Item -LiteralPath $drewBlueprintsTarget -Destination $drewBackup -Force -ErrorAction Stop
+                $drewProfile = Update-EskdDrewProfile -Master $drewBlueprintsMaster -Target $drewBlueprintsTarget -SourceRoot $SourceRoot `
+                    -BackupDir (Join-Path $env:LOCALAPPDATA "ESKD\Backups") -LastHash ([string](Get-RegValue $drewInstallKey "DrewProfileHash"))
+                Set-Reg $drewInstallKey "DrewProfileHash" $drewProfile.Hash
+                if ($drewProfile.Action -eq "Replaced") {
+                    $drewProfileNote = ("Профиль оформления Drew на этом ПК отличался от эталона (его меняли в настройках Drew?) и " +
+                                        "заменён эталоном: у всех конструкторов он один. Прежний сохранён: $($drewProfile.Backup). " +
+                                        "Правку для всех вносят в эталон — руководство, раздел 1.5.")
+                    Write-Warn $drewProfileNote
+                } elseif ($drewProfile.Action -eq "Same") {
+                    Write-Ok "Профиль оформления Drew совпадает с эталоном: форматки и шаблон чертежа из $SourceRoot"
+                } else {
+                    Write-Ok "Профиль оформления Drew: форматки и шаблон чертежа из $SourceRoot"
                 }
-                $xmlContent = [System.IO.File]::ReadAllText($drewBlueprintsMaster, [System.Text.Encoding]::UTF8)
-                $toolkit = [System.Security.SecurityElement]::Escape($SourceRoot.TrimEnd('\'))
-                $updated = $xmlContent.Replace("%TOOLKIT%", $toolkit)
-                [xml]$updated | Out-Null
-                [System.IO.File]::WriteAllText($drewBlueprintsTarget, $updated, (New-Object System.Text.UTF8Encoding($true)))
-                Write-Ok "Профиль оформления Drew: форматки и шаблон чертежа из $SourceRoot"
             } catch {
                 Write-Warn "Профиль оформления Drew не записан: $($_.Exception.Message)"
             }
@@ -1302,8 +1310,10 @@ Set-Reg $install "LanguageIssue" $languageIssue
 Set-Reg $install "LastLog" $logPath
 
 Write-Host ""
-# Предупреждение о языке системы повторяется перед итогом: в середине журнала его легко пропустить.
+# Предупреждения о языке системы и о заменённой правке профиля Drew повторяются перед итогом: в середине журнала их легко
+# пропустить.
 if ($acpNote) { Write-Warn $acpNote }
+if ($drewProfileNote) { Write-Warn $drewProfileNote }
 if ($failures) {
     Write-Host "=================================================================" -ForegroundColor Red
     Write-Host " НАСТРОЙКА ЗАВЕРШЕНА С ОШИБКАМИ: $failures. Сообщения выше." -ForegroundColor Red

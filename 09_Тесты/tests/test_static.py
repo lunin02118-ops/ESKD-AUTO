@@ -103,8 +103,61 @@ class StaticRepository(StaticTestCase):
         self.assertEqual([], missing, "пути профиля Drew не на существующие файлы инструментария")
         self.assertEqual(["false"], [e.text for e in root.iter("HideBendLinesFlatPatternSheet")], "линии гибов скрыты")
         setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
-        self.assertIn('Replace("%TOOLKIT%", $toolkit)', setup, "установщик не подставляет папку инструментария")
+        engine = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
+        self.assertIn('Replace("%TOOLKIT%", $toolkit)', engine, "установщик не подставляет папку инструментария")
         self.assertNotIn("$layout.DrwAutomation", setup, "поле раскладки, которого нет")
+
+    def test_T0_drew_profile_toolkit_wins_with_warning(self):
+        """T0 (решение владельца 26.09.2026, З-61): профиль оформления Drew — всегда эталон инструментария, у всех
+        конструкторов один. Правку в окне Drew настройка заменяет эталоном, но не молча: предупреждает и оставляет правку
+        в копии; свой прежний файл (отпечаток DrewProfileHash) обновляет без предупреждения; равный эталону не трогает."""
+        base = ROOT / "01_Настройки_SolidWorks" / "_Служебное"
+        setup = (base / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        engine = (base / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
+        self.assertIn("function Update-EskdDrewProfile", engine)
+        call = setup[setup.index("$drewProfile = Update-EskdDrewProfile"):]
+        call = call[:call.index("} catch {")]
+        self.assertIn('-LastHash ([string](Get-RegValue $drewInstallKey "DrewProfileHash"))', call, "нет отпечатка прошлой настройки")
+        self.assertIn("-SourceRoot $SourceRoot ", call, "пути профиля Drew — не на общую папку")
+        # Отпечаток пишется при любом итоге (и при «Same»): иначе следующая смена эталона выглядела бы правкой
+        after_call = call[call.index('"DrewProfileHash"))'):call.index('Set-Reg $drewInstallKey "DrewProfileHash" $drewProfile.Hash')]
+        self.assertNotIn("if (", after_call, "отпечаток профиля Drew пишется не при каждом итоге")
+        replaced = call[call.index('if ($drewProfile.Action -eq "Replaced")'):call.index("} elseif")]
+        self.assertIn("$($drewProfile.Backup)", replaced, "предупреждение не говорит, где правка")
+        self.assertIn("Write-Warn $drewProfileNote", replaced, "правка конструктора заменяется молча")
+        tail = setup[setup.index("$drewProfile = Update-EskdDrewProfile"):]
+        self.assertLess(tail.index("if ($drewProfileNote) { Write-Warn $drewProfileNote }"), tail.index("НАСТРОЙКА ЗАВЕРШЕНА"),
+                        "предупреждение о заменённой правке не повторяется перед итогом")
+        uninstall = setup[setup.index("$keepDrewInstaller = Get-RegValue"):setup.index('Write-Ok "Сведения об установке удалены')]
+        self.assertLess(uninstall.index('Get-RegValue $install "DrewProfileHash"'), uninstall.index("Remove-Item -LiteralPath $install"),
+                        "удаление читает отпечаток профиля Drew после удаления сведений")
+        self.assertIn('Set-Reg $install "DrewProfileHash" $keepDrewProfile', uninstall, "удаление забывает отпечаток профиля Drew")
+        engine_check = (ROOT / "09_Тесты" / "tools" / "check_deploy_engine.ps1").read_text(encoding="utf-8-sig")
+        for case in ("равен эталону — не трогается", "правка в окне Drew — заменена эталоном", "новый эталон — файл прошлой настройки",
+                     "отпечатка нет, папка инструментария сменилась", "отпечатка нет, другие концы строк",
+                     "отпечатка нет, файл прежнего эталона", "чужой файл без отпечатка — считается правкой", "эталон не XML"):
+            self.assertIn("Drew, профиль: " + case, engine_check, "нет случая в песочнице: " + case)
+        self.assertIn('"Uninstall: отпечаток профиля Drew сохранён"', engine_check, "удаление не проверено на песочнице")
+        # Эталоны, которые уже разносились по ПК, — в списке модуля: файл из любого из них не считается правкой.
+        # Отпечаток считается так же, как Get-EskdDrewProfileKey.
+        def profile_key(text):
+            norm = text.lstrip("﻿").replace("\r\n", "\n")
+            norm = re.sub(r"(<(?:Path|FullPath)>)[^<]*?(?=\\02_Шаблоны_и_Форматки\\)", r"\g<1>%TOOLKIT%", norm)
+            return hashlib.sha256(norm.encode("utf-8")).hexdigest()
+        block = engine[engine.index("$script:DrewProfileMasterKeys = @("):]
+        known = set(re.findall(r'"([0-9a-f]{64})"', block[:block.index(")")]))
+        master_rel = "03_Макросы_и_Плагины/Drw_System_Automation/Drew-Blueprints.xml"
+        master = (ROOT / master_rel).read_text(encoding="utf-8-sig")
+        self.assertIn(profile_key(master), known, "нынешний эталон профиля Drew не внесён в DrewProfileMasterKeys")
+        revs = subprocess.run(["git", "-C", str(ROOT), "log", "--format=%h", "--", master_rel], capture_output=True, text=True)
+        for rev in (revs.stdout.split() if revs.returncode == 0 else []):
+            old = subprocess.run(["git", "-C", str(ROOT), "show", f"{rev}:{master_rel}"], capture_output=True)
+            if old.returncode == 0:
+                self.assertIn(profile_key(old.stdout.decode("utf-8")), known, f"эталон профиля Drew из {rev} не в DrewProfileMasterKeys")
+        manual = (ROOT / "06_Документация" / "РУКОВОДСТВО_ПОЛЬЗОВАТЕЛЯ_И_АДМИНИСТРАТОРА.md").read_text(encoding="utf-8-sig")
+        section = manual[manual.index("### 1.5. Модуль Drew"):manual.index("### 1.6.")]
+        for text in ("Профиль оформления Drew", "DrewProfileHash", "%TOOLKIT%", "Drew-Blueprints_"):
+            self.assertIn(text, section, "раздел 1.5 не описывает профиль Drew: " + text)
 
     def test_T0_update_from_github_publishes_only_checked_release(self):
         """T0 (замысел владельца 20.09.2026): обновление инструментария — одна кнопка, которая тянет репозиторий с
