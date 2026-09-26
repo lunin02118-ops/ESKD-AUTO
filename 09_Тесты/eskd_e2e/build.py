@@ -352,11 +352,15 @@ def structural_tube(session, length_mm, profile, material, angle_deg=0.0, weldme
     """Деталь сварной конструкции: элемент конструкции (WeldMemberFeat) по отрезку вдоль X из профиля .sldlfp
     (выгрузка IGS, Т-29).
     angle_deg — наклон отрезка во фронтальной плоскости: ось трубы не совпадает с осями детали.
-    weldment — сначала элемент «Сварная деталь», как у детали из окна SolidWorks: со списком вырезов."""
+    weldment — сначала элемент «Сварная деталь», как у детали из окна SolidWorks: со списком вырезов.
+    Порядок — как у конструктора в окне SolidWorks: элемент перестроен, потом материал. Материал, назначенный до первого
+    перестроения элемента, SolidWorks записывает ещё и телу, и этот материал тела через API уже не сменить и не снять
+    (проба 26.09.2026, T05): смена материала детали потом не меняла массу, и проверка №33 справедливо видела расхождение."""
     doc = session.new_doc(paths.PART_TEMPLATE)
     if weldment:
         weldment_feature(doc)
     add_structural_member(doc, length_mm, profile, angle_deg)
+    doc.ForceRebuild3(False)
     set_material(doc, material)
     doc.ForceRebuild3(False)
     return doc
