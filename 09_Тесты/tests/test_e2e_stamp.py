@@ -43,17 +43,19 @@ class StampEtalon(SwTestCase):
         self.path("stamp_matrix.json").write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
         self.assertEqual({}, stamp_matrix.problems_of(result), "нарушения эталона штампа в шаблоне чертежа")
 
-    def test_D19_drawing_template_cosmetic_thread_not_high_quality(self):
-        """D19 (З-62, решение владельца 26.09.2026): в шаблоне «Чертеж.drwdot» снят флажок «Отображение условной резьбы —
-        высокое качество». В SolidWorks 2025 SP3 при высоком качестве на виде не рисуется дуга 3/4 у сквозной резьбы —
-        у части резьбовых отверстий на чертеже нет условной резьбы; в черновом режиме рисуются все."""
+    def test_D19_drawing_template_cosmetic_thread_high_quality(self):
+        """D19 (З-62, решение владельца 26.09.2026): в шаблоне «Чертеж.drwdot» включено «Отображение условной резьбы —
+        высокое качество»: видимая и скрытая части резьбы рисуются правильно, в черновом режиме скрытая резьба на обратных
+        и боковых видах рисуется целиком. Пропажа дуги у сквозной резьбы была у отверстий, построенных через API
+        (HoleWizard5: у условной резьбы глубина 0 и пустой размер), а не из-за этого флажка: отверстие из мастера
+        в интерфейсе рисуется и при высоком качестве."""
         with self.s.eskd_muted():
             drw = self.s.new_doc(paths.DRAWING_TEMPLATE)
             try:
                 high_quality = bool(drw.GetUserPreferenceToggle(SW_DETAILING_CTHREAD_DISPLAY_HIGH_QUALITY))
             finally:
                 self.s.close(drw)
-        self.assertFalse(high_quality, "в шаблоне чертежа снова включено высокое качество условной резьбы")
+        self.assertTrue(high_quality, "в шаблоне чертежа выключено высокое качество условной резьбы")
 
 
 if __name__ == "__main__":
