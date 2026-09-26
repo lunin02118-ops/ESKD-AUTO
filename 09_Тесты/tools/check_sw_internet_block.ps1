@@ -4,18 +4,22 @@
 .DESCRIPTION
     Функции пакета Set-SwInternetBlock.ps1 берутся разбором файла (сам пакет не запускается) и проверяются на данных:
       1. Адреса: «интернет» — всё, кроме частных сетей и самого ПК; сервер лицензий с публичным адресом остаётся
-         открытым; прокси в локальной сети закрывается.
+         открытым; прокси в локальной сети закрывается, но не на адресе сервера лицензий; системный прокси на самом ПК
+         (127.0.0.1, localhost, ::1) — ОШИБКА и код 4. Прокси и сервер лицензий берутся из раздела реестра
+         пользователя по SID (окно администратора), переменная процесса администратора не попадает.
       2. hosts: каждый домен ровно один раз, одна метка; прежние ошибки (мусорная строка «`r`n», двойная метка,
          поиск подстрокой: online. внутри backuponline., закомментированная строка считалась заглушкой) исправлены;
          повторный запуск ничего не меняет; снятие не трогает чужие строки.
       3. Папки: системные (диск, Windows, Program Files, профиль) целиком не закрываются; папка программы поднимается до
          папки SOLIDWORKS («Менеджер установки SOLIDWORKS» русской установки).
       4. Программы: SLDWORKS.exe закрывается в обе стороны (прежний пакет его пропускал), имена правил уникальны.
-      5. Сверка правила и код итога: 0 — всё закрыто; 3 — нужно применить; 4 — правила не действуют.
+      5. Сверка правила и код итога: 0 — всё закрыто; 3 — нужно применить; 4 — правила не действуют или обходятся.
+         Программа, к которой нет доступа (чужой профиль), не считается отсутствующей — её правило не лишнее.
       6. Шаг [8/9] установщика: текст ветки «if ($SwInternetBlock)» выполняется с подставным Invoke-EskdSwBlock —
          применение только когда проверка нашла нехватку; неполный итог — [ВНИМАНИЕ], ошибкой установки не считается
          (решение владельца 25.09.2026); сетевые функции SolidWorks выключаются в реестре; в тестовом корне реестра
-         брандмауэр не трогается.
+         брандмауэр не трогается; окну администратора передаются папки и SID пользователя; снятая галочка
+         запоминается (SwInternetBlock=0); примечания пакета видны и при успехе.
     Вывод — JSON; код выхода 0 при успехе.
 #>
 param([Parameter(Mandatory = $true)][string]$RepoRoot)
@@ -59,6 +63,50 @@ try {
     Check (-not (Test-PublicIpv4 '192.168.10.8') -and -not (Test-PublicIpv4 '127.0.0.1') -and -not (Test-PublicIpv4 '10.1.2.3') -and (Test-PublicIpv4 '8.8.8.8')) "Test-PublicIpv4 ошибается"
     Check ($script:InternetIpv6 -eq '2000::-3fff:ffff:ffff:ffff:ffff:ffff:ffff:ffff') "интернет IPv6 — не 2000::/3"
     Check ((Get-SwBlockFingerprint 'A') -eq (Get-SwBlockFingerprint 'a') -and (Get-SwBlockFingerprint 'a') -ne (Get-SwBlockFingerprint 'b')) "отпечаток не зависит от регистра или совпадает у разных строк"
+
+    # План адресов (проверка перед слиянием 26.09.2026): прокси в ЛВС закрыт; прокси на сервере лицензий открыт —
+    # иначе SolidWorks без лицензии; системный прокси на самом ПК — не закрыть, только ОШИБКА и код 4.
+    $noProxy = [pscustomobject]@{ Hosts = @(); AutoConfig = @() }
+    $p1 = Get-SwBlockAddressPlan -LicenseServers @() -Proxy ([pscustomobject]@{ Hosts = @('192.168.1.10'); AutoConfig = @() }) -LocalAddresses @()
+    Check (($p1.Block -join ',') -eq '192.168.1.10' -and $p1.Addresses -contains '192.168.1.10') "прокси в ЛВС не закрыт"
+    $p2 = Get-SwBlockAddressPlan -LicenseServers @('192.168.1.10') -Proxy ([pscustomobject]@{ Hosts = @('192.168.1.10'); AutoConfig = @() }) -LocalAddresses @()
+    Check (-not $p2.Block.Count -and -not ($p2.Addresses -contains '192.168.1.10')) "прокси на сервере лицензий закрыт — SolidWorks остался бы без лицензии"
+    Check (@($p2.Notes | Where-Object { $_ -match 'ВНИМАНИЕ' -and $_ -match 'сервер лицензий' }).Count -eq 1) "нет предупреждения о прокси на сервере лицензий"
+    $p3 = Get-SwBlockAddressPlan -LicenseServers @('localhost') -Proxy ([pscustomobject]@{ Hosts = @('127.0.0.1', 'localhost', '::1', '10.0.0.5'); AutoConfig = @() }) -LocalAddresses @()
+    Check (((@($p3.LoopProxy) | Sort-Object) -join ',') -eq ((@('::1', '127.0.0.1', 'localhost') | Sort-Object) -join ',')) ("системный прокси на ПК не замечен: " + (@($p3.LoopProxy) -join ','))
+    Check (($p3.Block -join ',') -eq '10.0.0.5') ("петля попала в закрытые адреса или прокси в ЛВС потерян: " + ($p3.Block -join ','))
+    $p4 = Get-SwBlockAddressPlan -LicenseServers @() -Proxy $noProxy -LocalAddresses @('192.168.0.7', '8.8.4.4')
+    Check (($p4.Allow -join ',') -eq '8.8.4.4') "публичный адрес самого ПК не оставлен открытым"
+    Check ($p4.Fingerprint -ne (New-SwBlockPlan).Fingerprint -and (Get-SwBlockAddressPlan -LicenseServers @() -Proxy $noProxy -LocalAddresses @()).Fingerprint -eq (New-SwBlockPlan).Fingerprint) "отпечаток плана не зависит от адресов"
+
+    # Настройки пользователя по SID: окно администратора читает прокси и сервер лицензий конструктора.
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    Check ((Get-SwBlockUserRoot '') -eq 'HKCU:') "без SID — не свой раздел реестра"
+    Check ((Get-SwBlockUserRoot $sid) -eq "Registry::HKEY_USERS\$sid") "по SID вошедшего пользователя — не его раздел в HKEY_USERS"
+    Check ((Get-SwBlockUserRoot 'S-1-5-21-1-2-3-4242424') -eq 'HKCU:') "по SID без раздела в HKEY_USERS — не свой раздел"
+    $badSid = $false; try { [void](Get-SwBlockUserRoot "S-1-5-21-1'; x") } catch { $badSid = $true }
+    Check $badSid "неверный SID принят"
+    $userKey = "HKCU:\Software\ESKD_SwBlockTest_" + [guid]::NewGuid().ToString("N")
+    $savedProcessLicense = $env:SW_D_LICENSE_FILE
+    try {
+        New-Item -Path "$userKey\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Force | Out-Null
+        New-ItemProperty -Path "$userKey\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name ProxyEnable -Value 1 -PropertyType DWord | Out-Null
+        New-ItemProperty -Path "$userKey\Software\Microsoft\Windows\CurrentVersion\Internet Settings" -Name ProxyServer -Value 'http=10.20.30.40:3128;https=10.20.30.40:3128' | Out-Null
+        New-Item -Path "$userKey\Environment" -Force | Out-Null
+        New-ItemProperty -Path "$userKey\Environment" -Name SW_D_LICENSE_FILE -Value '25734@10.9.9.9' | Out-Null
+        New-ItemProperty -Path "$userKey\Environment" -Name HTTP_PROXY -Value 'http://user@10.20.30.41:8080/' | Out-Null
+        $env:SW_D_LICENSE_FILE = '25734@10.8.8.8'   # переменная процесса «администратора» — не должна попасть
+        $script:UserRoot = $userKey
+        $ph = @((Get-SwBlockProxyHosts).Hosts)
+        Check ($ph -contains '10.20.30.40' -and $ph -contains '10.20.30.41') ("прокси пользователя не прочитан из его раздела: " + ($ph -join ', '))
+        $ls = @(Get-SwBlockLicenseServers)
+        Check ($ls -contains '10.9.9.9' -and -not ($ls -contains '10.8.8.8')) ("сервер лицензий пользователя: " + ($ls -join ', '))
+    } finally {
+        $script:UserRoot = 'HKCU:'
+        $env:SW_D_LICENSE_FILE = $savedProcessLicense
+        Remove-Item -LiteralPath $userKey -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Check (-not (Test-Path -LiteralPath $userKey)) "тестовый раздел реестра не удалён"
 
     # --- 2. hosts
     $domains = $script:SwDomains
@@ -155,7 +203,34 @@ try {
     $x = $base.Clone(); $x.HostsMissing = @('a'); $codes.hosts = Get-SwBlockAuditCode ([pscustomobject]$x)
     $x = $base.Clone(); $x.Firewall = [pscustomobject]@{ Problems = @('off'); Notes = @() }; $codes.firewall = Get-SwBlockAuditCode ([pscustomobject]$x)
     $x = $base.Clone(); $x.Programs = @(); $codes.none = Get-SwBlockAuditCode ([pscustomobject]$x)
-    Check (($codes.Values -join ',') -eq '0,3,3,3,4,3') ("коды итога: " + (($codes.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
+    $x = $base.Clone(); $x.Plan = [pscustomobject]@{ LoopProxy = @('127.0.0.1') }; $codes.loopProxy = Get-SwBlockAuditCode ([pscustomobject]$x)
+    $x = $base.Clone(); $x.Plan = [pscustomobject]@{ LoopProxy = @() }; $codes.planOk = Get-SwBlockAuditCode ([pscustomobject]$x)
+    Check (($codes.Values -join ',') -eq '0,3,3,3,4,3,4,0') ("коды итога: " + (($codes.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))
+
+    # Нет доступа — не «нет программы» (проверка без прав администратора не видит чужие профили): правило не лишнее.
+    $present = Join-Path $temp 'present.exe'; [IO.File]::WriteAllText($present, '')
+    Check (Test-SwBlockProgramPresent $present) "имеющаяся программа не найдена"
+    Check (-not (Test-SwBlockProgramPresent (Join-Path $temp 'нет\absent.exe'))) "отсутствующая программа найдена"
+    # Как профиль другого пользователя: запрет на папку и всё внутри (наследуемый), внутри — программа и папка CAD Booster.
+    $deniedDir = Join-Path $temp 'чужой профиль'; $denied = Join-Path $deniedDir 'updater.exe'
+    New-Item -ItemType Directory -Path (Join-Path $deniedDir 'CAD Booster') -Force | Out-Null; [IO.File]::WriteAllText($denied, '')
+    $me = "*" + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    try {
+        & icacls.exe $deniedDir /deny "${me}:(OI)(CI)(RD,RA,REA,X)" | Out-Null
+        $probe = $null; $probeErr = $null
+        try { $probe = Test-Path -LiteralPath $denied -ErrorAction SilentlyContinue -ErrorVariable probeErr } catch { $probeErr = $_ }
+        if ($probe) { $problems.Add("запрет доступа к тестовому файлу не подействовал — случай «нет доступа» не проверен") }
+        else {
+            $ErrorActionPreference = "Stop"
+            $seen = $null; try { $seen = Test-SwBlockProgramPresent $denied } catch { $problems.Add("проверка программы без доступа прервалась: $($_.Exception.Message)") }
+            Check ($seen -eq $true) "программа без доступа считается отсутствующей — её правило удалилось бы как лишнее"
+            $rootsDenied = New-Object System.Collections.Generic.List[object]
+            try { Add-SwBlockRoot $rootsDenied (Join-Path $deniedDir 'CAD Booster') 'тест' } catch { $problems.Add("папка без доступа прервала поиск папок: $($_.Exception.Message)") }
+            Check ($rootsDenied.Count -eq 0) "папка без доступа попала в список"
+        }
+    } finally {
+        & icacls.exe $deniedDir /remove:d $me /T /C | Out-Null
+    }
 
     # --- 6. Шаг [8/9] установщика
     Import-Module (Join-Path $setupDir "EskdDeploy.psm1") -Force -DisableNameChecking
@@ -164,13 +239,19 @@ try {
     if ($step.Count -ne 1) { throw "В установщике нет шага «if (`$SwInternetBlock)»" }
     $stepText = $step[0].Extent.Text
     Check (-not $stepText.Contains('Get-EskdSwBlockExpectedRules')) "шаг 8 считает правила по прежнему списку"
+    $offline = @("ESKD_Install|SwInternetBlock=1", "General|Show Latest News feeds In task pane=0", "General|Check Crash Fixes=0", "SW Event Log|Send Feedback Enabled=0")
     $cases = @(
         @{ label = 'уже закрыто'; codes = @(0); machine = $true; sandbox = $false; calls = 'audit'; ok = $true },
         @{ label = 'не хватало, применено'; codes = @(3, 0, 0); machine = $true; sandbox = $false; calls = 'audit,apply,audit'; ok = $true },
         @{ label = 'не хватало, не вышло'; codes = @(3, 3, 3); machine = $true; sandbox = $false; calls = 'audit,apply,audit'; ok = $false; warn = 'неполное' },
         @{ label = 'брандмауэр не применяет'; codes = @(4); machine = $true; sandbox = $false; calls = 'audit'; ok = $false; warn = 'не действуют' },
-        @{ label = 'тестовый корень'; codes = @(); machine = $false; sandbox = $true; calls = ''; ok = $false; warn = '' }
+        @{ label = 'тестовый корень'; codes = @(); machine = $false; sandbox = $true; calls = ''; ok = $false; warn = '' },
+        # Обычный пользователь: окно администратора получает папки пользователя и его SID (прокси, сервер лицензий).
+        @{ label = 'запрос UAC'; codes = @(3, 0, 0); machine = $false; sandbox = $false; calls = 'audit,roots,audit'; ok = $true; uac = $true },
+        # Снятая галочка запоминается: окно не ставит её снова при автообновлении.
+        @{ label = 'галочка снята'; codes = @(); machine = $true; sandbox = $false; calls = ''; ok = $false; warn = ''; unchecked = $true; regs = @("ESKD_Install|SwInternetBlock=0") }
     )
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     $verdicts = @()
     foreach ($case in $cases) {
         $script:calls = New-Object System.Collections.Generic.List[string]
@@ -178,6 +259,7 @@ try {
         foreach ($c in $case.codes) { $script:codes.Enqueue($c) }
         $script:log = New-Object System.Collections.Generic.List[string]
         $script:regs = New-Object System.Collections.Generic.List[string]
+        $script:uacArgs = ''
         & {
             function Write-Ok($text) { $script:log.Add("[OK] $text") }
             function Write-Info($text) { $script:log.Add("[ИНФО] $text") }
@@ -190,10 +272,16 @@ try {
                 $script:calls.Add($Mode)
                 $c = $script:codes.Dequeue()
                 $v = if ($c -eq 0) { "ИТОГ: SolidWorks отучен от интернета: тест." } else { "ИТОГ: не всё." }
-                [pscustomobject]@{ Code = $c; Lines = @("строка пакета", $v); Verdict = $v }
+                [pscustomobject]@{ Code = $c; Lines = @("строка пакета", "  ВНИМАНИЕ: тестовое примечание пакета", $v); Verdict = $v }
+            }
+            function Start-Process($FilePath, $Verb, [switch]$PassThru, $WindowStyle, $ArgumentList) {
+                $script:uacArgs = @($ArgumentList) -join ' '
+                $proc = [pscustomobject]@{}
+                $proc | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value { param($ms) $true }
+                return $proc
             }
             $testScriptRoot = $setupDir
-            $SwInternetBlock = $true; $machine = $case.machine; $sandbox = $case.sandbox; $failures = 0
+            $SwInternetBlock = -not $case.unchecked; $machine = $case.machine; $sandbox = $case.sandbox; $failures = 0
             $swRoot = "HKCU:\Software\SolidWorks\SOLIDWORKS 2025"; $install = "HKCU:\Software\SolidWorks\ESKD_Install"
             . ([scriptblock]::Create($stepText.Replace('$PSScriptRoot', '$testScriptRoot')))
             if ($failures -ne 0) { $problems.Add("$($case.label): отучение от сети посчитано ошибкой установки") }
@@ -207,8 +295,17 @@ try {
             Check (-not $blockOk.Count) "$($case.label): неудача закончилась [OK]"
             if ($case.warn) { Check (@($warns | Where-Object { $_.Contains($case.warn) }).Count -eq 1) "$($case.label): нет [ВНИМАНИЕ] «$($case.warn)»: $($script:log -join ' | ')" }
         }
-        foreach ($need in "ESKD_Install|SwInternetBlock=1", "General|Show Latest News feeds In task pane=0", "General|Check Crash Fixes=0", "SW Event Log|Send Feedback Enabled=0") {
+        if ($case.codes.Count) {
+            Check (@($script:log | Where-Object { $_.StartsWith('[ИНФО]') -and $_.Contains('ВНИМАНИЕ: тестовое примечание пакета') }).Count -ge 1) "$($case.label): примечание пакета не показано: $($script:log -join ' | ')"
+        }
+        $needRegs = if ($case.regs) { $case.regs } elseif ($case.sandbox -or -not $case.unchecked) { $offline } else { @() }
+        foreach ($need in $needRegs) {
             Check (@($script:regs | Where-Object { $_.EndsWith($need) }).Count -eq 1) "$($case.label): не записано $need"
+        }
+        if ($case.unchecked) { Check (-not @($script:regs | Where-Object { $_ -match 'SwInternetBlock=1|Send Feedback' }).Count) "$($case.label): при снятой галочке записаны настройки отучения" }
+        if ($case.uac) {
+            Check ($script:uacArgs.Contains("-Mode apply -UserSid '$sid'")) "$($case.label): окну администратора не передан SID пользователя: $($script:uacArgs)"
+            Check ($script:uacArgs.Contains("-ExtraRootFile '")) "$($case.label): окну администратора не переданы папки пользователя: $($script:uacArgs)"
         }
         $verdicts += [pscustomobject]@{ case = $case.label; calls = $calls; log = @($script:log) }
     }

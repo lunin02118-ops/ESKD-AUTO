@@ -279,10 +279,13 @@ if ($Mode -eq "Check") {
     $sbCheck = Join-Path (Split-Path -Path $PSScriptRoot -Parent) "SwInternetBlock\Set-SwInternetBlock.ps1"
     if ([string](Get-RegValue $install "SwInternetBlock") -eq "1" -and -not $sandbox -and (Test-Path -LiteralPath $sbCheck)) {
         $sbAudit = Invoke-EskdSwBlock -Script $sbCheck -Mode audit
-        if ($sbAudit.Code -eq 0) { Write-Ok $(if ($sbAudit.Verdict) { $sbAudit.Verdict -replace '^ИТОГ:\s*', '' } else { "SolidWorks отучен от интернета." }) }
-        else {
+        if ($sbAudit.Code -eq 0) {
+            foreach ($l in $sbAudit.Lines | Where-Object { $_ -match 'ВНИМАНИЕ' }) { Write-Info "  $($l.Trim())" }
+            Write-Ok $(if ($sbAudit.Verdict) { $sbAudit.Verdict -replace '^ИТОГ:\s*', '' } else { "SolidWorks отучен от интернета." })
+        } else {
             foreach ($l in $sbAudit.Lines | Select-Object -First 25) { Write-Info "  $l" }
-            Write-Warn "Отучение SolidWorks от сети неполное (код $($sbAudit.Code)): запустите установку с галочкой «Отучение SolidWorks от сети»."
+            if ($sbAudit.Code -eq 4) { Write-Warn "Правила отучения от сети на месте, но не действуют или обходятся (сообщения выше): SolidWorks может выходить в интернет." }
+            else { Write-Warn "Отучение SolidWorks от сети неполное (код $($sbAudit.Code)): запустите установку с галочкой «Отучение SolidWorks от сети»." }
         }
     }
     exit $check.Code
@@ -1146,7 +1149,9 @@ if ($SwInternetBlock) {
             } else {
                 Write-Info "Нужны права администратора - откроется запрос UAC..."
                 # У повышенного процесса нет подключённых сетевых дисков: пакет запускается из локальной копии (аудит 19.09,
-                # У-К4). Администратор не видит надстроек этого пользователя (HKCU) — их папки передаются файлом.
+                # У-К4). Администратор не видит надстроек этого пользователя (HKCU) — их папки передаются файлом. Права
+                # обычно подтверждает администратор своим паролем: HKCU окна — его, поэтому прокси и сервер лицензий пакет
+                # берёт из раздела конструктора по SID (иначе отпечаток адресов не сойдётся с проверкой и UAC будет всегда).
                 $sbTemp = Join-Path $env:TEMP ("ESKD_SwInternetBlock_" + [guid]::NewGuid().ToString("N"))
                 $sbCopy = $sb
                 $sbRoots = ""
@@ -1154,9 +1159,9 @@ if ($SwInternetBlock) {
                     Copy-Item -LiteralPath $sbDir -Destination $sbTemp -Recurse -Force -ErrorAction Stop
                     $sbCopy = Join-Path $sbTemp "Set-SwInternetBlock.ps1"
                     $sbRoots = Join-Path $sbTemp "roots.txt"
-                    [System.IO.File]::WriteAllLines($sbRoots, [string[]]@((Invoke-EskdSwBlock -Script $sb -Mode roots).Lines), (New-Object System.Text.UTF8Encoding($false)))
+                    [System.IO.File]::WriteAllText($sbRoots, (@((Invoke-EskdSwBlock -Script $sb -Mode roots).Lines) -join "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
                 } catch { Write-Warn "Копия SwInternetBlock в %TEMP% не сделана ($($_.Exception.Message)) - запуск из $sbDir." }
-                $sbCmd = "& '{0}' -Mode apply" -f $sbCopy.Replace("'", "''")
+                $sbCmd = "& '{0}' -Mode apply -UserSid '{1}'" -f $sbCopy.Replace("'", "''"), [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
                 if ($sbRoots) { $sbCmd += " -ExtraRootFile '{0}'" -f $sbRoots.Replace("'", "''") }
                 # Ожидание ограничено, чтобы окно установки не висело бесконечно: первое применение создаёт ~330 правил
                 # и на новом ПК идёт 2-3 минуты. По истечении срока процесс администратора продолжает работу сам.
@@ -1172,10 +1177,12 @@ if ($SwInternetBlock) {
             $sbAudit = Invoke-EskdSwBlock -Script $sb -Mode audit
         }
         if ($sbAudit.Code -eq 0) {
+            # Примечания пакета (прокси из сценария автонастройки, прокси на сервере лицензий) видны и при успехе.
+            foreach ($l in $sbAudit.Lines | Where-Object { $_ -match 'ВНИМАНИЕ' }) { Write-Info "  $($l.Trim())" }
             Write-Ok $(if ($sbAudit.Verdict) { $sbAudit.Verdict -replace '^ИТОГ:\s*', '' } else { "SolidWorks отучен от интернета." })
         } else {
             foreach ($l in $sbAudit.Lines | Select-Object -First 25) { Write-Info "  $l" }
-            if ($sbAudit.Code -eq 4) { Write-Warn "Правила брандмауэра на месте, но не действуют (сообщения выше): SolidWorks может выходить в интернет." }
+            if ($sbAudit.Code -eq 4) { Write-Warn "Правила брандмауэра на месте, но не действуют или обходятся (сообщения выше): SolidWorks может выходить в интернет." }
             else { Write-Warn "Отучение от сети неполное (сообщения выше, код $($sbAudit.Code)): SolidWorks может выходить в интернет." }
         }
     }
@@ -1184,6 +1191,8 @@ if ($SwInternetBlock) {
     if ([string](Get-RegValue $install "SwInternetBlock") -eq "1") {
         Write-Info "Правила прежнего отучения от сети остаются. Снять: SwInternetBlock\Set-SwInternetBlock.ps1 -Mode remove (администратор)."
     }
+    # Выбор запоминается: окно при следующем открытии (и автообновление через 5 с) не ставит галочку снова.
+    Set-Reg $install "SwInternetBlock" "0"
 }
 
 # 9. Язык интерфейса SolidWorks и Drew (выбор в окне; решение владельца 25.09.2026). После профиля [3/9]: сброс и .reg
@@ -1277,6 +1286,7 @@ Set-Reg $install "ReleaseCommit" $release.Commit
 Set-Reg $install "SwVersion" $SwVersion
 Set-Reg $install "Author" $Author
 Set-Reg $install "Language" $Language
+Set-Reg $install "Graphics" $Graphics   # окно помнит «Безопасную графику»: автообновление не включает конвейер снова
 Set-Reg $install "InstalledAt" (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Set-Reg $install "LastResult" $(if ($failures) { "FAILED" } else { "OK" })
 Set-Reg $install "LanguageIssue" $languageIssue

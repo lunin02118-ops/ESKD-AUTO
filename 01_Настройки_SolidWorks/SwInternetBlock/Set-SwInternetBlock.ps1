@@ -41,6 +41,13 @@
       roots        — только папки (строки «путь<TAB>причина»): установщик передаёт их окну администратора в
                      -ExtraRootFile — надстройки, зарегистрированные у пользователя (HKCU), администратор иначе не видит.
       hosts-apply, hosts-remove — только hosts (администратор).
+
+    -UserSid — SID учётной записи конструктора. Установщик передаёт его окну администратора: если права подтверждает
+    администратор своим паролем, HKCU и переменные пользователя в этом окне — администратора, а прокси и сервер
+    лицензий нужны конструктора (его раздел реестра открыт в HKEY_USERS, пока он в системе).
+
+    Системный прокси на самом ПК (127.0.0.1, localhost — клиент VPN или прокси) брандмауэром не закрыть: SolidWorks
+    выходит в интернет через него. Аудит сообщает об этом как ОШИБКА и выходит с кодом 4, а не 3: apply тут не поможет.
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File Set-SwInternetBlock.ps1 -Mode audit
 .EXAMPLE
@@ -49,10 +56,12 @@
 param(
     [ValidateSet('audit', 'apply', 'remove', 'list', 'roots', 'hosts-apply', 'hosts-remove')][string]$Mode = 'audit',
     [string]$HostsPath = (Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'),
-    [string]$ExtraRootFile = ''
+    [string]$ExtraRootFile = '',
+    [string]$UserSid = ''
 )
 
 $ErrorActionPreference = 'Stop'
+$script:UserRoot = 'HKCU:'   # раздел реестра пользователя, чьи прокси и сервер лицензий берутся (см. -UserSid)
 $script:Group = 'ESKD-SW-Internet-Block'
 $script:NamePrefix = 'ESKD SW Block'
 $script:LegacyPrefix = 'Block SW Internet'
@@ -136,14 +145,31 @@ function Resolve-SwBlockIpv4([string]$HostName) {
     } catch { return @() }
 }
 
+function Get-SwBlockUserRoot([string]$Sid) {
+    # Раздел реестра пользователя: свой (HKCU) или конструктора по SID (окно администратора, см. -UserSid).
+    if (-not $Sid) { return 'HKCU:' }
+    if ($Sid -notmatch '^S-1-5-21(-\d+)+$') { throw "неверный SID пользователя: $Sid" }
+    $root = "Registry::HKEY_USERS\$Sid"
+    if (Test-Path -LiteralPath $root) { return $root }
+    return 'HKCU:'
+}
+
+function Get-SwBlockUserEnv([string]$Name) {
+    # Переменная окружения пользователя — из его раздела реестра: у окна администратора свои переменные.
+    $p = Get-ItemProperty -LiteralPath "$script:UserRoot\Environment" -ErrorAction SilentlyContinue
+    if ($p -and $p.$Name) { return "$($p.$Name)" }
+    return $null
+}
+
 function Get-SwBlockLicenseServers {
     # Серверы лицензий SolidWorks: «port@host;port@host» из SW_D_LICENSE_FILE (переменная и HKLM/HKCU FLEXlm).
+    # Переменная процесса — только для своей учётной записи: в окне администратора она администратора.
     $values = @(
         [Environment]::GetEnvironmentVariable('SW_D_LICENSE_FILE', 'Machine'),
-        [Environment]::GetEnvironmentVariable('SW_D_LICENSE_FILE', 'User'),
-        [Environment]::GetEnvironmentVariable('SW_D_LICENSE_FILE', 'Process')
+        (Get-SwBlockUserEnv 'SW_D_LICENSE_FILE')
     )
-    foreach ($key in 'HKLM:\SOFTWARE\FLEXlm License Manager', 'HKCU:\Software\FLEXlm License Manager') {
+    if ($script:UserRoot -eq 'HKCU:') { $values += [Environment]::GetEnvironmentVariable('SW_D_LICENSE_FILE', 'Process') }
+    foreach ($key in 'HKLM:\SOFTWARE\FLEXlm License Manager', "$script:UserRoot\Software\FLEXlm License Manager") {
         $p = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue
         if ($p) { $values += $p.SW_D_LICENSE_FILE }
     }
@@ -161,7 +187,7 @@ function Get-SwBlockProxyHosts {
     # WPAD) адреса не называет — о ней отдельное предупреждение.
     $result = [pscustomobject]@{ Hosts = @(); AutoConfig = @() }
     $servers = @()
-    foreach ($key in 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings',
+    foreach ($key in "$script:UserRoot\Software\Microsoft\Windows\CurrentVersion\Internet Settings",
                      'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\Internet Settings') {
         $p = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue
         if (-not $p) { continue }
@@ -173,8 +199,7 @@ function Get-SwBlockProxyHosts {
         if ($winhttp -match '(?im)^\s*Proxy Server\(s\)\s*:\s*(\S+)' -or $winhttp -match '(?im)^\s*Прокси-сервер\S*\s*:\s*(\S+)') { $servers += $Matches[1] }
     } catch { }
     foreach ($name in 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY') {
-        foreach ($scope in 'Machine', 'User') {
-            $v = [Environment]::GetEnvironmentVariable($name, $scope)
+        foreach ($v in @([Environment]::GetEnvironmentVariable($name, 'Machine'), (Get-SwBlockUserEnv $name))) {
             if ($v) { $servers += $v }
         }
     }
@@ -197,39 +222,58 @@ function Get-SwBlockFingerprint([string]$Text) {
     return -join ($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Text.ToLowerInvariant())) | Select-Object -First 4 | ForEach-Object { $_.ToString('x2') })
 }
 
+function Get-SwBlockLocalIpv4 {
+    try { return @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop | ForEach-Object { $_.IPAddress }) } catch { return @() }
+}
+
 function Get-SwBlockAddressPlan {
-    # Итоговые адреса для правил и пояснения к ним.
+    # Итоговые адреса для правил и пояснения к ним. Параметры — для автотеста; по умолчанию — настройки этого ПК.
+    param([string[]]$LicenseServers = @(Get-SwBlockLicenseServers), $Proxy = (Get-SwBlockProxyHosts), [string[]]$LocalAddresses = @(Get-SwBlockLocalIpv4))
     $notes = New-Object System.Collections.Generic.List[string]
     $allow = @()
-    foreach ($h in Get-SwBlockLicenseServers) {
+    $licenseIps = @()
+    foreach ($h in $LicenseServers) {
         foreach ($ip in Resolve-SwBlockIpv4 $h) {
+            $licenseIps += $ip
             if (Test-PublicIpv4 $ip) { $allow += $ip; $notes.Add("сервер лицензий $h ($ip) — публичный адрес, оставлен открытым") }
         }
     }
-    try {
-        foreach ($a in Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop) {
-            if ((Test-PublicIpv4 $a.IPAddress)) { $allow += $a.IPAddress; $notes.Add("адрес этого ПК $($a.IPAddress) — публичный, оставлен открытым") }
-        }
-    } catch { }
+    foreach ($ip in @($LocalAddresses | Where-Object { $_ })) {
+        if (Test-PublicIpv4 $ip) { $allow += $ip; $notes.Add("адрес этого ПК $ip — публичный, оставлен открытым") }
+    }
     $block = @()
-    $proxy = Get-SwBlockProxyHosts
-    foreach ($h in $proxy.Hosts) {
-        foreach ($ip in Resolve-SwBlockIpv4 $h) {
-            if (-not (Test-PublicIpv4 $ip) -and -not $ip.StartsWith('127.')) { $block += $ip; $notes.Add("прокси $h ($ip) в локальной сети — закрыт для программ SolidWorks") }
+    $loop = @()
+    foreach ($h in $Proxy.Hosts) {
+        $ips = @(Resolve-SwBlockIpv4 $h)
+        # Прокси на самом ПК (клиент VPN или прокси): петлю брандмауэр не закрывает, а 127.0.0.1 закрывать нельзя —
+        # там сервер лицензий 25734@localhost. Только сообщение и код 4 (apply этого не исправит).
+        if ($h -match '^(localhost|::1|0:0:0:0:0:0:0:1)$' -or @($ips | Where-Object { $_.StartsWith('127.') }).Count) { $loop += $h; continue }
+        foreach ($ip in $ips) {
+            if (Test-PublicIpv4 $ip) { continue }
+            if ($licenseIps -contains $ip) {
+                # Тот же сервер держит лицензии SolidWorks: закрыть его — оставить SolidWorks без лицензии.
+                $notes.Add("ВНИМАНИЕ: прокси $h ($ip) — это и сервер лицензий SolidWorks: оставлен открытым; закройте выход SolidWorks в интернет на самом прокси")
+                continue
+            }
+            $block += $ip; $notes.Add("прокси $h ($ip) в локальной сети — закрыт для программ SolidWorks")
         }
     }
-    foreach ($u in $proxy.AutoConfig) {
+    foreach ($u in $Proxy.AutoConfig) {
         $notes.Add("ВНИМАНИЕ: прокси задан сценарием автонастройки ($u) — его адрес неизвестен; если прокси в локальной сети, через него SolidWorks может выйти в интернет")
     }
-    return New-SwBlockPlan -Allow $allow -Block $block -Notes $notes.ToArray()
+    if ($UserSid -and $script:UserRoot -eq 'HKCU:') {
+        $notes.Add("ВНИМАНИЕ: настройки пользователя $UserSid не найдены (он не в системе?) — прокси и сервер лицензий взяты этой учётной записи")
+    }
+    return New-SwBlockPlan -Allow $allow -Block $block -Notes $notes.ToArray() -LoopProxy $loop
 }
 
-function New-SwBlockPlan([string[]]$Allow = @(), [string[]]$Block = @(), [string[]]$Notes = @()) {
+function New-SwBlockPlan([string[]]$Allow = @(), [string[]]$Block = @(), [string[]]$Notes = @(), [string[]]$LoopProxy = @()) {
     $Allow = @($Allow | Where-Object { $_ } | Sort-Object -Unique)
     $Block = @($Block | Where-Object { $_ } | Sort-Object -Unique)
     $v4 = Get-SwBlockIpv4Ranges -Allow $Allow -Block $Block
     $addresses = @($v4) + @($script:InternetIpv6)
-    return [pscustomobject]@{ Addresses = $addresses; Fingerprint = (Get-SwBlockFingerprint ($addresses -join ',')); Allow = $Allow; Block = $Block; Notes = @($Notes) }
+    return [pscustomobject]@{ Addresses = $addresses; Fingerprint = (Get-SwBlockFingerprint ($addresses -join ',')); Allow = $Allow; Block = $Block
+                              Notes = @($Notes); LoopProxy = @($LoopProxy | Where-Object { $_ } | Sort-Object -Unique) }
 }
 
 # ------------------------------------------------------------------ программы
@@ -259,7 +303,8 @@ function Add-SwBlockRoot($List, [string]$Path, [string]$Reason) {
     $p = [Environment]::ExpandEnvironmentVariables("$Path".Trim().Trim('"'))
     if (-not $p) { return }
     try { $p = [System.IO.Path]::GetFullPath($p).TrimEnd('\') } catch { return }
-    if (-not (Test-Path -LiteralPath $p -PathType Container)) { return }
+    # Папка в чужом профиле без прав администратора: Test-Path с -PathType при отказе в доступе прерывает сценарий.
+    try { if (-not (Test-Path -LiteralPath $p -PathType Container)) { return } } catch { return }
     if (-not (Test-SwBlockSafeRoot $p)) { return }
     $List.Add([pscustomobject]@{ Path = $p; Reason = $Reason })
 }
@@ -397,6 +442,15 @@ function Get-SwBlockPrograms {
             [pscustomobject]@{ Path = $f.FullName; Reason = $r.Reason }
         }
     }
+}
+
+function Test-SwBlockProgramPresent([string]$Path) {
+    # Есть ли программа на диске. Нет доступа (программа в профиле другого пользователя, проверка без прав
+    # администратора) — не значит «нет программы»: её правило, созданное администратором, не лишнее.
+    if (-not $Path) { return $false }
+    $err = $null
+    if (Test-Path -LiteralPath $Path -ErrorAction SilentlyContinue -ErrorVariable err) { return $true }
+    return [bool](@($err | Where-Object { $_.Exception -is [System.UnauthorizedAccessException] }).Count)
 }
 
 function Get-SwBlockRuleName([string]$Program, [string]$Direction) {
@@ -573,9 +627,9 @@ function Get-SwBlockAudit {
     $desiredNames = @{}
     foreach ($d in $desired) { $desiredNames[$d.Name] = $true }
     # Правила группы для программ, которых нет на диске (удалённая версия SolidWorks): лишние.
-    $stale = @($existing.Rules | Where-Object { -not $desiredNames.ContainsKey($_.Name) -and -not ($_.Program -and (Test-Path -LiteralPath $_.Program)) })
+    $stale = @($existing.Rules | Where-Object { -not $desiredNames.ContainsKey($_.Name) -and -not (Test-SwBlockProgramPresent $_.Program) })
     # Правила группы для программ, найденных под другой учётной записью: остаются, но адреса должны быть актуальны.
-    $foreign = @($existing.Rules | Where-Object { -not $desiredNames.ContainsKey($_.Name) -and $_.Program -and (Test-Path -LiteralPath $_.Program) })
+    $foreign = @($existing.Rules | Where-Object { -not $desiredNames.ContainsKey($_.Name) -and (Test-SwBlockProgramPresent $_.Program) })
     $foreignWrong = @($foreign | Where-Object { -not (Test-SwBlockRuleOk $_ ([pscustomobject]@{ Direction = $_.Direction; Program = $_.Program }) $plan.Fingerprint) })
     $hostsMissing = @(Test-SwBlockHostsComplete (Read-SwBlockHosts $HostsPath).Text $script:SwDomains)
     $fw = Get-SwBlockFirewallState
@@ -595,13 +649,17 @@ function Write-SwBlockAudit($A) {
     if ($A.HostsMissing.Count) { Write-Output ('hosts: не заглушено {0}: {1}' -f $A.HostsMissing.Count, ($A.HostsMissing -join ', ')) }
     else { Write-Output ('hosts: заглушено доменов SolidWorks {0}' -f $script:SwDomains.Count) }
     foreach ($p in $A.Firewall.Problems) { Write-Output "ОШИБКА: $p" }
+    foreach ($h in @($A.Plan.LoopProxy | Where-Object { $_ })) {
+        Write-Output "ОШИБКА: системный прокси на этом ПК ($h — клиент VPN или прокси): SolidWorks выходит в интернет через него, брандмауэр это не закрывает. Отключите системный прокси или закройте SolidWorks в самом клиенте."
+    }
     foreach ($n in $A.Firewall.Notes) { Write-Output "  $n" }
 }
 
 function Get-SwBlockAuditCode($A) {
     if (-not $A.Programs.Count) { return 3 }
     if ($A.Missing.Count -or $A.Stale.Count -or $A.ForeignWrong.Count -or $A.Legacy.Count -or $A.HostsMissing.Count) { return 3 }
-    if ($A.Firewall.Problems.Count) { return 4 }
+    # 4, а не 3: правила на месте, apply не поможет (установщик на 3 снова просил бы права администратора).
+    if ($A.Firewall.Problems.Count -or @($A.Plan.LoopProxy | Where-Object { $_ }).Count) { return 4 }
     return 0
 }
 
@@ -609,7 +667,7 @@ function Write-SwBlockVerdict([int]$Code, $A) {
     switch ($Code) {
         0 { Write-Output ('ИТОГ: SolidWorks отучен от интернета: {0} программ, {1} правил, hosts — {2} доменов.' -f $A.Programs.Count, $A.Desired.Count, $script:SwDomains.Count) }
         3 { if ($A.Programs.Count) { Write-Output 'ИТОГ: отучение неполное — нужен запуск с -Mode apply (администратор).' } else { Write-Output 'ИТОГ: программы SolidWorks на этом ПК не найдены — закрывать нечего.' } }
-        4 { Write-Output 'ИТОГ: правила на месте, но брандмауэр их не применяет — см. ОШИБКА выше.' }
+        4 { Write-Output 'ИТОГ: правила на месте, но SolidWorks может выйти в интернет в обход них — см. ОШИБКА выше.' }
     }
 }
 
@@ -675,6 +733,7 @@ if ($Mode -notin 'audit', 'list', 'roots' -and -not (Test-SwBlockAdmin)) {
     exit 1
 }
 try {
+    $script:UserRoot = Get-SwBlockUserRoot $UserSid
     switch ($Mode) {
         'list' {
             foreach ($r in Get-SwBlockRoots) { Write-Output "папка: $($r.Path)  [$($r.Reason)]" }

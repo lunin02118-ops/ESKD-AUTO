@@ -464,7 +464,7 @@ class StaticRepository(StaticTestCase):
         self.assertEqual(["-Language", "English"], cmd[cmd.index("-Language"):cmd.index("-Language") + 2])
         self.assertNotIn("-DrewRussian", cmd, "прежний ключ окно не передаёт")
         window = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
-        self.assertIn('"LastResult", "Language")', window, "окно читает прежний выбор языка из ESKD_Install")
+        self.assertRegex(window, r'read_registry\("ESKD_Install", \([^)]*"Language"', "окно читает прежний выбор языка из ESKD_Install")
         guide = (ROOT / "06_Документация" / "РУКОВОДСТВО_ПОЛЬЗОВАТЕЛЯ_И_АДМИНИСТРАТОРА.md").read_text(encoding="utf-8")
         self.assertIn("`-Language`", guide, "ключ -Language описан в руководстве")
 
@@ -661,10 +661,17 @@ class StaticRepository(StaticTestCase):
         self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
         result = json.loads(lines[-1])
         self.assertEqual([], result["problems"])
-        self.assertEqual(5, result["facts"]["cases"], "проверены все ветки шага [8/9]")
+        self.assertEqual(7, result["facts"]["cases"], "проверены все ветки шага [8/9]")
         self.assertTrue(result["tempRemoved"], "временная папка не удалена")
         configurator = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
-        self.assertIn("self.var_block = tk.BooleanVar(value=True)", configurator, "галочка отучения от сети включена по умолчанию")
+        # Галочка включена по умолчанию, снятая — запоминается; «Безопасная графика» — прежний выбор этого ПК
+        # (проверка перед слиянием 26.09.2026: автообновление через 5 с ставило правила снова и включало конвейер графики).
+        self.assertIn('self.var_block = tk.BooleanVar(value=installed["SwInternetBlock"] != "0")', configurator,
+                      "галочка отучения от сети: включена по умолчанию, снятая запоминается")
+        self.assertIn('self.var_safe_gfx = tk.BooleanVar(value=(installed["Graphics"] or "").lower() == "safe")', configurator,
+                      "окно не помнит «Безопасную графику»")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn('Set-Reg $install "Graphics" $Graphics', setup, "установщик не запоминает выбор графики")
 
     def test_T0_drawing_scripts_refuse_without_product_folder(self):
         """T0 (ревью 24.09.2026): скрипты eskd-drawings без ESKD_DRW_ROOT отказываются работать (SKILL.md, «Порядок»),
