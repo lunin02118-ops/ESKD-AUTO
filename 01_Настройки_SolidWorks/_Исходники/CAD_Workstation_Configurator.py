@@ -6,7 +6,8 @@
 и есть источник: путь нигде не зашит и не вводится. Окно берёт фамилию и организацию, а всю работу делает
 установщик Setup_Workstation_SolidWorks.ps1 из той же папки: пути SolidWorks на папку инструментария, макросы
 SWPlus и надстройка ЕСКД — в профиль пользователя, кнопки, шрифты, Drew (лицензия встроена - активация
-не нужна). Галочки: Drew, отучение SolidWorks от сети (единственная опция, запрашивающая права администратора);
+не нужна). Галочки: Drew, отучение SolidWorks от сети (включена по умолчанию; права администратора — только
+когда правил не хватает);
 выбор языка интерфейса SolidWorks и Drew (русский или английский).
 
 Повторный запуск — обновление: если на ПК уже есть установка, оно начинается само через несколько секунд.
@@ -267,7 +268,8 @@ class ConfiguratorApp:
 
         info = ttk.Frame(top)
         info.pack(fill=tk.X)
-        installed = read_registry("ESKD_Install", ("ReleaseVersion", "InstalledAt", "SourceRoot", "LastResult", "Language"))
+        installed = read_registry("ESKD_Install", ("ReleaseVersion", "InstalledAt", "SourceRoot", "LastResult", "Language",
+                                                   "SwInternetBlock", "Graphics"))
         settings = read_registry("ESKD_Settings", ("Author", "Organization"))
         self.installed = bool(installed["InstalledAt"])
         rows = [
@@ -299,13 +301,18 @@ class ConfiguratorApp:
         comp = ttk.LabelFrame(root, text=" Компоненты ", padding="12 6 12 8")
         comp.pack(fill=tk.X, padx=16, pady=(6, 6))
         self.var_drew = tk.BooleanVar(value=True)
-        self.var_block = tk.BooleanVar(value=False)
+        # Отучение от сети включено по умолчанию (решение владельца 26.09.2026: телеметрия и данные SolidWorks не должны
+        # уходить в интернет). Повторная установка лишь проверяет правила: права администратора — только если чего-то нет.
+        # Снятая галочка запоминается (ESKD_Install\SwInternetBlock = 0): автообновление не ставит правила снова.
+        self.var_block = tk.BooleanVar(value=installed["SwInternetBlock"] != "0")
         # Язык: прежний выбор этого ПК, иначе русский (решение владельца 25.09.2026) — автообновление его не меняет.
         self.var_lang = tk.StringVar(value="English" if (installed["Language"] or "").lower() == "english" else "Russian")
-        self.var_safe_gfx = tk.BooleanVar(value=False)
+        # Безопасная графика — тоже прежний выбор этого ПК: автообновление не включает аппаратный конвейер снова.
+        self.var_safe_gfx = tk.BooleanVar(value=(installed["Graphics"] or "").lower() == "safe")
         ttk.Checkbutton(comp, text="Drew — Gov-издание (лицензия встроена, без активации и кейгена)",
                         variable=self.var_drew).pack(anchor=tk.W)
-        ttk.Checkbutton(comp, text="Отучение SolidWorks от сети (файрвол + hosts; запросит права администратора)",
+        ttk.Checkbutton(comp, text="Отучение SolidWorks от сети — SolidWorks, Drew, SWTools без интернета "
+                                   "(брандмауэр + hosts; права администратора — если правил не хватает)",
                         variable=self.var_block).pack(anchor=tk.W)
         lang = ttk.Frame(comp)
         lang.pack(anchor=tk.W, pady=(4, 0))

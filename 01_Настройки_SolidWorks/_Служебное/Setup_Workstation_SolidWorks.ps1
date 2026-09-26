@@ -274,6 +274,20 @@ if ($Mode -eq "Check") {
     if ($check.Problems.Count -gt 30) { Write-Info "… и ещё $($check.Problems.Count - 30)." }
     if ($check.Code -eq 0) { Write-Ok "Актуально: выпуск $($release.Version), локальная копия совпадает с выпуском." }
     else { Write-Warn "$($check.State) (код $($check.Code))." }
+    # Отучение от сети (если его ставили): после обновления SolidWorks появляются новые программы — их видно здесь.
+    # Код выхода не меняется: он про выпуск инструментария; следующая установка с галочкой догоняет правила сама.
+    $sbCheck = Join-Path (Split-Path -Path $PSScriptRoot -Parent) "SwInternetBlock\Set-SwInternetBlock.ps1"
+    if ([string](Get-RegValue $install "SwInternetBlock") -eq "1" -and -not $sandbox -and (Test-Path -LiteralPath $sbCheck)) {
+        $sbAudit = Invoke-EskdSwBlock -Script $sbCheck -Mode audit
+        if ($sbAudit.Code -eq 0) {
+            foreach ($l in $sbAudit.Lines | Where-Object { $_ -match 'ВНИМАНИЕ' }) { Write-Info "  $($l.Trim())" }
+            Write-Ok $(if ($sbAudit.Verdict) { $sbAudit.Verdict -replace '^ИТОГ:\s*', '' } else { "SolidWorks отучен от интернета." })
+        } else {
+            foreach ($l in $sbAudit.Lines | Select-Object -First 25) { Write-Info "  $l" }
+            if ($sbAudit.Code -eq 4) { Write-Warn "Правила отучения от сети на месте, но не действуют или обходятся (сообщения выше): SolidWorks может выходить в интернет." }
+            else { Write-Warn "Отучение SolidWorks от сети неполное (код $($sbAudit.Code)): запустите установку с галочкой «Отучение SolidWorks от сети»." }
+        }
+    }
     exit $check.Code
 }
 
@@ -1109,62 +1123,76 @@ if ($sandbox -or $SkipSwTools) {
     }
 }
 
-# 8. Отучение SolidWorks от сети (опция, галочка в окне)
+# 8. Отучение SolidWorks от сети (галочка в окне). Решение владельца 26.09.2026: SolidWorks не отправляет в интернет ничего —
+# закрыт и сам SLDWORKS.exe со всеми надстройками (Drew «Поделиться настройками» не работает — принято), SWTools, все
+# программы SolidWorks этого ПК. Пакет находит их сам (любая версия, диск, язык установки); компьютер и локальная сеть
+# (сервер лицензий, общие папки) остаются доступны. Права администратора запрашиваются, только если чего-то не хватает.
 Write-Step "[8/9] Отучение SolidWorks от сети..."
 if ($SwInternetBlock) {
     $sbDir = Join-Path (Split-Path -Path $PSScriptRoot -Parent) "SwInternetBlock"  # пакет лежит в 01_Настройки_SolidWorks, сценарий — в _Служебное
     $sb = Join-Path $sbDir "Set-SwInternetBlock.ps1"
-    # Сколько правил должно быть: записи манифеста, чьи программы есть на этом ПК, без SLDWORKS.exe (пакет не
-    # блокирует его ни наружу, ни внутрь). Прежний порог 300 был недостижим (аудит 19.09, У-В2).
-    $sbExpected = 0
-    try {
-        $sbExpected = @(Get-EskdSwBlockExpectedRules -ManifestPath (Join-Path $sbDir "SWInternetBlock.manifest.json")).Count
-    } catch { Write-Warn "Манифест SwInternetBlock не прочитан: $($_.Exception.Message)" }
-    if (-not (Test-Path -LiteralPath $sb)) {
+    # Сетевые функции самого SolidWorks — в настройках пользователя, без прав администратора (после профиля [3/9]).
+    foreach ($v in Get-EskdSwOfflineSettings) { Set-Reg "$swRoot\$($v.Key)" $v.Name $v.Value "DWord" }
+    Write-Ok "SolidWorks: новости, проверка исправлений сбоев, онлайн-учебник, отправка отзывов и 3DEXPERIENCE выключены."
+    Set-Reg $install "SwInternetBlock" "1"
+    if ($sandbox) {
+        Write-Info "Тестовый корень реестра: брандмауэр и hosts не меняются."
+    } elseif (-not (Test-Path -LiteralPath $sb)) {
         Write-Warn "Пакет SwInternetBlock не найден: $sb"
-    } elseif ($machine) {
-        # Не $mode: переменные PowerShell без учёта регистра, а у параметра $Mode ValidateSet Install/Check/Uninstall.
-        # Код выхода пакета читается: «FATAL» (hosts занят, правило не создано) не должен кончаться [OK] (ревью 24.09.2026).
-        # Сбой — примечание [ВНИМАНИЕ], установка ошибкой не считается (решение владельца 25.09.2026).
-        $sbFailed = @()
-        foreach ($sbMode in "apply", "hosts-apply") {
-            $out = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $sb -Mode $sbMode 2>&1
-            foreach ($l in $out) { if ("$l".Trim()) { Write-Info "  $l" } }
-            if ($LASTEXITCODE -ne 0) { $sbFailed += "$sbMode (код $LASTEXITCODE)" }
-        }
-        $cnt = @(Get-NetFirewallRule -DisplayName 'Block SW Internet*' -ErrorAction SilentlyContinue).Count
-        if ($sbFailed) { Write-Warn "Отучение от сети завершилось с ошибкой: $($sbFailed -join ', '); правил Block SW Internet: $cnt из $sbExpected. Сообщения пакета выше." }
-        elseif ($cnt -lt $sbExpected) { Write-Warn "Правил Block SW Internet: $cnt из $sbExpected - отучение от сети завершилось не полностью." }
-        else { Write-Ok "Правил Block SW Internet: $cnt из $sbExpected; домены SW заглушены в hosts. Drew и его облако настроек не затронуты." }
     } else {
-        Write-Info "Нужны права администратора - откроется запрос UAC (два раза не потребуется)..."
-        # У повышенного процесса нет подключённых сетевых дисков: пакет запускается из локальной копии (аудит 19.09, У-К4).
-        $sbTemp = Join-Path $env:TEMP ("ESKD_SwInternetBlock_" + [guid]::NewGuid().ToString("N"))
-        $sbRun = $sb
-        try {
-            Copy-Item -LiteralPath $sbDir -Destination $sbTemp -Recurse -Force -ErrorAction Stop
-            $sbRun = Join-Path $sbTemp "Set-SwInternetBlock.ps1"
-        } catch { Write-Warn "Копия SwInternetBlock в %TEMP% не сделана ($($_.Exception.Message)) - запуск из $sbDir." }
-        $sbCmd = "& '{0}' -Mode apply; & '{0}' -Mode hosts-apply" -f $sbRun.Replace("'", "''")
-        # Ожидание ограничено, чтобы окно установки не висело бесконечно. Первое применение создаёт ~300 правил
-        # брандмауэра и на новом ПК идёт 2-3 минуты, поэтому запас 10 минут. Процесс администратора из обычного
-        # процесса не остановить - по истечении срока он продолжает работу сам, установка идёт дальше.
-        $uacState = "declined"
-        try {
-            $uacProc = Start-Process powershell.exe -Verb RunAs -PassThru -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command',$sbCmd
-            $uacState = "done"
-            if ($uacProc -and -not $uacProc.WaitForExit(600000)) { $uacState = "timeout" }
-        } catch { Write-Warn "UAC отклонён - отучение от сети пропущено." }
-        if ($uacState -ne "timeout" -and $sbRun -ne $sb) { Remove-Item -LiteralPath $sbTemp -Recurse -Force -ErrorAction SilentlyContinue }
-        $cnt = @(Get-NetFirewallRule -DisplayName 'Block SW Internet*' -ErrorAction SilentlyContinue).Count
-        if ($uacState -eq "timeout") {
-            Write-Warn "Отучение от сети не завершилось за 10 минут и продолжается в отдельном окне; правил пока: $cnt. Проверьте позже."
-        } elseif ($sbExpected -gt 0 -and $cnt -ge $sbExpected) { Write-Ok "Правил Block SW Internet: $cnt из $sbExpected (применено)." }
-        elseif ($uacState -eq "done") { Write-Warn "Правил Block SW Internet: $cnt из $sbExpected - отучение от сети завершилось не полностью." }
-        else { Write-Warn "Правил Block SW Internet: $cnt - похоже, UAC не подтверждён." }
+        # Сбой — примечание [ВНИМАНИЕ], установка ошибкой не считается (решение владельца 25.09.2026).
+        $sbAudit = Invoke-EskdSwBlock -Script $sb -Mode audit
+        if ($sbAudit.Code -ne 0 -and $sbAudit.Code -ne 4) {
+            if ($machine) {
+                $sbRun = Invoke-EskdSwBlock -Script $sb -Mode apply
+                foreach ($l in $sbRun.Lines | Where-Object { $_ -match '^(apply|hosts|ОШИБКА)' }) { Write-Info "  $l" }
+            } else {
+                Write-Info "Нужны права администратора - откроется запрос UAC..."
+                # У повышенного процесса нет подключённых сетевых дисков: пакет запускается из локальной копии (аудит 19.09,
+                # У-К4). Администратор не видит надстроек этого пользователя (HKCU) — их папки передаются файлом. Права
+                # обычно подтверждает администратор своим паролем: HKCU окна — его, поэтому прокси и сервер лицензий пакет
+                # берёт из раздела конструктора по SID (иначе отпечаток адресов не сойдётся с проверкой и UAC будет всегда).
+                $sbTemp = Join-Path $env:TEMP ("ESKD_SwInternetBlock_" + [guid]::NewGuid().ToString("N"))
+                $sbCopy = $sb
+                $sbRoots = ""
+                try {
+                    Copy-Item -LiteralPath $sbDir -Destination $sbTemp -Recurse -Force -ErrorAction Stop
+                    $sbCopy = Join-Path $sbTemp "Set-SwInternetBlock.ps1"
+                    $sbRoots = Join-Path $sbTemp "roots.txt"
+                    [System.IO.File]::WriteAllText($sbRoots, (@((Invoke-EskdSwBlock -Script $sb -Mode roots).Lines) -join "`r`n"), (New-Object System.Text.UTF8Encoding($false)))
+                } catch { Write-Warn "Копия SwInternetBlock в %TEMP% не сделана ($($_.Exception.Message)) - запуск из $sbDir." }
+                $sbCmd = "& '{0}' -Mode apply -UserSid '{1}'" -f $sbCopy.Replace("'", "''"), [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+                if ($sbRoots) { $sbCmd += " -ExtraRootFile '{0}'" -f $sbRoots.Replace("'", "''") }
+                # Ожидание ограничено, чтобы окно установки не висело бесконечно: первое применение создаёт ~330 правил
+                # и на новом ПК идёт 2-3 минуты. По истечении срока процесс администратора продолжает работу сам.
+                $uacState = "declined"
+                try {
+                    $uacProc = Start-Process powershell.exe -Verb RunAs -PassThru -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-Command',$sbCmd
+                    $uacState = "done"
+                    if ($uacProc -and -not $uacProc.WaitForExit(600000)) { $uacState = "timeout" }
+                } catch { Write-Warn "UAC отклонён - отучение от сети пропущено." }
+                if ($uacState -ne "timeout" -and $sbCopy -ne $sb) { Remove-Item -LiteralPath $sbTemp -Recurse -Force -ErrorAction SilentlyContinue }
+                if ($uacState -eq "timeout") { Write-Warn "Отучение от сети не завершилось за 10 минут и продолжается в отдельном окне. Проверьте позже: установщик с -Mode Check." }
+            }
+            $sbAudit = Invoke-EskdSwBlock -Script $sb -Mode audit
+        }
+        if ($sbAudit.Code -eq 0) {
+            # Примечания пакета (прокси из сценария автонастройки, прокси на сервере лицензий) видны и при успехе.
+            foreach ($l in $sbAudit.Lines | Where-Object { $_ -match 'ВНИМАНИЕ' }) { Write-Info "  $($l.Trim())" }
+            Write-Ok $(if ($sbAudit.Verdict) { $sbAudit.Verdict -replace '^ИТОГ:\s*', '' } else { "SolidWorks отучен от интернета." })
+        } else {
+            foreach ($l in $sbAudit.Lines | Select-Object -First 25) { Write-Info "  $l" }
+            if ($sbAudit.Code -eq 4) { Write-Warn "Правила брандмауэра на месте, но не действуют или обходятся (сообщения выше): SolidWorks может выходить в интернет." }
+            else { Write-Warn "Отучение от сети неполное (сообщения выше, код $($sbAudit.Code)): SolidWorks может выходить в интернет." }
+        }
     }
 } else {
     Write-Info "Пропущено (галочка снята)."
+    if ([string](Get-RegValue $install "SwInternetBlock") -eq "1") {
+        Write-Info "Правила прежнего отучения от сети остаются. Снять: SwInternetBlock\Set-SwInternetBlock.ps1 -Mode remove (администратор)."
+    }
+    # Выбор запоминается: окно при следующем открытии (и автообновление через 5 с) не ставит галочку снова.
+    Set-Reg $install "SwInternetBlock" "0"
 }
 
 # 9. Язык интерфейса SolidWorks и Drew (выбор в окне; решение владельца 25.09.2026). После профиля [3/9]: сброс и .reg
@@ -1258,6 +1286,7 @@ Set-Reg $install "ReleaseCommit" $release.Commit
 Set-Reg $install "SwVersion" $SwVersion
 Set-Reg $install "Author" $Author
 Set-Reg $install "Language" $Language
+Set-Reg $install "Graphics" $Graphics   # окно помнит «Безопасную графику»: автообновление не включает конвейер снова
 Set-Reg $install "InstalledAt" (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Set-Reg $install "LastResult" $(if ($failures) { "FAILED" } else { "OK" })
 Set-Reg $install "LanguageIssue" $languageIssue

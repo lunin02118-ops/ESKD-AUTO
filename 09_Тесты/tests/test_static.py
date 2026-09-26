@@ -416,8 +416,9 @@ class StaticRepository(StaticTestCase):
         self.assertIn("[switch]$SwInternetBlock", setup, "опция отучения от сети объявлена")
         self.assertIn("[switch]$DrewRussian", setup, "опция русского интерфейса объявлена")
         block = ROOT / "01_Настройки_SolidWorks" / "SwInternetBlock"
-        self.assertTrue((block / "Set-SwInternetBlock.ps1").exists() and (block / "SWInternetBlock.manifest.json").exists(),
-                        "нет пакета SwInternetBlock рядом с движком")
+        self.assertTrue((block / "Set-SwInternetBlock.ps1").exists(), "нет пакета SwInternetBlock рядом с движком")
+        self.assertFalse((block / "SWInternetBlock.manifest.json").exists(),
+                         "список программ с одной машины не нужен: пакет находит программы сам (решение владельца 26.09.2026)")
         configurator = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
         for needed in ("Gov-издание (лицензия встроена", "Отучение SolidWorks от сети", "Язык интерфейса SolidWorks и Drew",
                        '"-SkipDrew"', '"-SwInternetBlock"', '"-Language"'):
@@ -463,7 +464,7 @@ class StaticRepository(StaticTestCase):
         self.assertEqual(["-Language", "English"], cmd[cmd.index("-Language"):cmd.index("-Language") + 2])
         self.assertNotIn("-DrewRussian", cmd, "прежний ключ окно не передаёт")
         window = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
-        self.assertIn('"LastResult", "Language")', window, "окно читает прежний выбор языка из ESKD_Install")
+        self.assertRegex(window, r'read_registry\("ESKD_Install", \([^)]*"Language"', "окно читает прежний выбор языка из ESKD_Install")
         guide = (ROOT / "06_Документация" / "РУКОВОДСТВО_ПОЛЬЗОВАТЕЛЯ_И_АДМИНИСТРАТОРА.md").read_text(encoding="utf-8")
         self.assertIn("`-Language`", guide, "ключ -Language описан в руководстве")
 
@@ -646,12 +647,13 @@ class StaticRepository(StaticTestCase):
         self.assertEqual([], result["problems"])
         self.assertTrue(result["sandboxRemoved"], "временный раздел реестра не удалён")
 
-    def test_T0_sw_block_expected_matches_package(self):
-        """T0 (ревью 24.09.2026): шаг 8 установщика «Отучение SolidWorks от сети». Установщик ждёт столько правил, сколько
-        создаёт пакет (SLDWORKS.exe пропускается в обе стороны, как в Test-SldWorksConflict), а сбой пакета или нехватка
-        правил в ветке «уже администратор» дают [ВНИМАНИЕ], не [OK], и ошибкой установки не считаются (решение владельца
-        25.09.2026: это примечание). Брандмауэр, hosts и реестр не затрагиваются:
-        программы и пакет подменяются временными файлами, счёт правил — заглушкой."""
+    def test_T0_sw_internet_block_universal(self):
+        """T0 (решение владельца 26.09.2026): отучение SolidWorks от сети закрывает интернет всему SolidWorks на любом ПК —
+        и самому SLDWORKS.exe с надстройками (Drew «Поделиться настройками» не работает — принято), и SWTools. Программы
+        пакет находит сам, а не берёт из списка одной машины; компьютер и локальная сеть открыты, прокси в локальной сети
+        закрыт; hosts — каждый домен один раз, чужие строки не трогаются; шаг [8/9] просит права администратора только
+        при нехватке правил, неполный итог — [ВНИМАНИЕ], не ошибка установки (решение владельца 25.09.2026).
+        Брандмауэр, hosts и реестр не затрагиваются: функции пакета проверяются на данных, пакет подменяется заглушкой."""
         out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
                               str(paths.TESTS / "tools" / "check_sw_internet_block.ps1"), "-RepoRoot", str(ROOT)],
                              capture_output=True, timeout=300)
@@ -659,10 +661,17 @@ class StaticRepository(StaticTestCase):
         self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
         result = json.loads(lines[-1])
         self.assertEqual([], result["problems"])
-        self.assertEqual({"Block SW Internet 096 - SLDWORKS", "Block SW Internet IN 096 - SLDWORKS"},
-                         set(result["skippedByPolicy"]), "пакет пропускает SLDWORKS.exe в обе стороны и только его")
-        self.assertEqual(result["package"], result["expected"])
+        self.assertEqual(7, result["facts"]["cases"], "проверены все ветки шага [8/9]")
         self.assertTrue(result["tempRemoved"], "временная папка не удалена")
+        configurator = (ROOT / "01_Настройки_SolidWorks" / "_Исходники" / "CAD_Workstation_Configurator.py").read_text(encoding="utf-8")
+        # Галочка включена по умолчанию, снятая — запоминается; «Безопасная графика» — прежний выбор этого ПК
+        # (проверка перед слиянием 26.09.2026: автообновление через 5 с ставило правила снова и включало конвейер графики).
+        self.assertIn('self.var_block = tk.BooleanVar(value=installed["SwInternetBlock"] != "0")', configurator,
+                      "галочка отучения от сети: включена по умолчанию, снятая запоминается")
+        self.assertIn('self.var_safe_gfx = tk.BooleanVar(value=(installed["Graphics"] or "").lower() == "safe")', configurator,
+                      "окно не помнит «Безопасную графику»")
+        setup = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "Setup_Workstation_SolidWorks.ps1").read_text(encoding="utf-8-sig")
+        self.assertIn('Set-Reg $install "Graphics" $Graphics', setup, "установщик не запоминает выбор графики")
 
     def test_T0_drawing_scripts_refuse_without_product_folder(self):
         """T0 (ревью 24.09.2026): скрипты eskd-drawings без ESKD_DRW_ROOT отказываются работать (SKILL.md, «Порядок»),
