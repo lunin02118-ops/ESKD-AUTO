@@ -10,7 +10,8 @@ SWPlus и надстройка ЕСКД — в профиль пользоват
 когда правил не хватает);
 выбор языка интерфейса SolidWorks и Drew (русский или английский).
 
-Повторный запуск — обновление: если на ПК уже есть установка, оно начинается само через несколько секунд.
+Повторный запуск — обновление. Окно само ничего не запускает: настройка и обновление начинаются только по кнопке
+«Установить / Обновить» (решение владельца 26.09.2026); при открытии окно лишь подсказывает, есть ли новый выпуск.
 
 Само окно реестр и файлы ПК не меняет — только читает (текущие фамилия, организация, сведения об установке).
 """
@@ -29,7 +30,6 @@ TOOLKIT_MARKERS = (
 )
 SWPLUS = os.path.join("03_Макросы_и_Плагины", "Макросы_SW_ZTool", "SWPlusMacro_v_2018_SP0.0")
 ENGINE = "Setup_Workstation_SolidWorks.ps1"
-AUTO_UPDATE_SECONDS = 5
 EXIT_MESSAGES = {
     0: "Готово. Запустите SolidWorks.",
     1: "Настройка завершена с ошибками — см. сообщения выше.",
@@ -129,9 +129,49 @@ def read_release(source_root):
     try:
         with open(path, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
+        if not isinstance(data, dict):
+            return "рабочая копия (не опубликована)"
         return "{} от {}".format(data.get("version", "?"), data.get("date", "?"))
     except (OSError, ValueError):
         return "рабочая копия (не опубликована)"
+
+
+def release_version(source_root):
+    """Номер выпуска в папке инструментария (toolkit_release.json) или пустая строка."""
+    try:
+        with open(os.path.join(source_root, "toolkit_release.json"), "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+        return str(data.get("version") or "") if isinstance(data, dict) else ""
+    except (OSError, ValueError):
+        return ""
+
+
+def _release_key(version):
+    """Номер выпуска «ГГГГ.ММ.ДД.ЧЧММ» (Publish-EskdToolkit) — кортеж для сравнения, иначе None."""
+    parts = (version or "").split(".")
+    return tuple(int(p) for p in parts) if len(parts) == 4 and all(p.isdigit() for p in parts) else None
+
+
+def startup_status(ready, installed_version, folder_version, author, firm, last_result=""):
+    """Подсказка при открытии окна. Окно само ничего не запускает: настройка и обновление — только по кнопке
+    «Установить / Обновить» (решение владельца 26.09.2026; прежде при готовой установке через 5 с начиналось само)."""
+    installed_version, folder_version = (installed_version or "").strip(), (folder_version or "").strip()
+    if not ready:
+        return "Запустите программу из папки инструментария на сетевом диске.", "error"
+    if not (author and firm):
+        return "Впишите свою фамилию и организацию и нажмите «Установить / Обновить».", "text"
+    if installed_version and folder_version and installed_version != folder_version:
+        old, new = _release_key(installed_version), _release_key(folder_version)
+        if old and new and new < old:
+            return ("В папке более ранний выпуск {} (на компьютере — {}): «Установить / Обновить» вернёт его."
+                    .format(folder_version, installed_version), "warn")
+        return "Есть новый выпуск {} — нажмите «Установить / Обновить».".format(folder_version), "warn"
+    # Установщик пишет номер выпуска и при ошибках (LastResult = FAILED): «текущий выпуск» тогда не утешение.
+    if installed_version and (last_result or "").strip().upper() == "FAILED":
+        return "Прошлая настройка завершилась с ошибками — нажмите «Установить / Обновить».", "warn"
+    if installed_version and installed_version == folder_version:
+        return "Установлен текущий выпуск. «Установить / Обновить» — настроить заново.", "text"
+    return "Проверьте данные и нажмите «Установить / Обновить».", "text"
 
 
 def read_registry(subkey, names):
@@ -245,7 +285,6 @@ class ConfiguratorApp:
         self.engine = find_engine(self.source, self.start_dir) if self.source else None
         self.events = queue.Queue()
         self.process = None
-        self.countdown = None
 
         root.title("Настройка рабочего места SolidWorks — ЕСКД")
         root.geometry("820x640")
@@ -303,11 +342,11 @@ class ConfiguratorApp:
         self.var_drew = tk.BooleanVar(value=True)
         # Отучение от сети включено по умолчанию (решение владельца 26.09.2026: телеметрия и данные SolidWorks не должны
         # уходить в интернет). Повторная установка лишь проверяет правила: права администратора — только если чего-то нет.
-        # Снятая галочка запоминается (ESKD_Install\SwInternetBlock = 0): автообновление не ставит правила снова.
+        # Снятая галочка запоминается (ESKD_Install\SwInternetBlock = 0): следующее обновление не ставит правила снова.
         self.var_block = tk.BooleanVar(value=installed["SwInternetBlock"] != "0")
-        # Язык: прежний выбор этого ПК, иначе русский (решение владельца 25.09.2026) — автообновление его не меняет.
+        # Язык: прежний выбор этого ПК, иначе русский (решение владельца 25.09.2026) — следующее обновление его не меняет.
         self.var_lang = tk.StringVar(value="English" if (installed["Language"] or "").lower() == "english" else "Russian")
-        # Безопасная графика — тоже прежний выбор этого ПК: автообновление не включает аппаратный конвейер снова.
+        # Безопасная графика — тоже прежний выбор этого ПК: следующее обновление не включает аппаратный конвейер снова.
         self.var_safe_gfx = tk.BooleanVar(value=(installed["Graphics"] or "").lower() == "safe")
         ttk.Checkbutton(comp, text="Drew — Gov-издание (лицензия встроена, без активации и кейгена)",
                         variable=self.var_drew).pack(anchor=tk.W)
@@ -349,14 +388,13 @@ class ConfiguratorApp:
         self.btn_install.pack(side=tk.RIGHT, padx=(0, 8))
         self.status.pack(side=tk.LEFT, fill=tk.X, expand=True)
         root.protocol("WM_DELETE_WINDOW", self.on_close)
-        if not self.source or not self.engine:
+        ready = bool(self.source and self.engine)
+        if not ready:
             self.btn_install.state(["disabled"])
-            self.set_status("Запустите программу из папки инструментария на сетевом диске.", "error")
-        elif self.installed and self.var_author.get().strip() and self.var_firm.get().strip():
-            self.countdown = AUTO_UPDATE_SECONDS
-            self.tick()
-        else:
-            self.set_status("Впишите свою фамилию и организацию и нажмите «Установить / Обновить».", "text")
+        # Только подсказка: настройка начинается лишь по кнопке (решение владельца 26.09.2026).
+        self.set_status(*startup_status(ready, installed["ReleaseVersion"] if self.installed else "",
+                                        release_version(self.source) if self.source else "",
+                                        self.var_author.get().strip(), self.var_firm.get().strip(), installed["LastResult"]))
         root.after(100, self.pump)
 
     def set_status(self, text, level):
@@ -369,20 +407,8 @@ class ConfiguratorApp:
         self.log.see(self.tk.END)
         self.log.configure(state=self.tk.DISABLED)
 
-    def tick(self):
-        if self.countdown is None:
-            return
-        if self.countdown <= 0:
-            self.countdown = None
-            self.start()
-            return
-        self.set_status("Обновление начнётся через {} с. Нажмите «Закрыть», чтобы отменить.".format(self.countdown), "text")
-        self.countdown -= 1
-        self.root.after(1000, self.tick)
-
     def start(self):
         from tkinter import messagebox
-        self.countdown = None
         author = self.var_author.get().strip()
         if not author:
             messagebox.showwarning("Фамилия", "Укажите фамилию и инициалы — они пишутся в основную надпись.")
@@ -437,10 +463,6 @@ class ConfiguratorApp:
         self.root.after(100, self.pump)
 
     def on_close(self):
-        if self.countdown is not None:
-            self.countdown = None
-            self.set_status("Обновление отменено.", "warn")
-            return
         if self.process is not None:
             from tkinter import messagebox
             if not messagebox.askyesno("Идёт настройка", "Настройка ещё не закончена. Закрыть окно? Установщик доработает сам."):

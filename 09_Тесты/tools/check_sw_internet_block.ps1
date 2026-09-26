@@ -248,7 +248,7 @@ try {
         @{ label = 'тестовый корень'; codes = @(); machine = $false; sandbox = $true; calls = ''; ok = $false; warn = '' },
         # Обычный пользователь: окно администратора получает папки пользователя и его SID (прокси, сервер лицензий).
         @{ label = 'запрос UAC'; codes = @(3, 0, 0); machine = $false; sandbox = $false; calls = 'audit,roots,audit'; ok = $true; uac = $true },
-        # Снятая галочка запоминается: окно не ставит её снова при автообновлении.
+        # Снятая галочка запоминается: окно при следующем открытии не ставит её снова.
         @{ label = 'галочка снята'; codes = @(); machine = $true; sandbox = $false; calls = ''; ok = $false; warn = ''; unchecked = $true; regs = @("ESKD_Install|SwInternetBlock=0") }
     )
     $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
