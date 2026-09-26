@@ -80,6 +80,7 @@ try {
         foreach ($d in $domains) { Check (@($lines | Where-Object { $_ -eq "0.0.0.0 $d" }).Count -eq 1) "домен $d в hosts не ровно один раз" }
         Check (@($lines | Where-Object { $_.Contains($script:HostsMarker) }).Count -eq 1) "метка пакета в hosts не одна"
         Check (-not ($applied.Contains('`r`n'))) "мусорная строка «`r`n» осталась в hosts"
+        Check (-not ($applied -match '[^\x00-\x7F]')) "в hosts записаны не латинские символы"
         foreach ($keep in '127.0.0.1 localhost', '0.0.0.0 api.cryptolens.io # DrewGov offline', '# 0.0.0.0 online.solidworks.com', '0.0.0.0 www.solidworks.com', '# Copyright (c) Microsoft Corp.') {
             Check ($lines -contains $keep) "чужая строка hosts пропала: $keep"
         }

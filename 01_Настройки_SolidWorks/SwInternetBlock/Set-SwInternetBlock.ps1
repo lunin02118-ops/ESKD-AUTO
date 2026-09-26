@@ -506,7 +506,8 @@ function Get-SwBlockHostsText([string]$Text, [string[]]$Domains, [switch]$Remove
     while ($kept.Count -and -not $kept[$kept.Count - 1].Trim()) { $kept.RemoveAt($kept.Count - 1) }
     if (-not $Remove) {
         $kept.Add('')
-        $kept.Add("# $($script:HostsMarker) (ESKD: SolidWorks без интернета; снять — Set-SwInternetBlock.ps1 -Mode remove)")
+        # hosts — только латиница: файл читают программы в разных кодировках.
+        $kept.Add("# $($script:HostsMarker) (ESKD: SolidWorks offline; undo: Set-SwInternetBlock.ps1 -Mode remove)")
         foreach ($d in $Domains) { $kept.Add("0.0.0.0 $d") }
     }
     $new = ($kept -join "`r`n") + "`r`n"
@@ -549,13 +550,14 @@ function Write-SwBlockHosts([string]$Path, [string]$Text, $Encoding) {
 }
 
 function Invoke-SwBlockHosts([switch]$Remove) {
+    # Строки — в вывод, успех — в $script:HostsOk (значение функции смешалось бы с её строками).
+    $script:HostsOk = $true
     $h = Read-SwBlockHosts $HostsPath
     $new = Get-SwBlockHostsText $h.Text $script:SwDomains -Remove:$Remove
-    if ($null -eq $new) { Write-Output ('hosts: без изменений ({0} доменов SolidWorks)' -f $(if ($Remove) { 0 } else { $script:SwDomains.Count })); return $true }
-    if (-not (Write-SwBlockHosts $HostsPath $new $h.Encoding)) { Write-Output 'ОШИБКА: hosts недоступен для записи (8 попыток).'; return $false }
+    if ($null -eq $new) { Write-Output ('hosts: без изменений ({0} доменов SolidWorks)' -f $(if ($Remove) { 0 } else { $script:SwDomains.Count })); return }
+    if (-not (Write-SwBlockHosts $HostsPath $new $h.Encoding)) { $script:HostsOk = $false; Write-Output 'ОШИБКА: hosts недоступен для записи (8 попыток).'; return }
     if ($Remove) { Write-Output 'hosts: заглушки доменов SolidWorks сняты' }
     else { Write-Output ('hosts: заглушено доменов SolidWorks {0}' -f $script:SwDomains.Count) }
-    return $true
 }
 
 # ------------------------------------------------------------------ проверка и применение
@@ -650,8 +652,10 @@ function Invoke-SwBlockApply {
         foreach ($r in $a.Legacy) { try { $r | Remove-NetFirewallRule -ErrorAction Stop; $legacyRemoved++ } catch { $errors++ } }
     }
     Write-Output ('apply: создано {0}, исправлено {1}, удалено лишних {2}, удалено правил прежнего пакета {3}, ошибок {4}' -f $created, $fixed, $removed, $legacyRemoved, $errors)
-    if (-not (Invoke-SwBlockHosts)) { $errors++ }
-    return $errors
+    Invoke-SwBlockHosts
+    if (-not $script:HostsOk) { $errors++ }
+    # Строки — в вывод, число ошибок — в $script:ApplyErrors (значение функции смешалось бы с её строками).
+    $script:ApplyErrors = $errors
 }
 
 function Invoke-SwBlockRemove {
@@ -660,7 +664,7 @@ function Invoke-SwBlockRemove {
         if ($r) { $r | Remove-NetFirewallRule; $n++ }
     }
     Write-Output "remove: удалено правил $n"
-    [void](Invoke-SwBlockHosts -Remove)
+    Invoke-SwBlockHosts -Remove
 }
 
 # ------------------------------------------------------------------ запуск
@@ -689,7 +693,8 @@ try {
             exit $code
         }
         'apply' {
-            $errors = Invoke-SwBlockApply
+            Invoke-SwBlockApply
+            $errors = $script:ApplyErrors
             $a = Get-SwBlockAudit
             Write-SwBlockAudit $a
             $code = Get-SwBlockAuditCode $a
@@ -698,8 +703,8 @@ try {
             exit $code
         }
         'remove' { Invoke-SwBlockRemove; exit 0 }
-        'hosts-apply' { if (Invoke-SwBlockHosts) { exit 0 } else { exit 1 } }
-        'hosts-remove' { if (Invoke-SwBlockHosts -Remove) { exit 0 } else { exit 1 } }
+        'hosts-apply' { Invoke-SwBlockHosts; if ($script:HostsOk) { exit 0 } else { exit 1 } }
+        'hosts-remove' { Invoke-SwBlockHosts -Remove; if ($script:HostsOk) { exit 0 } else { exit 1 } }
     }
 } catch {
     Write-Output "ОШИБКА: $($_.Exception.Message)"
