@@ -105,24 +105,22 @@ try {
     Expect "язык: английский — «Use English language» = 1, формат не трогается, DREW_LANG=en" ("{0}|{1}|{2}" -f $en.UseEnglish, $en.SetCulture, $en.DrewLang) "1|False|en"
     Expect "язык: кодовая страница 1252 — предупреждение SWPlus" $en.AcpOk $false
     Expect "язык: кодовая страница UTF-8 (65001) — предупреждение SWPlus" (Get-EskdLanguagePlan -Language Russian -UserLcid 0x0419 -RussianPack $true -Acp "65001").AcpOk $false
-    # Drew (решение владельца 26.09.2026): сменился установщик в инструментарии — Drew переставляется один раз
+    # Drew (решение владельца 26.09.2026): сменился установщик в инструментарии — Drew переставляется один раз на ПК
     $lic = "0D31E06D"; $newAuto = "A9CEE78D"; $oldAuto = "6BD50418"
-    $early = [datetime]"2026-09-20 10:00"; $autoAt = [datetime]"2026-09-26 10:27"; $late = [datetime]"2026-09-26 11:00"
-    function DrewPlan($LicPresent = $true, $LicNow = $lic, $AutoHash = $newAuto, $RecordedAuto = "", $DrewSince = $early, $AutoSince = $autoAt) {
-        Get-EskdDrewPlan -LicPresent $LicPresent -LicNow $LicNow -LicHash $lic -AutoHash $AutoHash -RecordedAuto $RecordedAuto -DrewSince $DrewSince -AutoSince $AutoSince
+    function DrewPlan($LicPresent = $true, $LicNow = $lic, $AutoHash = $newAuto, $RecordedAuto = "", $MachineAuto = $false) {
+        Get-EskdDrewPlan -LicPresent $LicPresent -LicNow $LicNow -LicHash $lic -AutoHash $AutoHash -RecordedAuto $RecordedAuto -MachineAuto $MachineAuto
     }
     Expect "Drew: не установлен — ставится" (DrewPlan -LicPresent $false -LicNow "") "Install"
+    Expect "Drew: не установлен, хотя метка ПК есть (удалили вручную) — ставится" (DrewPlan -LicPresent $false -LicNow "" -MachineAuto $true) "Install"
     Expect "Drew: сборка лицензии занята — не трогается" (DrewPlan -LicNow "") "Unverified"
     Expect "Drew: поставлен этим же установщиком — не трогается" (DrewPlan -RecordedAuto $newAuto) "Keep"
     Expect "Drew: тот же установщик, хэш сборки другой — не трогается" (DrewPlan -LicNow "FFFF" -RecordedAuto $newAuto) "Keep"
+    Expect "Drew: этим установщиком его уже поставила другая учётная запись ПК — не трогается" (DrewPlan -RecordedAuto $oldAuto -MachineAuto $true) "Keep"
+    Expect "Drew: другая учётная запись, отпечатка нет — не трогается" (DrewPlan -MachineAuto $true) "Keep"
     Expect "Drew: установщик в инструментарии сменился — обновляется" (DrewPlan -RecordedAuto $oldAuto) "Update"
-    Expect "Drew: установщик сменился, хотя Drew поставлен позже — отпечаток решает" (DrewPlan -RecordedAuto $oldAuto -DrewSince $late) "Update"
-    Expect "Drew: отпечатка нет, Drew поставлен до этого установщика — обновляется" (DrewPlan) "Update"
-    Expect "Drew: отпечатка нет, дата папки неизвестна — обновляется" (DrewPlan -DrewSince $null) "Update"
-    Expect "Drew: отпечатка нет, Drew поставлен после этого установщика (другая учётная запись) — не трогается" (DrewPlan -DrewSince $late) "Adopt"
+    Expect "Drew: ставили вручную или до записи отпечатка — обновляется" (DrewPlan) "Update"
     Expect "Drew: чужая сборка, прежний установщик — заменяется (отказ в правах — ошибка)" (DrewPlan -LicNow "FFFF" -RecordedAuto $oldAuto) "Replace"
     Expect "Drew: чужая сборка, отпечатка нет — заменяется" (DrewPlan -LicNow "FFFF") "Replace"
-    Expect "Drew: чужая сборка поставлена после установщика — всё равно заменяется" (DrewPlan -LicNow "FFFF" -DrewSince $late) "Replace"
     Expect "Drew: установщика в инструментарии нет, сборка верная — не трогается" (DrewPlan -AutoHash "") "Keep"
     Expect "Drew: установщика нет, сборка чужая — «ставится» (установщик сообщит, что его нет)" (DrewPlan -LicNow "FFFF" -AutoHash "") "Install"
     Expect "класс: папка «SWPlusMacro_v_2018_SP0.0 2» не путается с папкой SWPlus" (Resolve-EskdProfilePath -Relative "${swplusRel} 2\x.swp" -SourceRoot "S" -LocalRoot "L") "S\${swplusRel} 2\x.swp"

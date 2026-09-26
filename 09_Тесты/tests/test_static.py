@@ -353,8 +353,11 @@ class StaticRepository(StaticTestCase):
         # установка засчитывается только по появлению сборки лицензии или записи Drew в списке программ
         self.assertNotIn("$licItem.CreationTime -ge $startedAt", setup, "дата файла Drew не показывает свежую установку")
         self.assertNotIn("$setup.ExitCode -eq 0", setup, "код выхода AUTO.exe всегда 0 — не признак установки")
-        self.assertIn("(-not $licLeft -and (Test-Path -LiteralPath $licDll))", setup, "появление сборки лицензии — признак установки")
-        self.assertIn("(-not $entryLeft -and (& $findDrewEntries).Count -gt 0)", setup, "появление записи Drew — признак установки")
+        self.assertIn("$newFiles = -not $licLeft -and (Test-Path -LiteralPath $licDll)", setup, "появление сборки лицензии — признак установки")
+        self.assertIn("if ($newFiles -and $licAfter -eq $licHash) {", setup, "прежние файлы Drew не засчитываются как установка")
+        # одна запись Drew из скриптблока приходит без массива, а у одиночного объекта в PowerShell 5.1 нет .Count
+        self.assertIn("$entryLeft = @(& $findDrewEntries).Count -gt 0", setup, "запись Drew в списке программ не видна")
+        self.assertNotRegex(setup, r"[^@]\(& \$findDrewEntries\)\.Count", "счёт записей Drew без @() в PowerShell 5.1 пуст")
         self.assertIn("AddMinutes(6)", setup, "движок ждёт завершения установщика Drew с таймаутом")
         self.assertIn("Лицензия Drew: встроенная", setup, "активация больше не требуется — сообщается прямо")
         # решение владельца 15.09.2026: Drew другой сборки той же версии удаляется штатно и ставится заново —
@@ -372,10 +375,20 @@ class StaticRepository(StaticTestCase):
         module = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
         plan = module[module.index("function Get-EskdDrewPlan"):]
         plan = plan[:plan.index("\n}")]
-        self.assertIn('if ($RecordedAuto -eq $AutoHash) { return "Keep" }', plan, "Drew от того же установщика не признаётся установленным")
-        for outcome in ("Update", "Replace", "Adopt"):
+        self.assertIn('if ($RecordedAuto -eq $AutoHash -or $MachineAuto) { return "Keep" }', plan,
+                      "Drew от того же установщика (у этой или другой учётной записи ПК) не признаётся установленным")
+        for outcome in ("Update", "Replace"):
             self.assertIn(f'return "{outcome}"', plan, f"правило Drew без исхода {outcome}")
+        self.assertNotIn("Since", plan, "даты файлов не показывают, каким установщиком поставлен Drew")
         self.assertIn("$drewPlan = Get-EskdDrewPlan", setup, "шаг Drew не спрашивает правило")
+        # план → действие: обновление не считается готовым Drew; метка установки — на весь ПК
+        self.assertIn('$drewOk = @("Keep", "Unverified") -contains $drewPlan', setup, "рабочий Drew от прежнего установщика не переставляется")
+        self.assertIn(r'Join-Path $env:ProgramData "ESKD\DrewInstaller"', setup, "метка установки Drew не на весь ПК")
+        self.assertIn('if ($drewPlan -eq "Update" -and $licLeft) {', setup, "сбой запуска — предупреждение только при нетронутом рабочем Drew")
+        self.assertIn('elseif ($setup.HasExited -and $drewPlan -eq "Update" -and $licLeft -and (Test-Path -LiteralPath $licDll)) {', setup,
+                      "закрытое без установки окно при нетронутом рабочем Drew — предупреждение")
+        self.assertLess(setup.index("Copy-Item -LiteralPath $drewExe[0].FullName"), setup.index("msiexec.exe"),
+                        "установщик копируется до удаления рабочего Drew")
         self.assertIn("Drew не обновлён: запрос прав администратора отклонён", setup,
                       "отказ в правах при обновлении рабочего Drew — предупреждение, а не ошибка настройки")
         self.assertIn("$keepDrewInstaller = Get-RegValue $install \"DrewInstaller\"", setup, "-Mode Uninstall стирает отпечаток Drew")
