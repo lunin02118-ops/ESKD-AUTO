@@ -516,15 +516,31 @@ function Get-EskdLanguagePlan {
 
 function Get-EskdDrewRecordedInstaller {
     # Каким установщиком поставлен Drew на этом ПК — по последней подтверждённой установке. Записи «<время UTC>_<SHA-256
-    # AUTO.exe>»: метки на весь ПК (имена файлов в %ProgramData%\ESKD\DrewInstaller: Drew стоит на весь ПК) и отпечаток
-    # учётной записи (ESKD_Install\DrewInstaller); прежний вид отпечатка — голый хэш — считается самым старым. Метки только
-    # добавляются (чужой файл в ProgramData не изменить), поэтому решает последняя: возврат прежнего установщика — тоже смена.
-    param([string[]]$Records)
+    # AUTO.exe>» (New-EskdDrewStamp): метки на весь ПК (имена файлов в %ProgramData%\ESKD\DrewInstaller: Drew стоит на весь
+    # ПК) и отпечаток учётной записи (ESKD_Install\DrewInstaller, с «_<имя ПК>»: перемещаемый профиль приносит запись с
+    # другого ПК — она не считается); прежний вид отпечатка — голый хэш — самый старый. Метки только добавляются (чужой
+    # файл в ProgramData не изменить), поэтому решает последняя: возврат прежнего установщика — тоже смена.
+    param([string[]]$Records, [string]$Computer)
     $last = @($Records | Where-Object { $_ } |
-              ForEach-Object { if ($_ -match '^[0-9A-Fa-f]{64}$') { "00000000000000000_$_" } else { $_ } } |
+              ForEach-Object {
+                  if ($_ -match '^[0-9A-Fa-f]{64}$') { "00000000000000000_$_" }
+                  elseif ($_ -match '^(\d{17}_[0-9A-Fa-f]{64})_(.+)$') { if ($Matches[2] -eq $Computer) { $Matches[1] } }
+                  else { $_ }
+              } |
               Where-Object { $_ -match '^\d{17}_[0-9A-Fa-f]{64}$' } | Sort-Object) | Select-Object -Last 1
     if ($last) { return $last.Substring(18) }
     return $null
+}
+
+function New-EskdDrewStamp {
+    # Запись установки Drew «<время UTC>_<SHA-256 AUTO.exe>» — новее всех имеющихся: если часы ПК убегали вперёд, запись
+    # «из будущего» иначе навсегда осталась бы последней, и Drew переставлялся бы при каждой настройке.
+    param([string]$AutoHash, [string[]]$Records, [datetime]$Now = [datetime]::UtcNow)
+    $stamp = [long]$Now.ToString("yyyyMMddHHmmssfff", [Globalization.CultureInfo]::InvariantCulture)
+    foreach ($rec in @($Records)) {
+        if ("$rec" -match '^(\d{17})_[0-9A-Fa-f]{64}(_|$)' -and [long]$Matches[1] -ge $stamp) { $stamp = [long]$Matches[1] + 1 }
+    }
+    return "{0:D17}_{1}" -f $stamp, $AutoHash
 }
 
 function Get-EskdDrewPlan {

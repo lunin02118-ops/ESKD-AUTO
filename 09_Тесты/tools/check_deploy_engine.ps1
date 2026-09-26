@@ -124,13 +124,21 @@ try {
     Expect "Drew: установщика нет, сборка чужая — «ставится» (установщик сообщит, что его нет)" (DrewPlan -LicNow "FFFF" -AutoHash "") "Install"
     # Каким установщиком поставлен Drew: решает последняя запись — метки ПК «<время UTC>_<хэш>» и отпечаток учётной записи
     $t1 = "20260926090000000"; $t2 = "20260927090000000"; $t3 = "20260928090000000"
-    Expect "Drew, записи: ничего нет" ([string](Get-EskdDrewRecordedInstaller -Records @("", $null))) ""
-    Expect "Drew, записи: отпечаток прежнего вида (голый хэш)" (Get-EskdDrewRecordedInstaller -Records @($oldAuto)) $oldAuto
-    Expect "Drew, записи: метка ПК новее голого хэша учётной записи" (Get-EskdDrewRecordedInstaller -Records @("${t1}_$newAuto", $oldAuto)) $newAuto
-    Expect "Drew, записи: решает последняя метка (другая учётная запись обновила Drew)" (Get-EskdDrewRecordedInstaller -Records @("${t1}_$oldAuto", "${t2}_$newAuto", "${t1}_$oldAuto")) $newAuto
-    Expect "Drew, записи: возврат прежнего установщика — последняя метка за ним" (Get-EskdDrewRecordedInstaller -Records @("${t1}_$oldAuto", "${t2}_$newAuto", "${t3}_$oldAuto")) $oldAuto
-    Expect "Drew, записи: метку не дали записать — решает отпечаток учётной записи" (Get-EskdDrewRecordedInstaller -Records @("${t1}_$oldAuto", "${t2}_$newAuto")) $newAuto
-    Expect "Drew, записи: посторонние файлы в папке меток не мешают" (Get-EskdDrewRecordedInstaller -Records @("desktop.ini", "${t1}_$oldAuto", "x_$newAuto")) $oldAuto
+    function DrewRecorded($Records) { Get-EskdDrewRecordedInstaller -Records $Records -Computer "PC1" }
+    Expect "Drew, записи: ничего нет" ([string](DrewRecorded @("", $null))) ""
+    Expect "Drew, записи: отпечаток прежнего вида (голый хэш)" (DrewRecorded @($oldAuto)) $oldAuto
+    Expect "Drew, записи: метка ПК новее голого хэша учётной записи" (DrewRecorded @("${t1}_$newAuto", $oldAuto)) $newAuto
+    Expect "Drew, записи: решает последняя метка (другая учётная запись обновила Drew)" (DrewRecorded @("${t1}_$oldAuto", "${t2}_$newAuto", "${t1}_$oldAuto")) $newAuto
+    Expect "Drew, записи: возврат прежнего установщика — последняя метка за ним" (DrewRecorded @("${t1}_$oldAuto", "${t2}_$newAuto", "${t3}_$oldAuto")) $oldAuto
+    Expect "Drew, записи: метку не дали записать — решает отпечаток учётной записи этого ПК" (DrewRecorded @("${t1}_$oldAuto", "${t2}_${newAuto}_PC1")) $newAuto
+    Expect "Drew, записи: отпечаток с другого ПК (перемещаемый профиль) не считается" (DrewRecorded @("${t1}_$oldAuto", "${t2}_${newAuto}_PC2")) $oldAuto
+    Expect "Drew, записи: посторонние файлы в папке меток не мешают" (DrewRecorded @("desktop.ini", "${t1}_$oldAuto", "x_$newAuto")) $oldAuto
+    $now = [datetime]"2026-10-05 01:02:03.004"
+    Expect "Drew, запись: время UTC и хэш" (New-EskdDrewStamp -AutoHash $newAuto -Records @() -Now $now) "20261005010203004_$newAuto"
+    $future = "20360101000000000_$oldAuto"
+    $stamp = New-EskdDrewStamp -AutoHash $newAuto -Records @($future, "${t1}_${oldAuto}_PC1") -Now $now
+    Expect "Drew, запись: метка «из будущего» (часы ПК убегали) — новая всё равно последняя" (DrewRecorded @($future, $stamp)) $newAuto
+    Expect "Drew, запись: разбирается тем же правилом (отпечаток с именем ПК)" (DrewRecorded @("${t1}_$oldAuto", "${stamp}_PC1")) $newAuto
     Expect "класс: папка «SWPlusMacro_v_2018_SP0.0 2» не путается с папкой SWPlus" (Resolve-EskdProfilePath -Relative "${swplusRel} 2\x.swp" -SourceRoot "S" -LocalRoot "L") "S\${swplusRel} 2\x.swp"
 
     $setup = Join-Path $source "01_Настройки_SolidWorks\_Служебное\Setup_Workstation_SolidWorks.ps1"

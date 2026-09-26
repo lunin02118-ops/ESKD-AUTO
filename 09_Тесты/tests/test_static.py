@@ -369,7 +369,7 @@ class StaticRepository(StaticTestCase):
         # аудит 15.09.2026 B1, B2: сбой запуска установщика не ждёт 6 минут; установленный этим же установщиком Drew
         # не переустанавливается при каждом обновлении из-за расхождения хэша
         self.assertIn("-PassThru -ErrorAction Stop", setup, "сбой запуска установщика Drew перехватывается сразу")
-        self.assertIn('Set-Reg $drewInstallKey "DrewInstaller" $stamp', setup, "отпечаток установщика Drew не запоминается")
+        self.assertIn('Set-Reg $drewInstallKey "DrewInstaller" "${stamp}_$env:COMPUTERNAME"', setup, "отпечаток установщика Drew не запоминается")
         # решение владельца 26.09.2026: сменился установщик в инструментарии — Drew переставляется один раз, даже если
         # сборка лицензии та же (правило — Get-EskdDrewPlan, случаи — check_deploy_engine.ps1)
         module = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
@@ -384,11 +384,14 @@ class StaticRepository(StaticTestCase):
         self.assertIn('$drewOk = @("Keep", "Unverified") -contains $drewPlan', setup, "рабочий Drew от прежнего установщика не переставляется")
         # метка на весь ПК: решает последняя подтверждённая установка (метки и отпечаток учётной записи), пишется одна запись
         self.assertIn(r'Join-Path $env:ProgramData "ESKD\DrewInstaller"', setup, "метка установки Drew не на весь ПК")
-        self.assertIn('$recordedAuto = Get-EskdDrewRecordedInstaller -Records ($drewMarks + @([string](Get-RegValue $drewInstallKey "DrewInstaller")))',
-                      setup, "план не видит последнюю установку Drew на ПК")
+        self.assertIn('@([string](Get-RegValue $drewInstallKey "DrewInstaller"))', setup, "план не видит отпечаток учётной записи")
+        self.assertIn("$recordedAuto = Get-EskdDrewRecordedInstaller -Records $drewRecords -Computer $env:COMPUTERNAME", setup,
+                      "план не видит последнюю установку Drew на ПК")
+        self.assertIn("$stamp = New-EskdDrewStamp -AutoHash $autoHash -Records $drewRecords", setup,
+                      "запись установки Drew не новее прежних (часы ПК)")
         self.assertIn("-RecordedAuto $recordedAuto", setup, "правило Drew не получает последнюю установку")
         self.assertIn("& $markDrew $stamp", setup, "метка ПК и отпечаток учётной записи — разные записи")
-        self.assertIn('if ($autoHash -and $machineLast -ne $autoHash) { & $markDrew', setup, "Drew от этого установщика без метки ПК: другие учётные записи его переставят")
+        self.assertEqual(1, setup.count("& $markDrew"), "метка ПК пишется только вместе с отпечатком подтверждённой установки")
         self.assertEqual(2, setup.count("& $recordDrew"), "отпечаток Drew пишется не только после подтверждённой установки")
         # копия установщика — до удаления рабочего Drew и годна, только если читается
         self.assertLess(setup.index("Copy-Item -LiteralPath $drewExe[0].FullName"), setup.index("msiexec.exe"),
@@ -402,7 +405,7 @@ class StaticRepository(StaticTestCase):
         self.assertIn('if ($drewPlan -eq "Update" -and -not $uninstalled) {', setup, "сбой — предупреждение только при нетронутом рабочем Drew")
         self.assertIn('elseif ($setup.HasExited -and $drewPlan -eq "Update" -and -not $uninstalled -and (Test-Path -LiteralPath $licDll)) {', setup,
                       "закрытое без установки окно при нетронутом рабочем Drew — предупреждение")
-        self.assertIn('if ($drewPlan -eq "Update") { Write-Warn $overText } else { $failures++; Write-Fail $overText }', setup,
+        self.assertIn('if ($drewPlan -eq "Update" -and -not $uninstalled) { Write-Warn $overText } else { $failures++; Write-Fail $overText }', setup,
                       "ошибка без строки [ОШИБКА] в журнале")
         self.assertIn("Drew не обновлён: запрос прав администратора отклонён", setup,
                       "отказ в правах при обновлении рабочего Drew — предупреждение, а не ошибка настройки")
