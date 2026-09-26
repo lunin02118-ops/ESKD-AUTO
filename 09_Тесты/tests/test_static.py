@@ -426,6 +426,23 @@ class StaticRepository(StaticTestCase):
         for gone in ("Активация Drew", "Client-Activate-Drew.ps1", "drew_needs_activation"):
             self.assertNotIn(gone, configurator, f"артефакт активации не должен остаться в окне: {gone}")
 
+    def test_T0_drew_auto_removes_updater_but_keeps_drew(self):
+        """T0 (26.09.2026): установщик Drew AUTO удаляет программу обновлений (updater.exe, updater.ini, папку обновлений)
+        и не трогает сам Drew. В сборке 2026.09.26.1753 при установке для одного пользователя (без прав администратора)
+        папка установки — %LOCALAPPDATA%\\CAD Booster\\Drew, и её же стирала строка очистки остатков: свежий Drew пропадал.
+        В сборке 1559 удаление было вписано внутрь строки Write-Host и не выполнялось, а путь был с именем пользователя.
+        install-flat.ps1 берётся из самого AUTO.exe, блок удаления выполняется во временной папке в обоих режимах."""
+        auto = ROOT / "03_Макросы_и_Плагины" / "Drw_System_Automation" / "УСТАНОВЩИК_Drew_AUTO.exe"
+        out = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File",
+                              str(paths.TESTS / "tools" / "check_drew_auto_updater_cleanup.ps1"), "-AutoPath", str(auto)],
+                             capture_output=True, timeout=120)
+        lines = [ln for ln in out.stdout.decode("utf-8", errors="replace").splitlines() if ln.startswith("{")]
+        self.assertTrue(lines, out.stdout.decode("cp866", errors="replace") + out.stderr.decode("cp866", errors="replace"))
+        result = json.loads(lines[-1])
+        self.assertEqual([], result["problems"])
+        self.assertEqual(["machine", "peruser"], result["cases"], "проверены оба режима установщика")
+        self.assertTrue(result["tempRemoved"], "временная папка не удалена")
+
     def test_T0_language_choice_at_deploy(self):
         """T0 (решение владельца 25.09.2026): при развёртывании выбирается язык интерфейса SolidWorks и Drew.
         SolidWorks 2025 берёт язык из регионального формата пользователя (sldutu.dll LangUtils::GetLangSubdir:
