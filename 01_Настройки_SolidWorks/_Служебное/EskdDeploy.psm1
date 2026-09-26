@@ -609,6 +609,79 @@ function Clear-EskdDrewTempLeftovers {
     return $result
 }
 
+# Отпечатки (Get-EskdDrewProfileKey) эталонов профиля Drew, которые уже разносились по ПК: 6eb92e2 и 6d611c1 (15.09.2026),
+# 98d30ce (17.09.2026). Файл, записанный из любого из них, — не правка конструктора. Новый эталон — новая строка здесь
+# (тест test_T0_drew_profile_toolkit_wins_with_warning сверяет список с эталоном и историей git).
+$script:DrewProfileMasterKeys = @(
+    "d114e309fea3b73beee0f060327bc8f7ac200fbf68f77f2998a86143c11f82fb",
+    "9fc11a42f0b45e2de8f4a18eb0aaaf21dd478fb55f441338b44646713761eccb",
+    "49325ade883d69470a1f00ac34942cefb6f78e9cdbdbf6f2f5eb98dd8061e71c"
+)
+
+function Get-EskdDrewProfileKey {
+    # Отпечаток профиля Drew без папки инструментария: BOM и концы строк не считаются, путь в <Path> и <FullPath> до
+    # «\02_Шаблоны_и_Форматки\» заменяется на %TOOLKIT%. Одинаков у эталона и у файла, который настройка записала из
+    # него с любой папкой инструментария (буква диска, UNC, переезд общей папки, запуск без галочки Drew).
+    param([Parameter(Mandatory = $true)][AllowEmptyString()][string]$Text)
+    $norm = $Text.TrimStart([char]0xFEFF).Replace("`r`n", "`n")
+    $norm = [regex]::Replace($norm, '(<(?:Path|FullPath)>)[^<]*?(?=\\02_Шаблоны_и_Форматки\\)', '$1%TOOLKIT%')
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try { return ([System.BitConverter]::ToString($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($norm))) -replace '-', '').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+}
+
+function Update-EskdDrewProfile {
+    # Профиль оформления Drew (Drew-Blueprints.xml: форматки ГОСТ, шаблон чертежа, выгрузка DXF и PDF) — всегда эталон
+    # инструментария, как и профиль SolidWorks: у всех конструкторов он один (решение владельца 26.09.2026, З-61). В эталоне
+    # пути записаны через %TOOLKIT% и заменяются папкой инструментария. Файл, равный эталону, не трогается и в копию не
+    # кладётся. Иначе прежний файл уходит в копию, а итог говорит, чей он: Updated — его записала настройка (отпечаток
+    # LastHash прошлой записи или совпадение с эталоном — нынешним или прежним, KnownMasterKeys — при любой папке
+    # инструментария), пришёл новый эталон; Replaced — файл меняли после настройки (в окне настроек Drew или подложили
+    # другой), правка заменена эталоном, настройка предупреждает; Written — файла не было. Файл занят или эталон не
+    # читается как XML — исключение, файл пользователя не тронут.
+    param(
+        [Parameter(Mandatory = $true)][string]$Master,
+        [Parameter(Mandatory = $true)][string]$Target,
+        [Parameter(Mandatory = $true)][string]$SourceRoot,
+        [Parameter(Mandatory = $true)][string]$BackupDir,
+        [string]$LastHash,
+        [string[]]$KnownMasterKeys = $script:DrewProfileMasterKeys,
+        [datetime]$Now = (Get-Date)
+    )
+    $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+    $masterText = [System.IO.File]::ReadAllText($Master, [System.Text.Encoding]::UTF8)
+    $render = {
+        param([string]$Root)
+        $toolkit = [System.Security.SecurityElement]::Escape($Root.TrimEnd('\'))
+        $updated = $masterText.Replace("%TOOLKIT%", $toolkit)
+        return , [byte[]]($utf8Bom.GetPreamble() + $utf8Bom.GetBytes($updated))
+    }
+    $sha256 = {
+        param([byte[]]$Bytes)
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try { return ([System.BitConverter]::ToString($sha.ComputeHash($Bytes)) -replace '-', '').ToLowerInvariant() }
+        finally { $sha.Dispose() }
+    }
+    $bytes = & $render $SourceRoot
+    [xml]$utf8Bom.GetString($bytes, 3, $bytes.Length - 3) | Out-Null
+    $result = [pscustomobject]@{ Action = "Written"; Hash = (& $sha256 $bytes); Backup = $null }
+    if (Test-Path -LiteralPath $Target -PathType Leaf) {
+        $old = Get-EskdFileSha256 -Path $Target
+        if ($old -eq $result.Hash) { $result.Action = "Same"; return $result }
+        $ours = [bool]$LastHash -and $old -eq $LastHash
+        if (-not $ours) {
+            $masters = @($KnownMasterKeys) + @(Get-EskdDrewProfileKey -Text $masterText)
+            $ours = $masters -contains (Get-EskdDrewProfileKey -Text ([System.IO.File]::ReadAllText($Target, [System.Text.Encoding]::UTF8)))
+        }
+        $result.Action = if ($ours) { "Updated" } else { "Replaced" }
+        New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
+        $result.Backup = Join-Path $BackupDir ("Drew-Blueprints_" + $Now.ToString("yyyyMMdd_HHmmss") + ".xml")
+        Copy-Item -LiteralPath $Target -Destination $result.Backup -Force -ErrorAction Stop
+    }
+    [System.IO.File]::WriteAllBytes($Target, $bytes)
+    return $result
+}
+
 # ------------------------------------------------------------------ Отучение SolidWorks от сети
 
 function Get-EskdSwOfflineSettings {
