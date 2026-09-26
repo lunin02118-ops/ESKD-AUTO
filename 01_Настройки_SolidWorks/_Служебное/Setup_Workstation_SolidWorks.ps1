@@ -801,11 +801,12 @@ if ($sandbox -or $SkipDrew) {
     # (Get-EskdDrewPlan) и видно, что установка закончилась. Не обновили — установка всё равно засчитывается (сборка
     # лицензии появилась заново), а итог предупреждает, что замер устарел.
     $licHash = "0D31E06D6AC7F6F560745E8797BF09004BAC6FC576C937E36072AAC88831F365"
-    # Какой установщик ставил Drew: отпечаток файла AUTO.exe после подтверждённой установки — у учётной записи (HKCU,
-    # -Mode Uninstall его сохраняет) и метка на весь ПК в %ProgramData%\ESKD\DrewInstaller (Drew стоит на весь ПК: другая
-    # учётная запись не переставляет его заново). Пока в инструментарии тот же установщик, Drew не переустанавливается,
-    # даже если хэш лицензионной сборки не совпал с замером (другая ОС) — иначе удаление и установка с запросом прав
-    # повторялись бы при каждом обновлении. Сменился установщик — Drew переставляется один раз (решение владельца 26.09.2026).
+    # Какой установщик ставил Drew: запись «<время UTC>_<SHA-256 AUTO.exe>» после подтверждённой установки — метка на весь
+    # ПК (файл в %ProgramData%\ESKD\DrewInstaller: Drew стоит на весь ПК, другая учётная запись не переставляет его заново)
+    # и отпечаток учётной записи (HKCU, -Mode Uninstall его сохраняет; нужен, если метку записать не дали). Решает последняя
+    # запись (Get-EskdDrewRecordedInstaller). Пока в инструментарии тот же установщик, Drew не переустанавливается, даже если
+    # хэш лицензионной сборки не совпал с замером (другая ОС) — иначе удаление и установка с запросом прав повторялись бы
+    # при каждом обновлении. Сменился установщик (и возврат прежнего) — Drew переставляется один раз (решение владельца 26.09.2026).
     $drewInstallKey = "$U\SolidWorks\ESKD_Install"
     $drewMarkDir = Join-Path $env:ProgramData "ESKD\DrewInstaller"
     $drewDir = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation"
@@ -813,22 +814,26 @@ if ($sandbox -or $SkipDrew) {
     # Хэши — только через Get-EskdFileSha256 (.NET): пустой хэш из-за пропавшего Get-FileHash означал «не совпало» и
     # удаление с переустановкой Drew (20.09.2026). Хэш сборки лицензии не вычислился — Drew не трогаем вовсе.
     $autoHash = if ($drewExe.Count) { Get-EskdFileSha256OrNull -Path $drewExe[0].FullName } else { $null }
-    $recordedAuto = (Get-ItemProperty -LiteralPath $drewInstallKey -Name "DrewInstaller" -ErrorAction SilentlyContinue).DrewInstaller
-    $machineAuto = [bool]($autoHash -and (Test-Path -LiteralPath (Join-Path $drewMarkDir $autoHash)))
+    $drewMarks = @(Get-ChildItem -LiteralPath $drewMarkDir -File -Name -ErrorAction SilentlyContinue)
+    $machineLast = Get-EskdDrewRecordedInstaller -Records $drewMarks
+    $recordedAuto = Get-EskdDrewRecordedInstaller -Records ($drewMarks + @([string](Get-RegValue $drewInstallKey "DrewInstaller")))
     $licPresent = Test-Path -LiteralPath $licDll
     $licNow = if ($licPresent) { Get-EskdFileSha256OrNull -Path $licDll } else { $null }
-    $drewPlan = Get-EskdDrewPlan -LicPresent $licPresent -LicNow $licNow -LicHash $licHash -AutoHash $autoHash `
-                                 -RecordedAuto $recordedAuto -MachineAuto $machineAuto
+    $drewPlan = Get-EskdDrewPlan -LicPresent $licPresent -LicNow $licNow -LicHash $licHash -AutoHash $autoHash -RecordedAuto $recordedAuto
     $drewOk = @("Keep", "Unverified") -contains $drewPlan
-    # Установка подтверждена: отпечаток учётной записи и метка на весь ПК. Метка не создалась (политика, права) — другие
-    # учётные записи переставят Drew ещё раз, это безопасно.
-    $recordDrew = {
-        Set-Reg $drewInstallKey "DrewInstaller" $autoHash
+    # Метка на весь ПК. Не создалась (политика, права) — другие учётные записи переставят Drew ещё раз, это безопасно.
+    $markDrew = {
+        param([string]$Stamp)
         try {
             New-Item -ItemType Directory -Path $drewMarkDir -Force -ErrorAction Stop | Out-Null
-            $mark = Join-Path $drewMarkDir $autoHash
-            if (-not (Test-Path -LiteralPath $mark)) { New-Item -ItemType File -Path $mark -ErrorAction Stop | Out-Null }
+            New-Item -ItemType File -Path (Join-Path $drewMarkDir $Stamp) -Force -ErrorAction Stop | Out-Null
         } catch { Write-Info "Метка установки Drew для других учётных записей не записана: $($_.Exception.Message)" }
+    }
+    # Установка подтверждена: отпечаток учётной записи и метка на весь ПК — одна и та же запись.
+    $recordDrew = {
+        $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmssfff") + "_" + $autoHash
+        Set-Reg $drewInstallKey "DrewInstaller" $stamp
+        & $markDrew $stamp
     }
     # Записи «Drew» в списке установленных программ (установщик Windows): по ним удаляется прежняя сборка. Скриптблок отдаёт
     # одну запись без массива, а у одиночного объекта в PowerShell 5.1 нет .Count — считать только через @(& $findDrewEntries).
@@ -849,6 +854,8 @@ if ($sandbox -or $SkipDrew) {
         Write-Warn "Drew установлен, но сверить его сборку не удалось (файл занят или недоступен): $licDll. Переустановка не выполняется."
     } elseif ($drewPlan -eq "Keep") {
         Write-Info "Drew уже установлен $(if ($autoHash) { 'этим же установщиком' } else { '(сборка верная, хэш совпал)' })."
+        # Решил отпечаток учётной записи (прежний выпуск меток не писал, или метку записать не дали) — метка для других.
+        if ($autoHash -and $machineLast -ne $autoHash) { & $markDrew ((Get-Date).ToUniversalTime().ToString("yyyyMMddHHmmssfff") + "_" + $autoHash) }
     } elseif ($drewPlan -eq "Update" -and $drewExe.Count) {
         Write-Info "Drew поставлен прежним установщиком (или вручную), в инструментарии новый ($($drewExe[0].Name)): Drew будет переставлен один раз."
     } elseif ($drewPlan -eq "Replace" -and $drewExe.Count) {
@@ -871,7 +878,8 @@ if ($sandbox -or $SkipDrew) {
                 New-Item -ItemType Directory -Path $drewTemp -Force | Out-Null
                 Copy-Item -LiteralPath $drewExe[0].FullName -Destination $drewLocalExe -Force -ErrorAction Stop
                 $runHash = Get-EskdFileSha256OrNull -Path $drewLocalExe
-                if ($runHash) { $autoHash = $runHash }
+                if (-not $runHash) { throw "копия установщика не читается (антивирус?): $drewLocalExe" }
+                $autoHash = $runHash
                 $copied = $true
             } catch {
                 if ($drewPlan -eq "Update") {
@@ -883,10 +891,11 @@ if ($sandbox -or $SkipDrew) {
             }
             # Прежняя сборка Drew той же версии 4.3.0.0: установщик Windows её только «перенастроит» и файлы не заменит.
             # Поэтому сначала штатное удаление (msiexec /x по коду продукта; Program Files — нужны права администратора).
-            # Отказ в правах на удаление при обновлении рабочего Drew (Update) — предупреждение: прежний Drew цел,
-            # обновление предложит следующая установка. Чужая сборка (Replace) — ошибка. После удаления неудачная
-            # установка — ошибка: Drew на ПК уже нет, следующая настройка поставит его с нуля.
+            # Отказ в правах или сбой удаления при обновлении рабочего Drew (Update) — предупреждение: прежний Drew цел,
+            # обновление предложит следующая установка. Чужая сборка (Replace) — ошибка. После удаления (в том числе
+            # отложенного до перезагрузки, код 3010) неудачная установка — ошибка: следующая настройка поставит Drew с нуля.
             $removeOk = $copied
+            $uninstalled = $false
             if ($copied) {
                 foreach ($old in @(& $findDrewEntries)) {
                     $current = if (Test-Path -LiteralPath $licDll) { Get-EskdFileSha256OrNull -Path $licDll } else { "нет файла" }
@@ -894,11 +903,21 @@ if ($sandbox -or $SkipDrew) {
                     try {
                         $msi = Start-Process -FilePath "msiexec.exe" -ArgumentList "/x", $old.Code, "/qn", "/norestart" -Verb RunAs -Wait -PassThru
                         # 0 — удалено, 3010 — удалено, нужна перезагрузка, 1605 — продукт уже не установлен
-                        if (@(0, 3010, 1605) -contains $msi.ExitCode) { Write-Ok "Прежняя сборка Drew удалена (код $($msi.ExitCode))." }
-                        else { $removeOk = $false; $failures++; Write-Fail "Удаление прежней сборки Drew завершилось с кодом $($msi.ExitCode)." }
+                        if (@(0, 3010, 1605) -contains $msi.ExitCode) {
+                            if ($msi.ExitCode -ne 1605) { $uninstalled = $true }
+                            Write-Ok "Прежняя сборка Drew удалена (код $($msi.ExitCode))."
+                        } else {
+                            $removeOk = $false
+                            if ($drewPlan -eq "Update" -and -not $uninstalled) {
+                                Write-Warn "Drew не обновлён: удаление прежней сборки завершилось с кодом $($msi.ExitCode). Прежний Drew работает; обновление предложит следующая установка."
+                            } else {
+                                $failures++
+                                Write-Fail "Удаление прежней сборки Drew завершилось с кодом $($msi.ExitCode)."
+                            }
+                        }
                     } catch {
                         $removeOk = $false
-                        if ($drewPlan -eq "Update") {
+                        if ($drewPlan -eq "Update" -and -not $uninstalled) {
                             Write-Warn "Drew не обновлён: запрос прав администратора отклонён. Новая сборка не ставится, прежний Drew работает; обновление предложит следующая установка."
                         } else {
                             $failures++
@@ -920,7 +939,7 @@ if ($sandbox -or $SkipDrew) {
                     $setup = Start-Process -FilePath $drewLocalExe -WorkingDirectory $drewTemp -PassThru -ErrorAction Stop
                 } catch {
                     # Блокировка файла SmartScreen и т. п.: ждать нечего. Права установщик запрашивает сам, уже после запуска.
-                    if ($drewPlan -eq "Update" -and $licLeft) {
+                    if ($drewPlan -eq "Update" -and -not $uninstalled) {
                         Write-Warn "Drew не обновлён: установщик не запустился ($($_.Exception.Message)). Прежний Drew работает; обновление предложит следующая установка."
                     } else {
                         $failures++
@@ -958,10 +977,10 @@ if ($sandbox -or $SkipDrew) {
                         Write-Warn "Хэш сборки лицензии Drew ($(if ($licAfter) { $licAfter } else { 'не прочитан' })) не совпал с замером в сценарии настройки: установщик в инструментарии новее замера — администратору обновить `$licHash."
                     }
                     elseif ($registered) {
-                        Write-Warn "Drew поставлен поверх оставшихся файлов прежней сборки (их удаление ждёт перезагрузки, или Drew копировали вручную): сборку проверить нельзя. Перезагрузите ПК и запустите настройку снова."
-                        if ($drewPlan -ne "Update") { $failures++ }
+                        $overText = "Drew поставлен поверх оставшихся файлов прежней сборки (их удаление ждёт перезагрузки, или Drew копировали вручную): сборку проверить нельзя. Перезагрузите ПК и запустите настройку снова."
+                        if ($drewPlan -eq "Update") { Write-Warn $overText } else { $failures++; Write-Fail $overText }
                     }
-                    elseif ($setup.HasExited -and $drewPlan -eq "Update" -and $licLeft -and (Test-Path -LiteralPath $licDll)) {
+                    elseif ($setup.HasExited -and $drewPlan -eq "Update" -and -not $uninstalled -and (Test-Path -LiteralPath $licDll)) {
                         # Удалять было нечего, прежний Drew на месте, новый не поставлен (отказ в правах в окне установщика).
                         Write-Warn "Drew не обновлён: установщик закрылся, не поставив новую сборку. Прежний Drew работает; обновление предложит следующая установка."
                     }

@@ -514,31 +514,41 @@ function Get-EskdLanguagePlan {
 
 # ------------------------------------------------------------------ Drew
 
+function Get-EskdDrewRecordedInstaller {
+    # Каким установщиком поставлен Drew на этом ПК — по последней подтверждённой установке. Записи «<время UTC>_<SHA-256
+    # AUTO.exe>»: метки на весь ПК (имена файлов в %ProgramData%\ESKD\DrewInstaller: Drew стоит на весь ПК) и отпечаток
+    # учётной записи (ESKD_Install\DrewInstaller); прежний вид отпечатка — голый хэш — считается самым старым. Метки только
+    # добавляются (чужой файл в ProgramData не изменить), поэтому решает последняя: возврат прежнего установщика — тоже смена.
+    param([string[]]$Records)
+    $last = @($Records | Where-Object { $_ } |
+              ForEach-Object { if ($_ -match '^[0-9A-Fa-f]{64}$') { "00000000000000000_$_" } else { $_ } } |
+              Where-Object { $_ -match '^\d{17}_[0-9A-Fa-f]{64}$' } | Sort-Object) | Select-Object -Last 1
+    if ($last) { return $last.Substring(18) }
+    return $null
+}
+
 function Get-EskdDrewPlan {
-    # Что делать с Drew на шаге [7/9]. Отпечаток установщика — SHA-256 файла AUTO.exe инструментария после подтверждённой
-    # установки: у учётной записи (ESKD_Install\DrewInstaller, RecordedAuto) и у всего ПК (метка %ProgramData%\ESKD\DrewInstaller\
-    # <хэш>, MachineAuto — Drew стоит на весь ПК, и его уже поставила этим установщиком другая учётная запись). Решение
-    # владельца 26.09.2026: сменился установщик в инструментарии — Drew переставляется один раз, даже если сборка лицензии
-    # совпала с замером: у установщиков 24.09–26.09.2026 она одна, и прежнее правило «хэш совпал — Drew верный» оставляло
-    # старый Drew навсегда.
+    # Что делать с Drew на шаге [7/9]. RecordedAuto — SHA-256 установщика последней подтверждённой установки Drew на ПК
+    # (Get-EskdDrewRecordedInstaller). Решение владельца 26.09.2026: сменился установщик в инструментарии — Drew
+    # переставляется один раз на ПК, даже если сборка лицензии совпала с замером: у установщиков 24.09–26.09.2026 она одна,
+    # и прежнее правило «хэш совпал — Drew верный» оставляло старый Drew навсегда.
     #   Install — Drew нет; Keep — стоит этим же установщиком; Update — стоит Drew с верной сборкой лицензии от прежнего
-    #   (или неизвестного) установщика: переставляется, отказ в правах на удаление — только предупреждение; Replace —
-    #   сборка лицензии чужая (пробная производителя, со «слётом» лицензии): переставляется, отказ — ошибка;
-    #   Unverified — сборка лицензии есть, но не читается (файл занят): Drew не трогается.
+    #   (или неизвестного) установщика: переставляется, сбой удаления — только предупреждение; Replace — сборка лицензии
+    #   чужая (пробная производителя, со «слётом» лицензии): переставляется, сбой — ошибка; Unverified — сборка лицензии
+    #   есть, но не читается (файл занят): Drew не трогается.
     param(
         [bool]$LicPresent,
         [string]$LicNow,
         [string]$LicHash,
         [string]$AutoHash,
-        [string]$RecordedAuto,
-        [bool]$MachineAuto
+        [string]$RecordedAuto
     )
     if (-not $LicPresent) { return "Install" }
     if (-not $LicNow) { return "Unverified" }
     $licOk = $LicNow -eq $LicHash
     # Установщика в инструментарии нет или он не читается: сравнить не с чем — остаётся проверка по сборке лицензии.
     if (-not $AutoHash) { return $(if ($licOk) { "Keep" } else { "Install" }) }
-    if ($RecordedAuto -eq $AutoHash -or $MachineAuto) { return "Keep" }
+    if ($RecordedAuto -eq $AutoHash) { return "Keep" }
     if ($licOk) { return "Update" }
     return "Replace"
 }

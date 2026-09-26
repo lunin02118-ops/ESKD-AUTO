@@ -106,23 +106,31 @@ try {
     Expect "язык: кодовая страница 1252 — предупреждение SWPlus" $en.AcpOk $false
     Expect "язык: кодовая страница UTF-8 (65001) — предупреждение SWPlus" (Get-EskdLanguagePlan -Language Russian -UserLcid 0x0419 -RussianPack $true -Acp "65001").AcpOk $false
     # Drew (решение владельца 26.09.2026): сменился установщик в инструментарии — Drew переставляется один раз на ПК
-    $lic = "0D31E06D"; $newAuto = "A9CEE78D"; $oldAuto = "6BD50418"
-    function DrewPlan($LicPresent = $true, $LicNow = $lic, $AutoHash = $newAuto, $RecordedAuto = "", $MachineAuto = $false) {
-        Get-EskdDrewPlan -LicPresent $LicPresent -LicNow $LicNow -LicHash $lic -AutoHash $AutoHash -RecordedAuto $RecordedAuto -MachineAuto $MachineAuto
+    $lic = "0D31E06D"; $newAuto = "A9CEE78D" + "0" * 56; $oldAuto = "6BD50418" + "0" * 56
+    function DrewPlan($LicPresent = $true, $LicNow = $lic, $AutoHash = $newAuto, $RecordedAuto = "") {
+        Get-EskdDrewPlan -LicPresent $LicPresent -LicNow $LicNow -LicHash $lic -AutoHash $AutoHash -RecordedAuto $RecordedAuto
     }
     Expect "Drew: не установлен — ставится" (DrewPlan -LicPresent $false -LicNow "") "Install"
-    Expect "Drew: не установлен, хотя метка ПК есть (удалили вручную) — ставится" (DrewPlan -LicPresent $false -LicNow "" -MachineAuto $true) "Install"
+    Expect "Drew: не установлен, хотя этим установщиком ставили (удалили вручную) — ставится" (DrewPlan -LicPresent $false -LicNow "" -RecordedAuto $newAuto) "Install"
     Expect "Drew: сборка лицензии занята — не трогается" (DrewPlan -LicNow "") "Unverified"
     Expect "Drew: поставлен этим же установщиком — не трогается" (DrewPlan -RecordedAuto $newAuto) "Keep"
     Expect "Drew: тот же установщик, хэш сборки другой — не трогается" (DrewPlan -LicNow "FFFF" -RecordedAuto $newAuto) "Keep"
-    Expect "Drew: этим установщиком его уже поставила другая учётная запись ПК — не трогается" (DrewPlan -RecordedAuto $oldAuto -MachineAuto $true) "Keep"
-    Expect "Drew: другая учётная запись, отпечатка нет — не трогается" (DrewPlan -MachineAuto $true) "Keep"
     Expect "Drew: установщик в инструментарии сменился — обновляется" (DrewPlan -RecordedAuto $oldAuto) "Update"
+    Expect "Drew: вернули прежний установщик — тоже обновляется" (DrewPlan -AutoHash $oldAuto -RecordedAuto $newAuto) "Update"
     Expect "Drew: ставили вручную или до записи отпечатка — обновляется" (DrewPlan) "Update"
-    Expect "Drew: чужая сборка, прежний установщик — заменяется (отказ в правах — ошибка)" (DrewPlan -LicNow "FFFF" -RecordedAuto $oldAuto) "Replace"
+    Expect "Drew: чужая сборка, прежний установщик — заменяется (сбой — ошибка)" (DrewPlan -LicNow "FFFF" -RecordedAuto $oldAuto) "Replace"
     Expect "Drew: чужая сборка, отпечатка нет — заменяется" (DrewPlan -LicNow "FFFF") "Replace"
     Expect "Drew: установщика в инструментарии нет, сборка верная — не трогается" (DrewPlan -AutoHash "") "Keep"
     Expect "Drew: установщика нет, сборка чужая — «ставится» (установщик сообщит, что его нет)" (DrewPlan -LicNow "FFFF" -AutoHash "") "Install"
+    # Каким установщиком поставлен Drew: решает последняя запись — метки ПК «<время UTC>_<хэш>» и отпечаток учётной записи
+    $t1 = "20260926090000000"; $t2 = "20260927090000000"; $t3 = "20260928090000000"
+    Expect "Drew, записи: ничего нет" ([string](Get-EskdDrewRecordedInstaller -Records @("", $null))) ""
+    Expect "Drew, записи: отпечаток прежнего вида (голый хэш)" (Get-EskdDrewRecordedInstaller -Records @($oldAuto)) $oldAuto
+    Expect "Drew, записи: метка ПК новее голого хэша учётной записи" (Get-EskdDrewRecordedInstaller -Records @("${t1}_$newAuto", $oldAuto)) $newAuto
+    Expect "Drew, записи: решает последняя метка (другая учётная запись обновила Drew)" (Get-EskdDrewRecordedInstaller -Records @("${t1}_$oldAuto", "${t2}_$newAuto", "${t1}_$oldAuto")) $newAuto
+    Expect "Drew, записи: возврат прежнего установщика — последняя метка за ним" (Get-EskdDrewRecordedInstaller -Records @("${t1}_$oldAuto", "${t2}_$newAuto", "${t3}_$oldAuto")) $oldAuto
+    Expect "Drew, записи: метку не дали записать — решает отпечаток учётной записи" (Get-EskdDrewRecordedInstaller -Records @("${t1}_$oldAuto", "${t2}_$newAuto")) $newAuto
+    Expect "Drew, записи: посторонние файлы в папке меток не мешают" (Get-EskdDrewRecordedInstaller -Records @("desktop.ini", "${t1}_$oldAuto", "x_$newAuto")) $oldAuto
     Expect "класс: папка «SWPlusMacro_v_2018_SP0.0 2» не путается с папкой SWPlus" (Resolve-EskdProfilePath -Relative "${swplusRel} 2\x.swp" -SourceRoot "S" -LocalRoot "L") "S\${swplusRel} 2\x.swp"
 
     $setup = Join-Path $source "01_Настройки_SolidWorks\_Служебное\Setup_Workstation_SolidWorks.ps1"
