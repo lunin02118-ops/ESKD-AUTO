@@ -105,6 +105,26 @@ try {
     Expect "язык: английский — «Use English language» = 1, формат не трогается, DREW_LANG=en" ("{0}|{1}|{2}" -f $en.UseEnglish, $en.SetCulture, $en.DrewLang) "1|False|en"
     Expect "язык: кодовая страница 1252 — предупреждение SWPlus" $en.AcpOk $false
     Expect "язык: кодовая страница UTF-8 (65001) — предупреждение SWPlus" (Get-EskdLanguagePlan -Language Russian -UserLcid 0x0419 -RussianPack $true -Acp "65001").AcpOk $false
+    # Drew (решение владельца 26.09.2026): сменился установщик в инструментарии — Drew переставляется один раз
+    $lic = "0D31E06D"; $newAuto = "A9CEE78D"; $oldAuto = "6BD50418"
+    $early = [datetime]"2026-09-20 10:00"; $autoAt = [datetime]"2026-09-26 10:27"; $late = [datetime]"2026-09-26 11:00"
+    function DrewPlan($LicPresent = $true, $LicNow = $lic, $AutoHash = $newAuto, $RecordedAuto = "", $DrewSince = $early, $AutoSince = $autoAt) {
+        Get-EskdDrewPlan -LicPresent $LicPresent -LicNow $LicNow -LicHash $lic -AutoHash $AutoHash -RecordedAuto $RecordedAuto -DrewSince $DrewSince -AutoSince $AutoSince
+    }
+    Expect "Drew: не установлен — ставится" (DrewPlan -LicPresent $false -LicNow "") "Install"
+    Expect "Drew: сборка лицензии занята — не трогается" (DrewPlan -LicNow "") "Unverified"
+    Expect "Drew: поставлен этим же установщиком — не трогается" (DrewPlan -RecordedAuto $newAuto) "Keep"
+    Expect "Drew: тот же установщик, хэш сборки другой — не трогается" (DrewPlan -LicNow "FFFF" -RecordedAuto $newAuto) "Keep"
+    Expect "Drew: установщик в инструментарии сменился — обновляется" (DrewPlan -RecordedAuto $oldAuto) "Update"
+    Expect "Drew: установщик сменился, хотя Drew поставлен позже — отпечаток решает" (DrewPlan -RecordedAuto $oldAuto -DrewSince $late) "Update"
+    Expect "Drew: отпечатка нет, Drew поставлен до этого установщика — обновляется" (DrewPlan) "Update"
+    Expect "Drew: отпечатка нет, дата папки неизвестна — обновляется" (DrewPlan -DrewSince $null) "Update"
+    Expect "Drew: отпечатка нет, Drew поставлен после этого установщика (другая учётная запись) — не трогается" (DrewPlan -DrewSince $late) "Adopt"
+    Expect "Drew: чужая сборка, прежний установщик — заменяется (отказ в правах — ошибка)" (DrewPlan -LicNow "FFFF" -RecordedAuto $oldAuto) "Replace"
+    Expect "Drew: чужая сборка, отпечатка нет — заменяется" (DrewPlan -LicNow "FFFF") "Replace"
+    Expect "Drew: чужая сборка поставлена после установщика — всё равно заменяется" (DrewPlan -LicNow "FFFF" -DrewSince $late) "Replace"
+    Expect "Drew: установщика в инструментарии нет, сборка верная — не трогается" (DrewPlan -AutoHash "") "Keep"
+    Expect "Drew: установщика нет, сборка чужая — «ставится» (установщик сообщит, что его нет)" (DrewPlan -LicNow "FFFF" -AutoHash "") "Install"
     Expect "класс: папка «SWPlusMacro_v_2018_SP0.0 2» не путается с папкой SWPlus" (Resolve-EskdProfilePath -Relative "${swplusRel} 2\x.swp" -SourceRoot "S" -LocalRoot "L") "S\${swplusRel} 2\x.swp"
 
     $setup = Join-Path $source "01_Настройки_SolidWorks\_Служебное\Setup_Workstation_SolidWorks.ps1"
@@ -294,6 +314,8 @@ try {
 
     # ТЗ-01 -Mode Uninstall: регистрация, кнопки SWPlus, вкладка, локальная копия и ESKD_Install — долой; фамилия,
     # базовые кнопки SolidWorks и кнопка пользователя в панели быстрого доступа остаются.
+    # Отпечаток установщика Drew переживает удаление: иначе следующая установка переставила бы тот же Drew (26.09.2026).
+    Set-ItemProperty -LiteralPath "$sandbox\SolidWorks\ESKD_Install" -Name "DrewInstaller" -Value "A9CEE78D"
     $code, $out = & $run @("-Mode", "Uninstall")
     $output += "`n--- удаление ---`n" + $out
     Expect "Uninstall: код выхода" $code 0
@@ -304,7 +326,8 @@ try {
     Expect "Uninstall: кнопка пользователя осталась" (Read-Value $qat "Btn20") "1,40001"
     Expect "Uninstall: макросы на локальную копию убраны" (Read-Value "$swKey\User Defined Macros\01 - Macro Folder" "Source Path") $null
     Expect "Uninstall: локальная копия удалена" (Test-Path -LiteralPath $local) $false
-    Expect "Uninstall: ESKD_Install удалён" (Test-Path -LiteralPath "$sandbox\SolidWorks\ESKD_Install") $false
+    Expect "Uninstall: сведения об установке удалены" (@((Get-Item -LiteralPath "$sandbox\SolidWorks\ESKD_Install").Property) -join ",") "DrewInstaller"
+    Expect "Uninstall: отпечаток установщика Drew сохранён" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "DrewInstaller") "A9CEE78D"
     Expect "Uninstall: фамилия осталась" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
     $code, $out = & $run @("-Mode", "Check")
     Expect "Check после удаления: не установлено" $code 10

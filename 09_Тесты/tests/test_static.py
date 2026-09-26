@@ -349,8 +349,12 @@ class StaticRepository(StaticTestCase):
         # замер 24.09.2026: установщик без слёта лицензии (SHA-256 6BD50418…), чистая установка на ПК владельца
         self.assertIn("0D31E06D6AC7F6F560745E8797BF09004BAC6FC576C937E36072AAC88831F365", setup,
                       "движок сверяет сборку Drew по контрольному хэшу")
-        self.assertIn("$licItem.CreationTime -ge $startedAt", setup,
-                      "установщик Windows оставляет файлу дату сборки: свежую установку Drew видно по дате создания")
+        # 26.09.2026: установщик оставляет файлам Drew даты сборки (и создания), а AUTO.exe всегда выходит с кодом 0 —
+        # установка засчитывается только по появлению сборки лицензии или записи Drew в списке программ
+        self.assertNotIn("$licItem.CreationTime -ge $startedAt", setup, "дата файла Drew не показывает свежую установку")
+        self.assertNotIn("$setup.ExitCode -eq 0", setup, "код выхода AUTO.exe всегда 0 — не признак установки")
+        self.assertIn("(-not $licLeft -and (Test-Path -LiteralPath $licDll))", setup, "появление сборки лицензии — признак установки")
+        self.assertIn("(-not $entryLeft -and (& $findDrewEntries).Count -gt 0)", setup, "появление записи Drew — признак установки")
         self.assertIn("AddMinutes(6)", setup, "движок ждёт завершения установщика Drew с таймаутом")
         self.assertIn("Лицензия Drew: встроенная", setup, "активация больше не требуется — сообщается прямо")
         # решение владельца 15.09.2026: Drew другой сборки той же версии удаляется штатно и ставится заново —
@@ -363,7 +367,18 @@ class StaticRepository(StaticTestCase):
         # не переустанавливается при каждом обновлении из-за расхождения хэша
         self.assertIn("-PassThru -ErrorAction Stop", setup, "сбой запуска установщика Drew перехватывается сразу")
         self.assertIn('Set-Reg $drewInstallKey "DrewInstaller" $autoHash', setup, "отпечаток установщика Drew не запоминается")
-        self.assertIn("$recordedAuto -eq $autoHash", setup, "Drew от того же установщика не признаётся установленным")
+        # решение владельца 26.09.2026: сменился установщик в инструментарии — Drew переставляется один раз, даже если
+        # сборка лицензии та же (правило — Get-EskdDrewPlan, случаи — check_deploy_engine.ps1)
+        module = (ROOT / "01_Настройки_SolidWorks" / "_Служебное" / "EskdDeploy.psm1").read_text(encoding="utf-8-sig")
+        plan = module[module.index("function Get-EskdDrewPlan"):]
+        plan = plan[:plan.index("\n}")]
+        self.assertIn('if ($RecordedAuto -eq $AutoHash) { return "Keep" }', plan, "Drew от того же установщика не признаётся установленным")
+        for outcome in ("Update", "Replace", "Adopt"):
+            self.assertIn(f'return "{outcome}"', plan, f"правило Drew без исхода {outcome}")
+        self.assertIn("$drewPlan = Get-EskdDrewPlan", setup, "шаг Drew не спрашивает правило")
+        self.assertIn("Drew не обновлён: запрос прав администратора отклонён", setup,
+                      "отказ в правах при обновлении рабочего Drew — предупреждение, а не ошибка настройки")
+        self.assertIn("$keepDrewInstaller = Get-RegValue $install \"DrewInstaller\"", setup, "-Mode Uninstall стирает отпечаток Drew")
         self.assertNotIn("-Silent -NoActivate", setup, "старый вызов классического установщика убран")
         self.assertNotIn("Drew не активирован", setup)
         self.assertNotIn("Activation.code", setup)

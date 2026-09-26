@@ -330,7 +330,10 @@ if ($Mode -eq "Uninstall") {
     } elseif (Test-Path -LiteralPath $LocalRoot) {
         Write-Warn "Папка $LocalRoot не похожа на локальную копию ЕСКД — не удалена."
     }
+    # Отпечаток установщика Drew остаётся: Drew не удаляется, и следующая установка не должна переставлять его заново.
+    $keepDrewInstaller = Get-RegValue $install "DrewInstaller"
     Remove-Item -LiteralPath $install -Recurse -Force -ErrorAction SilentlyContinue
+    if ($keepDrewInstaller) { Set-Reg $install "DrewInstaller" $keepDrewInstaller }
     Write-Ok "Сведения об установке удалены. Фамилия и настройки ЕСКД, шрифты, Drew оставлены."
     exit 0
 }
@@ -793,12 +796,15 @@ if ($sandbox -or $SkipDrew) {
                         (Join-Path $env:LOCALAPPDATA "CAD Booster\Drew\CADBooster.Drew.Drawing.dll"))
     $licDll = Join-Path $env:ProgramFiles "CAD Booster\Drew\CADBooster.Common.Licensing.dll"
     # Хэш CADBooster.Common.Licensing.dll, которую ставит УСТАНОВЩИК_Drew_AUTO.exe инструментария (замер 24.09.2026, установщик
-    # без слёта лицензии, SHA-256 6BD50418…: удаление прежнего Drew, чистая установка этим установщиком). Новый установщик
-    # в Drw_System_Automation — новый замер и этот хэш.
+    # без слёта лицензии, SHA-256 6BD50418…; у установщика 26.09.2026, A9CEE78D…, сборка та же). Новый установщик в
+    # Drw_System_Automation — новый замер и этот хэш: по нему рабочий Drew отличается от чужой сборки (Get-EskdDrewPlan) и
+    # видно, что установка закончилась. Не обновили — установка всё равно засчитывается (файл или запись Drew появились),
+    # а итог предупреждает, что замер устарел.
     $licHash = "0D31E06D6AC7F6F560745E8797BF09004BAC6FC576C937E36072AAC88831F365"
-    # Какой установщик ставил Drew на этом ПК: отпечаток файла AUTO.exe после удачной установки. Пока в инструментарии тот же
-    # установщик, Drew не переустанавливается, даже если хэш лицензионной сборки не совпал с замером (другая ОС, новый
-    # установщик без обновления замера) — иначе удаление и установка с запросом прав повторялись бы при каждом обновлении.
+    # Какой установщик ставил Drew на этом ПК: отпечаток файла AUTO.exe после подтверждённой установки (-Mode Uninstall его
+    # сохраняет). Пока в инструментарии тот же установщик, Drew не переустанавливается, даже если хэш лицензионной сборки
+    # не совпал с замером (другая ОС) — иначе удаление и установка с запросом прав повторялись бы при каждом обновлении.
+    # Сменился установщик — Drew переставляется один раз (решение владельца 26.09.2026).
     $drewInstallKey = "$U\SolidWorks\ESKD_Install"
     $drewDir = Join-Path $SourceRoot "03_Макросы_и_Плагины\Drw_System_Automation"
     $drewExe = @(Get-ChildItem -LiteralPath $drewDir -Filter "*AUTO.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1)
@@ -808,15 +814,42 @@ if ($sandbox -or $SkipDrew) {
     $recordedAuto = (Get-ItemProperty -LiteralPath $drewInstallKey -Name "DrewInstaller" -ErrorAction SilentlyContinue).DrewInstaller
     $licPresent = Test-Path -LiteralPath $licDll
     $licNow = if ($licPresent) { Get-EskdFileSha256OrNull -Path $licDll } else { $null }
-    $licMatches = $licPresent -and $licNow -and ($licNow -eq $licHash)
-    $drewOk = $licMatches -or ($licPresent -and $autoHash -and $recordedAuto -eq $autoHash)
-    if (-not $drewOk -and $licPresent -and -not $licNow) {
-        $drewOk = $true
-        Write-Warn "Drew установлен, но сверить его сборку не удалось (файл занят или недоступен): $licDll. Переустановка не выполняется."
+    # Когда поставлен Drew — по дате создания его папки (удаление Drew её убирает, установка создаёт заново); файлам в ней
+    # установщик оставляет даты сборки. Нужна, только если отпечатка нет: другая учётная запись этого ПК уже обновила Drew.
+    $drewHome = Split-Path -Parent $licDll
+    $drewSince = if (Test-Path -LiteralPath $drewHome) { (Get-Item -LiteralPath $drewHome).CreationTime } else { $null }
+    $autoSince = if ($drewExe.Count) { $drewExe[0].LastWriteTime } else { $null }
+    $drewPlan = Get-EskdDrewPlan -LicPresent $licPresent -LicNow $licNow -LicHash $licHash -AutoHash $autoHash `
+                                 -RecordedAuto $recordedAuto -DrewSince $drewSince -AutoSince $autoSince
+    $drewOk = @("Keep", "Adopt", "Unverified") -contains $drewPlan
+    # Записи «Drew» в списке установленных программ (установщик Windows): по ним удаляется прежняя сборка, а запись,
+    # появившаяся после работы установщика, — признак, что установка прошла (код выхода AUTO.exe всегда 0).
+    $uninstallRoots = @("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+                        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall")
+    $findDrewEntries = {
+        @(foreach ($root in $uninstallRoots) {
+            foreach ($key in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
+                $entry = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
+                if ($entry -and "$($entry.DisplayName)" -eq "Drew" -and "$($entry.Publisher)" -match "CAD Booster" -and $key.PSChildName -match '^\{[0-9A-Fa-f\-]{36}\}$') {
+                    [pscustomobject]@{ Code = $key.PSChildName; Version = "$($entry.DisplayVersion)" }
+                }
+            }
+        })
     }
-    if ($drewOk) {
-        Write-Info "Drew уже установлен $(if ($licMatches) { '(сборка верная, хэш совпал)' } else { '(поставлен этим же установщиком)' })."
-    } else {
+    if ($drewPlan -eq "Unverified") {
+        Write-Warn "Drew установлен, но сверить его сборку не удалось (файл занят или недоступен): $licDll. Переустановка не выполняется."
+    } elseif ($drewPlan -eq "Keep") {
+        Write-Info "Drew уже установлен $(if ($autoHash) { 'этим же установщиком' } else { '(сборка верная, хэш совпал)' })."
+    } elseif ($drewPlan -eq "Adopt") {
+        Set-Reg $drewInstallKey "DrewInstaller" $autoHash
+        Write-Info "Drew уже установлен (сборка верная) после появления установщика $($drewExe[0].Name) — не переставляется."
+    } elseif ($drewPlan -eq "Update" -and $drewExe.Count) {
+        Write-Info "Drew поставлен прежним установщиком (или вручную), в инструментарии новый ($($drewExe[0].Name)): Drew будет переставлен один раз."
+    } elseif ($drewPlan -eq "Replace" -and $drewExe.Count) {
+        Write-Info "Сборка Drew не та, что ставит инструментарий (хэш лицензии $licNow): Drew будет переставлен."
+    }
+    if (-not $drewOk) {
         if ($drewExe.Count -eq 0) {
             Write-Warn "Установщик Drew не найден: $drewDir"
         } elseif (Get-Process -Name "SLDWORKS" -ErrorAction SilentlyContinue) {
@@ -824,19 +857,10 @@ if ($sandbox -or $SkipDrew) {
         } else {
             # Прежняя сборка Drew той же версии 4.3.0.0: установщик Windows её только «перенастроит» и файлы не заменит.
             # Поэтому сначала штатное удаление (msiexec /x по коду продукта; Program Files — нужны права администратора).
+            # Отказ в правах при обновлении рабочего Drew (Update) — предупреждение: прежний Drew работает, обновление
+            # предложит следующая установка. Чужая сборка (Replace) или установка с нуля — ошибка.
             $removeOk = $true
-            $uninstallRoots = @("HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-                                "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
-                                "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall")
-            $oldDrew = @(foreach ($root in $uninstallRoots) {
-                foreach ($key in @(Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue)) {
-                    $entry = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction SilentlyContinue
-                    if ($entry -and "$($entry.DisplayName)" -eq "Drew" -and "$($entry.Publisher)" -match "CAD Booster" -and $key.PSChildName -match '^\{[0-9A-Fa-f\-]{36}\}$') {
-                        [pscustomobject]@{ Code = $key.PSChildName; Version = "$($entry.DisplayVersion)" }
-                    }
-                }
-            })
-            foreach ($old in $oldDrew) {
+            foreach ($old in (& $findDrewEntries)) {
                 $current = if (Test-Path -LiteralPath $licDll) { Get-EskdFileSha256OrNull -Path $licDll } else { "нет файла" }
                 Write-Info "Удаление прежней сборки Drew $($old.Version) $($old.Code) (хэш лицензии $current). Подтвердите запрос прав администратора."
                 try {
@@ -845,13 +869,22 @@ if ($sandbox -or $SkipDrew) {
                     if (@(0, 3010, 1605) -contains $msi.ExitCode) { Write-Ok "Прежняя сборка Drew удалена (код $($msi.ExitCode))." }
                     else { $removeOk = $false; $failures++; Write-Fail "Удаление прежней сборки Drew завершилось с кодом $($msi.ExitCode)." }
                 } catch {
-                    $removeOk = $false; $failures++
-                    Write-Fail "Прежняя сборка Drew не удалена: запрос прав администратора отклонён. Новая сборка не ставится."
+                    $removeOk = $false
+                    if ($drewPlan -eq "Update") {
+                        Write-Warn "Drew не обновлён: запрос прав администратора отклонён. Новая сборка не ставится, прежний Drew работает; обновление предложит следующая установка."
+                    } else {
+                        $failures++
+                        Write-Fail "Прежняя сборка Drew не удалена: запрос прав администратора отклонён. Новая сборка не ставится."
+                    }
                 }
             }
             if ($removeOk) {
                 Write-Info "Установка Drew (Gov-издание, лицензия встроена): $($drewExe[0].Name)."
-                $startedAt = Get-Date
+                # Признаки, что установщик действительно поставил Drew (код выхода AUTO.exe всегда 0, даты файлов — даты
+                # сборки): сборки лицензии перед запуском не было, а после — есть; или записи Drew в списке программ не
+                # было, а после — есть. Прежние файлы на месте и запись не появилась — установки не было (26.09.2026).
+                $licLeft = Test-Path -LiteralPath $licDll
+                $entryLeft = (& $findDrewEntries).Count -gt 0
                 $setup = $null
                 # Установщик просит права администратора, а у повышенного процесса нет подключённых сетевых дисков: с буквы
                 # диска NAS он тихо не стартует. Как у SWTools — запуск из локальной копии (аудит 19.09, У-К4).
@@ -863,33 +896,48 @@ if ($sandbox -or $SkipDrew) {
                     $setup = Start-Process -FilePath $drewLocalExe -WorkingDirectory $drewTemp -PassThru -ErrorAction Stop
                 } catch {
                     # Отказ в правах администратора, блокировка файла с сетевого ресурса SmartScreen и т. п.: ждать нечего.
-                    $failures++
-                    Write-Fail "Установщик Drew не запустился: $($_.Exception.Message) Запустите $($drewExe[0].Name) вручную."
+                    if ($drewPlan -eq "Update" -and $licLeft) {
+                        Write-Warn "Drew не обновлён: установщик не запустился ($($_.Exception.Message)). Прежний Drew работает; обновление предложит следующая установка."
+                    } else {
+                        $failures++
+                        Write-Fail "Установщик Drew не запустился: $($_.Exception.Message) Запустите $($drewExe[0].Name) вручную."
+                    }
                 }
                 if ($setup) {
                     $deadline = (Get-Date).AddMinutes(6)
                     $exitedAt = $null
-                    $installed = $false
+                    $appeared = $false
                     while ((Get-Date) -lt $deadline) {
                         Start-Sleep -Seconds 3
-                        if ((Get-EskdFileSha256OrNull -Path $licDll) -eq $licHash) { $installed = $true; break }
+                        $appeared = (-not $licLeft -and (Test-Path -LiteralPath $licDll)) -or
+                                    (-not $entryLeft -and (& $findDrewEntries).Count -gt 0)
+                        # Сборка лицензии появилась с верным хэшем — установка закончилась, окно установщика ещё может быть открыто.
+                        if (-not $licLeft -and $appeared -and (Get-EskdFileSha256OrNull -Path $licDll) -eq $licHash) { break }
                         if ($setup.HasExited) {
                             # Установщик мог передать работу установщику Windows и выйти раньше — даём ему 20 секунд.
+                            if ($appeared) { break }
                             if (-not $exitedAt) { $exitedAt = Get-Date } elseif (((Get-Date) - $exitedAt).TotalSeconds -gt 20) { break }
                         }
                     }
-                    # Установщик Windows оставляет файлу дату сборки, а не установки: свежесть — и по дате создания
-                    # (24.09.2026: Drew поставлен, а итог сообщал «файлы Drew не обновлены»).
-                    $licItem = if (Test-Path -LiteralPath $licDll) { Get-Item -LiteralPath $licDll } else { $null }
-                    $fresh = $licItem -and ($installed -or $licItem.LastWriteTime -ge $startedAt.AddMinutes(-1) -or
-                                            $licItem.CreationTime -ge $startedAt.AddMinutes(-1))
-                    if ($installed -or ($setup.HasExited -and $fresh)) {
+                    $licAfter = if (Test-Path -LiteralPath $licDll) { Get-EskdFileSha256OrNull -Path $licDll } else { $null }
+                    if ($appeared -and $licAfter -eq $licHash) {
                         Set-Reg $drewInstallKey "DrewInstaller" $autoHash
                         $drewOk = $true
-                        if ($installed) { Write-Ok "Drew установлен (контроль хэша пройден)." }
-                        else { Write-Ok "Drew установлен. Хэш лицензионной сборки отличается от замера в инструментарии — установщик новее; повторно ставиться не будет." }
+                        Write-Ok "Drew установлен (контроль хэша пройден)."
                     }
-                    elseif ($setup.HasExited) { $failures++; Write-Fail "Установщик Drew завершился (код $($setup.ExitCode)), а файлы Drew не обновлены - запустите $($drewExe[0].Name) вручную." }
+                    elseif ($appeared -and $setup.HasExited) {
+                        # Установка прошла, а сборка лицензии не та, что в замере: установщик в инструментарии новее замера.
+                        # Отпечаток пишется — иначе удаление и установка повторялись бы при каждом обновлении.
+                        Set-Reg $drewInstallKey "DrewInstaller" $autoHash
+                        $drewOk = $true
+                        Write-Ok "Drew установлен."
+                        Write-Warn "Хэш сборки лицензии Drew ($(if ($licAfter) { $licAfter } else { 'нет файла' })) не совпал с замером в сценарии настройки: установщик в инструментарии новее замера — администратору обновить `$licHash."
+                    }
+                    elseif ($setup.HasExited -and $drewPlan -eq "Update" -and $licLeft -and (Test-Path -LiteralPath $licDll)) {
+                        # Прежний Drew на месте, новый не поставлен (отказ в правах в окне установщика, «Отмена» и т. п.).
+                        Write-Warn "Drew не обновлён: установщик закрылся, не поставив новую сборку. Прежний Drew работает; обновление предложит следующая установка."
+                    }
+                    elseif ($setup.HasExited) { $failures++; Write-Fail "Установщик Drew завершился, а Drew не установлен - запустите $($drewExe[0].Name) вручную." }
                     else { $failures++; Write-Fail "Drew не установился за 6 минут - проверьте окно установщика." }
                 }
                 # Копию убираем, только когда установщик закончил: работающему процессу она ещё нужна.
