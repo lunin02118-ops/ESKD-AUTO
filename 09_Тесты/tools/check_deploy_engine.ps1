@@ -105,6 +105,40 @@ try {
     Expect "язык: английский — «Use English language» = 1, формат не трогается, DREW_LANG=en" ("{0}|{1}|{2}" -f $en.UseEnglish, $en.SetCulture, $en.DrewLang) "1|False|en"
     Expect "язык: кодовая страница 1252 — предупреждение SWPlus" $en.AcpOk $false
     Expect "язык: кодовая страница UTF-8 (65001) — предупреждение SWPlus" (Get-EskdLanguagePlan -Language Russian -UserLcid 0x0419 -RussianPack $true -Acp "65001").AcpOk $false
+    # Drew (решение владельца 26.09.2026): сменился установщик в инструментарии — Drew переставляется один раз на ПК
+    $lic = "0D31E06D"; $newAuto = "A9CEE78D" + "0" * 56; $oldAuto = "6BD50418" + "0" * 56
+    function DrewPlan($LicPresent = $true, $LicNow = $lic, $AutoHash = $newAuto, $RecordedAuto = "") {
+        Get-EskdDrewPlan -LicPresent $LicPresent -LicNow $LicNow -LicHash $lic -AutoHash $AutoHash -RecordedAuto $RecordedAuto
+    }
+    Expect "Drew: не установлен — ставится" (DrewPlan -LicPresent $false -LicNow "") "Install"
+    Expect "Drew: не установлен, хотя этим установщиком ставили (удалили вручную) — ставится" (DrewPlan -LicPresent $false -LicNow "" -RecordedAuto $newAuto) "Install"
+    Expect "Drew: сборка лицензии занята — не трогается" (DrewPlan -LicNow "") "Unverified"
+    Expect "Drew: поставлен этим же установщиком — не трогается" (DrewPlan -RecordedAuto $newAuto) "Keep"
+    Expect "Drew: тот же установщик, хэш сборки другой — не трогается" (DrewPlan -LicNow "FFFF" -RecordedAuto $newAuto) "Keep"
+    Expect "Drew: установщик в инструментарии сменился — обновляется" (DrewPlan -RecordedAuto $oldAuto) "Update"
+    Expect "Drew: вернули прежний установщик — тоже обновляется" (DrewPlan -AutoHash $oldAuto -RecordedAuto $newAuto) "Update"
+    Expect "Drew: ставили вручную или до записи отпечатка — обновляется" (DrewPlan) "Update"
+    Expect "Drew: чужая сборка, прежний установщик — заменяется (сбой — ошибка)" (DrewPlan -LicNow "FFFF" -RecordedAuto $oldAuto) "Replace"
+    Expect "Drew: чужая сборка, отпечатка нет — заменяется" (DrewPlan -LicNow "FFFF") "Replace"
+    Expect "Drew: установщика в инструментарии нет, сборка верная — не трогается" (DrewPlan -AutoHash "") "Keep"
+    Expect "Drew: установщика нет, сборка чужая — «ставится» (установщик сообщит, что его нет)" (DrewPlan -LicNow "FFFF" -AutoHash "") "Install"
+    # Каким установщиком поставлен Drew: решает последняя запись — метки ПК «<время UTC>_<хэш>» и отпечаток учётной записи
+    $t1 = "20260926090000000"; $t2 = "20260927090000000"; $t3 = "20260928090000000"
+    function DrewRecorded($Records) { Get-EskdDrewRecordedInstaller -Records $Records -Computer "PC1" }
+    Expect "Drew, записи: ничего нет" ([string](DrewRecorded @("", $null))) ""
+    Expect "Drew, записи: отпечаток прежнего вида (голый хэш)" (DrewRecorded @($oldAuto)) $oldAuto
+    Expect "Drew, записи: метка ПК новее голого хэша учётной записи" (DrewRecorded @("${t1}_$newAuto", $oldAuto)) $newAuto
+    Expect "Drew, записи: решает последняя метка (другая учётная запись обновила Drew)" (DrewRecorded @("${t1}_$oldAuto", "${t2}_$newAuto", "${t1}_$oldAuto")) $newAuto
+    Expect "Drew, записи: возврат прежнего установщика — последняя метка за ним" (DrewRecorded @("${t1}_$oldAuto", "${t2}_$newAuto", "${t3}_$oldAuto")) $oldAuto
+    Expect "Drew, записи: метку не дали записать — решает отпечаток учётной записи этого ПК" (DrewRecorded @("${t1}_$oldAuto", "${t2}_${newAuto}_PC1")) $newAuto
+    Expect "Drew, записи: отпечаток с другого ПК (перемещаемый профиль) не считается" (DrewRecorded @("${t1}_$oldAuto", "${t2}_${newAuto}_PC2")) $oldAuto
+    Expect "Drew, записи: посторонние файлы в папке меток не мешают" (DrewRecorded @("desktop.ini", "${t1}_$oldAuto", "x_$newAuto")) $oldAuto
+    $now = [datetime]"2026-10-05 01:02:03.004"
+    Expect "Drew, запись: время UTC и хэш" (New-EskdDrewStamp -AutoHash $newAuto -Records @() -Now $now) "20261005010203004_$newAuto"
+    $future = "20360101000000000_$oldAuto"
+    $stamp = New-EskdDrewStamp -AutoHash $newAuto -Records @($future, "${t1}_${oldAuto}_PC1") -Now $now
+    Expect "Drew, запись: метка «из будущего» (часы ПК убегали) — новая всё равно последняя" (DrewRecorded @($future, $stamp)) $newAuto
+    Expect "Drew, запись: разбирается тем же правилом (отпечаток с именем ПК)" (DrewRecorded @("${t1}_$oldAuto", "${stamp}_PC1")) $newAuto
     Expect "класс: папка «SWPlusMacro_v_2018_SP0.0 2» не путается с папкой SWPlus" (Resolve-EskdProfilePath -Relative "${swplusRel} 2\x.swp" -SourceRoot "S" -LocalRoot "L") "S\${swplusRel} 2\x.swp"
 
     $setup = Join-Path $source "01_Настройки_SolidWorks\_Служебное\Setup_Workstation_SolidWorks.ps1"
@@ -294,6 +328,8 @@ try {
 
     # ТЗ-01 -Mode Uninstall: регистрация, кнопки SWPlus, вкладка, локальная копия и ESKD_Install — долой; фамилия,
     # базовые кнопки SolidWorks и кнопка пользователя в панели быстрого доступа остаются.
+    # Отпечаток установщика Drew переживает удаление: иначе следующая установка переставила бы тот же Drew (26.09.2026).
+    Set-ItemProperty -LiteralPath "$sandbox\SolidWorks\ESKD_Install" -Name "DrewInstaller" -Value "A9CEE78D"
     $code, $out = & $run @("-Mode", "Uninstall")
     $output += "`n--- удаление ---`n" + $out
     Expect "Uninstall: код выхода" $code 0
@@ -304,7 +340,8 @@ try {
     Expect "Uninstall: кнопка пользователя осталась" (Read-Value $qat "Btn20") "1,40001"
     Expect "Uninstall: макросы на локальную копию убраны" (Read-Value "$swKey\User Defined Macros\01 - Macro Folder" "Source Path") $null
     Expect "Uninstall: локальная копия удалена" (Test-Path -LiteralPath $local) $false
-    Expect "Uninstall: ESKD_Install удалён" (Test-Path -LiteralPath "$sandbox\SolidWorks\ESKD_Install") $false
+    Expect "Uninstall: сведения об установке удалены" (@((Get-Item -LiteralPath "$sandbox\SolidWorks\ESKD_Install").Property) -join ",") "DrewInstaller"
+    Expect "Uninstall: отпечаток установщика Drew сохранён" (Read-Value "$sandbox\SolidWorks\ESKD_Install" "DrewInstaller") "A9CEE78D"
     Expect "Uninstall: фамилия осталась" (Read-Value "$sandbox\SolidWorks\ESKD_Settings" "Author") "Тестов Т.Т."
     $code, $out = & $run @("-Mode", "Check")
     Expect "Check после удаления: не установлено" $code 10

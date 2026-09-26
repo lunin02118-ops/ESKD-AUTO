@@ -512,6 +512,63 @@ function Get-EskdLanguagePlan {
     }
 }
 
+# ------------------------------------------------------------------ Drew
+
+function Get-EskdDrewRecordedInstaller {
+    # Каким установщиком поставлен Drew на этом ПК — по последней подтверждённой установке. Записи «<время UTC>_<SHA-256
+    # AUTO.exe>» (New-EskdDrewStamp): метки на весь ПК (имена файлов в %ProgramData%\ESKD\DrewInstaller: Drew стоит на весь
+    # ПК) и отпечаток учётной записи (ESKD_Install\DrewInstaller, с «_<имя ПК>»: перемещаемый профиль приносит запись с
+    # другого ПК — она не считается); прежний вид отпечатка — голый хэш — самый старый. Метки только добавляются (чужой
+    # файл в ProgramData не изменить), поэтому решает последняя: возврат прежнего установщика — тоже смена.
+    param([string[]]$Records, [string]$Computer)
+    $last = @($Records | Where-Object { $_ } |
+              ForEach-Object {
+                  if ($_ -match '^[0-9A-Fa-f]{64}$') { "00000000000000000_$_" }
+                  elseif ($_ -match '^(\d{17}_[0-9A-Fa-f]{64})_(.+)$') { if ($Matches[2] -eq $Computer) { $Matches[1] } }
+                  else { $_ }
+              } |
+              Where-Object { $_ -match '^\d{17}_[0-9A-Fa-f]{64}$' } | Sort-Object) | Select-Object -Last 1
+    if ($last) { return $last.Substring(18) }
+    return $null
+}
+
+function New-EskdDrewStamp {
+    # Запись установки Drew «<время UTC>_<SHA-256 AUTO.exe>» — новее всех имеющихся: если часы ПК убегали вперёд, запись
+    # «из будущего» иначе навсегда осталась бы последней, и Drew переставлялся бы при каждой настройке.
+    param([string]$AutoHash, [string[]]$Records, [datetime]$Now = [datetime]::UtcNow)
+    $stamp = [long]$Now.ToString("yyyyMMddHHmmssfff", [Globalization.CultureInfo]::InvariantCulture)
+    foreach ($rec in @($Records)) {
+        if ("$rec" -match '^(\d{17})_[0-9A-Fa-f]{64}(_|$)' -and [long]$Matches[1] -ge $stamp) { $stamp = [long]$Matches[1] + 1 }
+    }
+    return "{0:D17}_{1}" -f $stamp, $AutoHash
+}
+
+function Get-EskdDrewPlan {
+    # Что делать с Drew на шаге [7/9]. RecordedAuto — SHA-256 установщика последней подтверждённой установки Drew на ПК
+    # (Get-EskdDrewRecordedInstaller). Решение владельца 26.09.2026: сменился установщик в инструментарии — Drew
+    # переставляется один раз на ПК, даже если сборка лицензии совпала с замером: у установщиков 24.09–26.09.2026 она одна,
+    # и прежнее правило «хэш совпал — Drew верный» оставляло старый Drew навсегда.
+    #   Install — Drew нет; Keep — стоит этим же установщиком; Update — стоит Drew с верной сборкой лицензии от прежнего
+    #   (или неизвестного) установщика: переставляется, сбой удаления — только предупреждение; Replace — сборка лицензии
+    #   чужая (пробная производителя, со «слётом» лицензии): переставляется, сбой — ошибка; Unverified — сборка лицензии
+    #   есть, но не читается (файл занят): Drew не трогается.
+    param(
+        [bool]$LicPresent,
+        [string]$LicNow,
+        [string]$LicHash,
+        [string]$AutoHash,
+        [string]$RecordedAuto
+    )
+    if (-not $LicPresent) { return "Install" }
+    if (-not $LicNow) { return "Unverified" }
+    $licOk = $LicNow -eq $LicHash
+    # Установщика в инструментарии нет или он не читается: сравнить не с чем — остаётся проверка по сборке лицензии.
+    if (-not $AutoHash) { return $(if ($licOk) { "Keep" } else { "Install" }) }
+    if ($RecordedAuto -eq $AutoHash) { return "Keep" }
+    if ($licOk) { return "Update" }
+    return "Replace"
+}
+
 # ------------------------------------------------------------------ Отучение SolidWorks от сети
 
 function Get-EskdSwBlockExpectedRules {
